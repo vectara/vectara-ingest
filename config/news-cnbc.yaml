@@ -1,0 +1,21 @@
+vectara:
+  corpus_id: 154
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: rss
+
+rss_crawler:
+  source: cnbc
+  rss_pages: [
+    "https://www.cnbc.com/id/100003114/device/rss/rss.html", "https://www.cnbc.com/id/105545213/device/rss/rss.html",
+    "https://www.cnbc.com/id/10000664/device/rss/rss.html", "https://www.cnbc.com/id/10000744/device/rss/rss.html",
+    "https://www.cnbc.com/id/10000108/device/rss/rss.html", "https://www.cnbc.com/id/10000115/device/rss/rss.html",
+    "https://www.cnbc.com/id/10000113/device/rss/rss.html", "https://www.cnbc.com/id/10000114/device/rss/rss.html", 
+    "https://www.cnbc.com/id/10000116/device/rss/rss.html", "https://www.cnbc.com/id/19836768/device/rss/rss.html", 
+    "https://www.cnbc.com/id/10000110/device/rss/rss.html", "https://www.cnbc.com/id/10000739/device/rss/rss.html", 
+    "https://www.cnbc.com/id/10000117/device/rss/rss.html"
+  ]
+  days_past: 90
+  delay: 1
+  extraction: pdf           # pdf or html

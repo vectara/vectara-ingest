@@ -1,0 +1,11 @@
+vectara:
+  corpus_id: 25
+  customer_id: 1169579801
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/Users/ofer/Downloads/transformer-papers/"
+  extensions: ['.pdf']
+

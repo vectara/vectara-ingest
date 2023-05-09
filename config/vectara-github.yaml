@@ -1,0 +1,11 @@
+vectara:
+  corpus_id: 150
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: github
+
+github_crawler:
+  owner: "vectara"
+  repos: ["getting-started", "protos", "slackbot", "magazine-search-demo", "web-crawler", "Search-UI", "hotel-reviews-demo"]
+  crawl_code: false

@@ -1,0 +1,12 @@
+vectara:
+  corpus_id: 148
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: mediawiki
+
+mediawiki_crawler:
+  api_url: "https://en.wikipedia.org/w/api.php"
+  n_pages: 1000
+  project: 'en.wikipedia'
+  

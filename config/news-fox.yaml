@@ -1,0 +1,18 @@
+vectara:
+  corpus_id: 153
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: rss
+
+rss_crawler:
+  source: fox
+  rss_pages: [
+    "http://feeds.foxnews.com/foxnews/latest", "http://feeds.foxnews.com/foxnews/national", "http://feeds.foxnews.com/foxnews/world",
+    "http://feeds.foxnews.com/foxnews/politics", "http://feeds.foxnews.com/foxnews/business", "http://feeds.foxnews.com/foxnews/entertainment",
+    "http://feeds.foxnews.com/foxnews/health", "http://feeds.foxnews.com/foxnews/science", "http://feeds.foxnews.com/foxnews/tech",
+    "http://feeds.foxnews.com/foxnews/internal/travel/mixed", "http://feeds.foxnews.com/foxnews/section/lifestyle"
+  ]
+  days_past: 90
+  delay: 1
+  extraction: pdf           # pdf or html

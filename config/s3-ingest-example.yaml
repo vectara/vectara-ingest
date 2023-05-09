@@ -1,0 +1,11 @@
+vectara:
+  corpus_id: 24
+  customer_id: 1169579801
+
+crawling:
+  crawler_type: s3
+
+s3_crawler:
+  s3_path: s3://ofer-pdfs
+  extensions: ['.pdf']
+
