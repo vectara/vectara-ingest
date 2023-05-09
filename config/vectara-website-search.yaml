@@ -1,0 +1,12 @@
+vectara:
+  corpus_id: 141
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  website_homepage: https://www.vectara.com
+  delay: 1
+  pages_source: sitemap     # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
+  extraction: pdf           # pdf or html

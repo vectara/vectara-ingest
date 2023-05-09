@@ -1,0 +1,11 @@
+vectara:
+  corpus_id: 156
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: github
+
+github_crawler:
+  owner: "huggingface"
+  repos: ["transformers", "datasets", "tokenizers", "accelerate", "optimum", "diffusers"]
+  crawl_code: false

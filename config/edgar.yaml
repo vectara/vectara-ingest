@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 157
+  customer_id: 1526022105
+
+crawling:
+  crawler_type: edgar
+
+edgar_crawler:
+  tickers: ['AAPL', 'AMZN', 'GOOG', 'EBAY', 'MSFT', 'INTC', 'NVDA', 'META', 'TSLA', 'AMD', 'CRM', 'NFLX', 'PYPL', 
+            'JNJ', 'CSCO', 'JPM', 'NKE', 'WMT', 'V', 'UNH', 'LLY', 'PG', 'HD', 'MRK', 'KO', 'ABBV', 'PEP', 'ORCL',
+            'USB', 'WFC', 
+           ]
+  start_date: "2015-01-01"
+  end_date: "2023-04-30"
