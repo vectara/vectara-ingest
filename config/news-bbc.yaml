@@ -1,6 +1,7 @@
 vectara:
   corpus_id: 152
   customer_id: 1526022105
+  reindex: false
 
 crawling:
   crawler_type: rss
@@ -16,6 +17,6 @@ rss_crawler:
     "http://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", "http://feeds.bbci.co.uk/news/world/asia/rss.xml",
     "http://feeds.bbci.co.uk/news/world/europe/rss.xml"
   ]
-  days_past: 90
+  days_past: 30
   delay: 1
-  extraction: pdf           # pdf or html
+  extraction: playwright           # pdf or playwright

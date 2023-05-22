@@ -1,6 +1,7 @@
 vectara:
   corpus_id: 25
   customer_id: 1169579801
+  reindex: true
 
 crawling:
   crawler_type: folder

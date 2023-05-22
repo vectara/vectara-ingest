@@ -1,15 +1,16 @@
 vectara:
-  corpus_id: 157
+  corpus_id: 161
   customer_id: 1526022105
   reindex: true
 
 crawling:
-  crawler_type: edgar
+  crawler_type: fmp
 
-edgar_crawler:
+fmp_crawler:
   tickers: ['AAPL', 'AMZN', 'GOOG', 'EBAY', 'MSFT', 'INTC', 'NVDA', 'META', 'TSLA', 'AMD', 'CRM', 'NFLX', 'PYPL', 
             'JNJ', 'CSCO', 'JPM', 'NKE', 'WMT', 'V', 'UNH', 'LLY', 'PG', 'HD', 'MRK', 'KO', 'ABBV', 'PEP', 'ORCL',
-            'USB', 'WFC', 
+            'USB', 'WFC', 'F', 'RIVN', 'T', 'SNOW', 'UBER', 'DASH', 'C', 'BAC', 'TGT', 'BBY', 'EXPE', 'ABNB', 
+            'LUV', 'DIS', 'XOM', 'CVX', 'SLB', 'PFE', 'CVS'
            ]
-  start_date: "2015-01-01"
-  end_date: "2023-05-08"
+  start_year: 2015
+  end_year: 2023

@@ -1,12 +1,13 @@
 vectara:
   corpus_id: 28
   customer_id: 1169579801
+  reindex: false
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  website_homepage: https://www.sf.gov
+  urls: [https://www.sf.gov]
   delay: 1
   pages_source: sitemap     # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  extraction: pdf           # pdf or html
+  extraction: playwright    # pdf or playwright

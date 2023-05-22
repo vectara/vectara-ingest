@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/crawler.png" alt="Futuristic crawler">
+  <img src="../img/crawler.png" alt="Futuristic crawler">
 </p>
 
 <h1 align="center">vectara-ingest crawlers</h1>
@@ -14,15 +14,14 @@ Let's go through each of these crawlers to explain how they work and how to cust
 ```yaml
 ...
 website_crawler:
-    website_homepage: https://www.vectara.com
+    urls: [https://www.vectara.com]
     delay: 1
     pages_source: sitemap
     extraction: pdf
-    max_depth: 2
 ```
 
 Ths website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
-1. `sitemap`: in this mode the crawler retrieves the sitemap of the target webpage (`website_homepage`) and indexes all the URLs listed in the sitemap
+1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of urls) and indexes all the URLs listed in each sitemap
 2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
 
 the `extraction` parameter defines how page content is extracted from URLs. 
@@ -163,5 +162,6 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
+- `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
 - `Hacker News` crawler: crawls the best, most recent an most popular Hacker News stories
 - `PMC` crawler: crawls medical articles from PubMed Central and indexes them into Vectara.

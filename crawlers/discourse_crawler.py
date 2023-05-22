@@ -1,6 +1,6 @@
 import logging
 import requests
-from crawler import Crawler
+from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
 import json

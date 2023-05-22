@@ -1,26 +1,31 @@
 import logging
 import json
 import requests
-import os
+import time
 from omegaconf import OmegaConf
 import toml
 import sys
+import os
 
-from crawlers.website_crawler import WebsiteCrawler
-from crawlers.hackernews_crawler import HackernewsCrawler
-from crawlers.docusaurus_crawler import DocusaurusCrawler
-from crawlers.rss_crawler import RssCrawler
-from crawlers.notion_crawler import NotionCrawler
-from crawlers.jira_crawler import JiraCrawler
-from crawlers.folder_crawler import FolderCrawler
-from crawlers.mediawiki_crawler import MediawikiCrawler
-from crawlers.discourse_crawler import DiscourseCrawler
-from crawlers.pmc_crawler import PmcCrawler
-from crawlers.s3_crawler import S3Crawler
-from crawlers.github_crawler import GithubCrawler
-from crawlers.edgar_crawler import EdgarCrawler
-
+import importlib
+from core.crawler import Crawler
 from authlib.integrations.requests_client import OAuth2Session  # type: ignore
+
+def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
+    sys.path.insert(0, os.path.abspath(folder_name))
+
+    crawler_name = class_name.split('Crawler')[0]
+    module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
+    module = importlib.import_module(module_name)
+
+    class_ = getattr(module, class_name)
+
+    # Ensure the class is a subclass of the base class
+    if not issubclass(class_, base_class):
+        raise TypeError(f"{class_name} is not a subclass of {base_class.__name__}")
+
+    # Instantiate the class and return the instance
+    return class_(*args, **kwargs)
 
 def get_jwt_token(auth_url, auth_id: str, auth_secret: str, customer_id: str):
     """Connect to the server and get a JWT token."""
@@ -92,6 +97,9 @@ def main():
         if k=='DISCOURSE_API_KEY':
             OmegaConf.update(cfg, f'discourse_crawler.{k.lower()}', v)
             continue
+        if k=='FMP_API_KEY':
+            OmegaConf.update(cfg, f'fmp_crawler.{k.lower()}', v)
+            continue
         if k=='JIRA_PASSWORD':
             OmegaConf.update(cfg, f'jira_crawler.{k.lower()}', v)
             continue
@@ -110,36 +118,9 @@ def main():
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
 
-    if crawler_type == 'website':
-        crawler = WebsiteCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'hackernews':
-        crawler = HackernewsCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'mediawiki':
-        crawler = MediawikiCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'docusaurus':
-        crawler = DocusaurusCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'rss':
-        crawler = RssCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'notion':
-        crawler = NotionCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'jira':
-        crawler = JiraCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'github':
-        crawler = GithubCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'folder':
-        crawler = FolderCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'discourse':
-        crawler = DiscourseCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'pmc':
-        crawler = PmcCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 'edgar':
-        crawler = EdgarCrawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    elif crawler_type == 's3':
-        crawler = S3Crawler(cfg, endpoint, customer_id, corpus_id, api_key)
-    else:
-        logging.info("Illegal crawler type {crawler_type}, exiting")
-        return 
-
+    # instantiate the crawler
+    crawler = instantiate_crawler(Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', cfg, endpoint, customer_id, corpus_id, api_key)
+        
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
@@ -147,6 +128,7 @@ def main():
     if reset_corpus_flag:
         logging.info("Resetting corpus")
         reset_corpus(endpoint, customer_id, corpus_id, cfg.vectara.auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logging.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()

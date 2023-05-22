@@ -1,7 +1,7 @@
 import logging
 import requests
 import json
-from crawler import Crawler
+from core.crawler import Crawler
 
 class JiraCrawler(Crawler):
 
@@ -39,9 +39,10 @@ class JiraCrawler(Crawler):
                     metadata["url"] = f"{self.cfg.jira_crawler.jira_base_url}/browse/{issue['key']}"
 
                     # Create a Vectara document with the metadata and the issue fields
+                    title = issue["fields"]["summary"]
                     document = {
                         "documentId": issue["key"],
-                        "title": issue["fields"]["summary"],
+                        "title": title,
                         "metadataJson": json.dumps(metadata),
                         "section": []
                     }
@@ -54,10 +55,12 @@ class JiraCrawler(Crawler):
                             comments.append(f'{author}: {comment_body}')
                         except Exception as e:
                             continue
+
                     try:
                         description = issue["fields"]["description"]["content"][0]["content"][0]["text"]
                     except Exception as e:
-                        description = ''
+                        description = str(issue['key'])
+
                     document["section"] = [
                         {
                             "title": "Comments",
@@ -66,19 +69,19 @@ class JiraCrawler(Crawler):
                         {
                             "title": "Description",
                             "text": description
+                        },
+                        {
+                            "title": "Status",
+                            "text": f'Issue {title} is {issue["fields"]["status"]["name"]}'
                         }
                     ]
 
-                    response, succeeded = self.indexer.index_document(document)
+                    succeeded = self.indexer.index_document(document)
                     if succeeded:
-                        if 'ALREADY_EXISTS' in response.text:
-                            logging.info(f"Document {document['documentId']} already exists, skipping")
-                        else:
-                            logging.info(f"Indexed issue {document['documentId']}")
+                        logging.info(f"Indexed issue {document['documentId']}")
                         issue_count += 1
                     else:
                         logging.info(f"Error indexing issue {document['documentId']}")
-
                 startAt = startAt + actual_cnt
             else:
                 break

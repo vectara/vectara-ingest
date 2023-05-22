@@ -35,6 +35,7 @@ class PDFConverter:
                 except subprocess.TimeoutExpired:
                     logging.warning(f"Timeout converting {url} to PDF")
                     return False
+
             return True
 
         except Exception as e:

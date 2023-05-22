@@ -1,5 +1,5 @@
 import logging
-from crawler import Crawler
+from core.crawler import Crawler
 import json
 import requests
 import urllib.parse
@@ -65,6 +65,6 @@ class MediawikiCrawler(Crawler):
                     }
                 ]
             }
-            _, succeeded = self.indexer.index_document(document)
+            succeeded = self.indexer.index_document(document)
             if not succeeded:
                 logging.info(f"Failed to index page {page_id}: url={page_url}, title={title}, content={page_content}")

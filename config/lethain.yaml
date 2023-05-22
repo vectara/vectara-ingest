@@ -1,13 +1,13 @@
 vectara:
-  corpus_id: 141
+  corpus_id: 160
   customer_id: 1526022105
-  reindex: true
+  reindex: false
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  urls: [https://www.vectara.com]
+  urls: ["https://infraeng.dev/", "https://staffeng.com/", "https://lethain.com/"]
   delay: 1
   pages_source: sitemap     # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  extraction: playwright           # pdf or html
+  extraction: playwright    # pdf or playwright

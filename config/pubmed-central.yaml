@@ -1,6 +1,7 @@
 vectara:
-  corpus_id: 22
+  corpus_id: 21
   customer_id: 1169579801
+  reindex: true
 
 crawling:
   crawler_type: pmc
@@ -13,6 +14,8 @@ pmc_crawler:
     "Primary Immunodeficiency diseases", "Prader-Willi Syndrome", "Polycystic Kidney Disease", "Porphyria", "Retinitis Pigmentosa", 
     "Gaucher Disease", "Tay-Sachs Disease", "Spinal Muscular Atrophy", "Tuberous Sclerosis", "Wilson Disease", "Rett Syndrome", 
     "Williams Syndrome", "Fragile X Syndrome", "Cystinosis", "Cerebral palsy spastic diplegic", "arthrogryposis","Cri du Chat Syndrome",
-    "Perlman syndrome", "Hashimoto encephalopathy", 
+    "Perlman syndrome", "Hashimoto encephalopathy", "Pachygyria", "Pompe Disease", "Schnitzler Syndrome", "Ewing Sarcoma", "Mesothelioma",
+    "Whipple Disease", "Meningioma", "Chediak-Higashi Syndrome", "Reye Syndrome", "Eosinophilic Fasciitis", "Degos Disease", "Dermatomyositis",
+    "Child Asthma"
   ]
   n_papers: 500

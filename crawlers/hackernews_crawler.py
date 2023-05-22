@@ -1,15 +1,10 @@
 
 import requests
-import time
 import logging
-from crawler import Crawler
+from core.crawler import Crawler
 import os
-from bs4 import BeautifulSoup
 from slugify import slugify         # type: ignore
-
-def html_to_text(html):
-    soup = BeautifulSoup(html, features='html.parser')
-    return soup.get_text()
+from core.utils import html_to_text
 
 def get_comments(kids, entrypoint):
     comments = []
@@ -63,11 +58,8 @@ class HackernewsCrawler(Crawler):
                     self.indexer.index_file(fname, uri=url, metadata={'title': title})
                     os.remove(fname)
                 else:
-                    fname = self.url_to_file(url, title=title, extraction="pdf")
-                    self.indexer.index_file(fname, uri=url, metadata={'title': title, 'source': 'hackernews', 'url': url})
+                    metadata = {'source': 'hackernews', 'title': title}
+                    self.indexer.index_url(url, metadata=metadata)
             except Exception as e:
                 import traceback
                 logging.error(f"Error crawling story {url}, error={e}, traceback={traceback.format_exc()}")
-
-            # Wait for 1 second to avoid hitting the server too frequently
-            time.sleep(1)

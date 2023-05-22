@@ -1,5 +1,5 @@
 import logging
-from crawler import Crawler
+from core.crawler import Crawler
 import os
 import pathlib
 import time
@@ -7,7 +7,7 @@ import time
 class FolderCrawler(Crawler):
 
     def crawl(self):
-        folder = "/home/vectara/data" #self.cfg.folder_crawler.path
+        folder = "/home/vectara/data"
         extensions = self.cfg.folder_crawler.extensions
 
         # Walk the directory and upload files with the specified extension to Vectara
