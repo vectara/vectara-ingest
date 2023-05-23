@@ -20,7 +20,7 @@ mkdir -p ~/tmp/mount
 cp secrets.toml ~/tmp/mount
 cp $1 ~/tmp/mount/
 docker build . --tag=vectara-ingest:latest
-docker rm vingest -f
+docker container inspect vingest &>/dev/null && docker rm -f vingest
 
 crawler_type="$(yq e '.crawling.crawler_type' $1)"
 config_file_name="${1##*/}"
