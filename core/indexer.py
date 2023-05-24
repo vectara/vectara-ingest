@@ -12,7 +12,6 @@ from unstructured.partition.pdf import partition_pdf
 import unstructured as us
 
 from playwright.async_api import async_playwright 
-from playwright.sync_api import sync_playwright
 
 from core.utils import process_chunks
 
@@ -30,24 +29,15 @@ async def fetch_content_with_timeout(url, timeout: int = 20):
     return content
 
 def get_content_type_and_status(url: str):
-    with sync_playwright() as playwright:
-        browser = playwright.firefox.launch()
-        context = browser.new_context()
-        page = context.new_page()
-        
-        content_type = None
-        status_code = None
-
-        def handle_response(response):
-            nonlocal content_type, status_code
-            if response.request.resource_type == "document":
-                content_type = response.headers.get("content-type")
-                status_code = response.status
-
-        page.on("response", handle_response)
-        page.goto(url)
-        browser.close()
-        return content_type, status_code
+    headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        return response.status_code, ''
+    else:
+        return response.status_code, str(response.headers["Content-Type"])
 
 class Indexer(object):
     """
@@ -156,10 +146,12 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         try:
-            content_type, status_code = get_content_type_and_status(url)
+            status_code, content_type = get_content_type_and_status(url)
         except Exception as e:
             logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
             return False
+        
+
         if status_code != 200:
             logging.info(f"Page {url} is unavailable ({status_code})")
             return False
@@ -176,8 +168,6 @@ class Indexer(object):
             title = titles[0] if len(titles)>0 else 'unknown'
             elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
         else:
-            if content_type == 'text/html':
-                url = f"about:reader?url={url}"
             try:
                 content = asyncio.run(fetch_content_with_timeout(url))
             except Exception as e:

@@ -9,5 +9,4 @@ crawling:
 mediawiki_crawler:
   api_url: "https://en.wikipedia.org/w/api.php"
   n_pages: 1000
-  project: 'en.wikipedia'
-  
+  project: "en.wikipedia"
