@@ -1,5 +1,5 @@
 import os
-from crawler import Crawler
+from core.crawler import Crawler
 from git import Repo
 import logging
 from pathlib import Path
@@ -36,9 +36,7 @@ class DocusaurusCrawler(Crawler):
         self.docs_path = os.path.join(local_folder, 'www/docs')
 
     def crawl(self):
-
-        markdown_files = find_files_with_extension('.md', self.docs_path)
-
+        markdown_files = find_files_with_extension('.md', self.docs_path) + find_files_with_extension('.mdx', self.docs_path)
         for file_path in markdown_files:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()

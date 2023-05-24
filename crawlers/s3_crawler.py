@@ -4,7 +4,7 @@ from slugify import slugify         # type: ignore
 import boto3
 import os
 
-from crawler import Crawler
+from core.crawler import Crawler
 
 def list_files_in_s3_bucket(bucket_name: str, prefix: str):
     """

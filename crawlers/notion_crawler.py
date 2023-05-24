@@ -1,5 +1,5 @@
 import logging
-from crawler import Crawler
+from core.crawler import Crawler
 from omegaconf import OmegaConf
 from notion_client import Client
 
@@ -68,12 +68,9 @@ class NotionCrawler(Crawler):
             doc_id = page['url']
             if len(segments)>0:
                 logging.info(f"Indexing {len(segments)} segments in page {doc_id}")
-                response, succeeded = self.indexer.index_segments(doc_id, segments, metadata={'source': 'notion', 'title': title, 'url': page['url']})
+                succeeded = self.indexer.index_segments(doc_id, segments, metadata={'source': 'notion', 'title': title, 'url': page['url']})
                 if succeeded:
-                    if 'ALREADY_EXISTS' in response.text:
-                        logging.info(f"Document {doc_id} already exists, skipping")
-                    else:
-                        logging.info(f"Indexed notion page {doc_id}")
+                    logging.info(f"Indexed notion page {doc_id}")
                 else:
                     logging.info(f"Error indexing notion page {doc_id}")
             else:

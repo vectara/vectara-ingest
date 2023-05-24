@@ -20,14 +20,19 @@ RUN rm wkhtmltox_0.12.6-1.focal_amd64.deb
 RUN apt-get install -y python3 python3-pip
 RUN pip3 install --upgrade pip
 
+RUN apt-get update
+RUN apt-get install -y poppler-utils tesseract-ocr libtesseract-dev
+
 ENV HOME /home/vectara
 ENV XDG_RUNTIME_DIR=/tmp
 WORKDIR ${HOME}
 
 COPY requirements.txt $HOME/
 RUN pip install -r requirements.txt
+RUN playwright install --with-deps firefox
 
 COPY *.py $HOME/
+COPY core/*.py $HOME/core/
 COPY crawlers/ $HOME/crawlers/
 
 ENTRYPOINT ["/bin/bash", "-l", "-c"]

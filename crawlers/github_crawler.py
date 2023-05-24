@@ -1,5 +1,5 @@
 import json
-from crawler import Crawler
+from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
 from attrdict import AttrDict
@@ -56,26 +56,27 @@ class GithubCrawler(Crawler):
             if item["type"] == "file":
                 fname = item["path"]
                 url = item["html_url"]
-                try:
-                    file_response = requests.get(item["url"], headers={"Authorization": f"token {self.github_token}"})
-                    file_content = base64.b64decode(file_response.json()["content"]).decode("utf-8")
-                except Exception as e:
-                    logging.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
-                    continue
+                if url.lower().endswith(".md") or url.lower().endswith(".mdx"):     # Only index markdown files from the code, not the code itself
+                    try:
+                        file_response = requests.get(item["url"], headers={"Authorization": f"token {self.github_token}"})
+                        file_content = base64.b64decode(file_response.json()["content"]).decode("utf-8")
+                    except Exception as e:
+                        logging.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
+                        continue
 
-                metadata = {'file': fname, 'source': 'github', 'url': url}
-                code_doc = {
-                    'documentId': f'github-{item["path"]}',
-                    'title': item["name"],
-                    'description': f'source code for {fname}',
-                    'metadataJson': json.dumps(metadata),
-                    'section': [{
-                        'title': 'code',
-                        'text': file_content,
-                    }]
-                }
-                logging.info(f"Indexing code for {item['path']}")
-                self.indexer.index_document(code_doc)
+                    metadata = {'file': fname, 'source': 'github', 'url': url}
+                    code_doc = {
+                        'documentId': f'github-{item["path"]}',
+                        'title': item["name"],
+                        'description': f'Markdown of {fname}',
+                        'metadataJson': json.dumps(metadata),
+                        'section': [{
+                            'title': 'markdown',
+                            'text': file_content,
+                        }]
+                    }
+                    logging.info(f"Indexing codebase markdown: {item['path']}")
+                    self.indexer.index_document(code_doc)
             elif item["type"] == "dir":
                 self.crawl_code_folder(base_url, path=item["path"])
 
@@ -123,7 +124,7 @@ class GithubCrawler(Crawler):
             
             for d_comment in comments:
                 comment = AttrDict(d_comment)
-                comment_id = f'github-comment-{comment.id}'
+                comment_id = comment.id
                 comment_text = comment.body
                 comment_author = comment.user.login
                 comment_created_at = str(comment.created_at)

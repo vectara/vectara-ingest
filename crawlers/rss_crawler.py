@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from crawler import Crawler
+from core.crawler import Crawler
 import feedparser
 from datetime import datetime, timedelta
 from time import mktime
@@ -40,13 +40,6 @@ class RssCrawler(Crawler):
                 logging.info(f"Skipping {url} since it was already crawled in this round")
                 continue
 
-            # convert URL to local file. Sometimes wkhtmltopdf fails to convert, in which case we just skip it
-            try:
-                filename = self.url_to_file(url, title=title, extraction=self.cfg.rss_crawler.extraction)
-            except Exception as e:
-                logging.error(f"Error while processing {url}: {e}")
-                continue
-
             # index document into Vectara
             try:
                 if pub_date:
@@ -61,13 +54,11 @@ class RssCrawler(Crawler):
                     'crawl_date': str(today),
                     'crawl_date_int': crawl_date_int
                 }
-                succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
+                succeeded = self.indexer.index_url(url, metadata=metadata)
                 if succeeded:
                     crawled_urls.add(url)
                 else:
                     logging.info(f"Indexing failed for {url}")
-                if os.path.exists(filename):
-                    os.remove(filename)
             except Exception as e:
                 logging.error(f"Error while indexing {url}: {e}")
             time.sleep(delay_in_secs)

@@ -1,6 +1,7 @@
 vectara:
   corpus_id: 151
   customer_id: 1526022105
+  reindex: false
 
 crawling:
   crawler_type: rss
@@ -18,6 +19,6 @@ rss_crawler:
     "http://rss.cnn.com/rss/edition_technology.rss", "http://rss.cnn.com/rss/edition_us.rss", "http://rss.cnn.com/rss/edition_space.rss",
     "http://rss.cnn.com/rss/edition_meast.rss", "http://rss.cnn.com/rss/money_news_international.rss"
   ]
-  days_past: 90
+  days_past: 30
   delay: 1
-  extraction: pdf           # pdf or html
+  extraction: playwright           # pdf or playwright

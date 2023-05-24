@@ -8,7 +8,7 @@ import pandas as pd
 import datetime
 from ratelimiter import RateLimiter
 
-from crawler import Crawler
+from core.crawler import Crawler
 
 # build mapping of ticker to cik
 df = pd.read_csv('https://www.sec.gov/include/ticker.txt', sep='\t', names=['ticker', 'cik'], dtype=str)
@@ -101,12 +101,9 @@ class EdgarCrawler(Crawler):
                 logging.info(f"indexing document {url}")
                 metadata = {'source': 'edgar', 'url': url, 'title': title}
                 with rate_limiter:
-                    filename = self.url_to_file(url, title=title, extraction='pdf')
-                succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
+                    succeeded = self.indexer.index_url(url, metadata=metadata)
                 if not succeeded:
                     logging.info(f"Indexing failed for url {url}")
-                if os.path.exists(filename):
-                    os.remove(filename)
                 time.sleep(1)
 
 
