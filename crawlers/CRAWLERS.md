@@ -14,14 +14,14 @@ Let's go through each of these crawlers to explain how they work and how to cust
 ```yaml
 ...
 website_crawler:
-    urls: [https://www.vectara.com]
+    urls: [https://vectara.com]
     delay: 1
     pages_source: sitemap
     extraction: pdf
 ```
 
 Ths website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
-1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of urls) and indexes all the URLs listed in each sitemap
+1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of URLs) and indexes all the URLs listed in each sitemap
 2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
 
 the `extraction` parameter defines how page content is extracted from URLs. 
@@ -53,7 +53,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `rss_pages` defines one or more RSS feed locations. 
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds between to wait between news articles, so as to make the crawl more friendly to the hosting site.
-- `extraction` defines how we process urls (pdf or html) as as with the website crawler.
+- `extraction` defines how we process URLs (pdf or html) as as with the website crawler.
 
 ### Docusaurus crawler
 

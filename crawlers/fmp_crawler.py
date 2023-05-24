@@ -39,17 +39,12 @@ class FmpCrawler(Crawler):
 
     def crawl(self):
         base_url = 'https://financialmodelingprep.com'
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" 
-        }   
         keys_to_ignore = ['fillingDate', 'date', 'symbol', 'cik', 'acceptedDate', 'reportedCurrency', 'link', 'finalLink']
         for ticker in self.tickers:
-
             # get profile
             url = f'{base_url}/api/v3/profile/{ticker}?apikey={self.api_key}'
             try:
-                response = requests.get(url, headers=headers)
+                response = requests.get(url)
             except Exception as e:
                 logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
                 continue
@@ -65,14 +60,14 @@ class FmpCrawler(Crawler):
             for year in range(self.start_year, self.end_year+1):
                 url = f'{base_url}/api/v4/financial-reports-json?symbol={ticker}&year={year}&period=FY&apikey={self.api_key}'
                 try:
-                    response = requests.get(url, headers=headers)
+                    response = requests.get(url)
                 except Exception as e:
                     logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
                     continue
                 if response.status_code == 200:
                     data = response.json()
                     doc_title = f"10-K for {company_name} from {year}"
-                    metadata = {'source': 'finsearch', 'title': doc_title}
+                    metadata = {'source': 'finsearch', 'title': doc_title, 'ticker': ticker, 'year': year, 'type': '10-K'}
                     document = {
                         "documentId": f"10-K-{company_name}-{year}",
                         "title": doc_title,
@@ -93,14 +88,14 @@ class FmpCrawler(Crawler):
             # income statements
             logging.info(f"Ingesting income statements for {ticker}")
             url = f'{base_url}/api/v3/income-statement/{ticker}?limit=120&apikey={self.api_key}'
-            statements = requests.get(url, headers=headers).json()
+            statements = requests.get(url).json()
             for statement in statements:
                 date = statement['fillingDate']
                 if is_date_in_range(date, self.start_year, self.end_year):
                     text_pieces = [f'Income statement for {company_name} on date {date}:'] + \
                                   [f"{camelCase_to_words(key)}: {value}" for key, value in statement.items() if key not in keys_to_ignore]
                     title = f"Income statement for {company_name}, on {date}"
-                    metadata = {'source': 'finsearch', 'title': title}
+                    metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'date': date, 'type': 'income-statement'}
                     document = {
                         "documentId": f"income-statment-{ticker}-{date}",
                         "title": title,
@@ -116,14 +111,14 @@ class FmpCrawler(Crawler):
             # balance sheet statenents
             logging.info(f"Ingesting balance sheet statements for {ticker}")
             url = f'{base_url}/api/v3/balance-sheet-statement/{ticker}?limit=120&apikey={self.api_key}'
-            statements = requests.get(url, headers=headers).json()
+            statements = requests.get(url).json()
             for statement in statements:
                 date = statement['fillingDate']
                 if is_date_in_range(date, self.start_year, self.end_year):
                     text_pieces = [f'Balance sheet statement for {company_name} on date {date}:'] + \
                                   [f"{camelCase_to_words(key)}: {value}" for key, value in statement.items() if key not in keys_to_ignore]
                     title = f"Balance sheet statement for {company_name}, on {date}"
-                    metadata = {'source': 'finsearch', 'title': title}
+                    metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'date': date, 'type': 'balance-sheet'}
                     document = {
                         "documentId": f"balance-sheet-statment-{ticker}-{date}",
                         "title": title,
@@ -142,14 +137,14 @@ class FmpCrawler(Crawler):
                 for quarter in range(1, 5):
                     url = f'{base_url}/api/v3/earning_call_transcript/{ticker}?quarter={quarter}&year={year}&apikey={self.api_key}'
                     try:
-                        response = requests.get(url, headers=headers)
+                        response = requests.get(url)
                     except Exception as e:
                         logging.info(f"Error getting transcript for {company_name} quarter {quarter} of {year}: {e}")
                         continue
                     if response.status_code == 200:
                         for transcript in response.json():
                             title = f"Earnings call transcript for {company_name}, quarter {quarter} of {year}"
-                            metadata = {'source': 'finsearch', 'title': title}
+                            metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'year': year, 'quarter': quarter, 'type': 'transcript'}
                             document = {
                                 "documentId": f"transcript-{ticker}-{year}-{quarter}",
                                 "title": title,

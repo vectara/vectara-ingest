@@ -10,7 +10,7 @@ chunk_max_len = 2500   # targeting roughly 500 words
 # We do this by calling process_chunks, and it will recursively split chunks that are too large or merges chunks that are too small
 #
 
-# ensure all chunks are at least chunk_min_len characters
+# Ensure all chunks are at least chunk_min_len characters
 def ensure_min_len(self, chunks):
     result = []
     text = ""
@@ -26,7 +26,7 @@ def ensure_min_len(self, chunks):
         result.append({"text": text})
     return result
 
-# ensure no chunk is higher than chunk_max_len characters
+# Ensure no chunk is higher than chunk_max_len characters
 def ensure_max_len(chunks):
     result = []
     for chunk in chunks:

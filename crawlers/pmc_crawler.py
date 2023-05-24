@@ -6,6 +6,7 @@ from lxml import etree
 from ratelimiter import RateLimiter
 import requests
 import xmltodict
+from datetime import datetime
 
 from core.utils import html_to_text
 from core.crawler import Crawler
@@ -112,7 +113,8 @@ class PmcCrawler(Crawler):
                 logging.info(f"Failed to index document {pmc_id}")
 
     def index_medline_plus(self, topics: list):
-        url = 'https://medlineplus.gov/xml/mplus_topics_2023-05-19.xml'
+        today = datetime.now().strftime("%Y-%m-%d")
+        url = f'https://medlineplus.gov/xml/mplus_topics_{today}.xml'
         response = requests.get(url)
         response.raise_for_status()
         xml_dict = xmltodict.parse(response.text)

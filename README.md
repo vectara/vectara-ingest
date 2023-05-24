@@ -143,7 +143,7 @@ The `Indexer` class provides useful functionality to index documents into Vectar
 <b>Methods</b>
 
 <b>`index_url()`</b> 
-This is probably the most useful method. It takes a `url` as input and extract the content from that URL (using the `playwright` and `unstructured` libraries), then sends that content to Vectara using the standard indexing API. If the url points to a PDF document, special care is taken to ensure proper processing.
+This is probably the most useful method. It takes a URL as input and extracts the content from that URL (using the `playwright` and `unstructured` libraries), then sends that content to Vectara using the standard indexing API. If the URL points to a PDF document, special care is taken to ensure proper processing.
 
 <b>`index_file()`</b>
 Use this when you have a file that you want to index using Vectara's file_uplaod [API](https://docs.vectara.com/docs/indexing-apis/file-upload), so that it takes care of format identification, segmentation of text and indexing. 
@@ -152,7 +152,7 @@ Use this when you have a file that you want to index using Vectara's file_uplaod
 Use thesewhen you build the `document` JSON structure directly and want to index this document in the Vectara corpus.
 
 <b>Parameters</b>
-The `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then sends it to the corpus index.
+Specifically, the `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then sends it to the corpus index.
 
 ## Deployment
 ### Docker
@@ -181,7 +181,7 @@ To run `vectara-ingest` locally, perform the following steps:
 
 👤 **Vectara**
 
-- Website: [vectara.com](https://www.vectara.com)
+- Website: [vectara.com](https://vectara.com)
 - Twitter: [@vectara](https://twitter.com/vectara)
 - GitHub: [@vectara](https://github.com/vectara)
 - LinkedIn: [@vectara](https://www.linkedin.com/company/vectara/)

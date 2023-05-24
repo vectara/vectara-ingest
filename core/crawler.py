@@ -61,7 +61,7 @@ class Crawler(object):
 
         Args:
             url (str): URL of the page to crawl.
-            title (str): Title to use in case HTML does not have its own title
+            title (str): Title to use in case HTML does not have its own title.
         
         Returns:
             str: Name of the PDF file created.

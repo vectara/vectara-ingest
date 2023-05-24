@@ -7,7 +7,7 @@ crawling:
   crawler_type: website
 
 website_crawler:
-  urls: [https://www.sf.gov]
+  urls: [https://sf.gov]
   delay: 1
-  pages_source: sitemap     # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  extraction: playwright    # pdf or playwright
+  pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
+  extraction: playwright # pdf or playwright

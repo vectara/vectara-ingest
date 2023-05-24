@@ -138,7 +138,7 @@ class Indexer(object):
 
     def index_url(self, url: str, metadata: dict) -> bool:
         """
-        Index a url by rendering itwith scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
+        Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
         Args:
             url (str): URL for where the document originated. 
             metadata (dict): Metadata for the document.
