@@ -10,12 +10,22 @@ from core.crawler import Crawler, recursive_crawl
 logging.getLogger('usp.fetch_parse').setLevel(logging.ERROR)
 logging.getLogger('usp.helpers').setLevel(logging.ERROR)
 
+import re
+from urllib.parse import urlparse
+
 class WebsiteCrawler(Crawler):
 
     def crawl(self):
     
         base_urls = self.cfg.website_crawler.urls
         crawled_urls = set()
+
+        if 'url_regex' in self.cfg.website_crawler:
+            logging.info(f"Filtering URLs by {self.cfg.website_crawler.url_regex}")
+            url_regex = re.compile(self.cfg.website_crawler.url_regex)
+        else:
+            url_regex = None
+
         for homepage in base_urls:
             if self.cfg.website_crawler.pages_source == 'sitemap':
                 tree = sitemap_tree_for_homepage(homepage)
@@ -24,8 +34,10 @@ class WebsiteCrawler(Crawler):
                 hp_domain = "{uri.netloc}".format(uri=urlparse(homepage))
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, domain=hp_domain)
 
-            domain = '.'.join(str(urlparse(homepage).hostname).split('.')[-2:])
-            urls = [u for u in urls if domain if u]         # ensure URL is in the same domain
+            if url_regex:
+                logging.info(url_regex)
+                urls = [u for u in urls if url_regex.match(u)]
+    
             logging.info(f"Finished crawling using {homepage}, found {len(urls)} URLs to index")
 
             rate_limiter = RateLimiter(max_calls=1, period=self.cfg.website_crawler.delay)
