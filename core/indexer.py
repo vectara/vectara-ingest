@@ -13,8 +13,6 @@ import unstructured as us
 
 from playwright.async_api import async_playwright 
 
-from core.utils import process_chunks
-
 async def fetch_content_with_timeout(url, timeout: int = 20):
     async with async_playwright() as playwright:
         browser = await playwright.firefox.launch()
@@ -199,23 +197,11 @@ class Indexer(object):
         document["metadataJson"] = json.dumps(metadata)
         return self.index_document(document)
     
-    def index_document(self, document: dict, use_low_level_api: bool = False) -> bool:
+    def index_document(self, document: dict) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
         """
-        if use_low_level_api:
-            logging.info(f"Section lengths before: {[len(x['text']) for x in document['section']]}")
-            document['section'] = process_chunks(document['section'])
-            logging.info(f"Section lengths after: {[len(x['text']) for x in document['section']]}")
-            document['parts'] = document['section']
-            del document['section']
-            metadata = json.loads(document['metadataJson'])
-            metadata['title'] = document['title']
-            document['metadataJson'] = json.dumps(metadata)
-            del document['title']
-            api_endpoint = f"https://{self.endpoint}/v1/core/index"
-        else:
-            api_endpoint = f"https://{self.endpoint}/v1/index"
+        api_endpoint = f"https://{self.endpoint}/v1/index"
 
         request = {
             'customer_id': self.customer_id,
