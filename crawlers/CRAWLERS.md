@@ -17,16 +17,23 @@ website_crawler:
     urls: [https://vectara.com]
     delay: 1
     pages_source: sitemap
-    extraction: pdf
+    force_prefix: true
+    extraction: playwright
+    max_depth: 3      # only needed if pages_source is set to 'crawl'
+...
 ```
 
-Ths website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
+The website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
 1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of URLs) and indexes all the URLs listed in each sitemap
 2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
 
-the `extraction` parameter defines how page content is extracted from URLs. 
+The `extraction` parameter defines how page content is extracted from URLs. 
 1. The default value is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. This is the preferred method as the rendering operation is helpful to extract any text that may be due to Javascript or other scriping execution. 
-2. The other option is `html` which results in extracting the HTML from the webpage directly and sending that content to be indexed.
+2. The other option is `playwright` which results in using [playwright](https://playwright.dev/) to render the page content including JS and then extracting the HTML.
+
+`delay` specifies the number of seconds to wait between to consecutive requests to avoid rate limiting issues. 
+
+if `force_prefix` is set to true, then a URL is included in the crawl job only if the base_url is a prefix of it. This functionality works well whether the `www` prefix is used or not; for example if a URL to crawl is `vectara.com/page` it will be included even if the base_url is `www.vectara.com/page`
 
 ### RSS crawler
 
