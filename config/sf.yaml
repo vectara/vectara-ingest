@@ -10,5 +10,4 @@ website_crawler:
   urls: [https://sf.gov]
   delay: 1
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  force_prefix: true
   extraction: playwright # pdf or playwright

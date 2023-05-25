@@ -10,5 +10,5 @@ website_crawler:
   urls: [https://vectara.com]
   delay: 1
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  force_prefix: true # if true, ensures base_url is always a strict prefix for crawled URLs
+  url_regex: ".*" # regex string or None; ".*" would match any string.
   extraction: playwright # pdf or html

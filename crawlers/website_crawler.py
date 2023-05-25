@@ -10,36 +10,8 @@ from core.crawler import Crawler, recursive_crawl
 logging.getLogger('usp.fetch_parse').setLevel(logging.ERROR)
 logging.getLogger('usp.helpers').setLevel(logging.ERROR)
 
+import re
 from urllib.parse import urlparse
-
-def normalize_url(url):
-    if not url.startswith(('http://', 'https://')):
-        url = 'https://' + url
-    return url
-
-def is_partial_path(url_a, url_b):
-    # Add 'http://' at the start of the urls if it's not present
-    url_a = normalize_url(url_a)
-    url_b = normalize_url(url_b)
-
-    # Parse the urls
-    parsed_a = urlparse(url_a)
-    parsed_b = urlparse(url_b)
-
-    # Remove the 'www.' if present
-    parsed_a_netloc = parsed_a.netloc.replace('www.', '')
-    parsed_b_netloc = parsed_b.netloc.replace('www.', '')
-
-    # Check if the domain names match
-    if parsed_a_netloc != parsed_b_netloc:
-        return False
-
-    # Check if the path of url_b is a subpath of url_a
-    if not parsed_a.path.startswith(parsed_b.path):
-        return False
-
-    return True
-
 
 class WebsiteCrawler(Crawler):
 
@@ -47,8 +19,14 @@ class WebsiteCrawler(Crawler):
     
         base_urls = self.cfg.website_crawler.urls
         crawled_urls = set()
+
+        if 'url_regex' in self.cfg.website_crawler:
+            logging.info(f"Filtering URLs by {self.cfg.website_crawler.url_regex}")
+            url_regex = re.compile(self.cfg.website_crawler.url_regex)
+        else:
+            url_regex = None
+
         for homepage in base_urls:
-            homepage = normalize_url(homepage)
             if self.cfg.website_crawler.pages_source == 'sitemap':
                 tree = sitemap_tree_for_homepage(homepage)
                 urls = [page.url for page in tree.all_pages()]
@@ -56,8 +34,9 @@ class WebsiteCrawler(Crawler):
                 hp_domain = "{uri.netloc}".format(uri=urlparse(homepage))
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, domain=hp_domain)
 
-            if self.cfg.website_crawler.get("force_prefix", False):
-                urls = [u for u in urls if is_partial_path(u, homepage)]       # ensure homepage is a substring of all URLs
+            if url_regex:
+                logging.info(url_regex)
+                urls = [u for u in urls if url_regex.match(u)]
     
             logging.info(f"Finished crawling using {homepage}, found {len(urls)} URLs to index")
 

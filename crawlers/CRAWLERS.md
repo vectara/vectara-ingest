@@ -17,7 +17,6 @@ website_crawler:
     urls: [https://vectara.com]
     delay: 1
     pages_source: sitemap
-    force_prefix: true
     extraction: playwright
     max_depth: 3      # only needed if pages_source is set to 'crawl'
 ...
@@ -33,7 +32,7 @@ The `extraction` parameter defines how page content is extracted from URLs.
 
 `delay` specifies the number of seconds to wait between to consecutive requests to avoid rate limiting issues. 
 
-if `force_prefix` is set to true, then a URL is included in the crawl job only if the base_url is a prefix of it. This functionality works well whether the `www` prefix is used or not; for example if a URL to crawl is `vectara.com/page` it will be included even if the base_url is `www.vectara.com/page`
+`url_regex` if it exists defines a regular expression that is used to filter URLs. For example, if I want only the developer pages from vectara.com to be indexed, I can use ".*vectara.com/developer.*" 
 
 ### RSS crawler
 
