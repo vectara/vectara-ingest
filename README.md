@@ -63,7 +63,7 @@ Edit the `pg-search.yaml` file and make the following changes:
 
 Make sure the Docker app is running.
 
-Then execute the run script from the root directory using your config file to tell it what to crawl and where to ingest the data, and assigning the “default” profile from your secrets file:
+Then execute the run script from the root directory using your config file to tell it what to crawl and where to ingest the data, assigning the “default” profile from your secrets file:
 
 ```sh
 bash run.sh config/pg-rss.yaml default
