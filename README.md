@@ -144,7 +144,7 @@ XXX_crawler:
 
 We use a `secrets.toml` file to hold secret keys and parameters. You need to create this file in the root directory before running a crawl job. This file can hold multiple "profiles", and specific specific secrets for each of these profiles. For example:
 
-```toml
+```
 [profile1]
 auth_url="https://vectara-prod-<CUSTOMER-ID>.auth.us-west-2.amazoncognito.com"
 api_key="<VECTAR-API-KEY-1>
