@@ -181,7 +181,7 @@ Use this when you have a file that you want to index using Vectara's file_uplaod
 
 Use these when you build the `document` JSON structure directly and want to index this document in the Vectara corpus.
 
-##### Parameters
+#### Parameters
 
 Specifically, the `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then sends it to the corpus index.
 
@@ -189,7 +189,7 @@ Specifically, the `reindex` parameter determines whether an existing document sh
 
 ### Docker
 
-The project is designed to be used within a Docker container, so that a crawl job can be run anywhere - on a local machine or on any cloud machine. see [Dockerfile](https://github.com/vectara/vectara-ingest/blob/main/Dockerfile) for more information on the Docker file structure and build.
+The project is designed to be used within a Docker container, so that a crawl job can be run anywhere - on a local machine or on any cloud machine. See the [Dockerfile](https://github.com/vectara/vectara-ingest/blob/main/Dockerfile) for more information on the Docker file structure and build.
 
 ### Local deployment
 
