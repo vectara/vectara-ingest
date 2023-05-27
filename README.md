@@ -146,15 +146,12 @@ We use a `secrets.toml` file to hold secret keys and parameters. You need to cre
 
 ```
 [profile1]
-auth_url="https://vectara-prod-<CUSTOMER-ID>.auth.us-west-2.amazoncognito.com"
 api_key="<VECTAR-API-KEY-1>
 
 [profile2]
-auth_url="https://vectara-prod-<CUSTOMER-ID>.auth.us-west-2.amazoncognito.com"
 api_key="<VECTARA-API-KEY-2>"
 
 [profile3]
-auth_url="https://vectara-prod-<CUSTOMER-ID>.auth.us-west-2.amazoncognito.com"
 api_key="<VECTARA-API-KEY-3>"
 MOTION_API_KEY="<YOUR-NOTION-API-KEY>
 ```
