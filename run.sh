@@ -31,3 +31,4 @@ if [[ "$crawler_type" == "folder" ]]; then
 else
     docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 fi
+echo "Ingest job is running. You can try 'docker logs -f vingest' to see the progress."

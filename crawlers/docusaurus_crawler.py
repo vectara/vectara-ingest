@@ -7,64 +7,58 @@ import fnmatch
 from omegaconf import OmegaConf
 from markdown import markdown
 from bs4 import BeautifulSoup
+import requests
+from slugify import slugify
+import json
+from urllib.parse import urljoin, urlparse
+import re
 
-def find_files_with_extension(extension, root_dir='.'):
-    matches = []
-    # Make sure the extension starts with a dot
-    if not extension.startswith('.'):
-        extension = '.' + extension
-    for root, _, filenames in os.walk(root_dir):
-        for filename in fnmatch.filter(filenames, '*' + extension):
-            matches.append(os.path.join(root, filename))
-    return matches
+class DocusaurusCrawler(Crawler):    
+    def _get_links(self, page_url):
+        """Crawls a single page in a docusaurus documentation site and return URLs that show on this page
 
-def md_to_text(md):
-    html = markdown(md)
-    soup = BeautifulSoup(html, features='html.parser')
-    return soup.get_text()
+        Args:
+            page_url: The URL of the page to crawl.
 
-class DocusaurusCrawler(Crawler):
-    
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
-        self.repo_url = self.cfg.docusaurus_crawler.docs_repo
-        self.docs_homepage = self.cfg.docusaurus_crawler.docs_homepage
-        path_in_repo = self.cfg.docusaurus_crawler.get("docs_path", "")
-        local_folder = 'tmp/docs_repo/'
-        os.makedirs(local_folder, exist_ok=True)
-        Repo.clone_from(self.repo_url, local_folder)
-        self.base_path = local_folder
-        self.docs_path = os.path.join(local_folder, path_in_repo)
-        
+        Returns:
+            A list of URLs extracted from the page
+        """
+
+        response = requests.get(page_url)
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        # Find all anchor tags and their href attributes
+        urls = []
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if href.startswith("#"):
+                continue
+            new_url = urljoin(page_url, href)
+            if new_url in self.crawled or new_url in self.ignored:
+                continue
+            if not any([r.match(new_url) for r in self.domain_regex]):
+                self.ignored.add(new_url)
+                continue
+            urls.append(new_url)
+        return urls
+
+    def crawl_urls(self, urls: list):
+        new_urls = []
+        for url in urls:
+            if url in self.crawled or url in self.ignored:
+                continue
+            self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
+            self.crawled.add(url)
+            new_urls.extend(self._get_links(url))
+
+        new_urls = list(set(new_urls)-self.crawled-self.ignored)
+        self.crawl_urls(new_urls)
+
     def crawl(self):
-        markdown_files = find_files_with_extension('.md', self.docs_path) + find_files_with_extension('.mdx', self.docs_path)
-        for file_path in markdown_files:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            fname = Path(file_path).name
-
-            if '---' in content and 'id:' in content and 'title:' in content:
-                dh = content.split('---')[1]
-                id_str = dh.split('id:')[1].split('\n')[0].strip()
-                title = dh.split('title:')[1].split('\n')[0].strip()
-                if 'slug:' in dh:
-                    slug_str = dh.split('slug:')[1].split('\n')[0].strip()
-                    source_path = os.path.join(self.docs_homepage, str(Path(file_path).relative_to(self.docs_path)))
-                    if slug_str == '/':
-                        source_path = source_path.replace(fname, '')
-                    else:
-                        source_path = source_path.replace(fname, slug_str)
-                else:
-                    source_path = os.path.join(self.docs_homepage, str(Path(file_path).relative_to(self.docs_path)).replace(fname, id_str))                
-            else:
-                source_path = os.path.join(self.docs_homepage, str(Path(file_path).relative_to(self.docs_path)))
-                title = fname
-
-            logging.info(f"Indexing {file_path} with source path {source_path}, title={title}")
-
-            fname = 'doc_text.txt'
-            with open(fname, 'w') as f:
-                f.write(md_to_text(content))
-
-            metadata = {'title': title, 'source': 'docusaurus', 'url': source_path}
-            self.indexer.index_file(fname, uri=source_path, metadata=metadata)
+        self.crawled = set()
+        self.ignored = set()
+        self.site_url = self.cfg.docusaurus_crawler.docs_homepage
+        self.domain_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
+        if self.site_url.endswith('/'):
+            self.site_url = self.site_url[:-1]
+        self.crawl_urls([self.site_url])

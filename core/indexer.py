@@ -108,6 +108,7 @@ class Indexer(object):
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
         }
+
         files = { "file": (uri, open(filename, 'rb')), "doc_metadata": json.dumps(metadata) }
         response = requests.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
@@ -149,7 +150,6 @@ class Indexer(object):
             logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
             return False
         
-
         if status_code != 200:
             logging.info(f"Page {url} is unavailable ({status_code})")
             return False

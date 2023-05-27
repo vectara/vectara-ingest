@@ -1,4 +1,4 @@
-requests==2.28.2
+requests==2.31.0
 pdfkit==1.0.0
 ultimate-sitemap-parser==0.5
 Authlib==1.2.0
