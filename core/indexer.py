@@ -33,39 +33,13 @@ async def fetch_content_with_timeout(url, timeout=30):
     '''
     async with async_playwright() as playwright:
         browser = await playwright.firefox.launch()
-        context = await browser.new_context(accept_downloads=True)  # allow downloads
-        page = await context.new_page()
-
-        content = None
-        async def on_download(download):
-            nonlocal content
-            download_path = await download.path()
-            with open(download_path, 'r') as file:
-                dl_content = file.read()  
-            url = download.url.lower()
-            if url.endswith('ipynb'):
-                nb = nbformat.reads(content, nbformat.NO_CONVERT)
-                exporter = HTMLExporter()
-                html_content, _ = exporter.from_notebook_node(nb)
-                content = html_to_text(html_content)
-            elif url.endswith('md'):
-                content = markdown.markdown(dl_content, output_format='text')
-            elif url.endswith('rst'):
-                content = docutils.core.publish_string(dl_content, writer_name='text')
-            else:
-                logging.info(f"Downloading file of unknown type: {url}")
-                content = dl_content
-
-        page.on("download", on_download) 
+        page = await browser.new_page()
         try:
             await asyncio.wait_for(page.goto(url), timeout=timeout)
             content = await page.content()
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = None
-        finally:
-            await page.close()
-            await browser.close()
         return content
 
 def get_content_type_and_status(url: str):
@@ -203,7 +177,8 @@ class Indexer(object):
             logging.info(f"Page {url} is unavailable ({status_code})")
             return False
 
-        # read page content using playwright
+        # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
+        # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
             response = requests.get(url)
             response.raise_for_status()
@@ -213,7 +188,24 @@ class Indexer(object):
             elements = partition_pdf(fname, strategy='auto')
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
-            elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
+
+        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+        elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
+            response = requests.get(url)
+            response.raise_for_status()
+            dl_content = response.content
+            if url.endswith('rst'):
+                html_content = docutils.core.publish_string(dl_content, writer_name='html')
+            elif url.endswith('md'):
+                html_content = markdown.markdown(dl_content)
+            elif url.lower().endswith('ipynb'):
+                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)
+                exporter = HTMLExporter()
+                html_content, _ = exporter.from_notebook_node(nb)
+            soup = BeautifulSoup(html_content, 'html.parser')
+            title = soup.title.string if soup.title else 'No Title'
+            elements = partition_html(text=html_content)
+        # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
                 content = asyncio.run(fetch_content_with_timeout(url))
@@ -225,7 +217,9 @@ class Indexer(object):
             soup = BeautifulSoup(content, 'html.parser')
             title = soup.title.string if soup.title else 'No Title'
             elements = partition_html(text=content)
-            elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
+
+        # only capture the text elements (as str) and ignore others        
+        elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=elements, metadata=metadata, title=title)
         if succeeded:
