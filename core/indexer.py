@@ -11,22 +11,73 @@ from unstructured.partition.html import partition_html
 from unstructured.partition.pdf import partition_pdf
 import unstructured as us
 
+from nbconvert import HTMLExporter
+import nbformat
+import markdown
+import docutils.core
+
+from core.utils import html_to_text
+
 from playwright.async_api import async_playwright 
 
-async def fetch_content_with_timeout(url, timeout: int = 20):
+async def fetch_content_with_timeout(url, timeout=30):
+    '''
+    Fetch content from a URL with a timeout.
+
+    Args:
+        url (str): URL to fetch.
+        timeout (int, optional): Timeout in seconds. Defaults to 30.
+
+    Returns:
+        str: Content from the URL.
+    '''
     async with async_playwright() as playwright:
         browser = await playwright.firefox.launch()
-        page = await browser.new_page()
+        context = await browser.new_context(accept_downloads=True)  # allow downloads
+        page = await context.new_page()
+
+        content = None
+        async def on_download(download):
+            nonlocal content
+            download_path = await download.path()
+            with open(download_path, 'r') as file:
+                dl_content = file.read()  
+            url = download.url.lower()
+            if url.endswith('ipynb'):
+                nb = nbformat.reads(content, nbformat.NO_CONVERT)
+                exporter = HTMLExporter()
+                html_content, _ = exporter.from_notebook_node(nb)
+                content = html_to_text(html_content)
+            elif url.endswith('md'):
+                content = markdown.markdown(dl_content, output_format='text')
+            elif url.endswith('rst'):
+                content = docutils.core.publish_string(dl_content, writer_name='text')
+            else:
+                logging.info(f"Downloading file of unknown type: {url}")
+                content = dl_content
+
+        page.on("download", on_download) 
         try:
             await asyncio.wait_for(page.goto(url), timeout=timeout)
             content = await page.content()
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = None
-        await browser.close()
-    return content
+        finally:
+            await page.close()
+            await browser.close()
+        return content
 
 def get_content_type_and_status(url: str):
+    '''
+    Get the content type and status code for a URL.
+
+    Args:
+        url (str): URL to fetch.
+
+    Returns:
+        tuple: status code and content_type
+    '''
     headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
@@ -54,8 +105,6 @@ class Indexer(object):
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
-        self.chunk_min_len = 50
-        self.chunk_max_len = 2500   # targeting roughly 500 words
 
     def _check_response(self, response) -> bool:
         if response.status_code != 200:

@@ -31,10 +31,11 @@ class DocusaurusCrawler(Crawler):
         urls = []
         for link in soup.find_all('a', href=True):
             href = link['href']
-            if href.startswith("#"):
-                continue
             new_url = urljoin(page_url, href)
             if new_url in self.crawled or new_url in self.ignored:
+                continue
+            if urlparse(new_url).fragment:          # don't crawl if this points to a fragment (#)
+                self.ignored.add(new_url)
                 continue
             if not any([r.match(new_url) for r in self.domain_regex]):
                 self.ignored.add(new_url)
@@ -52,7 +53,8 @@ class DocusaurusCrawler(Crawler):
             new_urls.extend(self._get_links(url))
 
         new_urls = list(set(new_urls)-self.crawled-self.ignored)
-        self.crawl_urls(new_urls)
+        if len(new_urls)>0:
+            self.crawl_urls(new_urls)
 
     def crawl(self):
         self.crawled = set()
