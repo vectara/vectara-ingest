@@ -36,4 +36,4 @@ pytesseract==0.3.10
 xmltodict==0.13.0
 nbconvert==7.2.10
 nbformat==5.8.0
-docutil==0.20.1
+docutils==0.20.1

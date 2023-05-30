@@ -34,7 +34,7 @@ class DocusaurusCrawler(Crawler):
             new_url = urljoin(page_url, href)
             if new_url in self.crawled or new_url in self.ignored:
                 continue
-            if urlparse(new_url).fragment:          # don't crawl if this points to a fragment (#)
+            if urlparse(new_url).fragment or new_url.endswith(".md") or new_url.endswith(".rst"):          # don't crawl if this points to a fragment (#) or RST/MD files
                 self.ignored.add(new_url)
                 continue
             if not any([r.match(new_url) for r in self.domain_regex]):

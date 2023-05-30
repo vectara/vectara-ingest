@@ -203,7 +203,7 @@ class Indexer(object):
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             soup = BeautifulSoup(html_content, 'html.parser')
-            title = soup.title.string if soup.title else 'No Title'
+            title = url.split('/')[-1]      # no title in these files, so using file name
             elements = partition_html(text=html_content)
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
