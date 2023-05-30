@@ -76,4 +76,3 @@ class WebsiteCrawler(Crawler):
                         self.indexer.delete_doc(doc_id)   # doc_id is the URL itself
                         self.indexer.index_url(url, metadata=metadata)
                     crawled_urls.add(url)
-            return
