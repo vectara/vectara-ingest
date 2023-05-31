@@ -7,5 +7,5 @@ crawling:
   crawler_type: docusaurus
 
 docusaurus_crawler:
-  docs_repo: "https://github.com/vectara/vectara-docs"
   docs_homepage: "https://docs.vectara.com/docs"
+  url_regex: [".*vectara.com/docs.*"]

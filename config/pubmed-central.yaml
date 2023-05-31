@@ -1,21 +1,70 @@
 vectara:
-  corpus_id: 21
-  customer_id: 1169579801
+  corpus_id: 162
+  customer_id: 1526022105
   reindex: true
 
 crawling:
   crawler_type: pmc
 
 pmc_crawler:
-  topics: [
-    "nacrolepsy", "multiple sclerosis", "cystic fibrosis", "hemophilia", "hereditary angioedema", "pulmonary arterial hypertension", 
-    "usher syndrome", "fabry disease", "Duchenne Muscular Dystroph", "sickle cell disorder", "Ehlers-Danlos syndrome", "Huntington's disease",
-    "Achondroplasia", "Marfan Syndrome", "Amyotrophic Lateral Sclerosis", "Friedreich's Ataxia", "Epidermolysis Bullosa", "Neurofibromatosis",
-    "Primary Immunodeficiency diseases", "Prader-Willi Syndrome", "Polycystic Kidney Disease", "Porphyria", "Retinitis Pigmentosa", 
-    "Gaucher Disease", "Tay-Sachs Disease", "Spinal Muscular Atrophy", "Tuberous Sclerosis", "Wilson Disease", "Rett Syndrome", 
-    "Williams Syndrome", "Fragile X Syndrome", "Cystinosis", "Cerebral palsy spastic diplegic", "arthrogryposis","Cri du Chat Syndrome",
-    "Perlman syndrome", "Hashimoto encephalopathy", "Pachygyria", "Pompe Disease", "Schnitzler Syndrome", "Ewing Sarcoma", "Mesothelioma",
-    "Whipple Disease", "Meningioma", "Chediak-Higashi Syndrome", "Reye Syndrome", "Eosinophilic Fasciitis", "Degos Disease", "Dermatomyositis",
-    "Child Asthma"
-  ]
+  topics:
+    [
+      "nacrolepsy",
+      "multiple sclerosis",
+      "cystic fibrosis",
+      "hemophilia",
+      "hereditary angioedema",
+      "pulmonary arterial hypertension",
+      "usher syndrome",
+      "fabry disease",
+      "Duchenne Muscular Dystroph",
+      "sickle cell disorder",
+      "Ehlers-Danlos syndrome",
+      "Huntington's disease",
+      "Achondroplasia",
+      "Marfan Syndrome",
+      "Amyotrophic Lateral Sclerosis",
+      "Friedreich's Ataxia",
+      "Epidermolysis Bullosa",
+      "Neurofibromatosis",
+      "Primary Immunodeficiency diseases",
+      "Prader-Willi Syndrome",
+      "Polycystic Kidney Disease",
+      "Porphyria",
+      "Retinitis Pigmentosa",
+      "Gaucher Disease",
+      "Tay-Sachs Disease",
+      "Spinal Muscular Atrophy",
+      "Tuberous Sclerosis",
+      "Wilson Disease",
+      "Rett Syndrome",
+      "Williams Syndrome",
+      "Fragile X Syndrome",
+      "Cystinosis",
+      "Cerebral palsy spastic diplegic",
+      "arthrogryposis",
+      "Cri du Chat Syndrome",
+      "Perlman syndrome",
+      "Hashimoto encephalopathy",
+      "Pachygyria",
+      "Pompe Disease",
+      "Schnitzler Syndrome",
+      "Ewing Sarcoma",
+      "Mesothelioma",
+      "Whipple Disease",
+      "Meningioma",
+      "Chediak-Higashi Syndrome",
+      "Reye Syndrome",
+      "Eosinophilic Fasciitis",
+      "Degos Disease",
+      "Dermatomyositis",
+      "Child Asthma",
+      "Danlos Syndrome",
+      "Sickle Cell",
+      "Phenylketonuria",
+      "Wolfram syndrome",
+      "X-linked agammaglobulinemia",
+      "Mucopolysaccharidosis type 1",
+      "Glycogen storage disease type 2",
+    ]
   n_papers: 500

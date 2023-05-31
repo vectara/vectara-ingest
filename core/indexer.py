@@ -11,9 +11,26 @@ from unstructured.partition.html import partition_html
 from unstructured.partition.pdf import partition_pdf
 import unstructured as us
 
+from nbconvert import HTMLExporter
+import nbformat
+import markdown
+import docutils.core
+
+from core.utils import html_to_text
+
 from playwright.async_api import async_playwright 
 
-async def fetch_content_with_timeout(url, timeout: int = 20):
+async def fetch_content_with_timeout(url, timeout=30):
+    '''
+    Fetch content from a URL with a timeout.
+
+    Args:
+        url (str): URL to fetch.
+        timeout (int, optional): Timeout in seconds. Defaults to 30.
+
+    Returns:
+        str: Content from the URL.
+    '''
     async with async_playwright() as playwright:
         browser = await playwright.firefox.launch()
         page = await browser.new_page()
@@ -23,10 +40,18 @@ async def fetch_content_with_timeout(url, timeout: int = 20):
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = None
-        await browser.close()
-    return content
+        return content
 
 def get_content_type_and_status(url: str):
+    '''
+    Get the content type and status code for a URL.
+
+    Args:
+        url (str): URL to fetch.
+
+    Returns:
+        tuple: status code and content_type
+    '''
     headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
@@ -54,8 +79,6 @@ class Indexer(object):
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
-        self.chunk_min_len = 50
-        self.chunk_max_len = 2500   # targeting roughly 500 words
 
     def _check_response(self, response) -> bool:
         if response.status_code != 200:
@@ -108,6 +131,7 @@ class Indexer(object):
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
         }
+
         files = { "file": (uri, open(filename, 'rb')), "doc_metadata": json.dumps(metadata) }
         response = requests.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
@@ -128,7 +152,7 @@ class Indexer(object):
                     return True
             return False
         elif response.status_code != 200:
-            logging.error(f"REST upload for {uri} failed with code {response.status_code}")
+            logging.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
         logging.info(f"REST upload for {uri} succeesful")
@@ -149,12 +173,12 @@ class Indexer(object):
             logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
             return False
         
-
         if status_code != 200:
             logging.info(f"Page {url} is unavailable ({status_code})")
             return False
 
-        # read page content using playwright
+        # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
+        # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
             response = requests.get(url)
             response.raise_for_status()
@@ -164,7 +188,24 @@ class Indexer(object):
             elements = partition_pdf(fname, strategy='auto')
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
-            elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
+
+        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+        elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
+            response = requests.get(url)
+            response.raise_for_status()
+            dl_content = response.content
+            if url.endswith('rst'):
+                html_content = docutils.core.publish_string(dl_content, writer_name='html')
+            elif url.endswith('md'):
+                html_content = markdown.markdown(dl_content)
+            elif url.lower().endswith('ipynb'):
+                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)
+                exporter = HTMLExporter()
+                html_content, _ = exporter.from_notebook_node(nb)
+            soup = BeautifulSoup(html_content, 'html.parser')
+            title = url.split('/')[-1]      # no title in these files, so using file name
+            elements = partition_html(text=html_content)
+        # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
                 content = asyncio.run(fetch_content_with_timeout(url))
@@ -176,7 +217,9 @@ class Indexer(object):
             soup = BeautifulSoup(content, 'html.parser')
             title = soup.title.string if soup.title else 'No Title'
             elements = partition_html(text=content)
-            elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
+
+        # only capture the text elements (as str) and ignore others        
+        elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=elements, metadata=metadata, title=title)
         if succeeded:

@@ -1,0 +1,17 @@
+vectara:
+  corpus_id: 163
+  customer_id: 1526022105
+  reindex: true
+
+crawling:
+  crawler_type: docusaurus
+
+docusaurus_crawler:
+  docs_homepage: "https://docs.langchain.com/docs"
+  url_regex:
+    [
+      ".*langchain.com/docs.*",
+      ".*python.langchain.com.*",
+      ".*js.langchain.com.*",
+      ".*blog.langchain.dev.*",
+    ]
