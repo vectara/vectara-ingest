@@ -209,6 +209,10 @@ To run `vectara-ingest` locally, perform the following steps:
    - [GCP instructions](https://cloud.google.com/run/docs/quickstarts/build-and-deploy).
 4. Launch the container on a VM instance based on the Docker image now hosted in your cloud environment.
 
+### docker-hub
+
+The `vectara-ingest` container is available for easy deployment via [docker-hub](https://hub.docker.com/repository/docker/vectara/vectara-ingest/general).
+
 ## Author
 
 👤 **Vectara**
