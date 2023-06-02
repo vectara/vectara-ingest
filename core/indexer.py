@@ -1,10 +1,11 @@
 import logging
-import requests
 import json
 import os
 from omegaconf import OmegaConf
 from slugify import slugify         # type: ignore
 from bs4 import BeautifulSoup
+import requests
+from requests.adapters import HTTPAdapter, Retry
 
 import asyncio
 from unstructured.partition.html import partition_html
@@ -16,9 +17,8 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text
-
 from playwright.async_api import async_playwright 
+from core.utils import html_to_text
 
 async def fetch_content_with_timeout(url, timeout=30):
     '''
@@ -40,6 +40,9 @@ async def fetch_content_with_timeout(url, timeout=30):
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = None
+        finally:
+            await page.close()
+            await browser.close()
         return content
 
 def get_content_type_and_status(url: str):
@@ -80,6 +83,10 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
 
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(max_retries=5)
+        self.session.mount('http://', adapter)
+
     def _check_response(self, response) -> bool:
         if response.status_code != 200:
             logging.error("REST upload failed with code %d, reason %s, text %s",
@@ -104,7 +111,7 @@ class Indexer(object):
         """
         body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
         post_headers = { 'x-api-key': self.api_key, 'customer-id': str(self.customer_id) }
-        response = requests.post(
+        response = self.session.post(
             f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
             verify=True, headers=post_headers)
         
@@ -133,7 +140,7 @@ class Indexer(object):
         }
 
         files = { "file": (uri, open(filename, 'rb')), "doc_metadata": json.dumps(metadata) }
-        response = requests.post(
+        response = self.session.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
             files=files, verify=True, headers=post_headers)
 
@@ -141,7 +148,7 @@ class Indexer(object):
             if self.reindex:
                 doc_id = response.json()['details'].split('document id')[1].split("'")[1]
                 self.delete_doc(doc_id)
-                response = requests.post(
+                response = self.session.post(
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
                     files=files, verify=True, headers=post_headers)
                 if response.status_code == 200:
@@ -180,7 +187,7 @@ class Indexer(object):
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
-            response = requests.get(url)
+            response = self.session.get(url)
             response.raise_for_status()
             fname = 'tmp.pdf'
             with open(fname, 'wb') as f:
@@ -191,7 +198,7 @@ class Indexer(object):
 
         # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-            response = requests.get(url)
+            response = self.session.get(url)
             response.raise_for_status()
             dl_content = response.content
             if url.endswith('rst'):
@@ -261,14 +268,19 @@ class Indexer(object):
         except Exception as e:
             logging.info(f"Can't serialize request {request}, skipping")   
             return False
-        response = requests.post(api_endpoint, data=data, verify=True, headers=post_headers)
+
+        try:
+            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+        except Exception as e:
+            logging.info(f"Exception {e} while indexing document {document['documentId']}")
+            return False
 
         result = response.json()
         if "status" in result and result["status"] and "ALREADY_EXISTS" in result["status"]["code"]:
             if self.reindex:
                 logging.info(f"Document {document['documentId']} already exists, re-indexing")
                 self.delete_doc(document['documentId'])
-                response = requests.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
+                response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
             else:
                 logging.info(f"Document {document['documentId']} already exists, skipping")
                 return False

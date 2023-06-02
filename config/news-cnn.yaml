@@ -8,17 +8,34 @@ crawling:
 
 rss_crawler:
   source: cnn
-  rss_pages: [
-    "http://rss.cnn.com/rss/cnn_topstories.rss", "http://rss.cnn.com/rss/cnn_world.rss", "http://rss.cnn.com/rss/cnn_us.rss",
-    "http://rss.cnn.com/rss/cnn_allpolitics.rss", "http://rss.cnn.com/rss/money_latest.rss", "http://rss.cnn.com/rss/cnn_tech.rss",
-    "http://rss.cnn.com/rss/cnn_health.rss", "http://rss.cnn.com/rss/cnn_showbiz.rss", "http://rss.cnn.com/rss/cnn_travel.rss",
-    "http://rss.cnn.com/rss/cnn_living.rss", "http://rss.cnn.com/rss/cnn_allcommentary.rss", "http://rss.cnn.com/rss/cnn_latest.rss",
-    "http://rss.cnn.com/rss/edition.rss", "http://rss.cnn.com/rss/edition_world.rss", "http://rss.cnn.com/rss/edition_africa.rss",
-    "http://rss.cnn.com/rss/edition_americas.rss", "http://rss.cnn.com/rss/edition_asia.rss", "http://rss.cnn.com/rss/edition_europe.rss",
-    "http://rss.cnn.com/rss/edition_sport.rss", "http://rss.cnn.com/rss/edition_entertainment.rss", 
-    "http://rss.cnn.com/rss/edition_technology.rss", "http://rss.cnn.com/rss/edition_us.rss", "http://rss.cnn.com/rss/edition_space.rss",
-    "http://rss.cnn.com/rss/edition_meast.rss", "http://rss.cnn.com/rss/money_news_international.rss"
-  ]
+  rss_pages:
+    [
+      "http://rss.cnn.com/rss/cnn_latest.rss",
+      "http://rss.cnn.com/rss/cnn_topstories.rss",
+      "http://rss.cnn.com/rss/cnn_world.rss",
+      "http://rss.cnn.com/rss/cnn_us.rss",
+      "http://rss.cnn.com/rss/cnn_allpolitics.rss",
+      "http://rss.cnn.com/rss/money_latest.rss",
+      "http://rss.cnn.com/rss/cnn_tech.rss",
+      "http://rss.cnn.com/rss/cnn_health.rss",
+      "http://rss.cnn.com/rss/cnn_showbiz.rss",
+      "http://rss.cnn.com/rss/cnn_travel.rss",
+      "http://rss.cnn.com/rss/cnn_living.rss",
+      "http://rss.cnn.com/rss/cnn_allcommentary.rss",
+      "http://rss.cnn.com/rss/edition.rss",
+      "http://rss.cnn.com/rss/edition_world.rss",
+      "http://rss.cnn.com/rss/edition_africa.rss",
+      "http://rss.cnn.com/rss/edition_americas.rss",
+      "http://rss.cnn.com/rss/edition_asia.rss",
+      "http://rss.cnn.com/rss/edition_europe.rss",
+      "http://rss.cnn.com/rss/edition_sport.rss",
+      "http://rss.cnn.com/rss/edition_entertainment.rss",
+      "http://rss.cnn.com/rss/edition_technology.rss",
+      "http://rss.cnn.com/rss/edition_us.rss",
+      "http://rss.cnn.com/rss/edition_space.rss",
+      "http://rss.cnn.com/rss/edition_meast.rss",
+      "http://rss.cnn.com/rss/money_news_international.rss",
+    ]
   days_past: 30
   delay: 1
-  extraction: playwright           # pdf or playwright
+  extraction: playwright # pdf or playwright
