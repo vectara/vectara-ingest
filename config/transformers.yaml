@@ -1,0 +1,12 @@
+vectara:
+  corpus_id: 4
+  customer_id: 1169579801
+  reindex: True
+
+crawling:
+  crawler_type: arxiv
+
+arxiv_crawler:
+  query_terms: ["transformers", "attention"]
+  n_papers: 100
+  start_year: 2017

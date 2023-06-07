@@ -5,7 +5,6 @@ from omegaconf import OmegaConf
 from slugify import slugify         # type: ignore
 from bs4 import BeautifulSoup
 import requests
-from requests.adapters import HTTPAdapter, Retry
 
 import asyncio
 from unstructured.partition.html import partition_html

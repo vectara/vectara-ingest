@@ -37,3 +37,4 @@ xmltodict==0.13.0
 nbconvert==7.2.10
 nbformat==5.8.0
 docutils==0.20.1
+arxiv==1.4.4
