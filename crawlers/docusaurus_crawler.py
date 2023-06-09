@@ -1,14 +1,7 @@
-import os
 from core.crawler import Crawler
-from git import Repo
-import logging
 from pathlib import Path
-import fnmatch
-from omegaconf import OmegaConf
-from markdown import markdown
 from bs4 import BeautifulSoup
 import requests
-from slugify import slugify
 import json
 from urllib.parse import urljoin, urlparse
 import re

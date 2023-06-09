@@ -21,8 +21,8 @@ class WebsiteCrawler(Crawler):
         crawled_urls = set()
 
         if 'url_regex' in self.cfg.website_crawler:
+            url_regex = [re.compile(r) for r in self.cfg.website_crawler.url_regex]
             logging.info(f"Filtering URLs by these regular expressions: {self.cfg.website_crawler.url_regex}")
-            url_regex = re.compile(self.cfg.website_crawler.url_regex)
         else:
             url_regex = None
 
@@ -35,7 +35,7 @@ class WebsiteCrawler(Crawler):
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, domain=hp_domain)
 
             if url_regex:
-                urls = [u for u in urls if url_regex.match(u)]
+                urls = [u for u in urls if any([r.match(u) for r in url_regex])]
     
             logging.info(f"Finished crawling using {homepage}, found {len(urls)} URLs to index")
 
