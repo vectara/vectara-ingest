@@ -225,9 +225,6 @@ class Indexer(object):
             title = doc.title()
             text = html_to_text(doc.summary())
 
-        # only capture the text elements (as str) and ignore others        
-        logging.info(f"DEBUG title = {title}, text = {text}")
-
         succeeded = self.index_segments(doc_id=slugify(url), parts=[text], metadata=metadata, title=title)
         if succeeded:
             logging.info(f"Indexing for {url} succeesful")
