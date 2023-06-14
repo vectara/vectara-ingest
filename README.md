@@ -30,11 +30,18 @@ Let’s create a basic crawler to scrape content from [Paul Graham's website](ht
 
 Install [python >= 3.8](https://www.python.org/downloads/) if it's not already installed.
 
-Install [yq](https://github.com/mikefarah/yq):
+For Mac/Linux, install [yq](https://github.com/mikefarah/yq):
 
 - Mac: `brew install yq`
 - Linux: `snap install yq`
 
+For Windows, install powershell-yaml module:
+- If you ExecutionPolicy is restricted you may not to enable scripts with `Set-ExecutionPolicy -ExecutionPolicy Default -Scope CurrentUser`
+- `Install-Module -Name powershell-yaml -Scope CurrentUser`
+- Ensure Windows Subsystem for Linux (wsl) is enabled and `Kali-linux` is installed: 
+  - `wsl --install`
+  - `wsl -s Kali-linux`
+  
 Install [Docker](https://docs.docker.com/engine/install/).
 
 Clone this repository:
@@ -65,8 +72,13 @@ Make sure the Docker app is running.
 
 Then execute the run script from the root directory using your config file to tell it what to crawl and where to ingest the data, assigning the “default” profile from your secrets file:
 
+For Linux or Mac:
 ```sh
 bash run.sh config/pg-rss.yaml default
+```
+For windows:
+```ps1
+.\run.ps1 config/pg-rss.yaml default
 ```
 
 The crawler executes inside of a [Docker container](https://www.docker.com/resources/what-container/) to protect your system’s resources and make it easier to move your crawlers to the cloud. This is a good time to grab a coffee or snack – the container needs to install a lot of dependencies, which will take some time.
@@ -221,6 +233,7 @@ The `vectara-ingest` container is available for easy deployment via [docker-hub]
 - Twitter: [@vectara](https://twitter.com/vectara)
 - GitHub: [@vectara](https://github.com/vectara)
 - LinkedIn: [@vectara](https://www.linkedin.com/company/vectara/)
+- Discord: [@vectara](https://discord.gg/GFb8gMz6UH)
 
 ## 🤝 Contributing
 

@@ -3,7 +3,6 @@ import json
 import os
 from omegaconf import OmegaConf
 from slugify import slugify         # type: ignore
-from bs4 import BeautifulSoup
 import requests
 
 import asyncio
@@ -15,9 +14,10 @@ from nbconvert import HTMLExporter
 import nbformat
 import markdown
 import docutils.core
-
-from playwright.async_api import async_playwright 
 from core.utils import html_to_text
+
+from readability import Document
+from playwright.async_api import async_playwright 
 
 async def fetch_content_with_timeout(url, timeout=30):
     '''
@@ -34,6 +34,7 @@ async def fetch_content_with_timeout(url, timeout=30):
         browser = await playwright.firefox.launch()
         page = await browser.new_page()
         try:
+            # goto page
             await asyncio.wait_for(page.goto(url), timeout=timeout)
             content = await page.content()
         except asyncio.TimeoutError:
@@ -192,6 +193,7 @@ class Indexer(object):
             with open(fname, 'wb') as f:
                 f.write(response.content)
             elements = partition_pdf(fname, strategy='auto')
+            text = ' '.join(str(t) for t in elements if type(t)!=us.documents.elements.Title)
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
 
@@ -208,26 +210,25 @@ class Indexer(object):
                 nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            soup = BeautifulSoup(html_content, 'html.parser')
             title = url.split('/')[-1]      # no title in these files, so using file name
-            elements = partition_html(text=html_content)
+            text = html_to_text(html_content)
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                content = asyncio.run(fetch_content_with_timeout(url))
+                html_content = asyncio.run(fetch_content_with_timeout(url))
             except Exception as e:
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}")
                 return False
-            if content is None:
+            if html_content is None:
                 return False
-            soup = BeautifulSoup(content, 'html.parser')
-            title = soup.title.string if soup.title else 'No Title'
-            elements = partition_html(text=content)
+            doc = Document(html_content)
+            title = doc.title()
+            text = html_to_text(doc.summary())
 
         # only capture the text elements (as str) and ignore others        
-        elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
+        logging.info(f"DEBUG title = {title}, text = {text}")
 
-        succeeded = self.index_segments(doc_id=slugify(url), parts=elements, metadata=metadata, title=title)
+        succeeded = self.index_segments(doc_id=slugify(url), parts=[text], metadata=metadata, title=title)
         if succeeded:
             logging.info(f"Indexing for {url} succeesful")
             return True
