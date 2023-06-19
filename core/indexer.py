@@ -1,22 +1,28 @@
 import logging
 import json
 import os
-from omegaconf import OmegaConf
 from slugify import slugify         # type: ignore
+
+from trafilatura import extract, extract_metadata
+
+# Disable logging msgs from imported packages like trafilatura
+import logging.config
+logging.config.dictConfig({
+    'version': 1,
+    'disable_existing_loggers': True,
+})
+
+from omegaconf import OmegaConf
 import requests
-
 import asyncio
-from unstructured.partition.html import partition_html
-from unstructured.partition.pdf import partition_pdf
-import unstructured as us
-
 from nbconvert import HTMLExporter
 import nbformat
 import markdown
 import docutils.core
 from core.utils import html_to_text
 
-from readability import Document
+from unstructured.partition.pdf import partition_pdf
+import unstructured as us
 from playwright.async_api import async_playwright 
 
 async def fetch_content_with_timeout(url, timeout=30):
@@ -45,25 +51,6 @@ async def fetch_content_with_timeout(url, timeout=30):
             await browser.close()
         return content
 
-def get_content_type_and_status(url: str):
-    '''
-    Get the content type and status code for a URL.
-
-    Args:
-        url (str): URL to fetch.
-
-    Returns:
-        tuple: status code and content_type
-    '''
-    headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        return response.status_code, ''
-    else:
-        return response.status_code, str(response.headers["Content-Type"])
 
 class Indexer(object):
     """
@@ -175,15 +162,20 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         try:
-            status_code, content_type = get_content_type_and_status(url)
+            headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            }
+            response = self.session.get(url, headers=headers)
+            if response.status_code != 200:
+                logging.info(f"Page {url} is unavailable ({response.status_code})")
+                return False
+            else:
+                content_type = str(response.headers["Content-Type"])
         except Exception as e:
             logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
             return False
         
-        if status_code != 200:
-            logging.info(f"Page {url} is unavailable ({status_code})")
-            return False
-
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
@@ -193,7 +185,7 @@ class Indexer(object):
             with open(fname, 'wb') as f:
                 f.write(response.content)
             elements = partition_pdf(fname, strategy='auto')
-            text = ' '.join(str(t) for t in elements if type(t)!=us.documents.elements.Title)
+            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
 
@@ -212,6 +204,7 @@ class Indexer(object):
                 html_content, _ = exporter.from_notebook_node(nb)
             title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content)
+            parts = [text]
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
@@ -221,16 +214,15 @@ class Indexer(object):
                 return False
             if html_content is None:
                 return False
-            doc = Document(html_content)
-            title = doc.title()
-            text = html_to_text(doc.summary())
+            text = extract(html_content)
+            md = extract_metadata(html_content)
+            title = md.title if md else "No title"
+            parts = [text]
 
-        succeeded = self.index_segments(doc_id=slugify(url), parts=[text], metadata=metadata, title=title)
+        succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadata=metadata, title=title)
         if succeeded:
-            logging.info(f"Indexing for {url} succeesful")
             return True
         else:
-            logging.info(f"Did not index {url}")
             return False
 
     def index_segments(self, doc_id: str, parts: list, metadata: dict, title: str = None) -> bool:

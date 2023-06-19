@@ -17,7 +17,6 @@ class JiraCrawler(Crawler):
 
             jira_response = requests.get(jira_query_url, headers=self.jira_headers, auth=self.jira_auth)
             jira_response.raise_for_status()
-
             jira_data = jira_response.json()
 
             actual_cnt = len(jira_data["issues"])

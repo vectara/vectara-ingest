@@ -7,5 +7,6 @@ crawling:
   crawler_type: docusaurus
 
 docusaurus_crawler:
-  docs_homepage: "https://docs.vectara.com/docs"
+  base_urls: ["https://docs.vectara.com/docs"]
   url_regex: [".*vectara.com/docs.*"]
+  extensions_to_ignore: []

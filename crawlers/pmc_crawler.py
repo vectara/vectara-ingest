@@ -6,7 +6,7 @@ from lxml import etree
 from ratelimiter import RateLimiter
 import requests
 import xmltodict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.utils import html_to_text
 from core.crawler import Crawler
@@ -112,12 +112,29 @@ class PmcCrawler(Crawler):
             if not succeeded:
                 logging.info(f"Failed to index document {pmc_id}")
 
-    def index_medline_plus(self, topics: list):
-        today = datetime.now().strftime("%Y-%m-%d")
-        url = f'https://medlineplus.gov/xml/mplus_topics_{today}.xml'
+    def _get_xml_dict(self):
+        days_back = 1
+        max_days = 30
+        while (days_back <= max_days):
+            xml_date = (datetime.now() - timedelta(days = days_back)).strftime("%Y-%m-%d")
+            url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
+            response = requests.get(url)
+            if response.status_code == 200:
+                break
+            days_back += 1
+        if days_back == max_days:
+            logging.info(f"Could not find medline plus topics after checkint last {max_days} days")
+            return {}
+
+        logging.info(f"Using MedlinePlus topics from {xml_date}")        
+        url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
         response = requests.get(url)
         response.raise_for_status()
         xml_dict = xmltodict.parse(response.text)
+        return xml_dict
+
+    def index_medline_plus(self, topics: list):
+        xml_dict = self._get_xml_dict()
         logging.info(f"Indexing {xml_dict['health-topics']['@total']} health topics from MedlinePlus")    
         rate_limiter = RateLimiter(max_calls=3, period=1)
 

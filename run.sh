@@ -22,8 +22,7 @@ cp $1 ~/tmp/mount/
 docker build . --tag=vectara-ingest:latest
 docker container inspect vingest &>/dev/null && docker rm -f vingest
 
-#crawler_type="$(yq e '.crawling.crawler_type' $1)"
-crawler_type=`python -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])"`
+crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])"`
 config_file_name="${1##*/}"
 if [[ "$crawler_type" == "folder" ]]; then
     # special handling of "folder crawler" where we need to mount the folder under /home/vectara/data

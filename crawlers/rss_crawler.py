@@ -39,7 +39,7 @@ class RssCrawler(Crawler):
             if url in crawled_urls:
                 logging.info(f"Skipping {url} since it was already crawled in this round")
                 continue
-
+            
             # index document into Vectara
             try:
                 if pub_date:
@@ -56,6 +56,7 @@ class RssCrawler(Crawler):
                 }
                 succeeded = self.indexer.index_url(url, metadata=metadata)
                 if succeeded:
+                    logging.info(f"Successfully indexed {url}")
                     crawled_urls.add(url)
                 else:
                     logging.info(f"Indexing failed for {url}")

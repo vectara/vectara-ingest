@@ -30,19 +30,12 @@ Let’s create a basic crawler to scrape content from [Paul Graham's website](ht
 
 Install [python >= 3.8](https://www.python.org/downloads/) if it's not already installed.
 
-For Mac/Linux, install [yq](https://github.com/mikefarah/yq):
-
-- Mac: `brew install yq`
-- Linux: `snap install yq`
-
-For Windows, install powershell-yaml module:
-- If you ExecutionPolicy is restricted you may not to enable scripts with `Set-ExecutionPolicy -ExecutionPolicy Default -Scope CurrentUser`
-- `Install-Module -Name powershell-yaml -Scope CurrentUser`
-- Ensure Windows Subsystem for Linux (wsl) is enabled and `Kali-linux` is installed: 
-  - `wsl --install`
-  - `wsl -s Kali-linux`
-  
 Install [Docker](https://docs.docker.com/engine/install/).
+
+For Windows, 
+- Start a Windows Powershell terminal
+- Update WSL: `wsl --update`
+- Ensure WSL has the right version of Linux available: `wsl --install ubuntu-20.04` 
 
 Clone this repository:
 
@@ -72,14 +65,11 @@ Make sure the Docker app is running.
 
 Then execute the run script from the root directory using your config file to tell it what to crawl and where to ingest the data, assigning the “default” profile from your secrets file:
 
-For Linux or Mac:
+Start the crawler job:
 ```sh
 bash run.sh config/pg-rss.yaml default
 ```
-For windows:
-```ps1
-.\run.ps1 config/pg-rss.yaml default
-```
+For Microsoft Windows, make sure you run this command from within the WSL environment (after running `wsl` to enter the linux environment).
 
 The crawler executes inside of a [Docker container](https://www.docker.com/resources/what-container/) to protect your system’s resources and make it easier to move your crawlers to the cloud. This is a good time to grab a coffee or snack – the container needs to install a lot of dependencies, which will take some time.
 

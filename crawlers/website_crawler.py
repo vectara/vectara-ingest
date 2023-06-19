@@ -1,7 +1,6 @@
 import logging
 import os
 from usp.tree import sitemap_tree_for_homepage      # type: ignore
-from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl

@@ -7,7 +7,6 @@ crawling:
   crawler_type: jira
 
 jira_crawler:
-  jira_base_url: "https://zir-ai.atlassian.net/"
+  jira_base_url: "https://vectara.atlassian.net/"
   jira_username: ofer@vectara.com
   jira_jql: "created > -365d"
-

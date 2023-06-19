@@ -38,4 +38,4 @@ nbconvert==7.2.10
 nbformat==5.8.0
 docutils==0.20.1
 arxiv==1.4.4
-readability-lxml==0.8.1
+trafilatura==1.5.0

@@ -63,7 +63,7 @@ rss_crawler:
   ]
   days_past: 90
   delay: 1
-  extraction: pdf           # pdf or html
+  extraction: playwright           # pdf or playwright
 ```
 
 The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news sites. In the example above, the rss_crawler is configured to crawl various newsfeeds from the BBC. 

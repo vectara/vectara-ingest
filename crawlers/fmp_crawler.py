@@ -11,9 +11,6 @@ def is_date_in_range(datetime_str, start_year, end_year):
     dt = datetime.strptime(datetime_str.split(' ')[0], '%Y-%m-%d')
     return start_year <= dt.year <= end_year
 
-def camelCase_to_words(s: str):
-    return re.sub(r'(?<!^)(?=[A-Z])', ' ', s).lower()
-
 # Crawler for financial information using the financialmodelingprep.com service
 # To use this crawler you have to have an fmp API_key in your secrets.toml profile
 class FmpCrawler(Crawler):
@@ -70,7 +67,7 @@ class FmpCrawler(Crawler):
                     data = response.json()
                     doc_title = f"10-K for {company_name} from {year}"
                     rel_filings = [f for f in filings if f['acceptedDate'][:4] == str(year)]
-                    url = rel_filings[0]['link'] if len(rel_filings)>0 else None
+                    url = rel_filings[0]['finalLink'] if len(rel_filings)>0 else None
                     metadata = {'source': 'finsearch', 'title': doc_title, 'ticker': ticker, 'compnay name': company_name, 'year': year, 'type': '10-K', 'url': url}
                     document = {
                         "documentId": f"10-K-{company_name}-{year}",
@@ -86,53 +83,6 @@ class FmpCrawler(Crawler):
                                 values = [v for v in values if v and type(v)==str and len(v)>=10]
                                 if len(values)>0 and len(' '.join(values))>100:
                                     document['section'].append({'title': f'{key} - {title}', 'text': '\n'.join(values)})
-                    self.index_doc(document)
-
-
-            # income statements
-            logging.info(f"Ingesting income statements for {company_name}")
-            url = f'{base_url}/api/v3/income-statement/{ticker}?limit=120&apikey={self.api_key}'
-            statements = requests.get(url).json()
-            for statement in statements:
-                date = statement['fillingDate']
-                if is_date_in_range(date, self.start_year, self.end_year):
-                    text_pieces = [f'Income statement for {company_name} on date {date}.'] + \
-                                  [f"{camelCase_to_words(key)}: {value}" for key, value in statement.items() if key not in keys_to_ignore]
-                    title = f"Income statement for {company_name}, on {date}"
-                    metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'compnay name': company_name, 'date': date, 'type': 'income-statement'}
-                    document = {
-                        "documentId": f"income-statment-{company_name}-{date}",
-                        "title": title,
-                        "metadataJson": json.dumps(metadata),
-                        "section": [
-                            {
-                                'text': '\n'.join(text_pieces)
-                            }
-                        ]
-                    }
-                    self.index_doc(document)
-
-            # balance sheet statenents
-            logging.info(f"Ingesting balance sheet statements for {company_name}")
-            url = f'{base_url}/api/v3/balance-sheet-statement/{ticker}?limit=120&apikey={self.api_key}'
-            statements = requests.get(url).json()
-            for statement in statements:
-                date = statement['fillingDate']
-                if is_date_in_range(date, self.start_year, self.end_year):
-                    text_pieces = [f'Balance sheet statement for {company_name} on date {date}.'] + \
-                                  [f"{camelCase_to_words(key)}: {value}" for key, value in statement.items() if key not in keys_to_ignore]
-                    title = f"Balance sheet statement for {company_name}, on {date}"
-                    metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'compnay name': company_name, 'date': date, 'type': 'balance-sheet'}
-                    document = {
-                        "documentId": f"balance-sheet-statment-{company_name}-{date}",
-                        "title": title,
-                        "metadataJson": json.dumps(metadata),
-                        "section": [
-                            {
-                                'text': '\n'.join(text_pieces)
-                            }
-                        ]
-                    }
                     self.index_doc(document)
 
             # Index earnings call transcript

@@ -2,58 +2,55 @@ from core.crawler import Crawler
 from pathlib import Path
 from bs4 import BeautifulSoup
 import requests
-import json
+import logging
 from urllib.parse import urljoin, urlparse
 import re
+from collections import deque
 
 class DocusaurusCrawler(Crawler):    
-    def _get_links(self, page_url):
-        """Crawls a single page in a docusaurus documentation site and return URLs that show on this page
 
-        Args:
-            page_url: The URL of the page to crawl.
+    def get_urls(self, base_urls):
+        new_urls = deque(base_urls)
+        crawled_urls = set()
+        ignored_urls = set()
 
-        Returns:
-            A list of URLs extracted from the page
-        """
+        # Crawl each URL in the queue
+        while len(new_urls):
+            # Dequeue a URL from new_urls
+            url = new_urls.popleft()
+            
+            try:
+                response = requests.get(url)
+                if response.status_code != 200:
+                    continue
+                page_content = BeautifulSoup(response.content, 'lxml')
+                crawled_urls.add(url)
 
-        response = requests.get(page_url)
-        soup = BeautifulSoup(response.content, "html.parser")
-
-        # Find all anchor tags and their href attributes
-        urls = []
-        for link in soup.find_all('a', href=True):
-            href = link['href']
-            new_url = urljoin(page_url, href)
-            if new_url in self.crawled or new_url in self.ignored:
+                # Find all the new URLs in the page's content and add them into the queue
+                for link in page_content.find_all('a'):
+                    href = link.get('href')
+                    if href is None:
+                        continue
+                    abs_url = urljoin(url, href)
+                    if (abs_url in ignored_urls or urlparse(abs_url).fragment or                   # don't crawl if this points to a fragment (#)
+                        any([abs_url.endswith(ext) for ext in self.extensions_to_ignore])):     # don't crawl specified extensions
+                           ignored_urls.add(abs_url)
+                           continue
+                    if abs_url not in crawled_urls and abs_url not in new_urls:
+                        # Ensure the URL is not None and it is a child URL under any of the base_urls
+                        if any(base_url in abs_url for base_url in base_urls):
+                            new_urls.append(abs_url)
+            except:
                 continue
-            if urlparse(new_url).fragment or new_url.endswith(".md") or new_url.endswith(".rst"):          # don't crawl if this points to a fragment (#) or RST/MD files
-                self.ignored.add(new_url)
-                continue
-            if not any([r.match(new_url) for r in self.domain_regex]):
-                self.ignored.add(new_url)
-                continue
-            urls.append(new_url)
-        return urls
 
-    def crawl_urls(self, urls: list):
-        new_urls = []
-        for url in urls:
-            if url in self.crawled or url in self.ignored:
-                continue
-            self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
-            self.crawled.add(url)
-            new_urls.extend(self._get_links(url))
-
-        new_urls = list(set(new_urls)-self.crawled-self.ignored)
-        if len(new_urls)>0:
-            self.crawl_urls(new_urls)
+        return crawled_urls
 
     def crawl(self):
-        self.crawled = set()
-        self.ignored = set()
-        self.site_url = self.cfg.docusaurus_crawler.docs_homepage
-        self.domain_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
-        if self.site_url.endswith('/'):
-            self.site_url = self.site_url[:-1]
-        self.crawl_urls([self.site_url])
+        self.extensions_to_ignore = list(set(self.cfg.docusaurus_crawler.extensions_to_ignore + ["png", "svg", "jpeg", "jpg", "gif", "mp4"]))
+        all_urls = self.get_urls(self.cfg.docusaurus_crawler.base_urls)
+
+        url_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
+        for url in set(all_urls):
+            if any([r.match(url) for r in url_regex]):
+                self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
+                logging.info(f"Docusarus Crawler: finished indexing {url}")
