@@ -27,10 +27,6 @@ ENV HOME /home/vectara
 ENV XDG_RUNTIME_DIR=/tmp
 WORKDIR ${HOME}
 
-RUN apt-get update && apt-get install -y curl ca-certificates
-RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash -
-RUN apt-get install -y nodejs
-
 COPY requirements.txt $HOME/
 RUN pip install -r requirements.txt
 RUN playwright install --with-deps firefox

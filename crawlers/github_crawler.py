@@ -16,6 +16,7 @@ class Github(object):
         self.session = requests.Session()
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def get_issues(self, state: str):
         # state can be "open", "closed", or "all"
@@ -51,6 +52,7 @@ class GithubCrawler(Crawler):
         self.session = requests.Session()
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def crawl_code_folder(self, base_url, path=""):
         headers = { "Accept": "application/vnd.github+json"}
