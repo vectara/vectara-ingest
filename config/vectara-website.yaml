@@ -11,4 +11,4 @@ website_crawler:
   delay: 1
   pages_source: sitemap
   url_regex: [".*"]
-  extraction: playwright # pdf or html
+  extraction: playwright
