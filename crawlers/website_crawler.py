@@ -66,7 +66,8 @@ class WebsiteCrawler(Crawler):
                     except Exception as e:
                         import traceback
                         logging.error(f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}")
-                else:   # use index_url which does not go through PDF
+                else:   # use index_url which uses PlayWright
+                    logging.info(f"Crawling and indexing {url}")
                     with rate_limiter:
                         succeeded = self.indexer.index_url(url, metadata=metadata)
                     if not succeeded:

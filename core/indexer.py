@@ -2,6 +2,8 @@ import logging
 import json
 import os
 from slugify import slugify         # type: ignore
+import time
+import asyncio
 
 from trafilatura import extract, extract_metadata
 
@@ -14,7 +16,6 @@ logging.config.dictConfig({
 
 from omegaconf import OmegaConf
 import requests
-import asyncio
 from nbconvert import HTMLExporter
 import nbformat
 import markdown
@@ -23,39 +24,12 @@ from core.utils import html_to_text
 
 from unstructured.partition.pdf import partition_pdf
 import unstructured as us
-from playwright.async_api import async_playwright 
-
-async def fetch_content_with_timeout(url, timeout=30):
-    '''
-    Fetch content from a URL with a timeout.
-
-    Args:
-        url (str): URL to fetch.
-        timeout (int, optional): Timeout in seconds. Defaults to 30.
-
-    Returns:
-        str: Content from the URL.
-    '''
-    async with async_playwright() as playwright:
-        browser = await playwright.firefox.launch()
-        page = await browser.new_page()
-        try:
-            # goto page
-            await asyncio.wait_for(page.goto(url), timeout=timeout)
-            content = await page.content()
-        except asyncio.TimeoutError:
-            logging.info(f"Page loading timed out for {url}")
-            content = None
-        finally:
-            await page.close()
-            await browser.close()
-        return content
+from playwright.sync_api import sync_playwright 
 
 
 class Indexer(object):
     """
     Vectara API class.
-
     Args:
         endpoint (str): Endpoint for the Vectara API.
         customer_id (str): ID of the Vectara customer.
@@ -69,10 +43,15 @@ class Indexer(object):
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
+        self.timeout = 30
 
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=5)
+        adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+
+        p = sync_playwright().start()
+        self.browser = p.firefox.launch(headless=True)
 
     def _check_response(self, response) -> bool:
         if response.status_code != 200:
@@ -83,7 +62,32 @@ class Indexer(object):
             return False
         else:
             return True
-        
+
+    def fetch_content_with_timeout(self, url: str, timeout: int = 30):
+        '''
+        Fetch content from a URL with a timeout.
+        Args:
+            url (str): URL to fetch.
+            timeout (int, optional): Timeout in seconds. Defaults to 30.
+        Returns:
+            str: Content from the URL.
+        '''
+        page = self.browser.new_page()
+        page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
+            if route.request.resource_type == "image" 
+            else route.continue_() 
+        ) 
+        try:
+            # goto page
+            page.goto(url, timeout=timeout*1000)
+            content = page.content()
+        except asyncio.TimeoutError:
+            logging.info(f"Page loading timed out for {url}")
+            content = None
+        finally:
+            page.close()
+        return content
+
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str):
         """
@@ -161,25 +165,26 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
+        st = time.time()
         try:
             headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
             }
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=headers, timeout=self.timeout)
             if response.status_code != 200:
                 logging.info(f"Page {url} is unavailable ({response.status_code})")
                 return False
             else:
                 content_type = str(response.headers["Content-Type"])
         except Exception as e:
-            logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
+            logging.info(f"Failed to crawl {url} to get content_type, skipping...")
             return False
         
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             fname = 'tmp.pdf'
             with open(fname, 'wb') as f:
@@ -191,7 +196,7 @@ class Indexer(object):
 
         # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             dl_content = response.content
             if url.endswith('rst'):
@@ -205,13 +210,15 @@ class Indexer(object):
             title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content)
             parts = [text]
+
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                html_content = asyncio.run(fetch_content_with_timeout(url))
+                html_content = self.fetch_content_with_timeout(url)
             except Exception as e:
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}")
                 return False
+            logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             if html_content is None:
                 return False
             text = extract(html_content)

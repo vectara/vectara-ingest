@@ -33,12 +33,13 @@ class DiscourseCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.discourse_base_url = self.cfg.discourse_crawler.base_url
         self.discourse_api_key = self.cfg.discourse_crawler.discourse_api_key
+        self.session = requests.Session()
 
     # function to fetch the topics from the Discourse API
     def index_topics(self):
         url = self.discourse_base_url + '/latest.json'
         params = { 'api_key': self.discourse_api_key, 'api_username': 'ofer@vectara.com', 'page': '0'}
-        response = requests.get(url, params=params)
+        response = self.session.get(url, params=params)
         if response.status_code != 200:
             raise Exception(f'Failed to fetch topics from Discourse, exception = {response.status_code}, {response.text}')
 
@@ -73,7 +74,7 @@ class DiscourseCrawler(Crawler):
         topic_id = topic["id"]
         url_json = self.discourse_base_url + '/t/' + str(topic_id) + '.json'
         params = { 'api_key': self.discourse_api_key, 'api_username': 'ofer@vectara.com'}
-        response = requests.get(url_json, params=params)
+        response = self.session.get(url_json, params=params)
         if response.status_code != 200:
             raise Exception('Failed to fetch posts for topic ' + str(topic_id) + ' from Discourse')
 

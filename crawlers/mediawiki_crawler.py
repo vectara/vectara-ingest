@@ -14,6 +14,7 @@ class MediawikiCrawler(Crawler):
         api_url = self.cfg.mediawiki_crawler.api_url
         project = self.cfg.mediawiki_crawler.project
         n_pages = self.cfg.mediawiki_crawler.n_pages
+        session = requests.Session()
         if n_pages > 1000:
             n_pages = 1000
             logging.info(f"n_pages is too large, setting to 1000")
@@ -29,7 +30,7 @@ class MediawikiCrawler(Crawler):
         for title in titles:
             time.sleep(1)
             params = {'action': 'query', 'prop': 'info|revisions', 'titles': title, 'inprop': 'url', 'rvprop': 'timestamp', 'format': 'json'}
-            response = requests.get(api_url, params=params).json()
+            response = session.get(api_url, params=params).json()
             page_id = list(response['query']['pages'].keys())[0]
             if int(page_id) <= 0:
                 continue
@@ -39,7 +40,7 @@ class MediawikiCrawler(Crawler):
             last_edited_at = last_revision['timestamp']
 
             params = {'action': 'query', 'prop': 'extracts', 'titles': title, 'format': 'json', 'explaintext': 1}
-            response = requests.get(api_url, params=params).json()
+            response = session.get(api_url, params=params).json()
             page_id = list(response["query"]["pages"].keys())[0]
             page_content = response["query"]["pages"][page_id]["extract"]
 
@@ -67,4 +68,4 @@ class MediawikiCrawler(Crawler):
             }
             succeeded = self.indexer.index_document(document)
             if not succeeded:
-                logging.info(f"Failed to index page {page_id}: url={page_url}, title={title}, content={page_content}")
+                logging.info(f"Failed to index page {page_id}: url={page_url}, title={title}")

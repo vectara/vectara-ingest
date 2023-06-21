@@ -34,6 +34,7 @@ class PmcCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.site_urls = set()
         self.crawled_pmc_ids = set()
+        self.session = requests.Session()
 
     def index_papers_by_topic(self, topic: str, n_papers: int):
         """
@@ -55,7 +56,7 @@ class PmcCrawler(Crawler):
             params = {"db": "pmc", "id": pmc_id, "retmode": "xml", "tool": "python_script", "email": email}
             try:
                 with rate_limiter:
-                    response = requests.get(base_url, params=params)
+                    response = self.session.get(base_url, params=params)
             except Exception as e:
                 logging.info(f"Failed to download paper {pmc_id} due to error {e}, skipping")
                 continue
@@ -118,7 +119,7 @@ class PmcCrawler(Crawler):
         while (days_back <= max_days):
             xml_date = (datetime.now() - timedelta(days = days_back)).strftime("%Y-%m-%d")
             url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
-            response = requests.get(url)
+            response = self.session.get(url)
             if response.status_code == 200:
                 break
             days_back += 1
@@ -128,7 +129,7 @@ class PmcCrawler(Crawler):
 
         logging.info(f"Using MedlinePlus topics from {xml_date}")        
         url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
-        response = requests.get(url)
+        response = self.session.get(url)
         response.raise_for_status()
         xml_dict = xmltodict.parse(response.text)
         return xml_dict
@@ -177,7 +178,7 @@ class PmcCrawler(Crawler):
             logging.info(f"Indexing data about {title}")
             succeeded = self.indexer.index_document(document)
             if not succeeded:
-                logging.info(f"Failed to index document {title}")
+                logging.info(f"Failed to index document with title {title}")
                 continue
             for site in ht['site']:
                 site_title = site['@title']

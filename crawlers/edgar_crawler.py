@@ -37,11 +37,13 @@ def get_filings(cik, start_date, end_date, filing_type="10-K"):
     current_start = 0
     rate_limiter = RateLimiter(max_calls=1, period=1)
     
+    session = requests.Session()
+
     while True:
         params["start"] = str(current_start)
 
         with rate_limiter:
-            response = requests.get(base_url, params=params, headers=get_headers())
+            response = session.get(base_url, params=params, headers=get_headers())
         if response.status_code != 200:
             logging.warning(f"Error: status code {response.status_code} for {cik}")
             return filings
@@ -59,7 +61,7 @@ def get_filings(cik, start_date, end_date, filing_type="10-K"):
                 try:
                     url = entry.link["href"]
                     with rate_limiter:
-                        soup = BeautifulSoup(requests.get(url, headers=get_headers()).content, "html.parser")
+                        soup = BeautifulSoup(session.get(url, headers=get_headers()).content, "html.parser")
                     l = soup.select_one('td:-soup-contains("10-K") + td a')
                     html_url = "https://www.sec.gov" + l["href"]
                     l = soup.select_one('td:-soup-contains("Complete submission text file") + td a')

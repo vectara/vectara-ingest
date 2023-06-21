@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 from core.crawler import Crawler
 import feedparser

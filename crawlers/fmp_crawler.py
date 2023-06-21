@@ -21,6 +21,7 @@ class FmpCrawler(Crawler):
         self.start_year = int(cfg.fmp_crawler.start_year)
         self.end_year = int(cfg.fmp_crawler.end_year)
         self.api_key = cfg.fmp_crawler.fmp_api_key
+        self.session = requests.Session()
 
     def index_doc(self, document):
         try:
@@ -36,12 +37,11 @@ class FmpCrawler(Crawler):
 
     def crawl(self):
         base_url = 'https://financialmodelingprep.com'
-        keys_to_ignore = ['fillingDate', 'date', 'symbol', 'cik', 'acceptedDate', 'reportedCurrency', 'link', 'finalLink']
         for ticker in self.tickers:
             # get profile
             url = f'{base_url}/api/v3/profile/{ticker}?apikey={self.api_key}'
             try:
-                response = requests.get(url)
+                response = self.session.get(url)
             except Exception as e:
                 logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
                 continue
@@ -55,11 +55,11 @@ class FmpCrawler(Crawler):
 
             # index 10-K for ticker in date range
             url = f'{base_url}/api/v3/sec_filings/{ticker}?type=10-K&page=0&apikey={self.api_key}'
-            filings = requests.get(url).json()
+            filings = self.session.get(url).json()
             for year in range(self.start_year, self.end_year+1):
                 url = f'{base_url}/api/v4/financial-reports-json?symbol={ticker}&year={year}&period=FY&apikey={self.api_key}'
                 try:
-                    response = requests.get(url)
+                    response = self.session.get(url)
                 except Exception as e:
                     logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
                     continue
@@ -91,7 +91,7 @@ class FmpCrawler(Crawler):
                 for quarter in range(1, 5):
                     url = f'{base_url}/api/v3/earning_call_transcript/{ticker}?quarter={quarter}&year={year}&apikey={self.api_key}'
                     try:
-                        response = requests.get(url)
+                        response = self.session.get(url)
                     except Exception as e:
                         logging.info(f"Error getting transcript for {company_name} quarter {quarter} of {year}: {e}")
                         continue

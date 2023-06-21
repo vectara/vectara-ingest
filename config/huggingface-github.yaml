@@ -8,5 +8,14 @@ crawling:
 
 github_crawler:
   owner: "huggingface"
-  repos: ["transformers", "datasets", "tokenizers", "accelerate", "optimum", "diffusers"]
+  repos:
+    [
+      "transformers",
+      "datasets",
+      "tokenizers",
+      "accelerate",
+      "optimum",
+      "diffusers",
+      "peft",
+    ]
   crawl_code: false

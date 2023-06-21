@@ -31,9 +31,10 @@ class HackernewsCrawler(Crawler):
         entrypoint = 'https://hacker-news.firebaseio.com/v0/'
 
         # Retrieve the IDs of the top N_ARTICLES stories
-        resp1= requests.get(entrypoint + 'topstories.json')
-        resp2 = requests.get(entrypoint + 'newstories.json')
-        resp3 = requests.get(entrypoint + 'beststories.json')
+        session = requests.Session()
+        resp1= session.get(entrypoint + 'topstories.json')
+        resp2 = session.get(entrypoint + 'newstories.json')
+        resp3 = session.get(entrypoint + 'beststories.json')
 
         top_ids = list(set(list(resp1.json()) + list(resp2.json()) + list(resp3.json())))[:N_ARTICLES]
         num_ids = len(top_ids)
@@ -44,7 +45,7 @@ class HackernewsCrawler(Crawler):
             if n_id % 20 == 0:
                 logging.info(f"Crawled {n_id} stories so far")
             try:
-                response = requests.get(entrypoint + 'item/{}.json'.format(id))
+                response = session.get(entrypoint + 'item/{}.json'.format(id))
                 story = response.json()
                 url = story.get('url', None)
                 if url is None:

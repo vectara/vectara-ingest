@@ -9,6 +9,6 @@ crawling:
 website_crawler:
   urls: [https://vectara.com]
   delay: 1
-  pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  url_regex: [".*"] # regex string or None; ".*" would match any string.
+  pages_source: sitemap
+  url_regex: [".*"]
   extraction: playwright # pdf or html

@@ -13,6 +13,7 @@ class DocusaurusCrawler(Crawler):
         new_urls = deque(base_urls)
         crawled_urls = set()
         ignored_urls = set()
+        session = requests.Session()
 
         # Crawl each URL in the queue
         while len(new_urls):
@@ -20,7 +21,7 @@ class DocusaurusCrawler(Crawler):
             url = new_urls.popleft()
             
             try:
-                response = requests.get(url)
+                response = session.get(url)
                 if response.status_code != 200:
                     continue
                 page_content = BeautifulSoup(response.content, 'lxml')
@@ -54,3 +55,5 @@ class DocusaurusCrawler(Crawler):
             if any([r.match(url) for r in url_regex]):
                 self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
                 logging.info(f"Docusarus Crawler: finished indexing {url}")
+            else:
+                logging.info(f"Docusarus Crawler: skipping {url} since it does not match any of the regexes")
