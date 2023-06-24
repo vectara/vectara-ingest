@@ -1,11 +1,11 @@
 from core.crawler import Crawler
-from pathlib import Path
 from bs4 import BeautifulSoup
-import requests
 import logging
 from urllib.parse import urljoin, urlparse
 import re
 from collections import deque
+
+from core.utils import create_session_with_retries
 
 class DocusaurusCrawler(Crawler):    
 
@@ -13,7 +13,7 @@ class DocusaurusCrawler(Crawler):
         new_urls = deque(base_urls)
         crawled_urls = set()
         ignored_urls = set()
-        session = requests.Session()
+        session = create_session_with_retries()
 
         # Crawl each URL in the queue
         while len(new_urls):

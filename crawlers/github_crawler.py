@@ -7,16 +7,15 @@ import logging
 import base64
 
 from ratelimiter import RateLimiter
+from core.utils import create_session_with_retries
 
 class Github(object):
     def __init__(self, repo: str, owner: str, token: str) -> None:
         self.repo = repo
         self.owner = owner
         self.token = token
-        self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=3)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        self.session = create_session_with_retries()
+
 
     def get_issues(self, state: str):
         # state can be "open", "closed", or "all"
@@ -49,7 +48,7 @@ class GithubCrawler(Crawler):
         self.repos = self.cfg.github_crawler.repos
         self.crawl_code = self.cfg.github_crawler.crawl_code
         self.rate_limiter = RateLimiter(max_calls=1, period=1)
-        self.session = requests.Session()
+        self.session = create_session_with_retries()
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)

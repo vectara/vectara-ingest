@@ -69,7 +69,7 @@ Start the crawler job:
 ```sh
 bash run.sh config/pg-rss.yaml default
 ```
-For Microsoft Windows, make sure you run this command from within the WSL environment (after running `wsl` to enter the linux environment).
+For Microsoft Windows, make sure you run this command from within the WSL environment (after running `wsl` to enter the Linux environment).
 
 The crawler executes inside of a [Docker container](https://www.docker.com/resources/what-container/) to protect your system’s resources and make it easier to move your crawlers to the cloud. This is a good time to grab a coffee or snack – the container needs to install a lot of dependencies, which will take some time.
 

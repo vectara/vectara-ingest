@@ -2,13 +2,14 @@ import logging
 import requests
 import json
 from core.crawler import Crawler
+from core.utils import create_session_with_retries
 
 class JiraCrawler(Crawler):
 
     def crawl(self):
         self.jira_headers = { "Accept": "application/json" }
         self.jira_auth = (self.cfg.jira_crawler.jira_username, self.cfg.jira_crawler.jira_password)
-        session = requests.Session()
+        session = create_session_with_retries()
 
         issue_count = 0
         startAt = 0

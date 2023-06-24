@@ -6,6 +6,7 @@ import requests
 import json
 from html.parser import HTMLParser
 from io import StringIO
+from core.utils import create_session_with_retries
 
 class MLStripper(HTMLParser):
     def __init__(self):
@@ -33,7 +34,7 @@ class DiscourseCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.discourse_base_url = self.cfg.discourse_crawler.base_url
         self.discourse_api_key = self.cfg.discourse_crawler.discourse_api_key
-        self.session = requests.Session()
+        self.session = create_session_with_retries()
 
     # function to fetch the topics from the Discourse API
     def index_topics(self):

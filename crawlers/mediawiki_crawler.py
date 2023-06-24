@@ -1,12 +1,12 @@
 import logging
-from core.crawler import Crawler
 import json
-import requests
 import urllib.parse
 import time
 from datetime import datetime, timedelta  
 from mwviews.api import PageviewsClient 
 
+from core.crawler import Crawler
+from core.utils import create_session_with_retries
 
 class MediawikiCrawler(Crawler):
 
@@ -14,7 +14,7 @@ class MediawikiCrawler(Crawler):
         api_url = self.cfg.mediawiki_crawler.api_url
         project = self.cfg.mediawiki_crawler.project
         n_pages = self.cfg.mediawiki_crawler.n_pages
-        session = requests.Session()
+        session = create_session_with_retries()
         if n_pages > 1000:
             n_pages = 1000
             logging.info(f"n_pages is too large, setting to 1000")

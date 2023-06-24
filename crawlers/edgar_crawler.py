@@ -9,6 +9,7 @@ import datetime
 from ratelimiter import RateLimiter
 
 from core.crawler import Crawler
+from core.utils import create_session_with_retries
 
 # build mapping of ticker to cik
 df = pd.read_csv('https://www.sec.gov/include/ticker.txt', sep='\t', names=['ticker', 'cik'], dtype=str)
@@ -37,7 +38,7 @@ def get_filings(cik, start_date, end_date, filing_type="10-K"):
     current_start = 0
     rate_limiter = RateLimiter(max_calls=1, period=1)
     
-    session = requests.Session()
+    session = create_session_with_retries()
 
     while True:
         params["start"] = str(current_start)

@@ -4,7 +4,7 @@ import logging
 from core.crawler import Crawler
 import os
 from slugify import slugify         # type: ignore
-from core.utils import html_to_text
+from core.utils import html_to_text, create_session_with_retries
 
 def get_comments(kids, entrypoint):
     comments = []
@@ -31,7 +31,7 @@ class HackernewsCrawler(Crawler):
         entrypoint = 'https://hacker-news.firebaseio.com/v0/'
 
         # Retrieve the IDs of the top N_ARTICLES stories
-        session = requests.Session()
+        session = create_session_with_retries()
         resp1= session.get(entrypoint + 'topstories.json')
         resp2 = session.get(entrypoint + 'newstories.json')
         resp3 = session.get(entrypoint + 'beststories.json')

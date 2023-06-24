@@ -21,7 +21,7 @@ Let's go through each of these crawlers to explain how they work and how to cust
   </tr>
 </table>
 
-### website crawler
+### Website crawler
 
 ```yaml
 ...
@@ -45,6 +45,53 @@ The `extraction` parameter defines how page content is extracted from URLs.
 `delay` specifies the number of seconds to wait between to consecutive requests to avoid rate limiting issues. 
 
 `url_regex` if it exists defines a regular expression that is used to filter URLs. For example, if I want only the developer pages from vectara.com to be indexed, I can use ".*vectara.com/developer.*" 
+
+### Database crawler
+
+```yaml
+...
+database_crawler:
+    db_url: "postgresql://<username>:<password>@my_db_host:5432/yelp"
+    db_table: yelp_reviews                                 
+    select_condition: "city='New Orleans'"
+    text_columns: [business_name, review_text]
+    metadata_columns: [city, state, postal_code]
+```
+The database crawler can be used to read data from a relational database and index relevant columns into Vectara.
+- `db_url` specifies the database URI including the type of database, host/port, username and password if needed.
+  - For MySQL: "mysql://username:password@host:port/database"
+  - For PostgreSQL:"postgresql://username:password@host:port/database"
+  - For Microsoft SQL Server: "mssql+pyodbc://username:password@host:port/database"
+  - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
+- `db_table` the table name in the database
+- `select_condition` optional condition to filter rows in the table by
+- `doc_id_col` defines a column that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
+- `text_columns` a list of column names that include textual information we want to use 
+- `metadata_columns` a list of column names that we want to use as metadata
+
+In the above example, the crawler would
+1. Include all rows in the database "yelp" that are from the city of New Orleans (`SELECT * FROM yelp WHERE city='New Orleans'`)
+2. Index the textual information in the columns "business_name" and "review_text"
+3. Include the columns "city", "state" and "postal_code" as meta-data for each row
+
+### CSV crawler
+
+```yaml
+...
+csv_crawler:
+    csv_path: "/path/to/yelp_reviews.csv"
+    text_columns: [business_name, review_text]
+    metadata_columns: [city, state, postal_code]
+```
+The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV file.
+- `select_condition` optional condition to filter rows in the table by
+- `text_columns` a list of column names that include textual information we want to use 
+
+In the above example, the crawler would
+1. Read all the data from the local CSV file
+2. Index the textual information in the columns "business_name" and "review_text"
+3. Include the columns "city", "state" and "postal_code" as meta-data for each row
+
 
 ### RSS crawler
 

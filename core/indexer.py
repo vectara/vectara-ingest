@@ -4,6 +4,7 @@ import os
 from slugify import slugify         # type: ignore
 import time
 import asyncio
+from core.utils import create_session_with_retries
 
 from trafilatura import extract, extract_metadata
 
@@ -45,23 +46,12 @@ class Indexer(object):
         self.reindex = reindex
         self.timeout = 30
 
-        self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=3)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        # setup requests session and mount adapter to retry requests
+        self.session = create_session_with_retries()
 
+        # create playwright browser so we can reuse it across all Indexer operations
         p = sync_playwright().start()
         self.browser = p.firefox.launch(headless=True)
-
-    def _check_response(self, response) -> bool:
-        if response.status_code != 200:
-            logging.error("REST upload failed with code %d, reason %s, text %s",
-                        response.status_code,
-                        response.reason,
-                        response.text)
-            return False
-        else:
-            return True
 
     def fetch_content_with_timeout(self, url: str, timeout: int = 30):
         '''
@@ -226,21 +216,24 @@ class Indexer(object):
             title = md.title if md else "No title"
             parts = [text]
 
-        succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadata=metadata, title=title)
+        succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
+                                        doc_metadata=metadata, title=title)
         if succeeded:
             return True
         else:
             return False
 
-    def index_segments(self, doc_id: str, parts: list, metadata: dict, title: str = None) -> bool:
+    def index_segments(self, doc_id: str, parts: list, metadatas: list, doc_metadata: dict = None, title: str = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
         """
         document = {}
         document["documentId"] = doc_id
-        document["title"] = title
-        document["section"] = [{"text": part} for part in parts]
-        document["metadataJson"] = json.dumps(metadata)
+        if title:
+            document["title"] = title
+        document["section"] = [{"text": part, "metadataJson": json.dumps(md)} for part,md in zip(parts,metadatas)]
+        if doc_metadata:
+            document["metadataJson"] = json.dumps(doc_metadata)
         return self.index_document(document)
     
     def index_document(self, document: dict) -> bool:
@@ -271,6 +264,13 @@ class Indexer(object):
             logging.info(f"Exception {e} while indexing document {document['documentId']}")
             return False
 
+        if response.status_code != 200:
+            logging.error("REST upload failed with code %d, reason %s, text %s",
+                          response.status_code,
+                          response.reason,
+                          response.text)
+            return False
+
         result = response.json()
         if "status" in result and result["status"] and "ALREADY_EXISTS" in result["status"]["code"]:
             if self.reindex:
@@ -280,5 +280,9 @@ class Indexer(object):
             else:
                 logging.info(f"Document {document['documentId']} already exists, skipping")
                 return False
+        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
+            return True
+        
+        logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        return False
 
-        return self._check_response(response)

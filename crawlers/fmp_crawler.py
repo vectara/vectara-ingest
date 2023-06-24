@@ -1,11 +1,10 @@
 import logging
 from omegaconf import OmegaConf
 import json
-import requests
-import re
 from datetime import datetime
 
 from core.crawler import Crawler
+from core.utils import create_session_with_retries
 
 def is_date_in_range(datetime_str, start_year, end_year):
     dt = datetime.strptime(datetime_str.split(' ')[0], '%Y-%m-%d')
@@ -21,7 +20,7 @@ class FmpCrawler(Crawler):
         self.start_year = int(cfg.fmp_crawler.start_year)
         self.end_year = int(cfg.fmp_crawler.end_year)
         self.api_key = cfg.fmp_crawler.fmp_api_key
-        self.session = requests.Session()
+        self.session = create_session_with_retries()
 
     def index_doc(self, document):
         try:

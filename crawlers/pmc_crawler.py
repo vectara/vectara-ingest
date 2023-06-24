@@ -4,11 +4,10 @@ from Bio import Entrez
 import json
 from lxml import etree
 from ratelimiter import RateLimiter
-import requests
 import xmltodict
 from datetime import datetime, timedelta
 
-from core.utils import html_to_text
+from core.utils import html_to_text, create_session_with_retries
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 
@@ -34,7 +33,7 @@ class PmcCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.site_urls = set()
         self.crawled_pmc_ids = set()
-        self.session = requests.Session()
+        self.session = create_session_with_retries()
 
     def index_papers_by_topic(self, topic: str, n_papers: int):
         """
