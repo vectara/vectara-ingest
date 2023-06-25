@@ -230,4 +230,4 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
 - `Hacker News` crawler: crawls the best, most recent an most popular Hacker News stories
 - `PMC` crawler: crawls medical articles from PubMed Central and indexes them into Vectara.
-- `Arxiv` crawler: crawls the top (most cited) Arxiv artcles about a topic and indexes them into Vectara.
+- `Arxiv` crawler: crawls the top (most cited or latest) Arxiv articles about a topic and indexes them into Vectara.

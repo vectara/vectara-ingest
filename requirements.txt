@@ -37,7 +37,7 @@ xmltodict==0.13.0
 nbconvert==7.2.10
 nbformat==5.8.0
 docutils==0.20.1
-arxiv==1.4.4
+arxiv==1.4.7
 trafilatura==1.5.0
 sqlalchemy==2.0.14
 pymysql==1.0.3

@@ -3,6 +3,17 @@ from core.crawler import Crawler
 import arxiv
 from core.utils import create_session_with_retries
 
+def validate_category(category: str):
+    valid_categories = [
+        "cs", "econ", "q-fin","stat",
+        "math", "math-ph", "q-bio", "stat-mech",
+        "physics", "astro-ph", "cond-mat", "gr-qc", "hep-ex", "hep-lat", "hep-ph", 
+        "hep-th", "nucl-ex", "nucl-th", "physics-ao-ph", "physics-ao-pl", "physics-ao-po",
+        "physics-ao-ps", "physics-app-ph",
+        "quant-ph"
+    ]
+    return category in valid_categories
+
 class ArxivCrawler(Crawler):
 
     def get_citations(self, arxiv_id):
@@ -45,18 +56,31 @@ class ArxivCrawler(Crawler):
         n_papers = self.cfg.arxiv_crawler.n_papers
         query_terms = self.cfg.arxiv_crawler.query_terms
         year = self.cfg.arxiv_crawler.start_year
+        category = self.cfg.arxiv_crawler.arxiv_category
+        if not validate_category(category):
+            logging.info(f"Invalid arxiv category: {category}, please check the config file")
+            exit(1)
 
         # setup requests session and mount adapter to retry requests
         self.session = create_session_with_retries()
 
         # define query for arxiv: search for the query in the "computer science" (cs.*) category
-        # We pull 100x papers so that we can get citations and enough highly cited paper.
-        query = "cat:cs.* AND " + ' AND '.join([f'all:{q}' for q in query_terms])
-        search = arxiv.Search(
-            query = query,
-            max_results = n_papers*100,
-            sort_by = arxiv.SortCriterion.Relevance
-        )
+        query = f"cat:{category}.* AND " + ' AND '.join([f'all:{q}' for q in query_terms])
+        if self.cfg.arxiv_crawler.sort_by == 'citations':
+            # for sort by n_citations We pull 100x papers so that we can get citations and enough highly cited paper.
+            search = arxiv.Search(
+                query = query,
+                max_results = n_papers*100,
+                sort_by = arxiv.SortCriterion.Relevance,
+                sort_order = arxiv.SortOrder.Descending
+            )
+        else:
+            search = arxiv.Search(
+                query = query,
+                max_results = n_papers,
+                sort_by = arxiv.SortCriterion.submittedDate,
+                sort_order = arxiv.SortOrder.Descending
+            )
 
         # filter by publication year
         papers = []
@@ -79,8 +103,11 @@ class ArxivCrawler(Crawler):
             logging.info(f"Exception {e}, we have {len(papers)} papers already, so will continue with indexing")
 
         # sort by citation count and get top n papers
-        sorted_papers = sorted(papers, key=lambda x: x['citation_count'], reverse=True) 
-        top_n = sorted_papers[:n_papers]
+        if self.cfg.arxiv_crawler.sort_by == 'citations':
+            sorted_papers = sorted(papers, key=lambda x: x['citation_count'], reverse=True) 
+            top_n = sorted_papers[:n_papers]
+        else:
+            top_n = papers
 
         # Index top papers selected in Vectara
         for paper in top_n:
