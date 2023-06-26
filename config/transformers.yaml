@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 170
+  customer_id: 1526022105
+  reindex: True
+
+crawling:
+  crawler_type: arxiv
+
+arxiv_crawler:
+  query_terms: ["transformers", "attention", "language"]
+  arxiv_category: cs
+  n_papers: 100
+  sort_by: citations # citations or date
+  start_year: 2017

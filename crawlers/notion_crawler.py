@@ -61,18 +61,23 @@ class NotionCrawler(Crawler):
                 logging.error(f"Failed to get blocks for page {page['url']}: {e}")
                 continue
             segments = []
+            metadatas = []
             for block in blocks:
                 text = get_text_from_block(block)
                 if len(text)>2:
                     segments.append(text)
+                    metadatas.append({'block_id': block['id'], 'block_type': block['type']})
             doc_id = page['url']
             if len(segments)>0:
                 logging.info(f"Indexing {len(segments)} segments in page {doc_id}")
-                succeeded = self.indexer.index_segments(doc_id, segments, metadata={'source': 'notion', 'title': title, 'url': page['url']})
+                succeeded = self.indexer.index_segments(doc_id, segments, metadatas, doc_metadata={'source': 'notion', 'title': title, 'url': page['url']})
                 if succeeded:
                     logging.info(f"Indexed notion page {doc_id}")
                 else:
-                    logging.info(f"Error indexing notion page {doc_id}")
+                    logging.info(f"Indexing failed for notion page {doc_id}, deleting document from corpus, then trying to index again")
+                    self.indexer.delete_doc(doc_id)   # doc_id is the URL itself
+                    self.indexer.index_segments(doc_id, segments, metadatas, doc_metadata={'source': 'notion', 'title': title, 'url': page['url']})
+                    logging.info(f"Finished reindexing for notion page {doc_id}")
             else:
                 logging.info(f"No text found in notion page {doc_id}")
             

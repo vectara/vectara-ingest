@@ -1,74 +1,28 @@
 import logging
 import json
 import os
-from omegaconf import OmegaConf
 from slugify import slugify         # type: ignore
-from bs4 import BeautifulSoup
-import requests
-from requests.adapters import HTTPAdapter, Retry
-
+import time
 import asyncio
-from unstructured.partition.html import partition_html
-from unstructured.partition.pdf import partition_pdf
-import unstructured as us
+from core.utils import create_session_with_retries
 
+from goose3 import Goose
+
+from omegaconf import OmegaConf
 from nbconvert import HTMLExporter
 import nbformat
 import markdown
 import docutils.core
-
-from playwright.async_api import async_playwright 
 from core.utils import html_to_text
 
-async def fetch_content_with_timeout(url, timeout=30):
-    '''
-    Fetch content from a URL with a timeout.
+from unstructured.partition.pdf import partition_pdf
+import unstructured as us
+from playwright.sync_api import sync_playwright 
 
-    Args:
-        url (str): URL to fetch.
-        timeout (int, optional): Timeout in seconds. Defaults to 30.
-
-    Returns:
-        str: Content from the URL.
-    '''
-    async with async_playwright() as playwright:
-        browser = await playwright.firefox.launch()
-        page = await browser.new_page()
-        try:
-            await asyncio.wait_for(page.goto(url), timeout=timeout)
-            content = await page.content()
-        except asyncio.TimeoutError:
-            logging.info(f"Page loading timed out for {url}")
-            content = None
-        finally:
-            await page.close()
-            await browser.close()
-        return content
-
-def get_content_type_and_status(url: str):
-    '''
-    Get the content type and status code for a URL.
-
-    Args:
-        url (str): URL to fetch.
-
-    Returns:
-        tuple: status code and content_type
-    '''
-    headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        return response.status_code, ''
-    else:
-        return response.status_code, str(response.headers["Content-Type"])
 
 class Indexer(object):
     """
     Vectara API class.
-
     Args:
         endpoint (str): Endpoint for the Vectara API.
         customer_id (str): ID of the Vectara customer.
@@ -82,21 +36,40 @@ class Indexer(object):
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
+        self.timeout = 30
 
-        self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=5)
-        self.session.mount('http://', adapter)
+        # setup requests session and mount adapter to retry requests
+        self.session = create_session_with_retries()
 
-    def _check_response(self, response) -> bool:
-        if response.status_code != 200:
-            logging.error("REST upload failed with code %d, reason %s, text %s",
-                        response.status_code,
-                        response.reason,
-                        response.text)
-            return False
-        else:
-            return True
-        
+        # create playwright browser so we can reuse it across all Indexer operations
+        p = sync_playwright().start()
+        self.browser = p.firefox.launch(headless=True)
+
+    def fetch_content_with_timeout(self, url: str, timeout: int = 30):
+        '''
+        Fetch content from a URL with a timeout.
+        Args:
+            url (str): URL to fetch.
+            timeout (int, optional): Timeout in seconds. Defaults to 30.
+        Returns:
+            str: Content from the URL.
+        '''
+        page = self.browser.new_page()
+        page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
+            if route.request.resource_type == "image" 
+            else route.continue_() 
+        ) 
+        try:
+            # goto page
+            page.goto(url, timeout=timeout*1000)
+            content = page.content()
+        except asyncio.TimeoutError:
+            logging.info(f"Page loading timed out for {url}")
+            content = None
+        finally:
+            page.close()
+        return content
+
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str):
         """
@@ -174,31 +147,38 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
+        st = time.time()
         try:
-            status_code, content_type = get_content_type_and_status(url)
+            headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            }
+            response = self.session.get(url, headers=headers, timeout=self.timeout)
+            if response.status_code != 200:
+                logging.info(f"Page {url} is unavailable ({response.status_code})")
+                return False
+            else:
+                content_type = str(response.headers["Content-Type"])
         except Exception as e:
-            logging.info(f"Failed to crawl {url} to get content_type and status_code, skipping...")
+            logging.info(f"Failed to crawl {url} to get content_type, skipping...")
             return False
         
-        if status_code != 200:
-            logging.info(f"Page {url} is unavailable ({status_code})")
-            return False
-
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition_pdf from  "unstructured.io" to extract the content
         if content_type == 'application/pdf':
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             fname = 'tmp.pdf'
             with open(fname, 'wb') as f:
                 f.write(response.content)
             elements = partition_pdf(fname, strategy='auto')
+            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
 
         # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             dl_content = response.content
             if url.endswith('rst'):
@@ -209,42 +189,43 @@ class Indexer(object):
                 nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            soup = BeautifulSoup(html_content, 'html.parser')
             title = url.split('/')[-1]      # no title in these files, so using file name
-            elements = partition_html(text=html_content)
+            text = html_to_text(html_content)
+            parts = [text]
+
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                content = asyncio.run(fetch_content_with_timeout(url))
+                html_content = self.fetch_content_with_timeout(url)
+                if html_content is None:
+                    return False
+                article = Goose().extract(raw_html=html_content)
+                title = article.title
+                text = article.cleaned_text
+                parts = [text]
+                logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}")
                 return False
-            if content is None:
-                return False
-            soup = BeautifulSoup(content, 'html.parser')
-            title = soup.title.string if soup.title else 'No Title'
-            elements = partition_html(text=content)
 
-        # only capture the text elements (as str) and ignore others        
-        elements = [str(e) for e in elements if type(e)==us.documents.elements.NarrativeText]
-
-        succeeded = self.index_segments(doc_id=slugify(url), parts=elements, metadata=metadata, title=title)
+        succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
+                                        doc_metadata=metadata, title=title)
         if succeeded:
-            logging.info(f"Indexing for {url} succeesful")
             return True
         else:
-            logging.info(f"Did not index {url}")
             return False
 
-    def index_segments(self, doc_id: str, parts: list, metadata: dict, title: str = None) -> bool:
+    def index_segments(self, doc_id: str, parts: list, metadatas: list, doc_metadata: dict = None, title: str = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
         """
         document = {}
         document["documentId"] = doc_id
-        document["title"] = title
-        document["section"] = [{"text": part} for part in parts]
-        document["metadataJson"] = json.dumps(metadata)
+        if title:
+            document["title"] = title
+        document["section"] = [{"text": part, "metadataJson": json.dumps(md)} for part,md in zip(parts,metadatas)]
+        if doc_metadata:
+            document["metadataJson"] = json.dumps(doc_metadata)
         return self.index_document(document)
     
     def index_document(self, document: dict) -> bool:
@@ -275,14 +256,26 @@ class Indexer(object):
             logging.info(f"Exception {e} while indexing document {document['documentId']}")
             return False
 
+        if response.status_code != 200:
+            logging.error("REST upload failed with code %d, reason %s, text %s",
+                          response.status_code,
+                          response.reason,
+                          response.text)
+            return False
+
         result = response.json()
         if "status" in result and result["status"] and "ALREADY_EXISTS" in result["status"]["code"]:
             if self.reindex:
                 logging.info(f"Document {document['documentId']} already exists, re-indexing")
                 self.delete_doc(document['documentId'])
                 response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
+                return True
             else:
                 logging.info(f"Document {document['documentId']} already exists, skipping")
                 return False
+        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
+            return True
+        
+        logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        return False
 
-        return self._check_response(response)

@@ -1,7 +1,6 @@
 import logging
 import os
 from usp.tree import sitemap_tree_for_homepage      # type: ignore
-from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
@@ -21,8 +20,8 @@ class WebsiteCrawler(Crawler):
         crawled_urls = set()
 
         if 'url_regex' in self.cfg.website_crawler:
+            url_regex = [re.compile(r) for r in self.cfg.website_crawler.url_regex]
             logging.info(f"Filtering URLs by these regular expressions: {self.cfg.website_crawler.url_regex}")
-            url_regex = re.compile(self.cfg.website_crawler.url_regex)
         else:
             url_regex = None
 
@@ -35,7 +34,7 @@ class WebsiteCrawler(Crawler):
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, domain=hp_domain)
 
             if url_regex:
-                urls = [u for u in urls if url_regex.match(u)]
+                urls = [u for u in urls if any([r.match(u) for r in url_regex])]
     
             logging.info(f"Finished crawling using {homepage}, found {len(urls)} URLs to index")
 
@@ -67,7 +66,8 @@ class WebsiteCrawler(Crawler):
                     except Exception as e:
                         import traceback
                         logging.error(f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}")
-                else:   # use index_url which does not go through PDF
+                else:   # use index_url which uses PlayWright
+                    logging.info(f"Crawling and indexing {url}")
                     with rate_limiter:
                         succeeded = self.indexer.index_url(url, metadata=metadata)
                     if not succeeded:
@@ -75,4 +75,6 @@ class WebsiteCrawler(Crawler):
                         doc_id = url
                         self.indexer.delete_doc(doc_id)   # doc_id is the URL itself
                         self.indexer.index_url(url, metadata=metadata)
+                        logging.info(f"Finished deleting and reindexing page {url}")
                     crawled_urls.add(url)
+                    logging.info(f"Crawled {url} successfully")

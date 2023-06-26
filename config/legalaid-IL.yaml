@@ -1,14 +1,14 @@
 vectara:
-  corpus_id: 141
+  corpus_id: 166
   customer_id: 1526022105
-  reindex: true
+  reindex: false
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  urls: [https://vectara.com]
+  urls: [https://www.illinoislegalaid.org/]
+  url_regex: [".*illinoislegalaid.*"]
   delay: 1
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  url_regex: ".*" # regex string or None; ".*" would match any string.
-  extraction: playwright # pdf or html
+  extraction: playwright # pdf or playwright

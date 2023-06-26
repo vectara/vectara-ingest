@@ -7,7 +7,13 @@ crawling:
   crawler_type: docusaurus
 
 docusaurus_crawler:
-  docs_homepage: "https://docs.langchain.com/docs"
+  base_urls:
+    [
+      "https://docs.langchain.com/docs",
+      "https://python.langchain.com",
+      "https://js.langchain.com",
+      "https://blog.langchain.dev",
+    ]
   url_regex:
     [
       ".*langchain.com/docs.*",
@@ -15,3 +21,4 @@ docusaurus_crawler:
       ".*js.langchain.com.*",
       ".*blog.langchain.dev.*",
     ]
+  extensions_to_ignore: ["md", "rst", "ipynb"]

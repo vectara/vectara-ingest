@@ -1,0 +1,15 @@
+vectara:
+  corpus_id: 169
+  customer_id: 1526022105
+  reindex: true
+
+crawling:
+  crawler_type: database
+
+database_crawler:
+  db_url: "postgresql+pg8000://ofer:yelp@192.168.7.26:5432/yelp"
+  db_table: yelp_reviews
+  select_condition: "city='St. Louis'"
+  doc_id_columns: [business_name]
+  text_columns: [business_name, review_text]
+  metadata_columns: [city, state, postal_code]

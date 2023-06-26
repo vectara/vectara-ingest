@@ -2,13 +2,12 @@ import logging
 import os
 from Bio import Entrez
 import json
-from lxml import etree
+from bs4 import BeautifulSoup
 from ratelimiter import RateLimiter
-import requests
 import xmltodict
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from core.utils import html_to_text
+from core.utils import html_to_text, create_session_with_retries
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 
@@ -34,6 +33,7 @@ class PmcCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.site_urls = set()
         self.crawled_pmc_ids = set()
+        self.session = create_session_with_retries()
 
     def index_papers_by_topic(self, topic: str, n_papers: int):
         """
@@ -55,7 +55,7 @@ class PmcCrawler(Crawler):
             params = {"db": "pmc", "id": pmc_id, "retmode": "xml", "tool": "python_script", "email": email}
             try:
                 with rate_limiter:
-                    response = requests.get(base_url, params=params)
+                    response = self.session.get(base_url, params=params)
             except Exception as e:
                 logging.info(f"Failed to download paper {pmc_id} due to error {e}, skipping")
                 continue
@@ -63,18 +63,17 @@ class PmcCrawler(Crawler):
                 logging.info(f"Failed to download paper {pmc_id}, skipping")
                 continue
 
-            xml_data = response.text
-            root = etree.fromstring(xml_data)
+            soup = BeautifulSoup(response.text, "xml")
 
             # Extract the title
-            title = root.find(".//article-title")
+            title = soup.find("article-title")
             if title is not None:
                 title = title.text
             else:
                 title = "Title not found"
-
+    
             # Extract the publication date
-            pub_date = root.find(".//pub-date")
+            pub_date = soup.find("pub-date")
             if pub_date is not None:
                 year = pub_date.find("year")
                 month = pub_date.find("month")
@@ -103,7 +102,7 @@ class PmcCrawler(Crawler):
                 }),
                 "section": []
             }
-            for paragraph in root.findall(".//body//p"):
+            for paragraph in soup.findall('body p'):
                 document['section'].append({
                     "text": paragraph.text,
                 })
@@ -112,12 +111,29 @@ class PmcCrawler(Crawler):
             if not succeeded:
                 logging.info(f"Failed to index document {pmc_id}")
 
-    def index_medline_plus(self, topics: list):
-        today = datetime.now().strftime("%Y-%m-%d")
-        url = f'https://medlineplus.gov/xml/mplus_topics_{today}.xml'
-        response = requests.get(url)
+    def _get_xml_dict(self):
+        days_back = 1
+        max_days = 30
+        while (days_back <= max_days):
+            xml_date = (datetime.now() - timedelta(days = days_back)).strftime("%Y-%m-%d")
+            url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
+            response = self.session.get(url)
+            if response.status_code == 200:
+                break
+            days_back += 1
+        if days_back == max_days:
+            logging.info(f"Could not find medline plus topics after checkint last {max_days} days")
+            return {}
+
+        logging.info(f"Using MedlinePlus topics from {xml_date}")        
+        url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
+        response = self.session.get(url)
         response.raise_for_status()
         xml_dict = xmltodict.parse(response.text)
+        return xml_dict
+
+    def index_medline_plus(self, topics: list):
+        xml_dict = self._get_xml_dict()
         logging.info(f"Indexing {xml_dict['health-topics']['@total']} health topics from MedlinePlus")    
         rate_limiter = RateLimiter(max_calls=3, period=1)
 
@@ -160,7 +176,7 @@ class PmcCrawler(Crawler):
             logging.info(f"Indexing data about {title}")
             succeeded = self.indexer.index_document(document)
             if not succeeded:
-                logging.info(f"Failed to index document {title}")
+                logging.info(f"Failed to index document with title {title}")
                 continue
             for site in ht['site']:
                 site_title = site['@title']
