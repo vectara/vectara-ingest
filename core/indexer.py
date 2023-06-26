@@ -207,7 +207,6 @@ class Indexer(object):
             title = article.title
             text = article.cleaned_text
             parts = [text]
-            logging.info(f"DEBUG url={url}, title={title}, text={text}")
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
                                         doc_metadata=metadata, title=title)
