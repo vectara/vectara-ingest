@@ -75,6 +75,6 @@ class WebsiteCrawler(Crawler):
                         doc_id = url
                         self.indexer.delete_doc(doc_id)   # doc_id is the URL itself
                         self.indexer.index_url(url, metadata=metadata)
-                        logging.info(f"Finished reindexing page {url}")
+                        logging.info(f"Finished deleting and reindexing page {url}")
                     crawled_urls.add(url)
                     logging.info(f"Crawled {url} successfully")
