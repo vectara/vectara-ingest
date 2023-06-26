@@ -269,6 +269,7 @@ class Indexer(object):
                 logging.info(f"Document {document['documentId']} already exists, re-indexing")
                 self.delete_doc(document['documentId'])
                 response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
+                return True
             else:
                 logging.info(f"Document {document['documentId']} already exists, skipping")
                 return False
