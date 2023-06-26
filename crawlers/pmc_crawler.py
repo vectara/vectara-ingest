@@ -102,7 +102,7 @@ class PmcCrawler(Crawler):
                 }),
                 "section": []
             }
-            for paragraph in root.findall(".//body//p"):
+            for paragraph in soup.findall('body p'):
                 document['section'].append({
                     "text": paragraph.text,
                 })

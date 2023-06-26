@@ -1,0 +1,13 @@
+vectara:
+  corpus_id: 40
+  customer_id: 1169579801
+  reindex: true
+
+crawling:
+  crawler_type: csv
+
+csv_crawler:
+  csv_path: "/Users/ofer/temp/Game_of_Thrones_Script.csv"
+  doc_id_columns: [Season, Episode]
+  text_columns: [Name, Sentence]
+  metadata_columns: ["Season", "Episode", "Episode Title"]
