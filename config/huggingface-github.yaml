@@ -10,12 +10,12 @@ github_crawler:
   owner: "huggingface"
   repos:
     [
-      "transformers",
-      "datasets",
-      "tokenizers",
       "accelerate",
-      "optimum",
+      "datasets",
       "diffusers",
+      "optimum",
       "peft",
+      "tokenizers",
+      "transformers",
     ]
   crawl_code: false

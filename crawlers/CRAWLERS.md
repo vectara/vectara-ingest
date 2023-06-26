@@ -9,18 +9,6 @@
 `vectara-ingest` includes a number of crawlers that make it easy to crawl data sources and index the results into Vectara.
 Let's go through each of these crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
-## Supported Integrations
-<table>
-  <tr>
-    <td align="center"><a href="https://www.atlassian.com/software/jira"><img src="../img/jira-logo.png" width="50px;" alt="Jira logo"/><br /></a></td>
-    <td align="center"><a href="https://www.notion.so/"><img src="../img/notion-logo.png" width="50px;" alt="Notion logo"/><br /></a></td>
-    <td align="center"><a href="https://docusaurus.io/"><img src="../img/docusaurus-logo.svg" width="50px;" alt="Docusaurus logo"/><br /></a></td>
-    <td align="center"><a href="https://arxiv.org/"><img src="../img/arxiv-logo.png"  width="50px;" alt="Arxiv logo"/><br /></a></td>
-    <td align="center"><a href="https://www.discourse.org/"><img src="../img/discourse-logo.png"  width="50px;" alt="Arxiv logo"/><br /></a></td>
-    <td align="center"><a href="https://www.mediawiki.org/wiki/MediaWiki"><img src="../img/mediawiki-logo.svg"  width="50px;" alt="mediawiki logo"/><br /></a></td>
-  </tr>
-</table>
-
 ### Website crawler
 
 ```yaml

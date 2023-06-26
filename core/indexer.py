@@ -6,17 +6,9 @@ import time
 import asyncio
 from core.utils import create_session_with_retries
 
-from trafilatura import extract, extract_metadata
-
-# Disable logging msgs from imported packages like trafilatura
-import logging.config
-logging.config.dictConfig({
-    'version': 1,
-    'disable_existing_loggers': True,
-})
+from goose3 import Goose
 
 from omegaconf import OmegaConf
-import requests
 from nbconvert import HTMLExporter
 import nbformat
 import markdown
@@ -211,10 +203,11 @@ class Indexer(object):
             logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             if html_content is None:
                 return False
-            text = extract(html_content)
-            md = extract_metadata(html_content)
-            title = md.title if md else "No title"
+            article = Goose().extract(raw_html=html_content)
+            title = article.title
+            text = article.cleaned_text
             parts = [text]
+            logging.info(f"DEBUG url={url}, title={title}, text={text}")
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
                                         doc_metadata=metadata, title=title)

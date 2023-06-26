@@ -7,7 +7,7 @@ crawling:
   crawler_type: website
 
 website_crawler:
-  urls: [https://vectara.com]
+  urls: ["https://vectara.com"]
   delay: 1
   pages_source: sitemap
   url_regex: [".*"]

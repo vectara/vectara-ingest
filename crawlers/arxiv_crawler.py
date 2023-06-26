@@ -102,6 +102,10 @@ class ArxivCrawler(Crawler):
         except Exception as e:
             logging.info(f"Exception {e}, we have {len(papers)} papers already, so will continue with indexing")
 
+        if len(papers) == 0:
+            logging.info(f"Found 0 papers for query: {query}, ignore crawl")
+            return
+
         # sort by citation count and get top n papers
         if self.cfg.arxiv_crawler.sort_by == 'citations':
             sorted_papers = sorted(papers, key=lambda x: x['citation_count'], reverse=True) 

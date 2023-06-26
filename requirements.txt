@@ -38,7 +38,7 @@ nbconvert==7.2.10
 nbformat==5.8.0
 docutils==0.20.1
 arxiv==1.4.7
-trafilatura==1.5.0
+goose3==3.1.16
 sqlalchemy==2.0.14
 pymysql==1.0.3
-psycopg2-binary==2.9.6
+pg8000==1.29.8

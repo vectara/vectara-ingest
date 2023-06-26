@@ -69,7 +69,7 @@ Start the crawler job:
 ```sh
 bash run.sh config/pg-rss.yaml default
 ```
-For Microsoft Windows, make sure you run this command from within the WSL environment (after running `wsl` to enter the Linux environment).
+For Microsoft Windows, make sure you run this command from within the WSL 2 environment (after running `wsl` to enter the Linux environment).
 
 The crawler executes inside of a [Docker container](https://www.docker.com/resources/what-container/) to protect your system’s resources and make it easier to move your crawlers to the cloud. This is a good time to grab a coffee or snack – the container needs to install a lot of dependencies, which will take some time.
 
@@ -170,7 +170,8 @@ The `Indexer` class provides useful functionality to index documents into Vectar
 
 ##### `index_url()`
 
-This is probably the most useful method. It takes a URL as input and extracts the content from that URL (using the `playwright` and `unstructured` libraries), then sends that content to Vectara using the standard indexing API. If the URL points to a PDF document, special care is taken to ensure proper processing.
+This is probably the most useful method. It takes a URL as input and extracts the content from that URL (using the `playwright` and `Goose3` libraries), then sends that content to Vectara using the standard indexing API. If the URL points to a PDF document, special care is taken to ensure proper processing.
+Please note that we use `Goose3` to extract the main (most important) content of the article, ignoring links, ads and other not-important content. If your crawled content has different requirements you can change the code to use a different extraction mechanism (html to text).
 
 ##### `index_file()`
 

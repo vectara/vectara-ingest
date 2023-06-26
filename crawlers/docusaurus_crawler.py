@@ -47,7 +47,7 @@ class DocusaurusCrawler(Crawler):
         return crawled_urls
 
     def crawl(self):
-        self.extensions_to_ignore = list(set(self.cfg.docusaurus_crawler.extensions_to_ignore + ["png", "svg", "jpeg", "jpg", "gif", "mp4"]))
+        self.extensions_to_ignore = list(set(self.cfg.docusaurus_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
         all_urls = self.get_urls(self.cfg.docusaurus_crawler.base_urls)
 
         url_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
