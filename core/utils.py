@@ -7,7 +7,7 @@ def html_to_text(html):
 
 def create_session_with_retries(retries: int = 3):
     session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=5)
+    adapter = requests.adapters.HTTPAdapter(max_retries=3)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
