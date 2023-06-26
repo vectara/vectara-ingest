@@ -197,16 +197,16 @@ class Indexer(object):
         else:
             try:
                 html_content = self.fetch_content_with_timeout(url)
+                if html_content is None:
+                    return False
+                article = Goose().extract(raw_html=html_content)
+                title = article.title
+                text = article.cleaned_text
+                parts = [text]
+                logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}")
                 return False
-            logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
-            if html_content is None:
-                return False
-            article = Goose().extract(raw_html=html_content)
-            title = article.title
-            text = article.cleaned_text
-            parts = [text]
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
                                         doc_metadata=metadata, title=title)

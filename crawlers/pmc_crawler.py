@@ -2,7 +2,7 @@ import logging
 import os
 from Bio import Entrez
 import json
-from lxml import etree
+from bs4 import BeautifulSoup
 from ratelimiter import RateLimiter
 import xmltodict
 from datetime import datetime, timedelta
@@ -63,18 +63,17 @@ class PmcCrawler(Crawler):
                 logging.info(f"Failed to download paper {pmc_id}, skipping")
                 continue
 
-            xml_data = response.text
-            root = etree.fromstring(xml_data)
+            soup = BeautifulSoup(response.text, "xml")
 
             # Extract the title
-            title = root.find(".//article-title")
+            title = soup.find("article-title")
             if title is not None:
                 title = title.text
             else:
                 title = "Title not found"
-
+    
             # Extract the publication date
-            pub_date = root.find(".//pub-date")
+            pub_date = soup.find("pub-date")
             if pub_date is not None:
                 year = pub_date.find("year")
                 month = pub_date.find("month")
