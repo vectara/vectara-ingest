@@ -32,7 +32,7 @@ if [[ "$crawler_type" == "folder" ]]; then
 elif [[ "$crawler_type" == "csv" ]]; then
     # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
     csv_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['csv_path'])"`
-    docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -v $csv_path:/home/vectara/data -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
+    docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -v $csv_path:/home/vectara/data/file.csv -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 else
     docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 fi
