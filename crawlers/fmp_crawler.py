@@ -67,7 +67,7 @@ class FmpCrawler(Crawler):
                     doc_title = f"10-K for {company_name} from {year}"
                     rel_filings = [f for f in filings if f['acceptedDate'][:4] == str(year)]
                     url = rel_filings[0]['finalLink'] if len(rel_filings)>0 else None
-                    metadata = {'source': 'finsearch', 'title': doc_title, 'ticker': ticker, 'compnay name': company_name, 'year': year, 'type': '10-K', 'url': url}
+                    metadata = {'source': 'finsearch', 'title': doc_title, 'ticker': ticker, 'company name': company_name, 'year': year, 'type': '10-K', 'url': url}
                     document = {
                         "documentId": f"10-K-{company_name}-{year}",
                         "title": doc_title,
@@ -97,7 +97,7 @@ class FmpCrawler(Crawler):
                     if response.status_code == 200:
                         for transcript in response.json():
                             title = f"Earnings call transcript for {company_name}, quarter {quarter} of {year}"
-                            metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'compnay name': company_name, 'year': year, 'quarter': quarter, 'type': 'transcript'}
+                            metadata = {'source': 'finsearch', 'title': title, 'ticker': ticker, 'company name': company_name, 'year': year, 'quarter': quarter, 'type': 'transcript'}
                             document = {
                                 "documentId": f"transcript-{company_name}-{year}-{quarter}",
                                 "title": title,
