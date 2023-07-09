@@ -17,7 +17,7 @@ from core.utils import html_to_text
 
 from unstructured.partition.pdf import partition_pdf
 import unstructured as us
-from playwright.sync_api import sync_playwright 
+from playwright.sync_api import sync_playwright, PlaywrightTimeoutError
 
 
 class Indexer(object):
@@ -72,6 +72,7 @@ class Indexer(object):
             logging.info(f"Page loading failed for {url} with exception {e}, recreating browser context")
             content = None
             out_url = None
+            self.browser.close()
             p = sync_playwright().start()
             self.browser = p.firefox.launch(headless=True)
         finally:
