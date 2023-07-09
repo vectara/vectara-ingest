@@ -63,12 +63,20 @@ class Indexer(object):
             # goto page
             page.goto(url, timeout=timeout*1000)
             content = page.content()
+            out_url = page.url
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = None
+            out_url = None
+        except Exception as e:
+            logging.info(f"Page loading failed for {url} with exception {e}, recreating browser context")
+            content = None
+            out_url = None
+            p = sync_playwright().start()
+            self.browser = p.firefox.launch(headless=True)
         finally:
             page.close()
-        return content
+        return out_url, content
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str):
@@ -196,9 +204,10 @@ class Indexer(object):
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                html_content = self.fetch_content_with_timeout(url)
+                actual_url, html_content = self.fetch_content_with_timeout(url)
                 if html_content is None:
                     return False
+                url = actual_url
                 article = Goose().extract(raw_html=html_content)
                 title = article.title
                 text = article.cleaned_text

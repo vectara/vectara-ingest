@@ -23,7 +23,7 @@ website_crawler:
 ```
 
 The website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
-1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of URLs) and indexes all the URLs listed in each sitemap
+1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of URLs) and indexes all the URLs listed in each sitemap. Note that some sitemaps are partial only and do not list all content of the website - in those cases, `crawl` may be a better option.
 2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
 
 The `extraction` parameter defines how page content is extracted from URLs. 

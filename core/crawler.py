@@ -1,40 +1,45 @@
 from omegaconf import OmegaConf
-from slugify import slugify         # type: ignore
+from slugify import slugify  # type: ignore
 import requests
-from core.indexer import Indexer
-from core.pdf_convert import PDFConverter
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import logging
 
-def recursive_crawl(url, depth, domain=None, visited=None):
-    if visited is None:
-        visited = set()
+from core.indexer import Indexer
+from core.pdf_convert import PDFConverter
+from core.utils import binary_extensions
 
-    # Check if the depth limit has been reached or if the URL has already been visited
-    if depth <= 0 or url in visited:
+def recursive_crawl(url, depth, url_regex, visited=None, session=None):
+    if depth <= 0:
         return visited
 
-    # make sure the domain of the URL is within the domain we are crawling    
-    if domain:
-        url_domain = "{uri.netloc}".format(uri=urlparse(url))
-        if url_domain != domain:
-            return visited
+    if visited is None:
+        visited = set()
+    if session is None:
+        session = requests.Session()
+
+    url_without_fragment = url.split("#")[0]
+    if any([url_without_fragment.endswith(ext) for ext in binary_extensions]):
+        return visited
 
     visited.add(url)
+    if url.endswith(".pdf") or url.endswith(".docx") or url.endswith(".pptx") or url.endswith(".xlsx"):
+        return visited
+
     try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        response = session.get(url)
+        logging.info(f"DEBUG 1: url = {url}")
+        soup = BeautifulSoup(response.content, "html.parser")
+        logging.info(f"DEBUG 2: url = {url}")
 
         # Find all anchor tags and their href attributes
-        for link in soup.find_all('a', href=True):
-            href = link['href']
-            # Join the base URL with the found href to get the absolute URL
-            new_url = urljoin(url, href)
-            # Check if the new URL has the same domain as the base URL
-            if urlparse(url).netloc == urlparse(new_url).netloc:
-                visited = recursive_crawl(new_url, depth - 1, domain, visited)
-    except requests.exceptions.RequestException:
+        new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]
+        new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and any([r.match(u) for r in url_regex])]
+        visited.update(new_urls)
+        for new_url in new_urls:
+            visited = recursive_crawl(new_url, depth-1, url_regex, visited, session)
+    except Exception as e:
+        logging.info(f"Error {e} in recursive_crawl for {url}")
         pass
 
     return visited
@@ -50,7 +55,15 @@ class Crawler(object):
         token (str): Bearer JWT token
         corpus_id (int): ID of the Vectara corpus to index to.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
+
+    def __init__(
+        self,
+        cfg: OmegaConf,
+        endpoint: str,
+        customer_id: str,
+        corpus_id: int,
+        api_key: str,
+    ) -> None:
         self.cfg = cfg
         reindex = self.cfg.vectara.get("reindex", False)
         self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex)
@@ -62,10 +75,10 @@ class Crawler(object):
         Args:
             url (str): URL of the page to crawl.
             title (str): Title to use in case HTML does not have its own title.
-        
+
         Returns:
             str: Name of the PDF file created.
-        """        
+        """
         # first verify the URL is valid
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
@@ -92,10 +105,12 @@ class Crawler(object):
             elif response.status_code == 405:
                 raise Exception(f"Error 405 - Method not allowed: {url}")
             else:
-                raise Exception(f"Invalid URL: {url} (status code={response.status_code}, reason={response.reason})")
+                raise Exception(
+                    f"Invalid URL: {url} (status code={response.status_code}, reason={response.reason})"
+                )
 
         if title is None:
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(response.text, "html.parser")
             title = soup.title.string
 
         # convert to local file (PDF)
@@ -107,4 +122,3 @@ class Crawler(object):
 
     def crawl(self):
         raise "Not implemented"
-
