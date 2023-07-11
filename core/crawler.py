@@ -28,9 +28,7 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
 
     try:
         response = session.get(url)
-        logging.info(f"DEBUG 1: url = {url}")
         soup = BeautifulSoup(response.content, "html.parser")
-        logging.info(f"DEBUG 2: url = {url}")
 
         # Find all anchor tags and their href attributes
         new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]

@@ -5,7 +5,7 @@ from urllib.parse import urlparse, urlunparse, ParseResult
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico", "ps"]
 doc_extensionss = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf"]
 binary_extensions = ["zip"] + img_extensions + doc_extensionss
-
+    
 def html_to_text(html):
     soup = BeautifulSoup(html, features='html.parser')
     return soup.get_text()

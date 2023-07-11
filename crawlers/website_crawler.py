@@ -35,6 +35,7 @@ class WebsiteCrawler(Crawler):
 
             if url_regex:
                 urls = [u for u in urls if any([r.match(u) for r in url_regex])]
+            urls = list(set(urls))
 
             logging.info(
                 f"Finished crawling using {homepage}, found {len(urls)} URLs to index"

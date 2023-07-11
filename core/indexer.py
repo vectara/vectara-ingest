@@ -15,9 +15,9 @@ import markdown
 import docutils.core
 from core.utils import html_to_text
 
-from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.auto import partition
 import unstructured as us
-from playwright.sync_api import sync_playwright, PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 
 class Indexer(object):
@@ -54,13 +54,12 @@ class Indexer(object):
         Returns:
             str: Content from the URL.
         '''
-        page = self.browser.new_page()
-        page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
-            if route.request.resource_type == "image" 
-            else route.continue_() 
-        ) 
         try:
-            # goto page
+            page = self.browser.new_page()
+            page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
+                if route.request.resource_type == "image" 
+                else route.continue_() 
+            ) 
             page.goto(url, timeout=timeout*1000)
             content = page.content()
             out_url = page.url
@@ -68,15 +67,18 @@ class Indexer(object):
             logging.info(f"Page loading timed out for {url}")
             content = None
             out_url = None
+            page = None
         except Exception as e:
-            logging.info(f"Page loading failed for {url} with exception {e}, recreating browser context")
+            if e == 'Download is starting':
+                logging.info(f"Downloading starting for {url}, ignoring...")
+                return '', ''
+            logging.info(f"Page loading failed for {url} with exception '{e}'")
             content = None
             out_url = None
-            self.browser.close()
-            p = sync_playwright().start()
-            self.browser = p.firefox.launch(headless=True)
+            page = None
         finally:
-            page.close()
+            if page:
+                page.close()
         return out_url, content
 
     # delete document; returns True if successful, False otherwise
@@ -173,17 +175,21 @@ class Indexer(object):
             return False
         
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
-        # If PDF then use partition_pdf from  "unstructured.io" to extract the content
-        if content_type == 'application/pdf':
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            fname = 'tmp.pdf'
-            with open(fname, 'wb') as f:
-                f.write(response.content)
-            elements = partition_pdf(fname, strategy='auto')
-            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-            title = titles[0] if len(titles)>0 else 'unknown'
+        # If PDF then use partition from  "unstructured.io" to extract the content
+        if content_type == 'application/pdf' or url.endswith(".pdf"):
+            try:
+                response = self.session.get(url, timeout=self.timeout)
+                response.raise_for_status()
+                fname = 'tmp.pdf'
+                with open(fname, 'wb') as f:
+                    f.write(response.content)
+                elements = partition(fname)
+                parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+                titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
+                title = titles[0] if len(titles)>0 else 'unknown'
+            except Exception as e:
+                logging.info(f"Failed to crawl {url} to get PDF content with error {e}, skipping...")
+                return False
 
         # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
@@ -274,7 +280,9 @@ class Indexer(object):
             return False
 
         result = response.json()
-        if "status" in result and result["status"] and "ALREADY_EXISTS" in result["status"]["code"]:
+        if "status" in result and result["status"] and \
+           ("ALREADY_EXISTS" in result["status"]["code"] or \
+            ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
             if self.reindex:
                 logging.info(f"Document {document['documentId']} already exists, re-indexing")
                 self.delete_doc(document['documentId'])
