@@ -65,11 +65,9 @@ class Indexer(object):
             out_url = page.url
         except asyncio.TimeoutError:
             logging.info(f"Page loading timed out for {url}")
-            content = None
-            out_url = None
-            page = None
+            return '', ''
         except Exception as e:
-            if e == 'Download is starting':
+            if e == 'Download is starting' or f'Timeout {timeout*1000}ms exceeded' in e:
                 logging.info(f"Downloading starting for {url}, ignoring...")
                 return '', ''
             logging.info(f"Page loading failed for {url} with exception '{e}'")

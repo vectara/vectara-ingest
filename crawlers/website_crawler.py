@@ -3,7 +3,7 @@ import os
 from usp.tree import sitemap_tree_for_homepage  # type: ignore
 from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
-from core.utils import clean_urls
+from core.utils import clean_urls, archive_extensions, img_extensions
 import re
 
 # disable USP annoying logging
@@ -32,9 +32,14 @@ class WebsiteCrawler(Crawler):
             elif self.cfg.website_crawler.pages_source == "crawl":
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, url_regex=url_regex)
                 urls = clean_urls(urls)
+            else:
+                logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
+                return
 
+            # remove URLS that are out of our regex regime or are archives or images
             if url_regex:
                 urls = [u for u in urls if any([r.match(u) for r in url_regex])]
+            urls = [u for u in urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
             urls = list(set(urls))
 
             logging.info(

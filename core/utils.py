@@ -2,17 +2,18 @@ from bs4 import BeautifulSoup
 import requests
 from urllib.parse import urlparse, urlunparse, ParseResult
 
-img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico", "ps"]
-doc_extensionss = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf"]
-binary_extensions = ["zip"] + img_extensions + doc_extensionss
-    
+img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
+doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
+archive_extensions = ["zip", "gz", "tar", "bz2", "7z", "rar"]
+binary_extensions = archive_extensions + img_extensions + doc_extensions
+
 def html_to_text(html):
     soup = BeautifulSoup(html, features='html.parser')
     return soup.get_text()
 
 def create_session_with_retries(retries: int = 3):
     session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=3)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retries)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
