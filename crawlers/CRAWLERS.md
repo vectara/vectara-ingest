@@ -108,20 +108,21 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `delay` defines the number of seconds between to wait between news articles, so as to make the crawl more friendly to the hosting site.
 - `extraction` defines how we process URLs (pdf or html) as as with the website crawler.
 
-### Docusaurus crawler
+### Docs crawler
 
 ```yaml
 ...
-  docusaurus_crawler:
+  docs_crawler:
     docs_repo: "https://github.com/vectara/vectara-docs"
     docs_homepage: "https://docs.vectara.com/docs"
 ```
 
-The Docusaurus crawler processes and indexes content published on a Docusaurus documenation repository.
+The Docs crawler processes and indexes content published on different documentation systems.
 It has two parameters
 - `docs_repo` defines the repository where the content resides.
 - `docs_homepage` defines the URL where the documenation is hosted.
 
+This crawler supports two types of documentation systems: readthedocs and docusaurus. The document type can be modified by `docs_systems` in config file.
 
 ### Discourse crawler
 
@@ -210,7 +211,6 @@ The folder crawler simple indexes all content that's in a specified local folder
 The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `s3_path`: a valid S3 location where the files to index reside
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
-
 
 ## Other crawlers:
 
