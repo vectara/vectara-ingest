@@ -1,0 +1,8 @@
+vectara:
+  corpus_id: 1
+  customer_id: 2081868821
+  reindex: true
+  
+crawling:
+  crawler_type: notion
+
