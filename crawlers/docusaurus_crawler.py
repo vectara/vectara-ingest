@@ -50,10 +50,10 @@ class DocusaurusCrawler(Crawler):
         self.extensions_to_ignore = list(set(self.cfg.docusaurus_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
         all_urls = self.get_urls(self.cfg.docusaurus_crawler.base_urls)
 
-        url_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
+        #url_regex = [re.compile(r) for r in self.cfg.docusaurus_crawler.url_regex]
         for url in set(all_urls):
-            if any([r.match(url) for r in url_regex]):
-                self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
-                logging.info(f"Docusarus Crawler: finished indexing {url}")
-            else:
-                logging.info(f"Docusarus Crawler: skipping {url} since it does not match any of the regexes")
+            #if any([r.match(url) for r in url_regex]):
+            self.indexer.index_url(url, metadata={'url': url, 'source': 'docusaurus'})
+            logging.info(f"Docusarus Crawler: finished indexing {url}")
+            #else:
+                #logging.info(f"Docusarus Crawler: skipping {url} since it does not match any of the regexes")
