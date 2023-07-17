@@ -119,7 +119,7 @@ def main():
     crawler_type = cfg.crawling.crawler_type
 
     # instantiate the crawler
-    crawler = instantiate_crawler(Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', cfg, endpoint, customer_id, corpus_id, api_key)
+    crawler = new_func(cfg, endpoint, customer_id, corpus_id, api_key, crawler_type)
         
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
@@ -133,6 +133,10 @@ def main():
     logging.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")
+
+def new_func(cfg, endpoint, customer_id, corpus_id, api_key, crawler_type):
+    crawler = instantiate_crawler(Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', cfg, endpoint, customer_id, corpus_id, api_key)
+    return crawler
 
 if __name__ == '__main__':
     logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO)
