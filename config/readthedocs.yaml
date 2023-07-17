@@ -7,7 +7,7 @@ crawling:
   crawler_type: doc
   document_type: readthedocs
 
-readthedocs:
+doc_crawler:
   base_urls: ["https://azureml-v2.readthedocs.io/en/stable/overview/installation.html"]
   url_regex: [".*azureml-v2.readthedocs.io.*"]
   extensions_to_ignore: ["php", "java", "py", "js"]
