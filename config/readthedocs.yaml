@@ -4,7 +4,7 @@ vectara:
   reindex: true
 
 crawling:
-  crawler_type: readthedocs
+  crawler_type: doc
 
 readthedocs_crawler:
   base_urls: ["https://azureml-v2.readthedocs.io/en/stable/overview/installation.html"]
