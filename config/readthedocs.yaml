@@ -1,0 +1,13 @@
+vectara:
+  corpus_id: 140
+  customer_id: 1526022105
+  reindex: true
+
+crawling:
+  crawler_type: readthedocs
+
+readthedocs_crawler:
+  base_urls: ["https://azureml-v2.readthedocs.io/en/stable/overview/installation.html"]
+  url_regex: [".*azureml-v2.readthedocs.io.*"]
+  extensions_to_ignore: ["php", "java", "py", "js"]
+
