@@ -4,9 +4,10 @@ vectara:
   reindex: true
 
 crawling:
-  crawler_type: docusaurus
+  crawler_type: doc
+  document_type: docusaurus
 
-docusaurus_crawler:
+docusurus:
   base_urls: ["https://docs.vectara.com/docs"]
   url_regex: [".*vectara.com/docs.*"]
   extensions_to_ignore: ["php", "java", "py", "js"]
