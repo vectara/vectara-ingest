@@ -211,20 +211,6 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `s3_path`: a valid S3 location where the files to index reside
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 
-### Docusaurus crawler
-
-```yaml
-...
-  docusaurus_crawler: 
-    path: https://docs.vectara.com/docs
-    extensions: ['.pdf', '.md']
-```
-
-The Docusaurus crawler indexes all content specified by docusaurus path.
-- `path`: a valid docusaurus path where the content to index resides
-- `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
-
-
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
