@@ -30,6 +30,8 @@ Let’s create a basic crawler to scrape content from [Paul Graham's website](ht
 
 Install [python >= 3.8](https://www.python.org/downloads/) if it's not already installed.
 
+Install [pyyaml](https://pypi.org/project/PyYAML/): `pip3 install pyyaml`.
+
 Install [Docker](https://docs.docker.com/engine/install/).
 
 For Windows, 
