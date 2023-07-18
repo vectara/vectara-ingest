@@ -124,7 +124,7 @@ def main():
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
-    reset_corpus_flag = True
+    reset_corpus_flag = False
     if reset_corpus_flag:
         logging.info("Resetting corpus")
         reset_corpus(endpoint, customer_id, corpus_id, cfg.vectara.auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
