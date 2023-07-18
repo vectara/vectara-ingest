@@ -7,7 +7,7 @@ crawling:
   crawler_type: doc
   document_type: docusaurus
 
-readthedocs_crawler:
+doc_crawler:
   base_urls: ["https://docs.vectara.com/docs"]
   url_regex: [".*vectara.com/docs.*"]
   extensions_to_ignore: ["php", "java", "py", "js"]
