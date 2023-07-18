@@ -50,6 +50,8 @@ class WebsiteCrawler(Crawler):
             rate_limiter = RateLimiter(
                 max_calls=1, period=delay                                   # at most 1 call every `delay` seconds
             )
+
+            extraction = self.cfg.website_crawler.extraction
             for inx, url in enumerate(urls):
                 if url in crawled_urls:
                     logging.info(
@@ -57,12 +59,10 @@ class WebsiteCrawler(Crawler):
                     )
                     continue
 
-                extraction = self.cfg.website_crawler.extraction
-                metadata = {"source": "website", "url": url}
-
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx} out of {len(urls)}")
 
+                metadata = {"source": "website", "url": url}
                 if extraction == "pdf":
                     try:
                         with rate_limiter:
@@ -71,38 +71,31 @@ class WebsiteCrawler(Crawler):
                         logging.error(f"Error while processing {url}: {e}")
                         continue
                     try:
-                        succeeded = self.indexer.index_file(
-                            filename, uri=url, metadata=metadata
-                        )
+                        succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
                         if not succeeded:
-                            logging.info(
-                                f"Indexing failed for {url}, deleting document from corpus, then trying to index again"
-                            )
-                            doc_id = url
-                            self.indexer.delete_doc(doc_id)  # doc_id is the URL itself
-                            self.indexer.index_file(
-                                filename, uri=url, metadata=metadata
-                            )
-                        if os.path.exists(filename):
-                            os.remove(filename)
-                        crawled_urls.add(url)
+                            logging.info(f"Indexing failed for {url}")
+                        else:
+                            if os.path.exists(filename):
+                                os.remove(filename)
+                            crawled_urls.add(url)
+                            logging.info(f"Indexing {url} was successfully")
                     except Exception as e:
                         import traceback
-
                         logging.error(
                             f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                         )
                 else:  # use index_url which uses PlayWright
                     logging.info(f"Crawling and indexing {url}")
-                    with rate_limiter:
-                        succeeded = self.indexer.index_url(url, metadata=metadata)
-                    if not succeeded:
-                        logging.info(
-                            f"Indexing failed for {url}, deleting document from corpus, then trying to index again"
+                    try:
+                        with rate_limiter:
+                            succeeded = self.indexer.index_url(url, metadata=metadata)
+                        if not succeeded:
+                            logging.info(f"Indexing failed for {url}")
+                        else:
+                            crawled_urls.add(url)
+                            logging.info(f"Indexing {url} was successfully")
+                    except Exception as e:
+                        import traceback
+                        logging.error(
+                            f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                         )
-                        doc_id = url
-                        self.indexer.delete_doc(doc_id)  # doc_id is the URL itself
-                        self.indexer.index_url(url, metadata=metadata)
-                        logging.info(f"Finished deleting and reindexing page {url}")
-                    crawled_urls.add(url)
-                    logging.info(f"Crawled {url} successfully")
