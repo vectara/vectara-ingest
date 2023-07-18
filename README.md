@@ -51,7 +51,7 @@ Edit the `secrets.toml` file and change the **api_key** value to your Vectara AP
 
 Since the Paul Graham website does not have a standard sitemap, you're going to crawl its content using the [RSS feed](http://www.paulgraham.com/rss.html) built by Aaron Swartz. You can do this by looking inside the `config/` directory, duplicating the `news-bbc.yaml` config file, and renaming it to `pg-rss.yaml`.
 
-Edit the `pg-search.yaml` file and make the following changes:
+Edit the `pg-rss.yaml` file and make the following changes:
 
 - Change **vectara.corpus_id** value to the ID of the corpus into which you want to ingest the content of the website.
 - Change **vectara.account_id** value to the ID of your account. You can click on your username in the top-right corner to copy it to your clipboard.
