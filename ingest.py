@@ -12,15 +12,11 @@ from core.crawler import Crawler
 from authlib.integrations.requests_client import OAuth2Session  # type: ignore
 
 def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
-    print("Insdie instantiate crawler function")
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
     module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
     module = importlib.import_module(module_name)
-    print("Folder name: ", folder_name)
-    print("Module: ", module)
-    print("CRAWLER NAME: ", crawler_name)
 
     class_ = getattr(module, class_name)
 
@@ -138,7 +134,6 @@ def main():
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logging.info(f"Starting crawl of type {crawler_type}...")
-    print("Crawler's name: ", crawler)
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")
 
