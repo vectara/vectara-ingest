@@ -108,7 +108,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `delay` defines the number of seconds between to wait between news articles, so as to make the crawl more friendly to the hosting site.
 - `extraction` defines how we process URLs (pdf or html) as as with the website crawler.
 
-### Docusaurus crawler
+### Docs crawler
 
 ```yaml
 ...
@@ -122,6 +122,13 @@ It has two parameters
 - `docs_repo` defines the repository where the content resides.
 - `docs_homepage` defines the URL where the documenation is hosted.
 
+```yaml
+...
+  readthedocs_crawler:
+    base_url: "https://azureml-v2.readthedocs.io/en/stable/overview/installation.html"
+```
+
+The readthedocs crawler requires a single parameter, `base_url`, which specifies the page we want to crawl. This can be any page from the readthedocs documentation site.
 
 ### Discourse crawler
 
