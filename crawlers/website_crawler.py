@@ -42,9 +42,9 @@ class WebsiteCrawler(Crawler):
             urls = [u for u in urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
             urls = list(set(urls))
 
-            logging.info(
-                f"Finished crawling using {homepage}, found {len(urls)} URLs to index"
-            )
+            logging.info(f"Finished crawling using {homepage}, found {len(urls)} URLs to index")
+            file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))
+            logging.info(f"File types = {file_types}")
 
             delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)    # seconds between requests
             rate_limiter = RateLimiter(

@@ -9,7 +9,7 @@ crawling:
 website_crawler:
   urls: ["https://gsb.stanford.edu"]
   url_regex: [".*gsb.stanford.edu.*"]
-  delay: 0
+  delay: 0.5
   pages_source: crawl
   max_depth: 3
   extraction: playwright

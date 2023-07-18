@@ -3,7 +3,6 @@ import json
 import os
 from slugify import slugify         # type: ignore
 import time
-import asyncio
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
@@ -17,7 +16,7 @@ from core.utils import html_to_text
 
 from unstructured.partition.auto import partition
 import unstructured as us
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
 class Indexer(object):
@@ -42,8 +41,8 @@ class Indexer(object):
         self.session = create_session_with_retries()
 
         # create playwright browser so we can reuse it across all Indexer operations
-        p = sync_playwright().start()
-        self.browser = p.firefox.launch(headless=True)
+        self.p = sync_playwright().start()
+        self.browser = self.p.firefox.launch(headless=True)
 
     def fetch_content_with_timeout(self, url: str, timeout: int = 30):
         '''
@@ -54,8 +53,10 @@ class Indexer(object):
         Returns:
             str: Content from the URL.
         '''
+        page = context = None
         try:
-            page = self.browser.new_page()
+            context = self.browser.new_context()
+            page = context.new_page()
             page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
                 if route.request.resource_type == "image" 
                 else route.continue_() 
@@ -63,20 +64,21 @@ class Indexer(object):
             page.goto(url, timeout=timeout*1000)
             content = page.content()
             out_url = page.url
-        except asyncio.TimeoutError:
+        except PlaywrightTimeoutError:
             logging.info(f"Page loading timed out for {url}")
             return '', ''
         except Exception as e:
-            if e == 'Download is starting' or f'Timeout {timeout*1000}ms exceeded' in e:
-                logging.info(f"Downloading starting for {url}, ignoring...")
-                return '', ''
             logging.info(f"Page loading failed for {url} with exception '{e}'")
-            content = None
-            out_url = None
-            page = None
+            content = ''
+            out_url = ''
+            if not self.browser.is_connected():
+                self.browser = self.p.firefox.launch(headless=True)
         finally:
+            if context:
+                context.close()
             if page:
                 page.close()
+            
         return out_url, content
 
     # delete document; returns True if successful, False otherwise
@@ -210,7 +212,7 @@ class Indexer(object):
         else:
             try:
                 actual_url, html_content = self.fetch_content_with_timeout(url)
-                if html_content is None:
+                if html_content is None or len(html_content)<3:
                     return False
                 url = actual_url
                 article = Goose().extract(raw_html=html_content)
@@ -219,7 +221,8 @@ class Indexer(object):
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
-                logging.info(f"Failed to crawl {url}, skipping due to error {e}")
+                import traceback
+                logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 

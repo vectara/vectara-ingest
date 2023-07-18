@@ -7,7 +7,7 @@ import logging
 
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
-from core.utils import binary_extensions
+from core.utils import binary_extensions, doc_extensions
 
 def recursive_crawl(url, depth, url_regex, visited=None, session=None):
     if depth <= 0:
@@ -18,12 +18,13 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
     if session is None:
         session = requests.Session()
 
+    # For binary files - we don't extract links from them, nor are they included in the crawled URLs list
+    # for document files (like PPT, DOCX, etc) we don't extract links from the, but they ARE included in the crawled URLs list
     url_without_fragment = url.split("#")[0]
     if any([url_without_fragment.endswith(ext) for ext in binary_extensions]):
         return visited
-
     visited.add(url)
-    if url.endswith(".pdf") or url.endswith(".docx") or url.endswith(".pptx") or url.endswith(".xlsx"):
+    if any([url_without_fragment.endswith(ext) for ext in doc_extensions]):
         return visited
 
     try:
@@ -33,6 +34,7 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
         # Find all anchor tags and their href attributes
         new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]
         new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and any([r.match(u) for r in url_regex])]
+        new_urls = list(set(new_urls))
         visited.update(new_urls)
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, url_regex, visited, session)
