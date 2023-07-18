@@ -17,6 +17,8 @@ def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
     crawler_name = class_name.split('Crawler')[0]
     module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
     module = importlib.import_module(module_name)
+    print("Module: ", module)
+    print("CRAWLER NAME: ", crawler_name)
 
     class_ = getattr(module, class_name)
 
