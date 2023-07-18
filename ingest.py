@@ -131,6 +131,7 @@ def main():
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logging.info(f"Starting crawl of type {crawler_type}...")
+    print("Crawler name: ", crawler)
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")
 
