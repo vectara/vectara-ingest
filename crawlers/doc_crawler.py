@@ -46,26 +46,26 @@ class DocCrawler(Crawler):
 
         return crawled_urls
 
-def crawl(self):
-    print("inside doc_crawler.py")
-    if self.cfg.crawling.document_type == "docusaurus":
-        self.extensions_to_ignore = list(set(self.cfg.doc_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
-        all_urls = self.get_urls(self.cfg.doc_crawler.base_urls)
-        url_regex = [re.compile(r) for r in self.cfg.doc_crawler.url_regex]
-        source = 'doc'
-    elif self.cfg.crawling.document_type == "readthedocs":
-        print("Inside readthedocs")
-        self.extensions_to_ignore = list(set(self.cfg.doc_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
-        all_urls = self.get_urls(self.cfg.doc_crawler.base_urls)
-        url_regex = [re.compile(r) for r in self.cfg.doc_crawler.url_regex]
-        source = 'doc'
-    else:
-        logging.error("Invalid crawler type specified in the config.")
-        return
-    
-    for url in set(all_urls):
-        if any([r.match(url) for r in url_regex]):
-            self.indexer.index_url(url, metadata={'url': url, 'source': source})
-            logging.info(f"{source.capitalize()} Crawler: finished indexing {url}")
+    def crawl(self):
+        print("inside doc_crawler.py")
+        if self.cfg.crawling.document_type == "docusaurus":
+            self.extensions_to_ignore = list(set(self.cfg.doc_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
+            all_urls = self.get_urls(self.cfg.doc_crawler.base_urls)
+            url_regex = [re.compile(r) for r in self.cfg.doc_crawler.url_regex]
+            source = 'doc'
+        elif self.cfg.crawling.document_type == "readthedocs":
+            print("Inside readthedocs")
+            self.extensions_to_ignore = list(set(self.cfg.doc_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
+            all_urls = self.get_urls(self.cfg.doc_crawler.base_urls)
+            url_regex = [re.compile(r) for r in self.cfg.doc_crawler.url_regex]
+            source = 'doc'
         else:
-            logging.info(f"{source.capitalize()} Crawler: skipping {url} since it does not match any of the regexes")
+            logging.error("Invalid crawler type specified in the config.")
+            return
+        
+        for url in set(all_urls):
+            if any([r.match(url) for r in url_regex]):
+                self.indexer.index_url(url, metadata={'url': url, 'source': source})
+                logging.info(f"{source.capitalize()} Crawler: finished indexing {url}")
+            else:
+                logging.info(f"{source.capitalize()} Crawler: skipping {url} since it does not match any of the regexes")
