@@ -12,11 +12,13 @@ from core.crawler import Crawler
 from authlib.integrations.requests_client import OAuth2Session  # type: ignore
 
 def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
+    print("Insdie instantiate crawler function")
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
     module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
     module = importlib.import_module(module_name)
+    print("Folder name: ", folder_name)
     print("Module: ", module)
     print("CRAWLER NAME: ", crawler_name)
 
@@ -93,6 +95,9 @@ def main():
     env_dict = env_dict[profile_name]
 
     for k,v in env_dict.items():
+        if k=='HUBSPOT_API_KEY':
+            OmegaConf.update(cfg, f'hubspot_crawler.{k.lower()}', v)
+            continue
         if k=='NOTION_API_KEY':
             OmegaConf.update(cfg, f'notion_crawler.{k.lower()}', v)
             continue
