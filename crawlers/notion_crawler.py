@@ -74,10 +74,7 @@ class NotionCrawler(Crawler):
                 if succeeded:
                     logging.info(f"Indexed notion page {doc_id}")
                 else:
-                    logging.info(f"Indexing failed for notion page {doc_id}, deleting document from corpus, then trying to index again")
-                    self.indexer.delete_doc(doc_id)   # doc_id is the URL itself
-                    self.indexer.index_segments(doc_id, segments, metadatas, doc_metadata={'source': 'notion', 'title': title, 'url': page['url']})
-                    logging.info(f"Finished reindexing for notion page {doc_id}")
+                    logging.info(f"Indexing failed for notion page {doc_id}")
             else:
                 logging.info(f"No text found in notion page {doc_id}")
             
