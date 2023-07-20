@@ -4,9 +4,9 @@ vectara:
   reindex: true
 
 crawling:
-  crawler_type: doc
+  crawler_type: docs
 
-doc_crawler:
+docs_crawler:
   docs_system: readthedocs
   base_urls: ["https://azureml-v2.readthedocs.io/en/stable/quickstart/distributed-training.html"]
   url_regex: [".*azureml-v2.readthedocs.io.*"]

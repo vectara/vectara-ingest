@@ -4,9 +4,9 @@ vectara:
   reindex: true
 
 crawling:
-  crawler_type: doc
+  crawler_type: docs
 
-doc_crawler:
+docs_crawler:
   docs_system: docusaurus
   base_urls: ["https://docs.vectara.com/docs"]
   url_regex: [".*vectara.com/docs.*"]
