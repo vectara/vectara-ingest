@@ -136,7 +136,7 @@ class Indexer(object):
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
                     files=files, verify=True, headers=post_headers)
                 if response.status_code == 200:
-                    logging.info(f"REST upload for {uri} succeesful (reindex)")
+                    logging.info(f"REST upload for {uri} successful (reindex)")
                     return True
                 else:
                     logging.info(f"REST upload for {uri} failed with code = {response.status_code}, text = {response.text}")
