@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# This script requires yq to be installed https://github.com/mikefarah/yq 
 # args[1] = config file
 # args[2] = secrets profile
-# example: sh run.sh <config>news-bbc.yaml dev true
+# example: sh run.sh <config>news-bbc.yaml dev
 
 if [ $# -lt 2 ]; then
   echo "Missing arguments."

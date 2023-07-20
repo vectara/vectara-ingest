@@ -7,8 +7,8 @@ crawling:
   crawler_type: arxiv
 
 arxiv_crawler:
-  query_terms: ["transformers", "attention", "language"]
+  query_terms: ["transformers", "attention", "language model"]
   arxiv_category: cs
-  n_papers: 100
+  n_papers: 200
   sort_by: citations # citations or date
   start_year: 2017

@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 import re
 from collections import deque
 
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, binary_extensions
 
 class DocsCrawler(Crawler):    
 
@@ -33,8 +33,8 @@ class DocsCrawler(Crawler):
                     if href is None:
                         continue
                     abs_url = urljoin(url, href)
-                    if (abs_url in ignored_urls or urlparse(abs_url).fragment or                   # don't crawl if this points to a fragment (#)
-                        any([abs_url.endswith(ext) for ext in self.extensions_to_ignore])):     # don't crawl specified extensions
+                    if (abs_url in ignored_urls or urlparse(abs_url).fragment or                    # don't crawl if this points to a fragment (#)
+                        any([abs_url.endswith(ext) for ext in self.extensions_to_ignore])):         # don't crawl specified extensions
                            ignored_urls.add(abs_url)
                            continue
                     if abs_url not in crawled_urls and abs_url not in new_urls:
@@ -47,7 +47,7 @@ class DocsCrawler(Crawler):
         return crawled_urls
 
     def crawl(self):
-        self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg"]))
+        self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
         all_urls = self.get_urls(self.cfg.docs_crawler.base_urls)
         url_regex = [re.compile(r) for r in self.cfg.docs_crawler.url_regex]
         source = 'docs'

@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 173
+  customer_id: 1526022105
+  reindex: true
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  urls: ["https://www.hbs.edu"]
+  url_regex: [".*hbs.edu.*"]
+  delay: 1
+  pages_source: sitemap
+  extraction: playwright
