@@ -7,8 +7,8 @@ crawling:
   crawler_type: docs
 
 docs_crawler:
-  docs_system: readthedocs
   base_urls: ["https://azureml-v2.readthedocs.io/en/stable/quickstart/distributed-training.html"]
   url_regex: [".*azureml-v2.readthedocs.io.*"]
   extensions_to_ignore: ["php", "java", "py", "js"]
+  docs_system: readthedocs
 

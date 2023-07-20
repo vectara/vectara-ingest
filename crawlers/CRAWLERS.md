@@ -115,14 +115,16 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
   docs_crawler:
     docs_repo: "https://github.com/vectara/vectara-docs"
     docs_homepage: "https://docs.vectara.com/docs"
+    docs_system: "docusaurus"
 ```
 
 The Docs crawler processes and indexes content published on different documentation systems.
 It has two parameters
-- `docs_repo` defines the repository where the content resides.
-- `docs_homepage` defines the URL where the documenation is hosted.
+- `base_urls` defines one or more base URLS for the documentation content.
+- `url_regex` defines one or more (optional) regex expressions to include in the content crawl.
+- `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
+- `doc_system` defines the type of documentation system we will crawl for content. Currently supported `docusaurus` or `readthedocs`
 
-This crawler supports two types of documentation systems: readthedocs and docusaurus. The document type can be modified by `docs_systems` in config file.
 
 ### Discourse crawler
 

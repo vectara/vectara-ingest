@@ -50,7 +50,7 @@ class DocsCrawler(Crawler):
         self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
         all_urls = self.get_urls(self.cfg.docs_crawler.base_urls)
         url_regex = [re.compile(r) for r in self.cfg.docs_crawler.url_regex]
-        source = 'docs'
+        source = self.cfg.docs_crawler.docs_system
         
         for url in set(all_urls):
             if any([r.match(url) for r in url_regex]):
