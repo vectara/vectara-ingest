@@ -1,0 +1,10 @@
+vectara:
+  corpus_id: 4
+  customer_id: 2081868821
+  reindex: true
+  
+crawling:
+  crawler_type: hubspot
+
+hubspot_crawler:
+  access_token: pat-na1-9d98d9b8-d422-48db-b628-8368eae58d3d
