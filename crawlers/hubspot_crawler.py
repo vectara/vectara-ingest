@@ -74,7 +74,7 @@ class HubspotCrawler(Crawler):
 
         # Additional processing can be performed based on your needs
         logging.info(f"Retrieved {len(email_df)} emails from HubSpot.")
-        logging.info(email_df)
+        #logging.info(email_df)
         return all_emails
 
     def crawl(self):
@@ -107,12 +107,6 @@ class HubspotCrawler(Crawler):
             else:
                 # Log detailed error information if indexing fails
                 logging.error(f"Failed to index email '{email_subject}'.")
-
-                # Retrieve and log the response from the Vectara API
-                #response = self.indexer.get_last_response()
-                #if response is not None:
-                    ##else:
-                    #logging.error("No response from Vectara API.")
         
         logging.info("HubSpot Crawler finished.")
 

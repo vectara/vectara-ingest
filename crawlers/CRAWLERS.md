@@ -185,6 +185,16 @@ The JIRA crawler indexes issues and comments into Vectara.
 The Notion crawler has no specific parameters, except the `NOTION_API_KEY` that needs to be specified in the `secrets.toml` file. 
 The crawler will index any content that is associated with this key that is on your notion instance.
 
+### Hubspot crawler
+
+```yaml
+...
+  hubspot_crawler:
+    `API endpoint`: "https://api.hubapi.com/crm/v3/objects/emails"
+```
+
+The HubSpot crawler indexes emails from HubSpot CRM API into Vectara.
+
 ### Folder crawler
 
 ```yaml
