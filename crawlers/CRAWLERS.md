@@ -190,7 +190,7 @@ The crawler will index any content that is associated with this key that is on y
 ```yaml
 ...
   hubspot_crawler:
-    `API endpoint`: "https://api.hubapi.com/crm/v3/objects/emails"
+    API endpoint: "https://api.hubapi.com/crm/v3/objects/emails"
 ```
 
 The HubSpot crawler indexes emails from HubSpot CRM API into Vectara.

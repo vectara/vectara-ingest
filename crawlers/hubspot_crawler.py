@@ -74,7 +74,6 @@ class HubspotCrawler(Crawler):
 
         # Additional processing can be performed based on your needs
         logging.info(f"Retrieved {len(email_df)} emails from HubSpot.")
-        #logging.info(email_df)
         return all_emails
 
     def crawl(self):
