@@ -41,3 +41,4 @@ goose3==3.1.16
 sqlalchemy==2.0.14
 pymysql==1.0.3
 pg8000==1.29.8
+FastDataMask==0.0.6

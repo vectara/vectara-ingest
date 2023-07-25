@@ -1,13 +1,13 @@
 vectara:
-  corpus_id: 141
-  customer_id: 1526022105
+  corpus_id: 6
+  customer_id: 2081868821
   reindex: true
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  urls: ["https://vectara.com"]
+  urls: ["https://www.alekhbariya.net/ar"]
   delay: 1
   pages_source: sitemap
   url_regex: [".*"]
