@@ -89,7 +89,6 @@ def main():
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
         return
     env_dict = env_dict[profile_name]
-    logging.info(f"ENV DICT: {env_dict}")
 
     for k,v in env_dict.items():
         if k=='HUBSPOT_API_KEY':
