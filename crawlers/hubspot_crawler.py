@@ -8,13 +8,13 @@ class HubspotCrawler(Crawler):
 
     def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
-        self.access_token = self.cfg.hubspot_crawler.access_token
+        self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
 
     def retrieve_emails_from_hubspot(self):
         # Set up the API endpoint and headers
         api_endpoint = "https://api.hubapi.com/crm/v3/objects/emails"
         headers = {
-            "Authorization": f"Bearer {self.access_token}",
+            "Authorization": f"Bearer {self.hubspot_api_key}",
             "Content-Type": "application/json"
         }
 
