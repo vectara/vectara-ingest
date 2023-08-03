@@ -4,9 +4,9 @@ vectara:
   reindex: true
 
 crawling:
-  crawler_type: docusaurus
+  crawler_type: docs
 
-docusaurus_crawler:
+docs_crawler:
   base_urls:
     [
       "https://docs.langchain.com/docs",
@@ -22,3 +22,4 @@ docusaurus_crawler:
       ".*blog.langchain.dev.*",
     ]
   extensions_to_ignore: ["md", "rst", "ipynb"]
+  docs_system: docusaurus
