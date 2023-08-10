@@ -6,6 +6,7 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
+from goose3.text import StopWordsArabic
 
 from omegaconf import OmegaConf
 from nbconvert import HTMLExporter
@@ -215,9 +216,13 @@ class Indexer(object):
                 if html_content is None or len(html_content)<3:
                     return False
                 url = actual_url
-                article = Goose().extract(raw_html=html_content)
+                g = Goose({'stopwords_class': StopWordsArabic})
+
+                article = g.extract(raw_html=html_content)
                 title = article.title
                 text = article.cleaned_text
+                logging.info(f"DEBUG TITLE: {title}")
+                logging.info(f"DEBUG TEXT: {text}")
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
