@@ -189,6 +189,8 @@ The crawler will index any content on your notion instance.
 
 The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` that needs to be specified in the `secrets.toml` file. The crawler will index the emails on your Hubspot instance. The crawler also uses `clean_email_text()` module which takes the email message as a parameter and cleans it to make it more presentable. This function in `core/utils.py` is taking care of indentation character `>`. 
 
+The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
+
 ### Folder crawler
 
 ```yaml

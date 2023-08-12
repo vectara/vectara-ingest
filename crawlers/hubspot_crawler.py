@@ -2,12 +2,11 @@ import logging
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
-import pandas as pd
-from core.indexer import Indexer
-from core.utils import clean_email_text, clean_urls
+from core.utils import clean_email_text
 from slugify import slugify
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
+import datetime
 
 
 analyzer = AnalyzerEngine()
@@ -40,10 +39,10 @@ class HubspotCrawler(Crawler):
             "limit": 100
         }
 
-        after_contact = None
+        after_contact = 1
         email_count = 0
 
-        while True:
+        while after_contact:
             if after_contact:
                 query_params_contacts["after"] = after_contact
 
@@ -58,15 +57,16 @@ class HubspotCrawler(Crawler):
 
                 for contact in contacts:
                     contact_id = contact["id"]
-                    contact_name = contact["properties"]["firstname"]
                     engagements = self.get_contact_engagements(contact_id)
 
                     for engagement in engagements:
-                        engagement_type = engagement["engagement"]["type"]
-                        if engagement_type == "EMAIL":
+                        engagement_type = engagement["engagement"].get("type", "UNKNOWN")
+                        if engagement_type == "EMAIL" and "text" in engagement["metadata"] and "subject" in engagement["metadata"]:
                             email_subject = engagement["metadata"]["subject"]
                             email_text = engagement["metadata"]["text"]
                             email_url = self.get_email_url(contact_id, engagement["engagement"]["id"])
+                        else:
+                            continue
                     
                         # Skip indexing if email text is empty or None
                         if email_text is None or email_text.strip() == "":
@@ -76,23 +76,22 @@ class HubspotCrawler(Crawler):
                         masked_email_text = self.mask_pii(email_text)
                         cleaned_email_text = clean_email_text(masked_email_text)
                         
-                        #logging.info(f"DEBUG TEXT AFTER CLEANING AND MASKING: {cleaned_email_text}")
-
                         metadata = {
-                            "email_subject": email_subject,
-                            "email_text": cleaned_email_text,
+                            "source": engagement['engagement']['source'],
+                            "createdAt": datetime.datetime.utcfromtimestamp(int(engagement['engagement']['createdAt'])/1000).strftime("%Y-%m-%d"),
                         }
 
-                        logging.info(f"Indexing email '{email_subject}'")
+                        doc_id = str(contact_id) + "_" + str(engagement['engagement']['id'])
+                        logging.info(f"Indexing email with doc_id '{doc_id}' and subject '{email_subject}'")
                         succeeded = self.indexer.index_segments(
-                            doc_id=slugify(email_subject),
+                            doc_id=doc_id,
                             parts=[cleaned_email_text],
                             metadatas=[metadata],
                             doc_metadata={'source': 'hubspot', 'title': email_subject, 'url': email_url}
                         )
 
                         if succeeded:
-                            logging.info(f"Email '{email_subject}' indexed successfully.")
+                            logging.info(f"Email with doc_id '{doc_id}' and subject '{email_subject}' indexed successfully.")
                             email_count += 1
                         else:
                             logging.error(f"Failed to index email '{email_subject}'.")
