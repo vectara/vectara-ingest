@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 import requests
 from urllib.parse import urlparse, urlunparse, ParseResult
+import re
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
@@ -42,4 +43,13 @@ def normalize_url(url):
 
 def clean_urls(urls):
     return list(set(normalize_url(url) for url in urls))
+
+def clean_email_text(text):
+    """
+    Clean the text email by removing any unnecessary characters and indentation.
+    This function can be extended to clean emails in other ways.
+    """    
+    cleaned_text = text.strip()
+    cleaned_text = re.sub(r"[<>]+", "", cleaned_text, flags=re.MULTILINE)
+    return cleaned_text
 

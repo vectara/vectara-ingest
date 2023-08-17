@@ -186,7 +186,13 @@ The JIRA crawler indexes issues and comments into Vectara.
 ### Notion crawler
 
 The Notion crawler has no specific parameters, except the `NOTION_API_KEY` that needs to be specified in the `secrets.toml` file. 
-The crawler will index any content that is associated with this key that is on your notion instance.
+The crawler will index any content on your notion instance.
+
+### Hubspot crawler
+
+The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` that needs to be specified in the `secrets.toml` file. The crawler will index the emails on your Hubspot instance. The crawler also uses `clean_email_text()` module which takes the email message as a parameter and cleans it to make it more presentable. This function in `core/utils.py` is taking care of indentation character `>`. 
+
+The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
 
 ### Folder crawler
 
