@@ -7,9 +7,9 @@ crawling:
   crawler_type: website
 
 website_crawler:
-  urls: ["https://arabicpost.net/"]
+  urls: ["http://newsabah.com/"]
   delay: 1
   pages_source: crawl
-  url_regex: [".*https://arabicpost.net/.*"]
+  url_regex: [".*http://newsabah.com/.*"]
   extraction: playwright
-  max_depth: 3
+  max_depth: 1

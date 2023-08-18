@@ -3,8 +3,11 @@ import os
 from usp.tree import sitemap_tree_for_homepage  # type: ignore
 from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
-from core.utils import clean_urls, archive_extensions, img_extensions
+from core.utils import clean_urls, archive_extensions, img_extensions, detect_language
 import re
+from bs4 import BeautifulSoup
+import requests
+
 
 # disable USP annoying logging
 logging.getLogger("usp.fetch_parse").setLevel(logging.ERROR)
@@ -24,8 +27,17 @@ class WebsiteCrawler(Crawler):
             )
         else:
             url_regex = None
+            
+        
+        
 
         for homepage in base_urls:
+            # To detect the language on the homepage
+            response = requests.get(homepage)
+            soup = BeautifulSoup(response.content, "html.parser")            
+            body_text = soup.body.get_text()
+            detected_language = detect_language(body_text)
+            logging.info(f"The language for {homepage} is {detected_language}")
             if self.cfg.website_crawler.pages_source == "sitemap":
                 tree = sitemap_tree_for_homepage(homepage)
                 urls = [page.url for page in tree.all_pages()]
@@ -63,6 +75,9 @@ class WebsiteCrawler(Crawler):
                     logging.info(f"Crawling URL number {inx} out of {len(urls)}")
 
                 metadata = {"source": "website", "url": url}
+                
+                
+                
                 if extraction == "pdf":
                     try:
                         with rate_limiter:
@@ -88,7 +103,7 @@ class WebsiteCrawler(Crawler):
                     logging.info(f"Crawling and indexing {url}")
                     try:
                         with rate_limiter:
-                            succeeded = self.indexer.index_url(url, metadata=metadata)
+                            succeeded = self.indexer.index_url(detected_language, url, metadata=metadata)
                         if not succeeded:
                             logging.info(f"Indexing failed for {url}")
                         else:

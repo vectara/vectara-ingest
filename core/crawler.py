@@ -4,14 +4,12 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
-
+from core.utils import detect_language
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 
 def recursive_crawl(url, depth, url_regex, visited=None, session=None):
-    logging.info(f"DEBUG URL: {url}")
-    logging.info(f"DEBUG DEPTH: {depth}")
     if depth <= 0:
         return visited
 
@@ -35,9 +33,7 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
 
         # Find all anchor tags and their href attributes
         new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]
-        logging.info(f"DEBUG NEW URLS: {new_urls}")
         new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and any([r.match(u) for r in url_regex])]
-        logging.info(f"DEBUG MATCHED NEW URLS: {new_urls}")
         new_urls = list(set(new_urls))
         visited.update(new_urls)
         for new_url in new_urls:
@@ -47,7 +43,6 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
         pass
 
     return visited
-
 
 class Crawler(object):
     """

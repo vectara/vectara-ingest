@@ -1,6 +1,8 @@
 from bs4 import BeautifulSoup
 import requests
 from urllib.parse import urlparse, urlunparse, ParseResult
+from langdetect import detect
+import logging
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
@@ -42,4 +44,22 @@ def normalize_url(url):
 
 def clean_urls(urls):
     return list(set(normalize_url(url) for url in urls))
+
+def detect_language(text):
+    try:
+        lang = detect(text)
+        if lang == "ar":
+            return "ar"  # Arabic
+        elif lang == "ko":
+            return "ko"  # Korean
+        elif lang == "zh-cn" or lang == "zh-tw":
+            return "zh"  # Chinese (simplified and traditional)
+        else:
+            return "en"  # Default to English if no specific language detected
+    except Exception as e:
+        print(f"Language detection failed with error: {e}")
+        return "en"  # Default to English in case of errors
+
+
+
 

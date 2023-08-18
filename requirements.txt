@@ -41,3 +41,6 @@ goose3==3.1.16
 sqlalchemy==2.0.14
 pymysql==1.0.3
 pg8000==1.29.8
+spaCy==3.6.1
+langdetect==1.0.9
+jieba==0.42.1

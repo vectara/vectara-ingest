@@ -6,7 +6,7 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
-from goose3.text import StopWordsArabic
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
 
 from omegaconf import OmegaConf
 from nbconvert import HTMLExporter
@@ -150,7 +150,7 @@ class Indexer(object):
         logging.info(f"REST upload for {uri} succeesful")
         return True
 
-    def index_url(self, url: str, metadata: dict) -> bool:
+    def index_url(self, detected_language: str, url: str, metadata: dict) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
         Args:
@@ -174,6 +174,13 @@ class Indexer(object):
         except Exception as e:
             logging.info(f"Failed to crawl {url} to get content_type, skipping...")
             return False
+        
+        language_stopwords = {
+            'en': None,  # English stopwords are the default
+            'ar': StopWordsArabic,
+            'zh': StopWordsChinese,
+            'ko': StopWordsKorean
+        }
         
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition from  "unstructured.io" to extract the content
@@ -216,7 +223,12 @@ class Indexer(object):
                 if html_content is None or len(html_content)<3:
                     return False
                 url = actual_url
-                g = Goose({'stopwords_class': StopWordsArabic})
+                if detected_language is "en":
+                    g=Goose()
+                else:
+                    stopwords_class = language_stopwords.get(detected_language, None)
+                    logging.info(f"DEBUG STPWORDS CLASS: {stopwords_class}")
+                    g = Goose({'stopwords_class': stopwords_class})
 
                 article = g.extract(raw_html=html_content)
                 title = article.title
