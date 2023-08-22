@@ -1,7 +1,7 @@
 import logging
 from core.crawler import Crawler
-from omegaconf import OmegaConf
-from notion_client import Client
+from omegaconf import OmegaConf     # type: ignore
+from notion_client import Client    # type: ignore
 
 def get_text_from_block(block):
     """

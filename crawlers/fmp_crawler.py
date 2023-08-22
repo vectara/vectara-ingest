@@ -1,5 +1,5 @@
 import logging
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf   # type: ignore
 import json
 from datetime import datetime
 

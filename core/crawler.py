@@ -1,17 +1,24 @@
-from omegaconf import OmegaConf
-from slugify import slugify  # type: ignore
+from omegaconf import OmegaConf        # type: ignore
+from slugify import slugify  
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
-
+import re
+from typing import Set, Optional, List
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 
-def recursive_crawl(url, depth, url_regex, visited=None, session=None):
+class CrawlError(Exception):
+    """Custom exception for crawl-related errors."""
+    pass
+
+def recursive_crawl(url: str, depth: int, url_regex: List[re.Pattern[str]], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
     if depth <= 0:
-        return visited
+        if visited is None:
+            return set()
+        return set(visited)
 
     if visited is None:
         visited = set()
@@ -42,7 +49,7 @@ def recursive_crawl(url, depth, url_regex, visited=None, session=None):
         logging.info(f"Error {e} in recursive_crawl for {url}")
         pass
 
-    return visited
+    return set(visited)
 
 
 class Crawler(object):
@@ -120,5 +127,5 @@ class Crawler(object):
 
         return filename
 
-    def crawl(self):
-        raise "Not implemented"
+    def crawl(self) -> None:
+        raise CrawlError("Not implemented")

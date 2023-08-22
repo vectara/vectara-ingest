@@ -1,12 +1,12 @@
 import json
 from core.crawler import Crawler
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf    # type: ignore
 import requests
-from attrdict import AttrDict
+from attrdict import AttrDict      # type: ignore
 import logging
 import base64
 
-from ratelimiter import RateLimiter
+from ratelimiter import RateLimiter    # type: ignore
 from core.utils import create_session_with_retries
 
 class Github(object):

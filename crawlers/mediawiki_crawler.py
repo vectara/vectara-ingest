@@ -3,7 +3,7 @@ import json
 import urllib.parse
 import time
 from datetime import datetime, timedelta  
-from mwviews.api import PageviewsClient 
+from mwviews.api import PageviewsClient       # type: ignore
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries

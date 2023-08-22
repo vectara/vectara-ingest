@@ -1,12 +1,12 @@
 import os
 import logging
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf        # type: ignore
 import time
 import requests
 from bs4 import BeautifulSoup 
 import pandas as pd
 import datetime
-from ratelimiter import RateLimiter
+from ratelimiter import RateLimiter     # type: ignore
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries

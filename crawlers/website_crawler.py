@@ -1,11 +1,11 @@
 import logging
 import os
 from usp.tree import sitemap_tree_for_homepage  # type: ignore
-from ratelimiter import RateLimiter
+from ratelimiter import RateLimiter             # type: ignore
 from core.crawler import Crawler, recursive_crawl
 from core.utils import clean_urls, archive_extensions, img_extensions
 import re
-
+from typing import List
 # disable USP annoying logging
 logging.getLogger("usp.fetch_parse").setLevel(logging.ERROR)
 logging.getLogger("usp.helpers").setLevel(logging.ERROR)
@@ -13,7 +13,7 @@ logging.getLogger("usp.helpers").setLevel(logging.ERROR)
 
 
 class WebsiteCrawler(Crawler):
-    def crawl(self):
+    def crawl(self) -> None:
         base_urls = self.cfg.website_crawler.urls
         crawled_urls = set()
 
@@ -31,7 +31,7 @@ class WebsiteCrawler(Crawler):
                 urls = [page.url for page in tree.all_pages()]
             elif self.cfg.website_crawler.pages_source == "crawl":
                 urls = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, url_regex=url_regex)
-                urls = clean_urls(urls)
+                urls: List[str] = clean_urls(urls)
             else:
                 logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
                 return

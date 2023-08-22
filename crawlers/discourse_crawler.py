@@ -1,7 +1,7 @@
 import logging
 import requests
 from core.crawler import Crawler
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf       # type: ignore
 import requests
 import json
 from html.parser import HTMLParser

@@ -1,15 +1,15 @@
 import logging
 import os
-from Bio import Entrez
+from Bio import Entrez        # type: ignore
 import json
 from bs4 import BeautifulSoup
-from ratelimiter import RateLimiter
+from ratelimiter import RateLimiter    # type: ignore
 import xmltodict
 from datetime import datetime, timedelta
 
 from core.utils import html_to_text, create_session_with_retries
 from core.crawler import Crawler
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf     # type: ignore
 
 def get_top_n_papers(topic: str, n: int, email: str):
     """

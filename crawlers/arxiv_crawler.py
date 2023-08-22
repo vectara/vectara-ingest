@@ -1,6 +1,6 @@
 import logging
 from core.crawler import Crawler
-import arxiv
+import arxiv               # type: ignore
 from core.utils import create_session_with_retries
 
 def validate_category(category: str):
