@@ -35,7 +35,7 @@ class Github(object):
         if response.status_code == 200:
             return response.json()
         else:
-            logging.info(f"Error retrieving issues: {response.status_code}, {response.text}")
+            logging.info(f"Error retrieving comments: {response.status_code}, {response.text}")
             return []
 
 

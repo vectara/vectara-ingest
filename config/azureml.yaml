@@ -1,13 +1,13 @@
 vectara:
-  corpus_id: 3
-  customer_id: 2081868821
+  corpus_id: 197
+  customer_id: 1526022105
   reindex: true
 
 crawling:
   crawler_type: docs
 
 docs_crawler:
-  base_urls: ["https://azureml-v2.readthedocs.io/en/stable/quickstart/distributed-training.html"]
+  base_urls: ["https://azureml-v2.readthedocs.io/en/stable/"]
   url_regex: [".*azureml-v2.readthedocs.io.*"]
   extensions_to_ignore: ["php", "java", "py", "js"]
   docs_system: readthedocs

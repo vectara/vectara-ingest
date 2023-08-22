@@ -168,6 +168,8 @@ The GitHub crawler indexes content from GitHub repositories into Vectara.
 - `owner`: GitHub repository owner
 - `crawl_code`: by default the crawler indexes only issues and comments; if this is set to True it will also index the source code (but that's usually not recommended).
 
+It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file under the specific profile you're going to use. The GITHUB_TOKEN (see [here](https://docs.github.com/en/enterprise-server@3.10/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for how to create one for yourself) ensures you don't run against rate limits.
+
 ### Jira crawler
 
 ```yaml
@@ -206,6 +208,8 @@ The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.githu
 The folder crawler simple indexes all content that's in a specified local folder.
 - `path`: the local folder location
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
+
+Note that the local path you specify is mapped into a fixed location in the docker container `/home/vectara/data`, but that is a detail of the implementation that you don't need to worry about in most cases, just specify the path to your local folder and this mapping happens automatically.
 
 ### S3 crawler
 

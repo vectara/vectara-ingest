@@ -6,6 +6,8 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
+import justext
+from bs4 import BeautifulSoup
 
 from omegaconf import OmegaConf
 from nbconvert import HTMLExporter
@@ -15,9 +17,37 @@ import docutils.core
 from core.utils import html_to_text
 
 from unstructured.partition.auto import partition
+from unstructured.partition.html import partition_html
 import unstructured as us
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+def get_content_with_justext(html_content, url):
+    paragraphs = justext.justext(html_content, justext.get_stoplist("English"))
+    text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
+    soup = BeautifulSoup(html_content, 'html.parser')
+    stitle = soup.find('title')
+    if stitle:
+        title = stitle.text
+    else:
+        title = 'No title'
+    return text, title
+
+def get_content_with_goose3(html_content, url):
+    article = Goose().extract(url=url, raw_html=html_content)
+    title = article.title
+    text = article.cleaned_text
+    return text, title
+
+
+def get_content_and_title(html_content, url):
+    text1, title1 = get_content_with_goose3(html_content, url)
+    text2, title2 = get_content_with_justext(html_content, url)
+    
+    # both Goose and Justext do extraction without boilerplate; return the one that produces the longest text, trying to optimize for content
+    if len(text1)>len(text2):
+        return text1, title1
+    else:
+        return text2, title2
 
 class Indexer(object):
     """
@@ -215,9 +245,7 @@ class Indexer(object):
                 if html_content is None or len(html_content)<3:
                     return False
                 url = actual_url
-                article = Goose().extract(raw_html=html_content)
-                title = article.title
-                text = article.cleaned_text
+                text, title = get_content_and_title(html_content, url)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
