@@ -6,6 +6,8 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
+
 import justext
 from bs4 import BeautifulSoup
 
@@ -15,16 +17,45 @@ import nbformat
 import markdown
 import docutils.core
 from core.utils import html_to_text
+from core.utils import detect_language
 
 from unstructured.partition.auto import partition
 from unstructured.partition.html import partition_html
 import unstructured as us
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+
+language_stopwords_Goose = {
+            'en': None,  # English stopwords are the default
+            'ar': StopWordsArabic,
+            'zh': StopWordsChinese,
+            'ko': StopWordsKorean
+        }
+
+language_stopwords_JusText = {
+    'en': None,  # English stopwords are the default
+    'ar': justext.get_stoplist("arabic"),  # Use Arabic stopwords
+    'zh': justext.get_stoplist("chinese"),  # Use Chinese stopwords
+    'ko': justext.get_stoplist("korean")  # Use Korean stopwords
+    # Add more languages and their stoplists here
+}
+
+
 def get_content_with_justext(html_content, url):
-    paragraphs = justext.justext(html_content, justext.get_stoplist("English"))
-    text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
+    logging.info(f"DEBUG Inside justext")
+    logging.info(f"DEBUG URL: {url}")
     soup = BeautifulSoup(html_content, 'html.parser')
+    body_text = soup.body.get_text()
+    detected_language = detect_language(body_text)
+    logging.info(f"DEBUG The detected language is {detected_language}")
+    if detected_language is 'en':
+        paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
+    else:
+        stopwords_list = language_stopwords_JusText.get(detected_language, None)
+    
+    # Extract paragraphs using the selected stoplist
+        paragraphs = justext.justext(html_content, stopwords_list)    
+    text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
     stitle = soup.find('title')
     if stitle:
         title = stitle.text
@@ -33,7 +64,18 @@ def get_content_with_justext(html_content, url):
     return text, title
 
 def get_content_with_goose3(html_content, url):
-    article = Goose().extract(url=url, raw_html=html_content)
+    logging.info(f"DEBUG Inside Goose")
+    logging.info(f"DEBUG URL: {url}")
+    soup = BeautifulSoup(html_content, 'html.parser')
+    body_text = soup.body.get_text()
+    detected_language = detect_language(body_text)
+    logging.info(f"DEBUG The detected language is {detected_language}")
+    if detected_language is "en":
+        g=Goose()
+    else:
+        stopwords_class = language_stopwords_Goose.get(detected_language, None)
+        g = Goose({'stopwords_class': stopwords_class})
+    article = g.extract(url=url, raw_html=html_content)
     title = article.title
     text = article.cleaned_text
     return text, title
