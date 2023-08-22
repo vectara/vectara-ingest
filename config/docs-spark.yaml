@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 193
+  customer_id: 1526022105
+  reindex: true
+
+crawling:
+  crawler_type: docs
+
+docs_crawler:
+  base_urls: ["https://spark.apache.org/docs/latest/"]
+  url_regex: [".*spark.apache.org/docs.*"]
+  extensions_to_ignore: ["php", "java", "py", "js", "scala"]
+  docs_system: sphinx
+

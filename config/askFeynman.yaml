@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 184
+  customer_id: 1526022105
+  reindex: false
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  urls: ["https://www.feynmanlectures.caltech.edu/"]
+  delay: 1
+  url_regex: ["https://www.feynmanlectures.caltech.edu/.*"]
+  pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
+  extraction: playwright # pdf or playwright
