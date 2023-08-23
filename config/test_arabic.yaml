@@ -7,9 +7,9 @@ crawling:
   crawler_type: website
 
 website_crawler:
-  urls: ["http://newsabah.com/"]
+  urls: ["https://news.baidu.com/"]
   delay: 1
   pages_source: crawl
-  url_regex: [".*http://newsabah.com/.*"]
+  url_regex: [".*https://news.baidu.com/.*"]
   extraction: playwright
-  max_depth: 1
+  max_depth: 2

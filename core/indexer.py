@@ -6,7 +6,7 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
-from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese, StopWords
 
 import justext
 from bs4 import BeautifulSoup
@@ -26,11 +26,11 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 
 language_stopwords_Goose = {
-    'en': None,  # English stopwords are the default
-    'ar': StopWordsArabic,
-    'zh': StopWordsChinese,
-    'ko': StopWordsKorean
-}
+            'en': None,  # English stopwords are the default
+            'ar': StopWordsArabic,
+            'zh': StopWordsChinese,
+            'ko': StopWordsKorean
+        }
 
 language_stopwords_JusText = {
     'en': None,  # English stopwords are the default
@@ -69,10 +69,15 @@ def get_content_with_goose3(html_content, url, detected_language):
     logging.info(f"DEBUG Inside Goose")
     logging.info(f"DEBUG URL: {url}")
     if detected_language == 'en':
-        g=Goose()
+        g = Goose()
     else:
         stopwords_class = language_stopwords_Goose.get(detected_language, None)
-        g = Goose({'stopwords_class': stopwords_class})
+        logging.info(f"DEBUG STPWORDS CLASS: {stopwords_class}")
+        
+        if stopwords_class is not None and issubclass(stopwords_class, StopWords):
+            g = Goose({'stopwords_class': stopwords_class})
+        else:
+            g = Goose()  # Use the default stopwords for non-configured languages
     article = g.extract(url=url, raw_html=html_content)
     title = article.title
     text = article.cleaned_text

@@ -60,14 +60,7 @@ def detect_language(text):
     logging.info(f"DEBUG Inside detect_language")
     try:
         lang = detect(text)
-        if lang == "ar":
-            return "ar"  # Arabic
-        elif lang == "ko":
-            return "ko"  # Korean
-        elif lang == "zh-cn" or lang == "zh-tw":
-            return "zh"  # Chinese (simplified and traditional)
-        else:
-            return "en"  # Default to English if no specific language detected
+        return lang 
     except Exception as e:
         print(f"Language detection failed with error: {e}")
         return "en"  # Default to English in case of errors
