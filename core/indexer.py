@@ -26,18 +26,20 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 
 language_stopwords_Goose = {
-            'en': None,  # English stopwords are the default
-            'ar': StopWordsArabic,
-            'zh': StopWordsChinese,
-            'ko': StopWordsKorean
-        }
+    'en': None,  # English stopwords are the default
+    'ar': StopWordsArabic,
+    'zh': StopWordsChinese,
+    'ko': StopWordsKorean
+}
 
 language_stopwords_JusText = {
     'en': None,  # English stopwords are the default
     'ar': 'Arabic',  # Use Arabic stopwords
     #'zh': 'Chinese',  # Use Chinese stopwords
     'ko': 'Korean' , # Use Korean stopwords
-    'ur': 'Urdu'
+    'ur': 'Urdu' ,  # Use urdu stopwords
+    'hi': 'Hindi' ,  # Use Hindi stopwords 
+    'fa': 'Persian'  # Use Persian stopwords
     # Add more languages and their stopwords keywords here
 }
 
