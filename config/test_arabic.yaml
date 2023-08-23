@@ -1,0 +1,15 @@
+vectara:
+  corpus_id: 6
+  customer_id: 2081868821
+  reindex: true
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  urls: ["http://newsabah.com/"]
+  delay: 1
+  pages_source: crawl
+  url_regex: [".*http://newsabah.com/.*"]
+  extraction: playwright
+  max_depth: 1

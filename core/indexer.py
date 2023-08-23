@@ -34,28 +34,28 @@ language_stopwords_Goose = {
 
 language_stopwords_JusText = {
     'en': None,  # English stopwords are the default
-    'ar': justext.get_stoplist("arabic"),  # Use Arabic stopwords
-    'zh': justext.get_stoplist("chinese"),  # Use Chinese stopwords
-    'ko': justext.get_stoplist("korean")  # Use Korean stopwords
-    # Add more languages and their stoplists here
+    'ar': 'Arabic',  # Use Arabic stopwords
+    #'zh': 'Chinese',  # Use Chinese stopwords
+    'ko': 'Korean' , # Use Korean stopwords
+    'ur': 'Urdu'
+    # Add more languages and their stopwords keywords here
 }
 
 
-def get_content_with_justext(html_content, url):
+
+def get_content_with_justext(html_content, url, detected_language):
     logging.info(f"DEBUG Inside justext")
     logging.info(f"DEBUG URL: {url}")
-    soup = BeautifulSoup(html_content, 'html.parser')
-    body_text = soup.body.get_text()
-    detected_language = detect_language(body_text)
-    logging.info(f"DEBUG The detected language is {detected_language}")
-    if detected_language is 'en':
+    if detected_language == 'en':
         paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
     else:
-        stopwords_list = language_stopwords_JusText.get(detected_language, None)
+        stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
     
     # Extract paragraphs using the selected stoplist
-        paragraphs = justext.justext(html_content, stopwords_list)    
+        paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
+    #languages = justext.get_stoplists()
     text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
+    soup = BeautifulSoup(html_content, 'html.parser')
     stitle = soup.find('title')
     if stitle:
         title = stitle.text
@@ -63,14 +63,10 @@ def get_content_with_justext(html_content, url):
         title = 'No title'
     return text, title
 
-def get_content_with_goose3(html_content, url):
+def get_content_with_goose3(html_content, url, detected_language):
     logging.info(f"DEBUG Inside Goose")
     logging.info(f"DEBUG URL: {url}")
-    soup = BeautifulSoup(html_content, 'html.parser')
-    body_text = soup.body.get_text()
-    detected_language = detect_language(body_text)
-    logging.info(f"DEBUG The detected language is {detected_language}")
-    if detected_language is "en":
+    if detected_language == 'en':
         g=Goose()
     else:
         stopwords_class = language_stopwords_Goose.get(detected_language, None)
@@ -81,9 +77,9 @@ def get_content_with_goose3(html_content, url):
     return text, title
 
 
-def get_content_and_title(html_content, url):
-    text1, title1 = get_content_with_goose3(html_content, url)
-    text2, title2 = get_content_with_justext(html_content, url)
+def get_content_and_title(html_content, url, detected_language):
+    text1, title1 = get_content_with_goose3(html_content, url, detected_language)
+    text2, title2 = get_content_with_justext(html_content, url, detected_language)
     
     # both Goose and Justext do extraction without boilerplate; return the one that produces the longest text, trying to optimize for content
     if len(text1)>len(text2):
@@ -108,6 +104,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.timeout = 30
+        self.detected_language = None
 
         # setup requests session and mount adapter to retry requests
         self.session = create_session_with_retries()
@@ -286,8 +283,15 @@ class Indexer(object):
                 actual_url, html_content = self.fetch_content_with_timeout(url)
                 if html_content is None or len(html_content)<3:
                     return False
+                if self.detected_language is None:
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    body_text = soup.body.get_text()
+                    self.detected_language = detect_language(body_text)
+                    logging.info(f"DEBUG detected language is {self.detected_language}")
                 url = actual_url
-                text, title = get_content_and_title(html_content, url)
+                text, title = get_content_and_title(html_content, url, self.detected_language)
+                logging.info(f"DEBUG Title: {title}")
+                logging.info(f"DEBUG Text: {text}")
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
