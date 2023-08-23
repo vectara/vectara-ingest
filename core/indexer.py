@@ -26,28 +26,27 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 
 language_stopwords_Goose = {
-            'en': None,  # English stopwords are the default
-            'ar': StopWordsArabic,
-            'zh': StopWordsChinese,
-            'ko': StopWordsKorean
+    'en': None,  # English stopwords are the default
+    'ar': StopWordsArabic,
+    'zh-cn': StopWordsChinese,
+    'zh-tw': StopWordsChinese,
+    'ko': StopWordsKorean
         }
 
 language_stopwords_JusText = {
     'en': None,  # English stopwords are the default
     'ar': 'Arabic',  # Use Arabic stopwords
-    #'zh': 'Chinese',  # Use Chinese stopwords
     'ko': 'Korean' , # Use Korean stopwords
     'ur': 'Urdu' ,  # Use urdu stopwords
     'hi': 'Hindi' ,  # Use Hindi stopwords 
-    'fa': 'Persian'  # Use Persian stopwords
+    'fa': 'Persian',  # Use Persian stopwords
+    'ja': 'Japanese'  # Use Japanese stopwords
     # Add more languages and their stopwords keywords here
 }
 
 
 
 def get_content_with_justext(html_content, url, detected_language):
-    logging.info(f"DEBUG Inside justext")
-    logging.info(f"DEBUG URL: {url}")
     if detected_language == 'en':
         paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
     else:
@@ -55,7 +54,6 @@ def get_content_with_justext(html_content, url, detected_language):
     
     # Extract paragraphs using the selected stoplist
         paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
-    #languages = justext.get_stoplists()
     text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
     soup = BeautifulSoup(html_content, 'html.parser')
     stitle = soup.find('title')
@@ -66,22 +64,23 @@ def get_content_with_justext(html_content, url, detected_language):
     return text, title
 
 def get_content_with_goose3(html_content, url, detected_language):
-    logging.info(f"DEBUG Inside Goose")
-    logging.info(f"DEBUG URL: {url}")
-    if detected_language == 'en':
-        g = Goose()
-    else:
+    if detected_language in language_stopwords_Goose:
         stopwords_class = language_stopwords_Goose.get(detected_language, None)
-        logging.info(f"DEBUG STPWORDS CLASS: {stopwords_class}")
         
-        if stopwords_class is not None and issubclass(stopwords_class, StopWords):
+        if stopwords_class is not None:
             g = Goose({'stopwords_class': stopwords_class})
         else:
-            g = Goose()  # Use the default stopwords for non-configured languages
-    article = g.extract(url=url, raw_html=html_content)
-    title = article.title
-    text = article.cleaned_text
-    return text, title
+            g = Goose()  # Use the default stopwords for languages that don't have a configured StopWords class
+
+        article = g.extract(url=url, raw_html=html_content)
+        title = article.title
+        text = article.cleaned_text
+        return text, title
+    else:
+        title = ""
+        text = ""
+        logging.info(f"{detected_language} is not supported by Goose")
+        return text, title
 
 
 def get_content_and_title(html_content, url, detected_language):
@@ -294,7 +293,7 @@ class Indexer(object):
                     soup = BeautifulSoup(html_content, 'html.parser')
                     body_text = soup.body.get_text()
                     self.detected_language = detect_language(body_text)
-                    logging.info(f"DEBUG detected language is {self.detected_language}")
+                    logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
                 text, title = get_content_and_title(html_content, url, self.detected_language)
                 logging.info(f"DEBUG Title: {title}")

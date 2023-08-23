@@ -57,7 +57,6 @@ def clean_email_text(text):
     return cleaned_text
 
 def detect_language(text):
-    logging.info(f"DEBUG Inside detect_language")
     try:
         lang = detect(text)
         return lang 
