@@ -41,6 +41,6 @@ def normalize_url(url: str) -> str:
     # Reconstruct URL with scheme, without 'www', and query parameters
     return ParseResult(p.scheme, netloc, path, '', '', '').geturl()
 
-def clean_urls(urls: str) -> list[str]:
+def clean_urls(urls: set[str]) -> list[str]:
     return list(set(normalize_url(url) for url in urls))
 
