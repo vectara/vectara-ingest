@@ -7,7 +7,7 @@ from time import mktime
 
 class RssCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         """
         Crawl RSS feeds and upload to Vectara.
         """
