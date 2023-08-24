@@ -6,7 +6,7 @@ import time
 from core.utils import create_session_with_retries
 
 from goose3 import Goose
-from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese, StopWords
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
 
 import justext
 from bs4 import BeautifulSoup
@@ -27,10 +27,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 language_stopwords_Goose = {
     'en': None,  # English stopwords are the default
-    'ar': StopWordsArabic,
-    'zh-cn': StopWordsChinese,
-    'zh-tw': StopWordsChinese,
-    'ko': StopWordsKorean
+    'ar': StopWordsArabic,  # Use Arabic stopwords
+    'zh-cn': StopWordsChinese,  # Use Chinese stopwords
+    'zh-tw': StopWordsChinese,  # Use Chinese stopwords
+    'ko': StopWordsKorean  # Use Korean stopwords
         }
 
 language_stopwords_JusText = {
@@ -40,7 +40,41 @@ language_stopwords_JusText = {
     'ur': 'Urdu' ,  # Use urdu stopwords
     'hi': 'Hindi' ,  # Use Hindi stopwords 
     'fa': 'Persian',  # Use Persian stopwords
-    'ja': 'Japanese'  # Use Japanese stopwords
+    'ja': 'Japanese',  # Use Japanese stopwords
+    'bg': 'Bulgarian',  # Use Bulgarian stopwords
+    'sv': 'Swedish',  # Use Swedish stopwords
+    'lv': 'Latvian',  # Use Latvian stopwords
+    'sr': 'Serbian',  # Use Serbian stopwords
+    'sq': 'Albanian',  # Use Albanian stopwords
+    'es': 'Spanish',  # Use Spanish stopwords
+    'ka': 'Gerogian',  # Use Georgian stopwords
+    'de': 'German',  # Use German stopwords
+    'el': 'Greek',  # Use Greek stopwords
+    'ga': 'Irish',  # Use Irish stopwords
+    'vi': 'Vietnamese',  # Use Vietnamese stopwords
+    'hu': 'Hungarian',  # Use Hungarian stopwords
+    'pt': 'Portuguese',  # Use Portuguese stopwords
+    'pl': 'Polish',  # Use Polish stopwords
+    'it': 'Italian',  # Use Italian stopwords
+    'la': 'Latin',  # Use Latin stopwords
+    'tr': 'Turkish',  # Use Turkish stopwords
+    'id': 'Indonesian',  # Use Indonesian stopwords
+    'hr': 'Croatian',  # Use Croatian stopwords
+    'be': 'Belarusian',  # Use Belarusian stopwords
+    'ru': 'Russian',  # Use Russian stopwords
+    'et': 'Estonian',  # Use Estonian stopwords
+    'uk': 'Ukranian',  # Use Ukranian stopwords
+    'ro': 'Romanian',  # Use Romanian stowords
+    'cs': 'Czech',  # Use Czech stopwords
+    'ml': 'Malyalam',  # Use Malyalam stopwords
+    'sk': 'Slovak',  # Use Slovak stopwords
+    'fi': 'Finnish',  # Use Finnish stopwords
+    'da': 'Danish',  # Use Danish stopwords
+    'ms': 'Malay',  # Use Malay stopwords
+    'ca': 'Catalan',  # Use Catalan stopwords
+    'eo': 'Esperanto',  # Use Esperanto stopwords
+    'nb': 'Norwegian_Bokmal',  # Use Norwegian_Bokmal stopwords
+    'nn': 'Norwegian_Nynorsk'  # Use Norwegian_Nynorsk stopwords
     # Add more languages and their stopwords keywords here
 }
 
@@ -296,8 +330,6 @@ class Indexer(object):
                     logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
                 text, title = get_content_and_title(html_content, url, self.detected_language)
-                logging.info(f"DEBUG Title: {title}")
-                logging.info(f"DEBUG Text: {text}")
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:

@@ -9,6 +9,10 @@
 `vectara-ingest` includes a number of crawlers that make it easy to crawl data sources and index the results into Vectara.
 Let's go through each of these crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
+### Multilingual Web Content Crawling and Indexing
+
+We support crawling and indexing web content in 41 languages currently. To determine the language of a given webpage, we utilize https://pypi.org/project/langdetect/. To cater to a larger number of languages we use both https://pypi.org/project/goose3/ and https://pypi.org/project/jusText/ to get all the web content. 
+
 ### Website crawler
 
 ```yaml
