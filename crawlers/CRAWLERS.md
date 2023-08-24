@@ -11,7 +11,7 @@ Let's go through each of these crawlers to explain how they work and how to cust
 
 ### Multilingual Web Content Crawling and Indexing
 
-We support crawling and indexing web content in 41 languages currently. To determine the language of a given webpage, we utilize https://pypi.org/project/langdetect/. To cater to a larger number of languages we use both https://pypi.org/project/goose3/ and https://pypi.org/project/jusText/ to get all the web content. 
+We support crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize https://pypi.org/project/langdetect/. To cater to a larger number of languages we use both https://pypi.org/project/goose3/ and https://pypi.org/project/jusText/ to get all the web content. 
 
 ### Website crawler
 
