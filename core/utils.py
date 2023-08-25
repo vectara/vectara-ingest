@@ -2,6 +2,9 @@ from bs4 import BeautifulSoup
 import requests
 from urllib.parse import urlparse, urlunparse, ParseResult
 import re
+from langdetect import detect
+import logging
+
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
@@ -53,3 +56,10 @@ def clean_email_text(text):
     cleaned_text = re.sub(r"[<>]+", "", cleaned_text, flags=re.MULTILINE)
     return cleaned_text
 
+def detect_language(text):
+    try:
+        lang = detect(text)
+        return lang 
+    except Exception as e:
+        print(f"Language detection failed with error: {e}")
+        return "en"  # Default to English in case of errors
