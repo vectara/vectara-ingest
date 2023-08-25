@@ -7,14 +7,10 @@
 ## Overview
 
 `vectara-ingest` includes a number of crawlers that make it easy to crawl data sources and index the results into Vectara.
+
+`vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in Indexer.index_url to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. `vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
+
 Let's go through each of these crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
-
-we use https://pypi.org/project/goose3/ and https://pypi.org/project/jusText/ in indexer.index_url to enhance web content extraction, ensuring relevant material is gathered while excluding ads and irrelevant content during indexing.
-
-### Multilingual Web Content Crawling and Indexing
-
-We support crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize https://pypi.org/project/langdetect/. 
-The use of both https://pypi.org/project/goose3/ and https://pypi.org/project/jusText/ enables us to cater to a wide range of languages.
 
 ### Website crawler
 
