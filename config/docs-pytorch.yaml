@@ -8,7 +8,7 @@ crawling:
 
 docs_crawler:
   base_urls: ["https://pytorch.org/docs/stable/index.html"]
-  url_regex: ["https://pytorch.org/docs/.*"]
+  pos_regex: ["https://pytorch.org/docs/.*"]
   extensions_to_ignore: ["php", "java", "js", "scala"]
   docs_system: AsciiDocs
 

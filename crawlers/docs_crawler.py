@@ -66,7 +66,8 @@ class DocsCrawler(Crawler):
                         if href is None:
                             continue
                         abs_url = self.concat_url_and_href(url, href)
-                        if ((any([r.match(abs_url) for r in self.url_regex])) and                           # match any of the allowed regexes
+                        if ((any([r.match(abs_url) for r in self.pos_regex])) and                           # match any of the positive regexes
+                            (not any([r.match(abs_url) for r in self.neg_regex])) and                       # don't match any of the negative regexes
                             (abs_url.startswith("http")) and                                                # starts with http/https
                             (abs_url not in self.ignored_urls) and                                          # not previously ignored    
                             (len(urlparse(abs_url).fragment)==0) and                                        # does not have fragment
@@ -86,7 +87,8 @@ class DocsCrawler(Crawler):
         self.crawled_urls = set()
         self.ignored_urls = set()
         self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
-        self.url_regex = [re.compile(r) for r in self.cfg.docs_crawler.url_regex]
+        self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.pos_regex] if self.cfg.docs_crawler.pos_regex else []
+        self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.neg_regex] if self.cfg.docs_crawler.neg_regex else []
 
         self.session = create_session_with_retries()
         self.rate_limiter = RateLimiter(max_calls=2, period=1)
