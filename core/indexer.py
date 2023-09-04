@@ -7,7 +7,7 @@ from core.utils import create_session_with_retries
 
 from goose3 import Goose     # type: ignore
 
-from omegaconf import OmegaConf    # type: ignore
+from omegaconf import OmegaConf
 from nbconvert import HTMLExporter   # type: ignore
 import nbformat
 import markdown
@@ -17,8 +17,8 @@ from core.utils import html_to_text
 from typing import Any, List, Dict, Tuple
 
 from unstructured.partition.auto import partition       # type: ignore
-import unstructured as us         # type: ignore
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError        # type:ignore
+import unstructured as us                               # type: ignore
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
 class Indexer(object):
@@ -206,7 +206,7 @@ class Indexer(object):
             elif url.endswith('md'):
                 html_content = markdown.markdown(dl_content)
             elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT) # type: ignore
+                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             extracted_title = url.split('/')[-1]      # no title in these files, so using file name

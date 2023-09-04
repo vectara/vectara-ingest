@@ -1,5 +1,5 @@
-from omegaconf import OmegaConf        # type: ignore
-from slugify import slugify  
+from omegaconf import OmegaConf
+from slugify import slugify
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -10,15 +10,9 @@ from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 
-class CrawlError(Exception):
-    """Custom exception for crawl-related errors."""
-    pass
-
 def recursive_crawl(url: str, depth: int, url_regex: List[re.Pattern[str]], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
     if depth <= 0:
-        if visited is None:
-            return set()
-        return set(visited)
+        return set() if visited is None else set(visited)
 
     if visited is None:
         visited = set()
@@ -72,7 +66,7 @@ class Crawler(object):
         api_key: str,
     ) -> None:
         self.cfg = cfg
-        reindex = self.cfg.vectara.get("reindex", False)
+        reindex = self.cfg.vectara.get("reindex", False)        # type: ignore
         self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex)
 
     def url_to_file(self, url: str, title: str) -> str:
@@ -128,4 +122,4 @@ class Crawler(object):
         return filename
 
     def crawl(self) -> None:
-        raise CrawlError("Not implemented")
+        raise Exception("Not implemented")
