@@ -1,12 +1,13 @@
 import logging
 from core.crawler import Crawler
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf   # type: ignore
 import requests
 from core.utils import clean_email_text
 from slugify import slugify
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
+from presidio_analyzer import AnalyzerEngine   # type: ignore
+from presidio_anonymizer import AnonymizerEngine   # type: ignore
 import datetime
+from typing import Tuple, List, Dict, Any
 
 # Initialize Presidio Analyzer and Anonymizer
 analyzer = AnalyzerEngine()
@@ -20,17 +21,17 @@ class HubspotCrawler(Crawler):
         self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
 
 
-    def mask_pii(self, text):
+    def mask_pii(self, text: str) -> str:
         # Analyze and anonymize PII data
         results = analyzer.analyze(text=text,
                                entities=["PHONE_NUMBER", "CREDIT_CARD", "EMAIL_ADDRESS", "IBAN_CODE", "PERSON", "US_BANK_NUMBER", "US_PASSPORT", "US_SSN", "LOCATION"],
                                language='en')  # Other Entities can be added 
     
         anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
-        return anonymized_text.text
+        return str(anonymized_text.text)
 
 
-    def crawl(self):
+    def crawl(self) -> None:
         logging.info("Starting HubSpot Crawler.")
         
         # API endpoint for fetching contacts
@@ -116,7 +117,7 @@ class HubspotCrawler(Crawler):
                 logging.error(f"Error: {response_contacts.status_code} - {response_contacts.text}")
 
 
-    def get_contact_engagements(self, contact_id):
+    def get_contact_engagements(self, contact_id: str) -> Tuple[List[Dict[Any, Any]], int]:
         api_endpoint_engagements = f"https://api.hubapi.com/engagements/v1/engagements/associated/contact/{contact_id}/paged"
         headers = {
             "Authorization": f"Bearer {self.hubspot_api_key}",
@@ -146,6 +147,6 @@ class HubspotCrawler(Crawler):
         return all_engagements, len(all_engagements)
 
 
-    def get_email_url(self, contact_id, engagement_id):
+    def get_email_url(self, contact_id: str, engagement_id: str) -> str:
         email_url = f"https://app.hubspot.com/contacts/{self.cfg.hubspot_crawler.hubspot_customer_id}/contact/{contact_id}/?engagement={engagement_id}"
         return email_url

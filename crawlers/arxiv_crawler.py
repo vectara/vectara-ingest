@@ -1,9 +1,9 @@
 import logging
 from core.crawler import Crawler
-import arxiv
+import arxiv     # type: ignore
 from core.utils import create_session_with_retries
 
-def validate_category(category: str):
+def validate_category(category: str) -> bool:
     valid_categories = [
         "cs", "econ", "q-fin","stat",
         "math", "math-ph", "q-bio", "stat-mech",
@@ -16,7 +16,7 @@ def validate_category(category: str):
 
 class ArxivCrawler(Crawler):
 
-    def get_citations(self, arxiv_id):
+    def get_citations(self, arxiv_id: str) -> int:
         """
         Retrieves the number of citations for a given paper from Semantic Scholar API based on its arXiv ID.
 
@@ -52,7 +52,7 @@ class ArxivCrawler(Crawler):
             return -1
 
 
-    def crawl(self):
+    def crawl(self) -> None:
         n_papers = self.cfg.arxiv_crawler.n_papers
         query_terms = self.cfg.arxiv_crawler.query_terms
         year = self.cfg.arxiv_crawler.start_year

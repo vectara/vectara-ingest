@@ -1,12 +1,13 @@
 import logging
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf    # type: ignore
 import json
 from datetime import datetime
+from typing import Dict, Any
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
 
-def is_date_in_range(datetime_str, start_year, end_year):
+def is_date_in_range(datetime_str: str, start_year: int, end_year: int) -> bool:
     dt = datetime.strptime(datetime_str.split(' ')[0], '%Y-%m-%d')
     return start_year <= dt.year <= end_year
 
@@ -22,7 +23,7 @@ class FmpCrawler(Crawler):
         self.api_key = cfg.fmp_crawler.fmp_api_key
         self.session = create_session_with_retries()
 
-    def index_doc(self, document):
+    def index_doc(self, document: Dict[str, Any]) -> bool:
         try:
             succeeded = self.indexer.index_document(document)
             if succeeded:
@@ -34,7 +35,7 @@ class FmpCrawler(Crawler):
             logging.info(f"Error during indexing of {document['documentId']}: {e}")
             return False
 
-    def crawl(self):
+    def crawl(self) -> None:
         base_url = 'https://financialmodelingprep.com'
         for ticker in self.tickers:
             # get profile
@@ -42,7 +43,7 @@ class FmpCrawler(Crawler):
             try:
                 response = self.session.get(url)
             except Exception as e:
-                logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
+                logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")   # type: ignore
                 continue
             if response.status_code == 200:
                 data = response.json()
@@ -60,7 +61,7 @@ class FmpCrawler(Crawler):
                 try:
                     response = self.session.get(url)
                 except Exception as e:
-                    logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")
+                    logging.info(f"Error getting transcript for {ticker} quarter {quarter} of {year}: {e}")    # type: ignore
                     continue
                 if response.status_code == 200:
                     data = response.json()
@@ -81,7 +82,7 @@ class FmpCrawler(Crawler):
                             for title, values in item_dict.items():
                                 values = [v for v in values if v and type(v)==str and len(v)>=10]
                                 if len(values)>0 and len(' '.join(values))>100:
-                                    document['section'].append({'title': f'{key} - {title}', 'text': '\n'.join(values)})
+                                    document['section'].append({'title': f'{key} - {title}', 'text': '\n'.join(values)})   # type: ignore
                     self.index_doc(document)
 
             # Index earnings call transcript
@@ -104,7 +105,7 @@ class FmpCrawler(Crawler):
                                 "metadataJson": json.dumps(metadata),
                                 "section": [
                                     {
-                                        'text': transcript['content']
+                                        'text': transcript['content']     # type: ignore
                                     }
                                 ]
                             }

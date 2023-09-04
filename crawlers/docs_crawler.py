@@ -1,15 +1,16 @@
 from core.crawler import Crawler
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 import logging
 from urllib.parse import urljoin, urlparse
 import re
 from collections import deque
-from ratelimiter import RateLimiter
+from ratelimiter import RateLimiter   # type: ignore
 from core.utils import create_session_with_retries, binary_extensions
+from typing import Tuple, Optional, List, Set
 
 class DocsCrawler(Crawler):
 
-    def concat_url_and_href(self, url, href):
+    def concat_url_and_href(self, url: str, href: str) -> str:
         if href.startswith('http'):
             return href
         else:
@@ -18,7 +19,7 @@ class DocsCrawler(Crawler):
             joined = urljoin(url, href)
             return joined
 
-    def get_url_content(self, url):
+    def get_url_content(self, url: str) -> Tuple[Optional[str], Optional[BeautifulSoup]]:
         headers = {
             'User-Agent': 'Mozilla/5.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
@@ -32,10 +33,13 @@ class DocsCrawler(Crawler):
         # check for refresh redirect        
         soup = BeautifulSoup(response.content, 'html.parser')
         meta_refresh = soup.find('meta', attrs={'http-equiv': 'refresh'})
-        if meta_refresh:
-            href = meta_refresh['content'].split('url=')[-1]
-            url = self.parse_url_and_href(url, href)
-            response = self.session.get(url, headers=headers)
+        if meta_refresh and isinstance(meta_refresh, NavigableString):
+            content = str(meta_refresh)
+            match = re.search(r'url=([^\s;]+)', content)
+            if match:
+                href = match.group(1)
+                url = self.concat_url_and_href(url, href)
+                response = self.session.get(url, headers=headers)
             if response.status_code != 200:
                 logging.info(f"Failed to crawl redirect {url}, response code is {response.status_code}")
                 return None, None
@@ -43,7 +47,7 @@ class DocsCrawler(Crawler):
         page_content = BeautifulSoup(response.content, 'lxml')
         return url, page_content
 
-    def get_urls(self, base_url):
+    def get_urls(self, base_url: str) -> None:
         new_urls = deque([base_url])
 
         # Crawl each URL in the queue
@@ -53,14 +57,15 @@ class DocsCrawler(Crawler):
                 logging.info(f"Currently have {n_urls} crawled urls identified")
             
             # pop the left-most URL from new_urls
-            url = new_urls.popleft()
+            current_url = new_urls.popleft()
 
             try:
-                url, page_content = self.get_url_content(url)
-                self.crawled_urls.add(url)
+                url, page_content = self.get_url_content(current_url)
+                if url is not None:
+                    self.crawled_urls.add(url)
 
                 # Find all the new URLs in the page's content and add them into the queue
-                if page_content:
+                if page_content and url is not None:
                     for link in page_content.find_all('a'):
                         href = link.get('href')
                         if href is None:
@@ -83,9 +88,9 @@ class DocsCrawler(Crawler):
                 logging.info(f"Error crawling {url}: {e}, traceback={traceback.format_exc()}")
                 continue
 
-    def crawl(self):
-        self.crawled_urls = set()
-        self.ignored_urls = set()
+    def crawl(self) -> None:
+        self.crawled_urls: Set[str] = set()
+        self.ignored_urls: Set[str] = set()
         self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
         self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.pos_regex] if self.cfg.docs_crawler.pos_regex else []
         self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.neg_regex] if self.cfg.docs_crawler.neg_regex else []

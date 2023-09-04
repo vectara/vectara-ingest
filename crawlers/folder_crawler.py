@@ -6,7 +6,7 @@ import time
 
 class FolderCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         folder = "/home/vectara/data"
         extensions = self.cfg.folder_crawler.extensions
 

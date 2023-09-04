@@ -9,7 +9,7 @@ class PDFConverter:
     def __init__(self, use_pdfkit: bool = False):
         self.use_pdfkit = use_pdfkit
 
-    def from_url(self, url: str, filename: str, title: str = None) -> bool:
+    def from_url(self, url: str, filename: str, title: str = "") -> bool:
         """
         Convert a webpage to PDF and save it to a file.
 

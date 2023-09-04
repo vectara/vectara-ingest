@@ -1,13 +1,13 @@
 import logging
 import time
 from core.crawler import Crawler
-import feedparser
+import feedparser       # type: ignore
 from datetime import datetime, timedelta
 from time import mktime
 
 class RssCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         """
         Crawl RSS feeds and upload to Vectara.
         """
@@ -64,4 +64,3 @@ class RssCrawler(Crawler):
             time.sleep(delay_in_secs)
 
         return
-

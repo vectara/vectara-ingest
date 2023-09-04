@@ -1,28 +1,29 @@
 import logging
 import json
 import os
-from slugify import slugify         # type: ignore
+from slugify import slugify         
 import time
 from core.utils import create_session_with_retries
 
-from goose3 import Goose
-from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
+from goose3 import Goose   # type: ignore
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese    # type: ignore
+from typing import List, Tuple, Any, Dict, Union
 
-import justext
+import justext    # type: ignore
 from bs4 import BeautifulSoup
 
-from omegaconf import OmegaConf
-from nbconvert import HTMLExporter
+from omegaconf import OmegaConf   # type: ignore
+from nbconvert import HTMLExporter   # type: ignore
 import nbformat
 import markdown
 import docutils.core
 from core.utils import html_to_text
 from core.utils import detect_language
 
-from unstructured.partition.auto import partition
-from unstructured.partition.html import partition_html
-import unstructured as us
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from unstructured.partition.auto import partition    # type: ignore
+from unstructured.partition.html import partition_html   # type: ignore
+import unstructured as us    # type: ignore
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError     # type: ignore
 
 
 language_stopwords_Goose = {
@@ -80,7 +81,7 @@ language_stopwords_JusText = {
 
 
 
-def get_content_with_justext(html_content, url, detected_language):
+def get_content_with_justext(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
     if detected_language == 'en':
         paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
     else:
@@ -97,7 +98,7 @@ def get_content_with_justext(html_content, url, detected_language):
         title = 'No title'
     return text, title
 
-def get_content_with_goose3(html_content, url, detected_language):
+def get_content_with_goose3(html_content: str, url: str, detected_language: str) -> Tuple[str, str] :
     if detected_language in language_stopwords_Goose:
         stopwords_class = language_stopwords_Goose.get(detected_language, None)
         
@@ -117,7 +118,7 @@ def get_content_with_goose3(html_content, url, detected_language):
         return text, title
 
 
-def get_content_and_title(html_content, url, detected_language):
+def get_content_and_title(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
     text1, title1 = get_content_with_goose3(html_content, url, detected_language)
     text2, title2 = get_content_with_justext(html_content, url, detected_language)
     
@@ -144,7 +145,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.timeout = 30
-        self.detected_language = None
+        self.detected_language = ""
 
         # setup requests session and mount adapter to retry requests
         self.session = create_session_with_retries()
@@ -153,7 +154,7 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str, timeout: int = 30):
+    def fetch_content_with_timeout(self, url: str, timeout: int = 30) -> Tuple[str, str]:
         '''
         Fetch content from a URL with a timeout.
         Args:
@@ -191,7 +192,7 @@ class Indexer(object):
         return out_url, content
 
     # delete document; returns True if successful, False otherwise
-    def delete_doc(self, doc_id: str):
+    def delete_doc(self, doc_id: str) -> bool:
         """
         Delete a document from the Vectara corpus.
 
@@ -213,7 +214,7 @@ class Indexer(object):
             return False
         return True
     
-    def index_file(self, filename: str, uri: str, metadata: dict) -> bool:
+    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
         Args:
@@ -232,7 +233,10 @@ class Indexer(object):
             'customer-id': str(self.customer_id),
         }
 
-        files = { "file": (uri, open(filename, 'rb')), "doc_metadata": json.dumps(metadata) }
+        files: Any = {
+            "file": (uri, open(filename, 'rb')),
+            "doc_metadata": (None, json.dumps(metadata)),
+        }          
         response = self.session.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
             files=files, verify=True, headers=post_headers)
@@ -258,7 +262,7 @@ class Indexer(object):
         logging.info(f"REST upload for {uri} succeesful")
         return True
 
-    def index_url(self, url: str, metadata: dict) -> bool:
+    def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
         Args:
@@ -304,30 +308,30 @@ class Indexer(object):
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-            dl_content = response.content
+            dl_content = response.content.decode('utf-8')
             if url.endswith('rst'):
                 html_content = docutils.core.publish_string(dl_content, writer_name='html')
             elif url.endswith('md'):
                 html_content = markdown.markdown(dl_content)
             elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)
+                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT) # type: ignore
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content)
             parts = [text]
-
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
                 actual_url, html_content = self.fetch_content_with_timeout(url)
                 if html_content is None or len(html_content)<3:
                     return False
-                if self.detected_language is None:
+                if self.detected_language == "":
                     soup = BeautifulSoup(html_content, 'html.parser')
-                    body_text = soup.body.get_text()
-                    self.detected_language = detect_language(body_text)
-                    logging.info(f"The detected language is {self.detected_language}")
+                    if soup.body:  # Check if the <body> tag exists
+                        body_text = soup.body.get_text()
+                        self.detected_language = detect_language(body_text)
+                        logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
                 text, title = get_content_and_title(html_content, url, self.detected_language)
                 parts = [text]
@@ -338,13 +342,13 @@ class Indexer(object):
                 return False
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
-                                        doc_metadata=metadata, title=title)
+                                        doc_metadata=metadata, title=title if title is not None else "No Title")
         if succeeded:
             return True
         else:
             return False
 
-    def index_segments(self, doc_id: str, parts: list, metadatas: list, doc_metadata: dict = None, title: str = None) -> bool:
+    def index_segments(self, doc_id: Union[str, Tuple[Any, ...]], parts: List[str], metadatas: List[Dict[str, Any]], doc_metadata: Dict[str, Any] = {}, title: Union[str, Tuple[Any, ...]] = "") -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
         """
@@ -352,12 +356,12 @@ class Indexer(object):
         document["documentId"] = doc_id
         if title:
             document["title"] = title
-        document["section"] = [{"text": part, "metadataJson": json.dumps(md)} for part,md in zip(parts,metadatas)]
+        document["section"] = [{"text": part, "metadataJson": json.dumps(md)} for part,md in zip(parts,metadatas)]  # type: ignore
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
         return self.index_document(document)
     
-    def index_document(self, document: dict) -> bool:
+    def index_document(self, document: Dict[str, Any]) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
         """

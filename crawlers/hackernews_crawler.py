@@ -3,10 +3,11 @@ import requests
 import logging
 from core.crawler import Crawler
 import os
-from slugify import slugify         # type: ignore
+from slugify import slugify         
 from core.utils import html_to_text, create_session_with_retries
+from typing import List
 
-def get_comments(kids, entrypoint):
+def get_comments(kids: List[int], entrypoint: str) -> List[str]:
     comments = []
     for kid in kids:
         try:
@@ -24,7 +25,7 @@ def get_comments(kids, entrypoint):
 
 class HackernewsCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         N_ARTICLES = self.cfg.hackernews_crawler.max_articles
 
         # URL for the Hacker News API

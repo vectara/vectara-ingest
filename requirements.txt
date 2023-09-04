@@ -47,3 +47,14 @@ spaCy==3.6.1
 justext==3.0.0
 jieba==0.42.1
 langdetect==1.0.9
+mypy==1.5.1
+typing==3.7.4.3
+types-requests==2.31.0.2
+types-beautifulsoup4==4.12.0.6
+types-markdown==3.4.2.10
+types-docutils==0.20.0.3
+types-xmltodict==0.13.0.3
+pandas-stubs==2.0.3.230814
+types-python-slugify==8.0.0.3
+types-SQLAlchemy==1.4.53.38
+types-boto3==1.0.2

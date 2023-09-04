@@ -2,10 +2,11 @@ import logging
 from core.crawler import Crawler
 import pandas as pd
 import unicodedata
+from typing import Tuple, Union, Any
 
 class CsvCrawler(Crawler):
 
-    def crawl(self):        
+    def crawl(self) -> None:        
         text_columns = list(self.cfg.csv_crawler.text_columns)
         metadata_columns = list(self.cfg.csv_crawler.metadata_columns)
         csv_path = self.cfg.csv_crawler.csv_path
@@ -17,7 +18,7 @@ class CsvCrawler(Crawler):
         
         logging.info(f"indexing {len(df)} rows from the CSV file {csv_path}")
 
-        def index_df(doc_id, title, df):
+        def index_df(doc_id: Union[str, Tuple[Any, ...]], title: Union[str, Tuple[Any, ...]], df: pd.DataFrame) -> None:
             parts = []
             metadatas = []
             for _, row in df.iterrows():
@@ -30,12 +31,16 @@ class CsvCrawler(Crawler):
         if doc_id_columns:
             grouped = df.groupby(doc_id_columns)
             for name, group in grouped:
-                gr_str = name if type(name)==str else ' - '.join(str(x) for x in name)
-                index_df(doc_id=gr_str, title=gr_str, df=group)
+                if isinstance(name, tuple):
+                    gr_str = ' - '.join(str(x) for x in name)
+                    index_df(doc_id=gr_str, title=gr_str, df=group)
+                else:
+                    index_df(doc_id=name, title=name, df=group)
         else:
             rows_per_chunk = self.cfg.csv_crawler.get("rows_per_chunk", 500)
             for inx in range(0, df.shape[0], rows_per_chunk):
                 sub_df = df[inx: inx+rows_per_chunk]
-                name = f'rows {inx}-{inx+rows_per_chunk-1}'
+                if isinstance(name, str):
+                    name = f'rows {inx}-{inx+rows_per_chunk-1}'
                 index_df(doc_id=name, title=name, df=sub_df)
         
