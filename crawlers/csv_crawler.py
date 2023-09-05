@@ -5,7 +5,7 @@ import unicodedata
 
 class CsvCrawler(Crawler):
 
-    def crawl(self):        
+    def crawl(self) -> None:
         text_columns = list(self.cfg.csv_crawler.text_columns)
         metadata_columns = list(self.cfg.csv_crawler.metadata_columns)
         csv_path = self.cfg.csv_crawler.csv_path
@@ -17,7 +17,7 @@ class CsvCrawler(Crawler):
         
         logging.info(f"indexing {len(df)} rows from the CSV file {csv_path}")
 
-        def index_df(doc_id, title, df):
+        def index_df(doc_id: str, title: str, df: pd.DataFrame) -> None:
             parts = []
             metadatas = []
             for _, row in df.iterrows():

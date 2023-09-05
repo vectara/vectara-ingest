@@ -6,7 +6,7 @@ from core.utils import create_session_with_retries
 
 class JiraCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         self.jira_headers = { "Accept": "application/json" }
         self.jira_auth = (self.cfg.jira_crawler.jira_username, self.cfg.jira_crawler.jira_password)
         session = create_session_with_retries()
