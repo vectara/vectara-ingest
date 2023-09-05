@@ -6,7 +6,7 @@ import unicodedata
 
 class DatabaseCrawler(Crawler):
 
-    def crawl(self):        
+    def crawl(self) -> None: 
         db_url = self.cfg.database_crawler.db_url
         db_table = self.cfg.database_crawler.db_table
         text_columns = list(self.cfg.database_crawler.text_columns)
@@ -25,7 +25,7 @@ class DatabaseCrawler(Crawler):
         
         logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
 
-        def index_df(doc_id, title, df):
+        def index_df(doc_id: str, title: str, df: pd.DataFrame) -> None:
             parts = []
             metadatas = []
             for _, row in df.iterrows():

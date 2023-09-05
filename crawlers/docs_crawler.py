@@ -6,10 +6,11 @@ import re
 from collections import deque
 from ratelimiter import RateLimiter
 from core.utils import create_session_with_retries, binary_extensions
+from typing import Tuple, Set
 
 class DocsCrawler(Crawler):
 
-    def concat_url_and_href(self, url, href):
+    def concat_url_and_href(self, url: str, href: str) -> str:
         if href.startswith('http'):
             return href
         else:
@@ -18,7 +19,7 @@ class DocsCrawler(Crawler):
             joined = urljoin(url, href)
             return joined
 
-    def get_url_content(self, url):
+    def get_url_content(self, url: str) -> Tuple[str, BeautifulSoup]:
         headers = {
             'User-Agent': 'Mozilla/5.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
@@ -33,7 +34,7 @@ class DocsCrawler(Crawler):
         soup = BeautifulSoup(response.content, 'html.parser')
         meta_refresh = soup.find('meta', attrs={'http-equiv': 'refresh'})
         if meta_refresh:
-            href = meta_refresh['content'].split('url=')[-1]
+            href = meta_refresh['content'].split('url=')[-1]            # type: ignore
             url = self.concat_url_and_href(url, href)
             response = self.session.get(url, headers=headers)
             if response.status_code != 200:
@@ -43,7 +44,7 @@ class DocsCrawler(Crawler):
         page_content = BeautifulSoup(response.content, 'lxml')
         return url, page_content
 
-    def get_urls(self, base_url):
+    def collect_urls(self, base_url: str) -> None:
         new_urls = deque([base_url])
 
         # Crawl each URL in the queue
@@ -83,9 +84,9 @@ class DocsCrawler(Crawler):
                 logging.info(f"Error crawling {url}: {e}, traceback={traceback.format_exc()}")
                 continue
 
-    def crawl(self):
-        self.crawled_urls = set()
-        self.ignored_urls = set()
+    def crawl(self) -> None:
+        self.crawled_urls: Set[str] = set()
+        self.ignored_urls: Set[str] = set()
         self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
         self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.pos_regex] if self.cfg.docs_crawler.pos_regex else []
         self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.neg_regex] if self.cfg.docs_crawler.neg_regex else []
@@ -94,7 +95,7 @@ class DocsCrawler(Crawler):
         self.rate_limiter = RateLimiter(max_calls=2, period=1)
 
         for base_url in self.cfg.docs_crawler.base_urls:
-            self.get_urls(base_url)
+            self.collect_urls(base_url)
 
         logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         source = self.cfg.docs_crawler.docs_system

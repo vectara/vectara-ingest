@@ -9,7 +9,7 @@ import os
 
 import importlib
 from core.crawler import Crawler
-from authlib.integrations.requests_client import OAuth2Session  # type: ignore
+from authlib.integrations.requests_client import OAuth2Session
 
 def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
     sys.path.insert(0, os.path.abspath(folder_name))

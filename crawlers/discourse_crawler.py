@@ -1,26 +1,23 @@
 import logging
-import requests
 from core.crawler import Crawler
 from omegaconf import OmegaConf
-import requests
 import json
 from html.parser import HTMLParser
 from io import StringIO
 from core.utils import create_session_with_retries
+from typing import List, Dict, Any
 
 class MLStripper(HTMLParser):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.reset()
         self.strict = False
         self.convert_charrefs= True
         self.text = StringIO()
-    def handle_data(self, d):
-        self.text.write(d)
-    def get_data(self):
+    def get_data(self) -> str:
         return self.text.getvalue()
 
-def strip_html(text: str):
+def strip_html(text: str) -> str:
     """
     Strip HTML tags from text
     """
@@ -37,7 +34,7 @@ class DiscourseCrawler(Crawler):
         self.session = create_session_with_retries()
 
     # function to fetch the topics from the Discourse API
-    def index_topics(self):
+    def index_topics(self) -> List[Dict[str, Any]]:
         url = self.discourse_base_url + '/latest.json'
         params = { 'api_key': self.discourse_api_key, 'api_username': 'ofer@vectara.com', 'page': '0'}
         response = self.session.get(url, params=params)
@@ -45,7 +42,7 @@ class DiscourseCrawler(Crawler):
             raise Exception(f'Failed to fetch topics from Discourse, exception = {response.status_code}, {response.text}')
 
         # index all topics
-        topics = json.loads(response.text)['topic_list']['topics']
+        topics = list(json.loads(response.text)['topic_list']['topics'])
         for topic in topics:
             topic_id = topic['id']
             logging.info(f"Indexing topic {topic_id}")
@@ -71,7 +68,7 @@ class DiscourseCrawler(Crawler):
         return topics
 
     # function to fetch the posts for a topic from the Discourse API
-    def index_posts(self, topic):
+    def index_posts(self, topic: Dict[str, Any]) -> List[Any]:
         topic_id = topic["id"]
         url_json = self.discourse_base_url + '/t/' + str(topic_id) + '.json'
         params = { 'api_key': self.discourse_api_key, 'api_username': 'ofer@vectara.com'}
@@ -80,7 +77,7 @@ class DiscourseCrawler(Crawler):
             raise Exception('Failed to fetch posts for topic ' + str(topic_id) + ' from Discourse')
 
         # parse the response JSON
-        posts = json.loads(response.text)['post_stream']['posts']
+        posts = list(json.loads(response.text)['post_stream']['posts'])
         for post in posts:
             post_id = post['id']
             logging.info(f"Indexing post {post_id}")
@@ -104,7 +101,7 @@ class DiscourseCrawler(Crawler):
             self.indexer.index_document(document)
         return posts
 
-    def crawl(self):
+    def crawl(self) -> None:
         topics = self.index_topics()
         logging.info(f"Indexed {len(topics)} topics from Discourse")
         for topic in topics:

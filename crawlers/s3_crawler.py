@@ -1,12 +1,13 @@
 import logging
 import pathlib
-from slugify import slugify         # type: ignore
+from slugify import slugify
 import boto3
 import os
+from typing import List, Tuple
 
 from core.crawler import Crawler
 
-def list_files_in_s3_bucket(bucket_name: str, prefix: str):
+def list_files_in_s3_bucket(bucket_name: str, prefix: str) -> List[str]:
     """
     List all files in an S3 bucket.
 
@@ -30,7 +31,7 @@ def list_files_in_s3_bucket(bucket_name: str, prefix: str):
 
     return files
 
-def split_s3_uri(s3_uri: str):
+def split_s3_uri(s3_uri: str) -> Tuple[str, str]:
     """
     Split an S3 URI into bucket and object key.
     """
@@ -43,7 +44,7 @@ class S3Crawler(Crawler):
     """
     Crawler for S3 files.
     """
-    def crawl(self):
+    def crawl(self) -> None:
         folder = self.cfg.s3_crawler.s3_path
         extensions = self.cfg.s3_crawler.extensions
 

@@ -1,8 +1,6 @@
-import os
 import logging
 from omegaconf import OmegaConf
 import time
-import requests
 from bs4 import BeautifulSoup 
 import pandas as pd
 import datetime
@@ -11,11 +9,14 @@ from ratelimiter import RateLimiter
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
 
+from typing import Dict, List
+
+
 # build mapping of ticker to cik
 df = pd.read_csv('https://www.sec.gov/include/ticker.txt', sep='\t', names=['ticker', 'cik'], dtype=str)
 ticker_dict = dict(zip(df.ticker.map(lambda x: str(x).upper()), df.cik))
     
-def get_headers() -> str:
+def get_headers() -> Dict[str, str]:
     """
     Get a set of headers to use for HTTP requests.
     """
@@ -25,16 +26,16 @@ def get_headers() -> str:
     }
     return headers
 
-def get_filings(cik, start_date, end_date, filing_type="10-K"):
+def get_filings(cik: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
     base_url = "https://www.sec.gov/cgi-bin/browse-edgar"
     params = {
         "action": "getcompany", "CIK": cik, "type": filing_type, "dateb": "", "owner": "exclude", 
         "start": "", "output": "atom", "count": "100"
     }
-    start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
-    end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+    start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
+    end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d')
     
-    filings = []
+    filings: List[Dict[str, str]] = []
     current_start = 0
     rate_limiter = RateLimiter(max_calls=1, period=1)
     
@@ -64,9 +65,9 @@ def get_filings(cik, start_date, end_date, filing_type="10-K"):
                     with rate_limiter:
                         soup = BeautifulSoup(session.get(url, headers=get_headers()).content, "html.parser")
                     l = soup.select_one('td:-soup-contains("10-K") + td a')
-                    html_url = "https://www.sec.gov" + l["href"]
+                    html_url = "https://www.sec.gov" + str(l["href"])
                     l = soup.select_one('td:-soup-contains("Complete submission text file") + td a')
-                    submission_url = "https://www.sec.gov" + l["href"]
+                    submission_url = "https://www.sec.gov" + str(l["href"])
                     filings.append({"date": filing_date_str, "submission_url": submission_url, "html_url": html_url})
                 except Exception as e:
                     pass
@@ -86,7 +87,7 @@ class EdgarCrawler(Crawler):
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date
 
-    def crawl(self):
+    def crawl(self) -> None:
         rate_limiter = RateLimiter(max_calls=1, period=1)
         for ticker in self.tickers:
             logging.info(f"downloading 10-Ks for {ticker}")
