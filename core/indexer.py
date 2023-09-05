@@ -20,11 +20,6 @@ import markdown
 import docutils.core
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, remove_images_from_pdf
 
-<<<<<<< HEAD
-from unstructured.partition.auto import partition
-import unstructured as us
-=======
->>>>>>> main
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from unstructured.partition.auto import partition
