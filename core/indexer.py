@@ -18,7 +18,7 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, remove_images_from_pdf
+from core.utils import html_to_text, detect_language, get_file_size_in_MB
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 

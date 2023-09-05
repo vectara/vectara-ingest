@@ -68,19 +68,3 @@ def get_file_size_in_MB(file_path):
     file_size_bytes = os.path.getsize(file_path)
     file_size_MB = file_size_bytes / (1024 * 1024)    
     return file_size_MB
-
-def remove_images_from_pdf(input_path, output_path):
-    # Create PdfFileReader and PdfFileWriter objects
-    pdf_reader = PdfReader(input_path)
-    pdf_writer = PdfWriter()
-
-    # Loop through each page
-    for page_num in range(len(pdf_reader.pages)):
-        page = pdf_reader.pages[page_num]
-
-        # Remove images by creating a new page with only the text
-        pdf_writer.add_page(page)
-
-    # Create a new PDF without images
-    with open(output_path, 'wb') as out_pdf:
-        pdf_writer.write(out_pdf)
