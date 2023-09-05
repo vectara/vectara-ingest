@@ -1,13 +1,15 @@
 import json
 from core.crawler import Crawler
-from omegaconf import OmegaConf    # type: ignore
+from omegaconf import OmegaConf
 import requests
-from attrdict import AttrDict      # type: ignore
+from attrdict import AttrDict
 import logging
 import base64
 
-from ratelimiter import RateLimiter    # type: ignore
+from ratelimiter import RateLimiter
 from core.utils import create_session_with_retries
+
+from typing import List, Any
 
 class Github(object):
     def __init__(self, repo: str, owner: str, token: str) -> None:
@@ -17,25 +19,25 @@ class Github(object):
         self.session = create_session_with_retries()
 
 
-    def get_issues(self, state: str):
+    def get_issues(self, state: str) -> List[Any]:
         # state can be "open", "closed", or "all"
         api_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/issues?state={state}"
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"}
         response = self.session.get(api_url, headers=headers)
         if response.status_code == 200:
-            return response.json()
+            return list(response.json())
         else:
             logging.info(f"Error retrieving issues: {response.status_code}, {response.text}")
             return []
 
-    def get_comments(self, issue_number: str):
+    def get_comments(self, issue_number: str) -> List[Any]:
         api_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"}
         response = self.session.get(api_url, headers=headers)
         if response.status_code == 200:
-            return response.json()
+            return list(response.json())
         else:
-            logging.info(f"Error retrieving issues: {response.status_code}, {response.text}")
+            logging.info(f"Error retrieving comments: {response.status_code}, {response.text}")
             return []
 
 
@@ -53,7 +55,7 @@ class GithubCrawler(Crawler):
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
 
-    def crawl_code_folder(self, base_url, path=""):
+    def crawl_code_folder(self, base_url: str, path: str = "") -> None:
         headers = { "Accept": "application/vnd.github+json"}
         if self.github_token:
             headers["Authorization"] = f"token {self.github_token}"
@@ -91,7 +93,7 @@ class GithubCrawler(Crawler):
             elif item["type"] == "dir":
                 self.crawl_code_folder(base_url, path=item["path"])
 
-    def crawl_repo(self, repo, owner, token):
+    def crawl_repo(self, repo: str, owner: str, token: str) -> None:
 
         g = Github(repo, owner, token)
         issues = g.get_issues("all")
@@ -167,7 +169,7 @@ class GithubCrawler(Crawler):
             self.crawl_code_folder(base_url)
 
 
-    def crawl(self):
+    def crawl(self) -> None:
         for repo in self.repos:
             logging.info(f"Crawling repo {repo}")
             self.crawl_repo(repo, self.owner, self.github_token)

@@ -7,6 +7,9 @@
 ## Overview
 
 `vectara-ingest` includes a number of crawlers that make it easy to crawl data sources and index the results into Vectara.
+
+`vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in Indexer.index_url to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. `vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
+
 Let's go through each of these crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
 ### Website crawler
@@ -168,6 +171,8 @@ The GitHub crawler indexes content from GitHub repositories into Vectara.
 - `owner`: GitHub repository owner
 - `crawl_code`: by default the crawler indexes only issues and comments; if this is set to True it will also index the source code (but that's usually not recommended).
 
+It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file under the specific profile you're going to use. The GITHUB_TOKEN (see [here](https://docs.github.com/en/enterprise-server@3.10/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for how to create one for yourself) ensures you don't run against rate limits.
+
 ### Jira crawler
 
 ```yaml
@@ -186,7 +191,13 @@ The JIRA crawler indexes issues and comments into Vectara.
 ### Notion crawler
 
 The Notion crawler has no specific parameters, except the `NOTION_API_KEY` that needs to be specified in the `secrets.toml` file. 
-The crawler will index any content that is associated with this key that is on your notion instance.
+The crawler will index any content on your notion instance.
+
+### Hubspot crawler
+
+The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` that needs to be specified in the `secrets.toml` file. The crawler will index the emails on your Hubspot instance. The crawler also uses `clean_email_text()` module which takes the email message as a parameter and cleans it to make it more presentable. This function in `core/utils.py` is taking care of indentation character `>`. 
+
+The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
 
 ### Folder crawler
 
@@ -200,6 +211,8 @@ The crawler will index any content that is associated with this key that is on y
 The folder crawler simple indexes all content that's in a specified local folder.
 - `path`: the local folder location
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
+
+Note that the local path you specify is mapped into a fixed location in the docker container `/home/vectara/data`, but that is a detail of the implementation that you don't need to worry about in most cases, just specify the path to your local folder and this mapping happens automatically.
 
 ### S3 crawler
 

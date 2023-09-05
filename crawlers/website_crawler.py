@@ -1,7 +1,7 @@
 import logging
 import os
-from usp.tree import sitemap_tree_for_homepage  # type: ignore
-from ratelimiter import RateLimiter             # type: ignore
+from usp.tree import sitemap_tree_for_homepage
+from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
 from core.utils import clean_urls, archive_extensions, img_extensions
 import re

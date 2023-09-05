@@ -6,12 +6,12 @@ import time
 
 class FolderCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         folder = "/home/vectara/data"
         extensions = self.cfg.folder_crawler.extensions
 
         # Walk the directory and upload files with the specified extension to Vectara
-        logging.info(f"indexing files in {folder} with extensions {extensions}")
+        logging.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")
         for root, _, files in os.walk(folder):
             for file in files:
                 file_extension = pathlib.Path(file).suffix

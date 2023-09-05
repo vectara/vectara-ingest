@@ -3,14 +3,14 @@ import json
 import urllib.parse
 import time
 from datetime import datetime, timedelta  
-from mwviews.api import PageviewsClient       # type: ignore
+from mwviews.api import PageviewsClient
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
 
 class MediawikiCrawler(Crawler):
 
-    def crawl(self):
+    def crawl(self) -> None:
         api_url = self.cfg.mediawiki_crawler.api_url
         project = self.cfg.mediawiki_crawler.project
         n_pages = self.cfg.mediawiki_crawler.n_pages

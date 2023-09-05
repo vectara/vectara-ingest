@@ -1,25 +1,133 @@
 import logging
 import json
 import os
+from typing import Tuple, Dict, Any, List, Optional
+
 from slugify import slugify         
 import time
 from core.utils import create_session_with_retries
 
-from goose3 import Goose     # type: ignore
+from goose3 import Goose
+from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
+
+import justext
+from bs4 import BeautifulSoup
 
 from omegaconf import OmegaConf
-from nbconvert import HTMLExporter   # type: ignore
+from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
 from core.utils import html_to_text
+from core.utils import detect_language
 
-from typing import Any, List, Dict, Tuple
-
-from unstructured.partition.auto import partition       # type: ignore
-import unstructured as us                               # type: ignore
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+from unstructured.partition.auto import partition
+import unstructured as us
+
+
+language_stopwords_Goose = {
+    'en': None,  # English stopwords are the default
+    'ar': StopWordsArabic,  # Use Arabic stopwords
+    'zh-cn': StopWordsChinese,  # Use Chinese stopwords
+    'zh-tw': StopWordsChinese,  # Use Chinese stopwords
+    'ko': StopWordsKorean  # Use Korean stopwords
+        }
+
+language_stopwords_JusText = {
+    'en': None,  # English stopwords are the default
+    'ar': 'Arabic',  # Use Arabic stopwords
+    'ko': 'Korean' , # Use Korean stopwords
+    'ur': 'Urdu' ,  # Use urdu stopwords
+    'hi': 'Hindi' ,  # Use Hindi stopwords 
+    'fa': 'Persian',  # Use Persian stopwords
+    'ja': 'Japanese',  # Use Japanese stopwords
+    'bg': 'Bulgarian',  # Use Bulgarian stopwords
+    'sv': 'Swedish',  # Use Swedish stopwords
+    'lv': 'Latvian',  # Use Latvian stopwords
+    'sr': 'Serbian',  # Use Serbian stopwords
+    'sq': 'Albanian',  # Use Albanian stopwords
+    'es': 'Spanish',  # Use Spanish stopwords
+    'ka': 'Gerogian',  # Use Georgian stopwords
+    'de': 'German',  # Use German stopwords
+    'el': 'Greek',  # Use Greek stopwords
+    'ga': 'Irish',  # Use Irish stopwords
+    'vi': 'Vietnamese',  # Use Vietnamese stopwords
+    'hu': 'Hungarian',  # Use Hungarian stopwords
+    'pt': 'Portuguese',  # Use Portuguese stopwords
+    'pl': 'Polish',  # Use Polish stopwords
+    'it': 'Italian',  # Use Italian stopwords
+    'la': 'Latin',  # Use Latin stopwords
+    'tr': 'Turkish',  # Use Turkish stopwords
+    'id': 'Indonesian',  # Use Indonesian stopwords
+    'hr': 'Croatian',  # Use Croatian stopwords
+    'be': 'Belarusian',  # Use Belarusian stopwords
+    'ru': 'Russian',  # Use Russian stopwords
+    'et': 'Estonian',  # Use Estonian stopwords
+    'uk': 'Ukranian',  # Use Ukranian stopwords
+    'ro': 'Romanian',  # Use Romanian stowords
+    'cs': 'Czech',  # Use Czech stopwords
+    'ml': 'Malyalam',  # Use Malyalam stopwords
+    'sk': 'Slovak',  # Use Slovak stopwords
+    'fi': 'Finnish',  # Use Finnish stopwords
+    'da': 'Danish',  # Use Danish stopwords
+    'ms': 'Malay',  # Use Malay stopwords
+    'ca': 'Catalan',  # Use Catalan stopwords
+    'eo': 'Esperanto',  # Use Esperanto stopwords
+    'nb': 'Norwegian_Bokmal',  # Use Norwegian_Bokmal stopwords
+    'nn': 'Norwegian_Nynorsk'  # Use Norwegian_Nynorsk stopwords
+    # Add more languages and their stopwords keywords here
+}
+
+
+
+def get_content_with_justext(html_content: str, detected_language: str) -> Tuple[str, str]:
+    if detected_language == 'en':
+        paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
+    else:
+        stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
+    
+    # Extract paragraphs using the selected stoplist
+        paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
+    text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
+    soup = BeautifulSoup(html_content, 'html.parser')
+    stitle = soup.find('title')
+    if stitle:
+        title = stitle.text
+    else:
+        title = 'No title'
+    return text, title
+
+def get_content_with_goose3(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
+    if detected_language in language_stopwords_Goose:
+        stopwords_class = language_stopwords_Goose.get(detected_language, None)
+        
+        if stopwords_class is not None:
+            g = Goose({'stopwords_class': stopwords_class})
+        else:
+            g = Goose()  # Use the default stopwords for languages that don't have a configured StopWords class
+
+        article = g.extract(url=url, raw_html=html_content)
+        title = article.title
+        text = article.cleaned_text
+        return text, title
+    else:
+        title = ""
+        text = ""
+        logging.info(f"{detected_language} is not supported by Goose")
+        return text, title
+
+
+def get_content_and_title(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
+    text1, title1 = get_content_with_goose3(html_content, url, detected_language)
+    text2, title2 = get_content_with_justext(html_content, detected_language)
+    
+    # both Goose and Justext do extraction without boilerplate; return the one that produces the longest text, trying to optimize for content
+    if len(text1)>len(text2):
+        return text1, title1
+    else:
+        return text2, title2
 
 class Indexer(object):
     """
@@ -38,6 +146,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.timeout = 30
+        self.detected_language: Optional[str] = None
 
         # setup requests session and mount adapter to retry requests
         self.session = create_session_with_retries()
@@ -219,10 +328,13 @@ class Indexer(object):
                 actual_url, html_content = self.fetch_content_with_timeout(url)
                 if html_content is None or len(html_content)<3:
                     return False
+                if self.detected_language is None:
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    body_text = soup.body.get_text()
+                    self.detected_language = detect_language(body_text)
+                    logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
-                article = Goose().extract(raw_html=html_content)
-                extracted_title = article.title
-                text = article.cleaned_text
+                text, extracted_title = get_content_and_title(html_content, url, self.detected_language)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:

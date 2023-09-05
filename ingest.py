@@ -9,7 +9,7 @@ import os
 
 import importlib
 from core.crawler import Crawler
-from authlib.integrations.requests_client import OAuth2Session  # type: ignore
+from authlib.integrations.requests_client import OAuth2Session
 
 def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
     sys.path.insert(0, os.path.abspath(folder_name))
@@ -92,6 +92,9 @@ def main():
     env_dict = env_dict[profile_name]
 
     for k,v in env_dict.items():
+        if k=='HUBSPOT_API_KEY':
+            OmegaConf.update(cfg, f'hubspot_crawler.{k.lower()}', v)
+            continue
         if k=='NOTION_API_KEY':
             OmegaConf.update(cfg, f'notion_crawler.{k.lower()}', v)
             continue
@@ -110,8 +113,9 @@ def main():
         if k.startswith('aws_'):
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
             continue
-        else:
-            OmegaConf.update(cfg['vectara'], k, v)
+
+        # default (otherwise) - add to vectara config
+        OmegaConf.update(cfg['vectara'], k, v)
 
     endpoint = 'api.vectara.io'
     customer_id = cfg.vectara.customer_id

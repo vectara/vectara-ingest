@@ -1,0 +1,10 @@
+vectara:
+  corpus_id: 7
+  customer_id: 2081868821
+  reindex: true
+  
+crawling:
+  crawler_type: hubspot
+  
+hubspot_crawler:
+  hubspot_customer_id: 21542831

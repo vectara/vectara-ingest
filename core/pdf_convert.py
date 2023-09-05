@@ -1,6 +1,6 @@
 import logging
 import subprocess
-import pdfkit                       # type: ignore
+import pdfkit
 
 class PDFConverter:
     """

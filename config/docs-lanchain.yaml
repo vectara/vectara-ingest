@@ -14,7 +14,7 @@ docs_crawler:
       "https://js.langchain.com",
       "https://blog.langchain.dev",
     ]
-  url_regex:
+  pos_regex:
     [
       ".*langchain.com/docs.*",
       ".*python.langchain.com.*",

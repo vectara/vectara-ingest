@@ -1,15 +1,15 @@
 import logging
 import os
-from Bio import Entrez        # type: ignore
+from Bio import Entrez
 import json
 from bs4 import BeautifulSoup
-from ratelimiter import RateLimiter    # type: ignore
+from ratelimiter import RateLimiter
 import xmltodict
 from datetime import datetime, timedelta
 from typing import Set, List, Dict, Any
 from core.utils import html_to_text, create_session_with_retries
 from core.crawler import Crawler
-from omegaconf import OmegaConf     # type: ignore
+from omegaconf import OmegaConf
 
 def get_top_n_papers(topic: str, n: int, email: str) -> Any:
     """
@@ -74,20 +74,31 @@ class PmcCrawler(Crawler):
 
     
             # Extract the publication date
-            pub_date = soup.find("pub-date")
-            if pub_date is not None:
-                year = pub_date.find("year")
-                month = pub_date.find("month")
-                day = pub_date.find("day")
+            pub_date_soup = soup.find("pub-date")
+            if pub_date_soup is not None:
+                year = pub_date_soup.find("year")
+                if year is None:
+                    year_text = '1970'
+                else:
+                    year_text = str(year)
+                month = pub_date_soup.find("month")
+                if month is None:
+                    month_text = '1'
+                else:
+                    month_text = str(month)
+                day = pub_date_soup.find("day")
+                if day is None:
+                    day_text = '1'
+                else:
+                    day_text = str(day)
+
                 try:
-                    year_text = year.text if year else '1970'
-                    month_text = month.text if month else '1'
-                    day_text = day.text if day else '1'
                     pub_date = f"{year_text}-{month_text}-{day_text}"
                 except Exception as e:
                     pub_date = 'unknown'
             else:
                 pub_date = "Publication date not found"
+            
             self.crawled_pmc_ids.add(pmc_id)
             logging.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
 
@@ -112,7 +123,7 @@ class PmcCrawler(Crawler):
             if not succeeded:
                 logging.info(f"Failed to index document {pmc_id}")
 
-    def _get_xml_dict(self) -> dict:
+    def _get_xml_dict(self) -> Any:
         days_back = 1
         max_days = 30
         while (days_back <= max_days):

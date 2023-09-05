@@ -1,7 +1,7 @@
 import logging
 import time
 from core.crawler import Crawler
-import feedparser       # type: ignore
+import feedparser
 from datetime import datetime, timedelta
 from time import mktime
 

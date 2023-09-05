@@ -1,16 +1,15 @@
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 from slugify import slugify
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
-import re
-from typing import Set, Optional, List
+from typing import Set, Optional, List, Any
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 
-def recursive_crawl(url: str, depth: int, url_regex: List[re.Pattern[str]], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
+def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
     if depth <= 0:
         return set() if visited is None else set(visited)
 
@@ -65,8 +64,8 @@ class Crawler(object):
         corpus_id: int,
         api_key: str,
     ) -> None:
-        self.cfg = cfg
-        reindex = self.cfg.vectara.get("reindex", False)        # type: ignore
+        self.cfg: DictConfig = DictConfig(cfg)
+        reindex = self.cfg.vectara.get("reindex", False)
         self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex)
 
     def url_to_file(self, url: str, title: str) -> str:

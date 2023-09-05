@@ -1,9 +1,10 @@
 import logging
 from core.crawler import Crawler
-from omegaconf import OmegaConf     # type: ignore
-from notion_client import Client    # type: ignore
+from omegaconf import OmegaConf
+from notion_client import Client
+from typing import Any, List, Dict
 
-def get_text_from_block(block):
+def get_text_from_block(block: Any) -> str:
     """
     Recursively extract all text from a block.
     """
@@ -17,7 +18,7 @@ def get_text_from_block(block):
     return text
 
 
-def list_all_pages(notion):
+def list_all_pages(notion: Any) -> List[Dict[str, Any]]:
     """
     List all pages in a Notion workspace.
     """
@@ -40,7 +41,7 @@ class NotionCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.notion_api_key = self.cfg.notion_crawler.notion_api_key
 
-    def crawl(self):
+    def crawl(self) -> None:
         notion = Client(auth=self.notion_api_key)
 
         pages = list_all_pages(notion)
@@ -56,7 +57,7 @@ class NotionCrawler(Crawler):
 
             # Extract all text blocks from the page
             try:
-                blocks = notion.blocks.children.list(page_id).get("results")
+                blocks = notion.blocks.children.list(page_id).get("results")        # type: ignore
             except Exception as e:
                 logging.error(f"Failed to get blocks for page {page['url']}: {e}")
                 continue
