@@ -80,9 +80,9 @@ class PmcCrawler(Crawler):
                 month = pub_date.find("month")
                 day = pub_date.find("day")
                 try:
-                    year_text = year.text if year else 'unknown'
-                    month_text = month.text if month else 'unknown'
-                    day_text = day.text if day else 'unknown'
+                    year_text = year.text if year else '1970'
+                    month_text = month.text if month else '1'
+                    day_text = day.text if day else '1'
                     pub_date = f"{year_text}-{month_text}-{day_text}"
                 except Exception as e:
                     pub_date = 'unknown'
