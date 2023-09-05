@@ -4,7 +4,7 @@ from urllib.parse import urlparse, urlunparse, ParseResult
 import re
 from langdetect import detect
 from typing import List, Set
-
+import os
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
@@ -63,3 +63,8 @@ def detect_language(text: str) -> str:
     except Exception as e:
         print(f"Language detection failed with error: {e}")
         return "en"  # Default to English in case of errors
+
+def get_file_size_in_MB(file_path: str) -> float:
+    file_size_bytes = os.path.getsize(file_path)
+    file_size_MB = file_size_bytes / (1024 * 1024)    
+    return file_size_MB

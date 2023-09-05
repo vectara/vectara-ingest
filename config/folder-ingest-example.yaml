@@ -9,4 +9,5 @@ crawling:
 folder_crawler:
   path: "/Users/ofer/Downloads/transformer-papers/"
   extensions: ['.pdf']
+  source: 'pdf-folder'
 

@@ -211,6 +211,7 @@ The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.githu
 The folder crawler simple indexes all content that's in a specified local folder.
 - `path`: the local folder location
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
+- `source`: a string that is added to each file's metadata under the "source" field
 
 Note that the local path you specify is mapped into a fixed location in the docker container `/home/vectara/data`, but that is a detail of the implementation that you don't need to worry about in most cases, just specify the path to your local folder and this mapping happens automatically.
 

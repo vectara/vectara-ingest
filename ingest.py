@@ -2,23 +2,23 @@ import logging
 import json
 import requests
 import time
-from omegaconf import OmegaConf
-import toml
+from omegaconf import OmegaConf, DictConfig
+import toml     # type: ignore
 import sys
 import os
+from typing import Any
 
 import importlib
 from core.crawler import Crawler
 from authlib.integrations.requests_client import OAuth2Session
 
-def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
+def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
     module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
     module = importlib.import_module(module_name)
     
-
     class_ = getattr(module, class_name)
 
     # Ensure the class is a subclass of the base class
@@ -28,14 +28,14 @@ def instantiate_crawler(base_class, folder_name, class_name, *args, **kwargs):
     # Instantiate the class and return the instance
     return class_(*args, **kwargs)
 
-def get_jwt_token(auth_url, auth_id: str, auth_secret: str, customer_id: str):
+def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str, customer_id: str) -> Any:
     """Connect to the server and get a JWT token."""
     token_endpoint = f'{auth_url}/oauth2/token'
     session = OAuth2Session(auth_id, auth_secret, scope="")
     token = session.fetch_token(token_endpoint, grant_type="client_credentials")
     return token["access_token"]
 
-def reset_corpus(endpoint: str, customer_id: str, corpus_id: int, auth_url: str, auth_id: str, auth_secret) -> None:
+def reset_corpus(endpoint: str, customer_id: str, corpus_id: int, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
     Reset the corpus by deleting all documents and metadata.
 
@@ -65,7 +65,7 @@ def reset_corpus(endpoint: str, customer_id: str, corpus_id: int, auth_url: str,
         logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
                       
 
-def main():
+def main() -> None:
     """
     Main function that runs the web crawler based on environment variables.
     
@@ -80,7 +80,7 @@ def main():
     profile_name = sys.argv[2]
 
     # process arguments 
-    cfg = OmegaConf.load(config_name)
+    cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
     
     # add .env params, by profile
     volume = '/home/vectara/env'

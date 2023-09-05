@@ -18,13 +18,13 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
-from core.utils import html_to_text
-from core.utils import detect_language
+from core.utils import html_to_text, detect_language, get_file_size_in_MB
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from unstructured.partition.auto import partition
 import unstructured as us
+
 
 
 language_stopwords_Goose = {
@@ -228,6 +228,17 @@ class Indexer(object):
         if os.path.exists(filename) == False:
             logging.error(f"File {filename} does not exist")
             return False
+
+        # if file size is more than 50MB, then we extract the text locally and send over with standard API
+        if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
+            elements = partition(filename)
+            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
+            title = titles[0] if len(titles)>0 else 'unknown'
+            succeeded = self.index_segments(doc_id=slugify(filename), parts=parts, metadatas=[{}]*len(parts), 
+                                            doc_metadata=metadata, title=title)
+            logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
+            return succeeded
 
         post_headers = { 
             'x-api-key': self.api_key,
