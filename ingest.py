@@ -139,5 +139,11 @@ def main() -> None:
     logging.info(f"Finished crawl of type {crawler_type}...")
 
 if __name__ == '__main__':
-    logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
     main()

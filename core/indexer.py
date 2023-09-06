@@ -41,10 +41,11 @@ class Indexer(object):
         self.timeout = 30
         self.detected_language: Optional[str] = None
 
-        # setup requests session and mount adapter to retry requests
-        self.session = create_session_with_retries()
+        self.setup()
 
-        # create playwright browser so we can reuse it across all Indexer operations
+    def setup(self):
+        self.session = create_session_with_retries()
+        # Create playwright browser so we can reuse it across all Indexer operations
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
@@ -291,10 +292,7 @@ class Indexer(object):
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
                                         doc_metadata=metadata, title=extracted_title)
-        if succeeded:
-            return True
-        else:
-            return False
+        return succeeded
 
     def index_segments(self, doc_id: str, parts: List[str], metadatas: List[Dict[str, Any]], doc_metadata: Dict[str, Any] = {}, title: str = "") -> bool:
         """
@@ -314,7 +312,7 @@ class Indexer(object):
         Index a document (by uploading it to the Vectara corpus).
         Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
         """
-        self._index_document(document)
+        return self._index_document(document)
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
@@ -343,4 +341,3 @@ class Indexer(object):
 
         return self._index_file(filename, uri, metadata)
     
-
