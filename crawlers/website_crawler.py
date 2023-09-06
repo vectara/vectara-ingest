@@ -112,7 +112,7 @@ class WebsiteCrawler(Crawler):
         ray_workers = self.cfg.website_crawler.get("ray_workers", -1)       # -1: don't use ray
 
         if ray_workers == -1:
-            ray_workers = psutil.cpu_count(logical=True) - 1
+            ray_workers = psutil.cpu_count(logical=True)
 
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
