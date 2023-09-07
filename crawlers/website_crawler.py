@@ -91,6 +91,7 @@ class WebsiteCrawler(Crawler):
             else:
                 logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
                 return
+            logging.info(f"Found {len(urls)} URLs on {homepage}")
             all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
@@ -107,9 +108,9 @@ class WebsiteCrawler(Crawler):
         file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))
         logging.info(f"File types = {file_types}")
 
-        delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)    # seconds between requests
+        delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)        # seconds between requests
         extraction = self.cfg.website_crawler.extraction
-        ray_workers = self.cfg.website_crawler.get("ray_workers", -1)       # -1: don't use ray
+        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)        # -1: use ray with ALL cores, 0: dont use ray
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)

@@ -84,24 +84,29 @@ def get_content_with_justext(html_content: str, detected_language: str) -> Tuple
     return text, title
 
 def get_content_with_goose3(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
-    if detected_language in language_stopwords_Goose:
-        stopwords_class = language_stopwords_Goose.get(detected_language, None)
-        
-        if stopwords_class is not None:
-            g = Goose({'stopwords_class': stopwords_class})
-        else:
-            g = Goose()  # Use the default stopwords for languages that don't have a configured StopWords class
+    try:
+        if detected_language in language_stopwords_Goose:
+            stopwords_class = language_stopwords_Goose.get(detected_language, None)
+            
+            if stopwords_class is not None:
+                g = Goose({'stopwords_class': stopwords_class})
+            else:
+                g = Goose()  # Use the default stopwords for languages that don't have a configured StopWords class
 
-        article = g.extract(url=url, raw_html=html_content)
-        title = article.title
-        text = article.cleaned_text
-        return text, title
-    else:
+            article = g.extract(url=url, raw_html=html_content)
+            title = article.title
+            text = article.cleaned_text
+            return text, title
+        else:
+            title = ""
+            text = ""
+            logging.info(f"{detected_language} is not supported by Goose")
+            return text, title
+    except Exception as e:
         title = ""
         text = ""
-        logging.info(f"{detected_language} is not supported by Goose")
+        logging.info(f"Error in Goose3 ({e}); that's okay Justext will fill in")
         return text, title
-
 
 def get_content_and_title(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
     text1, title1 = get_content_with_goose3(html_content, url, detected_language)
