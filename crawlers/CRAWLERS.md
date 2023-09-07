@@ -18,10 +18,12 @@ Let's go through each of these crawlers to explain how they work and how to cust
 ...
 website_crawler:
     urls: [https://vectara.com]
+    url_regex: []
     delay: 1
     pages_source: sitemap
     extraction: playwright
     max_depth: 3      # only needed if pages_source is set to 'crawl'
+    ray_workers: 0
 ...
 ```
 
@@ -36,6 +38,8 @@ The `extraction` parameter defines how page content is extracted from URLs.
 `delay` specifies the number of seconds to wait between to consecutive requests to avoid rate limiting issues. 
 
 `url_regex` if it exists defines a regular expression that is used to filter URLs. For example, if I want only the developer pages from vectara.com to be indexed, I can use ".*vectara.com/developer.*" 
+
+`ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 
 ### Database crawler
 

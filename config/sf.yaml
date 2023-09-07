@@ -2,7 +2,6 @@ vectara:
   corpus_id: 28
   customer_id: 1169579801
   reindex: false
-  index_with_ray: true
 
 crawling:
   crawler_type: website
