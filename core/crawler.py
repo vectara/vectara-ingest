@@ -9,6 +9,14 @@ from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 
+get_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
 def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
     if depth <= 0:
         return set() if visited is None else set(visited)
@@ -28,7 +36,7 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optiona
         return visited
 
     try:
-        response = session.get(url)
+        response = session.get(url, headers=get_headers)
         soup = BeautifulSoup(response.content, "html.parser")
 
         # Find all anchor tags and their href attributes
@@ -80,21 +88,7 @@ class Crawler(object):
             str: Name of the PDF file created.
         """
         # first verify the URL is valid
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-        }
-
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=get_headers)
         if response.status_code != 200:
             if response.status_code == 404:
                 raise Exception(f"Error 404 - URL not found: {url}")

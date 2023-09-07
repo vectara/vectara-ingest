@@ -7,10 +7,6 @@ from slugify import slugify
 import time
 from core.utils import create_session_with_retries
 
-from goose3 import Goose
-from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
-
-import justext
 from bs4 import BeautifulSoup
 
 from omegaconf import OmegaConf
@@ -19,115 +15,12 @@ import nbformat
 import markdown
 import docutils.core
 from core.utils import html_to_text, detect_language, get_file_size_in_MB
+from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from unstructured.partition.auto import partition
 import unstructured as us
-
-
-
-language_stopwords_Goose = {
-    'en': None,  # English stopwords are the default
-    'ar': StopWordsArabic,  # Use Arabic stopwords
-    'zh-cn': StopWordsChinese,  # Use Chinese stopwords
-    'zh-tw': StopWordsChinese,  # Use Chinese stopwords
-    'ko': StopWordsKorean  # Use Korean stopwords
-        }
-
-language_stopwords_JusText = {
-    'en': None,  # English stopwords are the default
-    'ar': 'Arabic',  # Use Arabic stopwords
-    'ko': 'Korean' , # Use Korean stopwords
-    'ur': 'Urdu' ,  # Use urdu stopwords
-    'hi': 'Hindi' ,  # Use Hindi stopwords 
-    'fa': 'Persian',  # Use Persian stopwords
-    'ja': 'Japanese',  # Use Japanese stopwords
-    'bg': 'Bulgarian',  # Use Bulgarian stopwords
-    'sv': 'Swedish',  # Use Swedish stopwords
-    'lv': 'Latvian',  # Use Latvian stopwords
-    'sr': 'Serbian',  # Use Serbian stopwords
-    'sq': 'Albanian',  # Use Albanian stopwords
-    'es': 'Spanish',  # Use Spanish stopwords
-    'ka': 'Gerogian',  # Use Georgian stopwords
-    'de': 'German',  # Use German stopwords
-    'el': 'Greek',  # Use Greek stopwords
-    'ga': 'Irish',  # Use Irish stopwords
-    'vi': 'Vietnamese',  # Use Vietnamese stopwords
-    'hu': 'Hungarian',  # Use Hungarian stopwords
-    'pt': 'Portuguese',  # Use Portuguese stopwords
-    'pl': 'Polish',  # Use Polish stopwords
-    'it': 'Italian',  # Use Italian stopwords
-    'la': 'Latin',  # Use Latin stopwords
-    'tr': 'Turkish',  # Use Turkish stopwords
-    'id': 'Indonesian',  # Use Indonesian stopwords
-    'hr': 'Croatian',  # Use Croatian stopwords
-    'be': 'Belarusian',  # Use Belarusian stopwords
-    'ru': 'Russian',  # Use Russian stopwords
-    'et': 'Estonian',  # Use Estonian stopwords
-    'uk': 'Ukranian',  # Use Ukranian stopwords
-    'ro': 'Romanian',  # Use Romanian stowords
-    'cs': 'Czech',  # Use Czech stopwords
-    'ml': 'Malyalam',  # Use Malyalam stopwords
-    'sk': 'Slovak',  # Use Slovak stopwords
-    'fi': 'Finnish',  # Use Finnish stopwords
-    'da': 'Danish',  # Use Danish stopwords
-    'ms': 'Malay',  # Use Malay stopwords
-    'ca': 'Catalan',  # Use Catalan stopwords
-    'eo': 'Esperanto',  # Use Esperanto stopwords
-    'nb': 'Norwegian_Bokmal',  # Use Norwegian_Bokmal stopwords
-    'nn': 'Norwegian_Nynorsk'  # Use Norwegian_Nynorsk stopwords
-    # Add more languages and their stopwords keywords here
-}
-
-
-
-def get_content_with_justext(html_content: str, detected_language: str) -> Tuple[str, str]:
-    if detected_language == 'en':
-        paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
-    else:
-        stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
-    
-    # Extract paragraphs using the selected stoplist
-        paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
-    text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
-    soup = BeautifulSoup(html_content, 'html.parser')
-    stitle = soup.find('title')
-    if stitle:
-        title = stitle.text
-    else:
-        title = 'No title'
-    return text, title
-
-def get_content_with_goose3(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
-    if detected_language in language_stopwords_Goose:
-        stopwords_class = language_stopwords_Goose.get(detected_language, None)
-        
-        if stopwords_class is not None:
-            g = Goose({'stopwords_class': stopwords_class})
-        else:
-            g = Goose()  # Use the default stopwords for languages that don't have a configured StopWords class
-
-        article = g.extract(url=url, raw_html=html_content)
-        title = article.title
-        text = article.cleaned_text
-        return text, title
-    else:
-        title = ""
-        text = ""
-        logging.info(f"{detected_language} is not supported by Goose")
-        return text, title
-
-
-def get_content_and_title(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
-    text1, title1 = get_content_with_goose3(html_content, url, detected_language)
-    text2, title2 = get_content_with_justext(html_content, detected_language)
-    
-    # both Goose and Justext do extraction without boilerplate; return the one that produces the longest text, trying to optimize for content
-    if len(text1)>len(text2):
-        return text1, title1
-    else:
-        return text2, title2
 
 class Indexer(object):
     """
@@ -148,10 +41,11 @@ class Indexer(object):
         self.timeout = 30
         self.detected_language: Optional[str] = None
 
-        # setup requests session and mount adapter to retry requests
-        self.session = create_session_with_retries()
+        self.setup()
 
-        # create playwright browser so we can reuse it across all Indexer operations
+    def setup(self):
+        self.session = create_session_with_retries()
+        # Create playwright browser so we can reuse it across all Indexer operations
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
@@ -215,7 +109,7 @@ class Indexer(object):
             return False
         return True
     
-    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
         Args:
@@ -228,17 +122,6 @@ class Indexer(object):
         if os.path.exists(filename) == False:
             logging.error(f"File {filename} does not exist")
             return False
-
-        # if file size is more than 50MB, then we extract the text locally and send over with standard API
-        if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
-            elements = partition(filename)
-            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-            title = titles[0] if len(titles)>0 else 'unknown'
-            succeeded = self.index_segments(doc_id=slugify(filename), parts=parts, metadatas=[{}]*len(parts), 
-                                            doc_metadata=metadata, title=title)
-            logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
-            return succeeded
 
         post_headers = { 
             'x-api-key': self.api_key,
@@ -273,6 +156,60 @@ class Indexer(object):
 
         logging.info(f"REST upload for {uri} succeesful")
         return True
+
+    def _index_document(self, document: Dict[str, Any]) -> bool:
+        """
+        Index a document (by uploading it to the Vectara corpus) from the document dictionary
+        """
+        api_endpoint = f"https://{self.endpoint}/v1/index"
+
+        request = {
+            'customer_id': self.customer_id,
+            'corpus_id': self.corpus_id,
+            'document': document,
+        }
+
+        post_headers = { 
+            'x-api-key': self.api_key,
+            'customer-id': str(self.customer_id),
+        }
+        try:
+            data = json.dumps(request)
+        except Exception as e:
+            logging.info(f"Can't serialize request {request}, skipping")   
+            return False
+
+        try:
+            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+        except Exception as e:
+            logging.info(f"Exception {e} while indexing document {document['documentId']}")
+            return False
+
+        if response.status_code != 200:
+            logging.error("REST upload failed with code %d, reason %s, text %s",
+                          response.status_code,
+                          response.reason,
+                          response.text)
+            return False
+
+        result = response.json()
+        if "status" in result and result["status"] and \
+           ("ALREADY_EXISTS" in result["status"]["code"] or \
+            ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
+            if self.reindex:
+                logging.info(f"Document {document['documentId']} already exists, re-indexing")
+                self.delete_doc(document['documentId'])
+                response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
+                return True
+            else:
+                logging.info(f"Document {document['documentId']} already exists, skipping")
+                return False
+        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
+            return True
+        
+        logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        return False
+    
 
     def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
         """
@@ -355,10 +292,7 @@ class Indexer(object):
 
         succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
                                         doc_metadata=metadata, title=extracted_title)
-        if succeeded:
-            return True
-        else:
-            return False
+        return succeeded
 
     def index_segments(self, doc_id: str, parts: List[str], metadatas: List[Dict[str, Any]], doc_metadata: Dict[str, Any] = {}, title: str = "") -> bool:
         """
@@ -372,57 +306,38 @@ class Indexer(object):
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
         return self.index_document(document)
-    
+
     def index_document(self, document: Dict[str, Any]) -> bool:
         """
-        Index a document (by uploading it to the Vectara corpus) from the document dictionary
+        Index a document (by uploading it to the Vectara corpus).
+        Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
         """
-        api_endpoint = f"https://{self.endpoint}/v1/index"
+        return self._index_document(document)
 
-        request = {
-            'customer_id': self.customer_id,
-            'corpus_id': self.corpus_id,
-            'document': document,
-        }
-
-        post_headers = { 
-            'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
-        }
-        try:
-            data = json.dumps(request)
-        except Exception as e:
-            logging.info(f"Can't serialize request {request}, skipping")   
+    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Index a file on local file system by uploading it to the Vectara corpus.
+        Args:
+            filename (str): Name of the PDF file to create.
+            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
+            metadata (dict): Metadata for the document.
+        Returns:
+            bool: True if the upload was successful, False otherwise.
+        """
+        if os.path.exists(filename) == False:
+            logging.error(f"File {filename} does not exist")
             return False
 
-        try:
-            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
-        except Exception as e:
-            logging.info(f"Exception {e} while indexing document {document['documentId']}")
-            return False
+        # if file size is more than 50MB, then we extract the text locally and send over with standard API
+        if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
+            elements = partition(filename)
+            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
+            title = titles[0] if len(titles)>0 else 'unknown'
+            succeeded = self.index_segments(doc_id=slugify(filename), parts=parts, metadatas=[{}]*len(parts), 
+                                            doc_metadata=metadata, title=title)
+            logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
+            return succeeded
 
-        if response.status_code != 200:
-            logging.error("REST upload failed with code %d, reason %s, text %s",
-                          response.status_code,
-                          response.reason,
-                          response.text)
-            return False
-
-        result = response.json()
-        if "status" in result and result["status"] and \
-           ("ALREADY_EXISTS" in result["status"]["code"] or \
-            ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
-            if self.reindex:
-                logging.info(f"Document {document['documentId']} already exists, re-indexing")
-                self.delete_doc(document['documentId'])
-                response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
-                return True
-            else:
-                logging.info(f"Document {document['documentId']} already exists, skipping")
-                return False
-        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
-            return True
-        
-        logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
-        return False
-
+        return self._index_file(filename, uri, metadata)
+    

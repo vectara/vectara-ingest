@@ -25,6 +25,5 @@ class FolderCrawler(Crawler):
                         'file_size': os.path.getsize(file_path),
                         'source': source,
                         'title': file_name,
-#                        'url': file_name
                     }
                     self.indexer.index_file(filename=file_path, uri=file_name, metadata=file_metadata)

@@ -88,8 +88,8 @@ class DocsCrawler(Crawler):
         self.crawled_urls: Set[str] = set()
         self.ignored_urls: Set[str] = set()
         self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
-        self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.pos_regex] if self.cfg.docs_crawler.pos_regex else []
-        self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.neg_regex] if self.cfg.docs_crawler.neg_regex else []
+        self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.get("pos_regex", [])]
+        self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.get("neg_regex", [])]
 
         self.session = create_session_with_retries()
         self.rate_limiter = RateLimiter(max_calls=2, period=1)
