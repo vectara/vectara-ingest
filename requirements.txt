@@ -50,3 +50,4 @@ justext==3.0.0
 jieba==0.42.1
 langdetect==1.0.9
 ray==2.6.3
+synapseclient==2.7.2

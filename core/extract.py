@@ -60,6 +60,7 @@ language_stopwords_JusText = {
     'ca': 'Catalan',  # Use Catalan stopwords
     'eo': 'Esperanto',  # Use Esperanto stopwords
     'nb': 'Norwegian_Bokmal',  # Use Norwegian_Bokmal stopwords
+    'he': "Hebrew",
     'nn': 'Norwegian_Nynorsk'  # Use Norwegian_Nynorsk stopwords
     # Add more languages and their stopwords keywords here
 }
@@ -71,9 +72,9 @@ def get_content_with_justext(html_content: str, detected_language: str) -> Tuple
         paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
     else:
         stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
-    
-    # Extract paragraphs using the selected stoplist
+        # Extract paragraphs using the selected stoplist
         paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
+
     text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
     soup = BeautifulSoup(html_content, 'html.parser')
     stitle = soup.find('title')
