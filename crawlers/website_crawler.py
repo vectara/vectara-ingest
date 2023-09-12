@@ -27,11 +27,11 @@ class PageCrawlWorker(object):
     def setup(self):
         self.indexer.setup()
 
-    def process(self, url: str, extraction: str, delay: int):
+    def process(self, url: str, extraction: str, delay: int, source: str):
         rate_limiter = RateLimiter(
             max_calls=1, period=delay                                   # at most 1 call every `delay` seconds
         )
-        metadata = {"source": "website", "url": url}
+        metadata = {"source": source, "url": url}
         if extraction == "pdf":
             try:
                 with rate_limiter:
@@ -46,7 +46,7 @@ class PageCrawlWorker(object):
                 else:
                     if os.path.exists(filename):
                         os.remove(filename)
-                    self.logger.info(f"Indexing {url} was successfully")
+                    self.logger.info(f"Indexing {url} was successful")
             except Exception as e:
                 import traceback
                 self.logger.error(
@@ -60,7 +60,7 @@ class PageCrawlWorker(object):
                 if not succeeded:
                     self.logger.info(f"Indexing failed for {url}")
                 else:
-                    self.logger.info(f"Indexing {url} was successfully")
+                    self.logger.info(f"Indexing {url} was successful")
             except Exception as e:
                 import traceback
                 self.logger.error(
@@ -108,9 +108,10 @@ class WebsiteCrawler(Crawler):
         file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))
         logging.info(f"File types = {file_types}")
 
-        delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)        # seconds between requests
-        extraction = self.cfg.website_crawler.extraction
-        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)        # -1: use ray with ALL cores, 0: dont use ray
+        delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)            # seconds between requests
+        extraction = self.cfg.website_crawler.get("extraction", "playwright")   # "playwright" or "pdf"
+        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
+        source = self.cfg.website_crawler.get("source", "website")
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -126,7 +127,7 @@ class WebsiteCrawler(Crawler):
                 w.setup.remote()
             ray_ids = []
             for inx, url in enumerate(urls):
-                ray_ids.append(workers[inx % ray_workers].process.remote(url, extraction=extraction, delay=delay))
+                ray_ids.append(workers[inx % ray_workers].process.remote(url, extraction=extraction, delay=delay, source=source))
             _ = ray.get(ray_ids)
                 
         else:
@@ -134,4 +135,4 @@ class WebsiteCrawler(Crawler):
             for inx, url in enumerate(urls):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(urls)}")
-                crawl_worker.process(url, extraction=extraction, delay=delay)
+                crawl_worker.process(url, extraction=extraction, delay=delay, source=source)

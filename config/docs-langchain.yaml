@@ -16,10 +16,11 @@ docs_crawler:
     ]
   pos_regex:
     [
-      ".*langchain.com/docs.*",
-      ".*python.langchain.com.*",
-      ".*js.langchain.com.*",
-      ".*blog.langchain.dev.*",
+      "https://docs.langchain.com/docs.*",
+      "https://python.langchain.com/docs.*",
+      "https://js.langchain.com/docs.*",
+      "https://api.langchain.dev/en/latest.*",
+      "https://blog.langchain.dev.*",
     ]
-  extensions_to_ignore: ["md", "rst", "ipynb"]
+  extensions_to_ignore: ["md", "rst", "ipynb", "txt"]
   docs_system: docusaurus
