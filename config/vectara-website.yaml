@@ -12,4 +12,4 @@ website_crawler:
   pages_source: sitemap
   url_regex: [".*"]
   extraction: playwright
-  ray_workers: 4
+  ray_workers: 0
