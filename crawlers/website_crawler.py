@@ -10,7 +10,6 @@ from typing import List, Set
 
 import ray
 import psutil
-import sys
 
 # disable USP annoying logging
 logging.getLogger("usp.fetch_parse").setLevel(logging.ERROR)
@@ -38,7 +37,7 @@ class PageCrawlWorker(object):
                     filename = self.crawler.url_to_file(url, title="")
             except Exception as e:
                 self.logger.error(f"Error while processing {url}: {e}")
-                return
+                return -1
             try:
                 succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
                 if not succeeded:
@@ -52,6 +51,7 @@ class PageCrawlWorker(object):
                 self.logger.error(
                     f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                 )
+                return -1
         else:  # use index_url which uses PlayWright
             self.logger.info(f"Crawling and indexing {url}")
             try:
@@ -66,6 +66,8 @@ class PageCrawlWorker(object):
                 self.logger.error(
                     f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                 )
+                return -1
+        return 0
 
 class WebsiteCrawler(Crawler):
     def crawl(self) -> None:
@@ -118,17 +120,13 @@ class WebsiteCrawler(Crawler):
 
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
+            self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True)
-            PCWR = ray.remote(PageCrawlWorker)
-            self.indexer.p = None
-            self.indexer.browser = None
-            workers = [PCWR.remote(self.indexer, self) for _ in range(ray_workers)]
-            for w in workers:
-                w.setup.remote()
-            ray_ids = []
-            for inx, url in enumerate(urls):
-                ray_ids.append(workers[inx % ray_workers].process.remote(url, extraction=extraction, delay=delay, source=source))
-            _ = ray.get(ray_ids)
+            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self) for _ in range(ray_workers)]
+            for a in actors:
+                a.setup.remote()
+            pool = ray.util.ActorPool(actors)
+            _ = list(pool.map(lambda a, u: a.process.remote(u, extraction=extraction, delay=delay, source=source), urls))
                 
         else:
             crawl_worker = PageCrawlWorker(self.indexer, self)

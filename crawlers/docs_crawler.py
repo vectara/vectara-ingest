@@ -7,6 +7,35 @@ from collections import deque
 from ratelimiter import RateLimiter
 from core.utils import create_session_with_retries, binary_extensions
 from typing import Tuple, Set
+from core.indexer import Indexer
+import psutil
+import ray
+
+class UrlCrawlWorker(object):
+    def __init__(self, indexer: Indexer):
+        self.indexer = indexer
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+
+    def setup(self):
+        self.indexer.setup()
+
+    def process(self, url: str, source: str):
+        metadata = {"source": source, "url": url}
+        self.logger.info(f"Crawling and indexing {url}")
+        try:
+            succeeded = self.indexer.index_url(url, metadata=metadata)
+            if not succeeded:
+                self.logger.info(f"Indexing failed for {url}")
+            else:
+                self.logger.info(f"Indexing {url} was successful")
+        except Exception as e:
+            import traceback
+            self.logger.error(
+                f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
+            )
+            return -1
+        return 0
 
 class DocsCrawler(Crawler):
 
@@ -99,6 +128,23 @@ class DocsCrawler(Crawler):
 
         logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         source = self.cfg.docs_crawler.docs_system
-        for url in self.crawled_urls:
-            self.indexer.index_url(url, metadata={'url': url, 'source': source})
-            logging.info(f"{source.capitalize()} Crawler: finished indexing {url}")
+        ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
+        if ray_workers == -1:
+            ray_workers = psutil.cpu_count(logical=True)
+        if ray_workers > 0:
+            logging.info(f"Using {ray_workers} ray workers")
+            self.indexer.p = self.indexer.browser = None
+            ray.init(num_cpus=ray_workers, log_to_driver=True)
+            actors = [ray.remote(UrlCrawlWorker).remote(self.indexer) for _ in range(ray_workers)]
+            for a in actors:
+                a.setup.remote()
+            pool = ray.util.ActorPool(actors)
+            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), self.crawled_urls))
+                
+        else:
+            crawl_worker = UrlCrawlWorker(self.indexer)
+            for inx, url in enumerate(self.crawled_urls):
+                if inx % 100 == 0:
+                    logging.info(f"Crawling URL number {inx+1} out of {len(self.crawled_urls)}")
+                crawl_worker.process(url, source=source)
+
