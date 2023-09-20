@@ -40,6 +40,7 @@ The `extraction` parameter defines how page content is extracted from URLs.
 `url_regex` if it exists defines a regular expression that is used to filter URLs. For example, if I want only the developer pages from vectara.com to be indexed, I can use ".*vectara.com/developer.*" 
 
 `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
+Note that ray with docker does not work on Mac M1/M2 machines.
 
 ### Database crawler
 
@@ -123,6 +124,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
     docs_repo: "https://github.com/vectara/vectara-docs"
     docs_homepage: "https://docs.vectara.com/docs"
     docs_system: "docusaurus"
+    ray_workers: 0
 ```
 
 The Docs crawler processes and indexes content published on different documentation systems.
@@ -131,6 +133,8 @@ It has two parameters
 - `url_regex` defines one or more (optional) regex expressions to include in the content crawl.
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
 - `doc_system` defines the type of documentation system we will crawl for content. Currently supported `docusaurus` or `readthedocs`
+- `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
+Note that ray with docker does not work on Mac M1/M2 machines.
 
 
 ### Discourse crawler
