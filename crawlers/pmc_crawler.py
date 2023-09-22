@@ -71,7 +71,6 @@ class PmcCrawler(Crawler):
                 title = title_element.get_text(strip=True)
             else:
                 title = "Title not found"
-
     
             # Extract the publication date
             pub_date_soup = soup.find("pub-date")
@@ -80,17 +79,17 @@ class PmcCrawler(Crawler):
                 if year is None:
                     year_text = '1970'
                 else:
-                    year_text = str(year)
+                    year_text = str(year.text)
                 month = pub_date_soup.find("month")
                 if month is None:
                     month_text = '1'
                 else:
-                    month_text = str(month)
+                    month_text = str(month.text)
                 day = pub_date_soup.find("day")
                 if day is None:
                     day_text = '1'
                 else:
-                    day_text = str(day)
+                    day_text = str(day.text)
 
                 try:
                     pub_date = f"{year_text}-{month_text}-{day_text}"
@@ -114,7 +113,7 @@ class PmcCrawler(Crawler):
                 }),
                 "section": []
             }
-            for paragraph in soup.findall('body p'):
+            for paragraph in soup.find_all('body p'):
                 document['section'].append({
                     "text": paragraph.text,
                 })
