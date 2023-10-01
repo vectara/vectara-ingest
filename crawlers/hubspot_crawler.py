@@ -3,7 +3,6 @@ from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
 from core.utils import clean_email_text
-from slugify import slugify
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 import datetime
