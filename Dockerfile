@@ -10,6 +10,7 @@ RUN apt-get install -y build-essential xorg libssl-dev libxrender-dev wget git
 RUN apt-get install -y --no-install-recommends xvfb libfontconfig libjpeg-turbo8 xfonts-75dpi fontconfig
 RUN apt-get update
 RUN apt-get install -y vim
+RUN apt install -y unixodbc
 
 # Install wkhtmltopdf stuff
 RUN wget --no-check-certificate https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb

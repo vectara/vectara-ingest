@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 161
+  corpus_id: 244
   customer_id: 1526022105
   reindex: true
 
@@ -10,54 +10,12 @@ fmp_crawler:
   tickers:
     [
       "AAPL",
-      "ABBV",
-      "ABNB",
-      "AMD",
       "AMZN",
-      "BAC",
-      "BBY",
-      "C",
-      "CRM",
-      "CSCO",
-      "CVS",
-      "CVX",
-      "DASH",
-      "DIS",
-      "EBAY",
-      "EXPE",
-      "F",
       "GOOG",
-      "HD",
-      "INTC",
-      "JNJ",
-      "JPM",
-      "KO",
-      "LLY",
-      "LUV",
-      "META",
-      "MRK",
       "MSFT",
-      "NFLX",
-      "NKE",
       "NVDA",
-      "ORCL",
-      "PEP",
-      "PFE",
-      "PG",
-      "PYPL",
-      "RIVN",
-      "SLB",
       "SNOW",
-      "T",
-      "TGT",
       "TSLA",
-      "UBER",
-      "UNH",
-      "USB",
-      "V",
-      "WFC",
-      "WMT",
-      "XOM",
     ]
 
   start_year: 2015
