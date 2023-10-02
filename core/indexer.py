@@ -31,13 +31,14 @@ class Indexer(object):
         corpus_id (int): ID of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True, index_code: bool = False) -> None:
         self.cfg = cfg
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
+        self.index_code = index_code
         self.timeout = 30
         self.detected_language: Optional[str] = None
 
@@ -267,7 +268,7 @@ class Indexer(object):
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             extracted_title = url.split('/')[-1]      # no title in these files, so using file name
-            text = html_to_text(html_content)
+            text = html_to_text(html_content, self.index_code)
             parts = [text]
 
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
@@ -282,7 +283,7 @@ class Indexer(object):
                     self.detected_language = detect_language(body_text)
                     logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
-                text, extracted_title = get_content_and_title(html_content, url, self.detected_language)
+                text, extracted_title = get_content_and_title(html_content, url, self.detected_language, self.index_code)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
