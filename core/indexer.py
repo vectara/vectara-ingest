@@ -39,7 +39,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.index_code = index_code
-        self.timeout = 30
+        self.timeout = 45
         self.detected_language: Optional[str] = None
 
         self.setup()
@@ -50,7 +50,7 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str, timeout: int = 30) -> Tuple[str, str] :
+    def fetch_content_with_timeout(self, url: str) -> Tuple[str, str] :
         '''
         Fetch content from a URL with a timeout.
         Args:
@@ -67,7 +67,7 @@ class Indexer(object):
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
-            page.goto(url, timeout=timeout*1000)
+            page.goto(url, timeout=self.timeout*1000)
             content = page.content()
             out_url = page.url
         except PlaywrightTimeoutError:
