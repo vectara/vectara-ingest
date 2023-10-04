@@ -134,7 +134,7 @@ It has two parameters
 - `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
 - `doc_system` defines the type of documentation system we will crawl for content. Currently supported `docusaurus` or `readthedocs`
-- `include_code` if true (default) then include code segments in what is indexed, otherwise ignore those sections (`<script>, <pre> and <code>`)
+- `remove_code` if true (default) then removes all code segments (with tags `<script> and <code>`) in what is indexed, otherwise keeps those sections 
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
 
