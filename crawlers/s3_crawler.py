@@ -1,11 +1,10 @@
-import logging
 import pathlib
-from slugify import slugify
 import boto3
 import os
 from typing import List, Tuple
 
 from core.crawler import Crawler
+from slugify import slugify
 
 def list_files_in_s3_bucket(bucket_name: str, prefix: str) -> List[str]:
     """

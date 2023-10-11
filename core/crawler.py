@@ -1,5 +1,4 @@
 from omegaconf import OmegaConf, DictConfig
-from slugify import slugify
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -8,6 +7,7 @@ from typing import Set, Optional, List, Any
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
+from slugify import slugify
 
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",

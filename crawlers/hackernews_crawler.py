@@ -3,8 +3,9 @@ import requests
 import logging
 from core.crawler import Crawler
 import os
-from slugify import slugify
 from core.utils import html_to_text, create_session_with_retries
+from slugify import slugify
+
 from typing import List
 
 def get_comments(kids: List[str], entrypoint: str) -> List[str]:

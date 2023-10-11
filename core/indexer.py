@@ -3,9 +3,8 @@ import json
 import os
 from typing import Tuple, Dict, Any, List, Optional
 
-from slugify import slugify         
 import time
-from core.utils import create_session_with_retries
+from slugify import slugify
 
 from bs4 import BeautifulSoup
 
@@ -14,7 +13,8 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
-from core.utils import html_to_text, detect_language, get_file_size_in_MB
+
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
