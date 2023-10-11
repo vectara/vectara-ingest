@@ -1,8 +1,9 @@
 import logging
-from typing import Tuple, Optional
+from typing import Tuple
 
 from goose3 import Goose
 from goose3.text import StopWordsArabic, StopWordsKorean, StopWordsChinese
+from core.utils import remove_code_from_html
 
 import justext
 from bs4 import BeautifulSoup
@@ -109,7 +110,10 @@ def get_content_with_goose3(html_content: str, url: str, detected_language: str)
         logging.info(f"Error in Goose3 ({e}); that's okay Justext will fill in")
         return text, title
 
-def get_content_and_title(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
+def get_content_and_title(html_content: str, url: str, detected_language: str, remove_code: bool = False) -> Tuple[str, str]:
+    if remove_code:
+        html_content = remove_code_from_html(html_content)
+
     text1, title1 = get_content_with_goose3(html_content, url, detected_language)
     text2, title2 = get_content_with_justext(html_content, detected_language)
     

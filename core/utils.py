@@ -11,7 +11,15 @@ doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
 archive_extensions = ["zip", "gz", "tar", "bz2", "7z", "rar"]
 binary_extensions = archive_extensions + img_extensions + doc_extensions
 
-def html_to_text(html: str) -> str:
+def remove_code_from_html(html_text: str) -> str:
+    soup = BeautifulSoup(html_text, 'html.parser')
+    for tag in soup.find_all(['code', 'script']):
+        tag.decompose()
+    return str(soup)
+
+def html_to_text(html: str, include_code: bool = True) -> str:
+    if not include_code:
+        html = remove_code_from_html(html)
     soup = BeautifulSoup(html, features='html.parser')
     return soup.get_text()
 

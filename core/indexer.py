@@ -31,14 +31,15 @@ class Indexer(object):
         corpus_id (int): ID of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True, remove_code: bool = True) -> None:
         self.cfg = cfg
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
-        self.timeout = 30
+        self.remove_code = remove_code
+        self.timeout = cfg.vectara.get("timeout", 30)
         self.detected_language: Optional[str] = None
 
         self.setup()
@@ -49,7 +50,7 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str, timeout: int = 30) -> Tuple[str, str] :
+    def fetch_content_with_timeout(self, url: str) -> Tuple[str, str] :
         '''
         Fetch content from a URL with a timeout.
         Args:
@@ -66,7 +67,7 @@ class Indexer(object):
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
-            page.goto(url, timeout=timeout*1000)
+            page.goto(url, timeout=self.timeout*1000)
             content = page.content()
             out_url = page.url
         except PlaywrightTimeoutError:
@@ -267,7 +268,7 @@ class Indexer(object):
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             extracted_title = url.split('/')[-1]      # no title in these files, so using file name
-            text = html_to_text(html_content)
+            text = html_to_text(html_content, self.remove_code)
             parts = [text]
 
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
@@ -282,7 +283,7 @@ class Indexer(object):
                     self.detected_language = detect_language(body_text)
                     logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
-                text, extracted_title = get_content_and_title(html_content, url, self.detected_language)
+                text, extracted_title = get_content_and_title(html_content, url, self.detected_language, self.remove_code)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:

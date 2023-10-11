@@ -129,8 +129,10 @@ vectara:
   corpus_id: 4
   # the Vectara customer ID
   customer_id: 1234567
-  # flag: should vectara-ingest reindex if document already exists
+  # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
+  # timeout (optional); sets the URL crawling timeout in seconds
+  timeout: 45
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
