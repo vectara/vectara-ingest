@@ -80,7 +80,8 @@ class FmpCrawler(Crawler):
                                 values = [v for v in values if v and type(v)==str and len(v)>=10]
                                 if len(values)>0 and len(' '.join(values))>100:
                                     document['section'].append({'title': f'{key} - {title}', 'text': '\n'.join(values)})
-                    self.index_doc(document)
+                    if len(document['section'])>0:
+                        self.index_doc(document)
 
             # Index earnings call transcript
             logging.info(f"Getting transcripts")

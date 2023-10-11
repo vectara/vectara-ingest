@@ -29,7 +29,7 @@ class DatabaseCrawler(Crawler):
             parts = []
             metadatas = []
             for _, row in df.iterrows():
-                text = ' - '.join(str(x) for x in row[text_columns].tolist() if x)
+                text = ' - '.join(str(x) for x in row[text_columns].tolist() if x) + '\n'
                 parts.append(unicodedata.normalize('NFD', text))
                 metadatas.append({column: row[column] for column in metadata_columns})
             logging.info(f"Indexing df for '{doc_id}' with ({len(df)}) rows")

@@ -50,6 +50,7 @@ database_crawler:
     db_url: "postgresql://<username>:<password>@my_db_host:5432/yelp"
     db_table: yelp_reviews                                 
     select_condition: "city='New Orleans'"
+    doc_id_columns: [postal_code]
     text_columns: [business_name, review_text]
     metadata_columns: [city, state, postal_code]
 ```
@@ -61,33 +62,35 @@ The database crawler can be used to read data from a relational database and ind
   - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
 - `db_table` the table name in the database
 - `select_condition` optional condition to filter rows in the table by
-- `doc_id_col` defines a column that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
+- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
 - `metadata_columns` a list of column names that we want to use as metadata
 
 In the above example, the crawler would
 1. Include all rows in the database "yelp" that are from the city of New Orleans (`SELECT * FROM yelp WHERE city='New Orleans'`)
-2. Index the textual information in the columns "business_name" and "review_text"
-3. Include the columns "city", "state" and "postal_code" as meta-data for each row
+2. Group all rows that have the same values for `postal_code` into the same Vectara document
+3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `business_name` and `review_text` and including the meta-data fields `city`, `state` and `postal_code`.
 
 ### CSV crawler
 
 ```yaml
 ...
 csv_crawler:
-    csv_path: "/path/to/yelp_reviews.csv"
-    text_columns: [business_name, review_text]
-    metadata_columns: [city, state, postal_code]
+    csv_path: "/path/to/Game_of_Thrones_Script.csv"
+    doc_id_columns: [Season, Episode]
+    text_columns: [Name, Sentence]
+    metadata_columns: ["Season", "Episode", "Episode Title"]
 ```
 The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV file.
 - `select_condition` optional condition to filter rows in the table by
+- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
+- `metadata_columns` a list of column names that we want to use as metadata
 
 In the above example, the crawler would
-1. Read all the data from the local CSV file
-2. Index the textual information in the columns "business_name" and "review_text"
-3. Include the columns "city", "state" and "postal_code" as meta-data for each row
-
+1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
+2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
+3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
 
 ### RSS crawler
 
