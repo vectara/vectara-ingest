@@ -16,6 +16,7 @@ fmp_crawler:
       "NVDA",
       "SNOW",
       "TSLA",
+      "TEAM",
     ]
 
   start_year: 2015
