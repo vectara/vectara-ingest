@@ -120,10 +120,17 @@ def main() -> None:
         # default (otherwise) - add to vectara config
         OmegaConf.update(cfg['vectara'], k, v)
 
-    endpoint = 'api.vectara.io'
-    customer_id = cfg.vectara.customer_id
-    corpus_id = cfg.vectara.corpus_id
-    api_key = cfg.vectara.api_key
+    if cfg.use_arguflow:
+        endpoint = cfg.arguflow.endpoint
+        customer_id = "0"
+        corpus_id = 0
+        api_key = cfg.arguflow.api_key
+    else:
+        endpoint = 'api.vectara.io'
+        customer_id = cfg.vectara.customer_id
+        corpus_id = cfg.vectara.corpus_id
+        api_key = cfg.vectara.api_key
+
     crawler_type = cfg.crawling.crawler_type
 
     # instantiate the crawler
@@ -133,7 +140,7 @@ def main() -> None:
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
     reset_corpus_flag = False
-    if reset_corpus_flag:
+    if reset_corpus_flag and not cfg.use_arguflow:
         logging.info("Resetting corpus")
         reset_corpus(endpoint, customer_id, corpus_id, cfg.vectara.auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
