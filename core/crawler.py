@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
 from typing import Set, Optional, List, Any
-from core.indexer import Indexer
+from core.indexer import ArguflowIndexer, Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 from slugify import slugify
@@ -74,7 +74,7 @@ class Crawler(object):
     ) -> None:
         self.cfg: DictConfig = DictConfig(cfg)
         reindex = self.cfg.vectara.get("reindex", False)
-        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex)
+        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex) if not cfg.use_arguflow else ArguflowIndexer(cfg, endpoint, api_key)
 
     def url_to_file(self, url: str, title: str) -> str:
         """
