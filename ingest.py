@@ -117,8 +117,9 @@ def main() -> None:
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
             continue
 
-        # default (otherwise) - add to vectara config
+        # default (otherwise) - add to vectara and arguflow configs
         OmegaConf.update(cfg['vectara'], k, v)
+        OmegaConf.update(cfg['arguflow'], k, v)
 
     if cfg.use_arguflow:
         endpoint = cfg.arguflow.endpoint

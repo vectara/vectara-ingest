@@ -5,8 +5,7 @@ vectara:
 
 use_arguflow: true
 arguflow:
-  api_host: http://127.0.0.1:8090:/api/
-  api_key: "api-key"
+  endpoint: http://127.0.0.1:8090/api
 
 crawling:
   crawler_type: rss
