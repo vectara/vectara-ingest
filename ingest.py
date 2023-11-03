@@ -91,6 +91,9 @@ def main() -> None:
         return
     env_dict = env_dict[profile_name]
 
+    if cfg.use_arguflow:
+        cfg.arguflow = {}
+
     for k,v in env_dict.items():
         if k=='HUBSPOT_API_KEY':
             OmegaConf.update(cfg, f'hubspot_crawler.{k.lower()}', v)
@@ -115,6 +118,9 @@ def main() -> None:
             continue
         if k.startswith('aws_'):
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
+            continue
+        if k == "USE_ARGUFLOW":
+            cfg.use_arguflow = v
             continue
 
         # default (otherwise) - add to vectara and arguflow configs

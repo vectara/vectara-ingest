@@ -3,10 +3,6 @@ vectara:
   customer_id: 1526022105
   reindex: false
 
-use_arguflow: true
-arguflow:
-  endpoint: http://127.0.0.1:8090/api
-
 crawling:
   crawler_type: rss
 
