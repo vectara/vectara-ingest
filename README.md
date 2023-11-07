@@ -45,7 +45,7 @@ Clone this repository:
 git clone https://github.com/vectara/vectara-ingest.git
 ```
 
-### 2. Configure the crawler
+### 2.a Configure the crawler for vectara
 
 Duplicate the `secrets.example.toml` file and rename the copy to `secrets.toml`.
 
@@ -60,6 +60,13 @@ Edit the `pg-rss.yaml` file and make the following changes:
 - Change **rss_crawler.source** to `pg`.
 - Change **rss_crawler.rss_pages** to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]`.
 - Change **rss_crawler.days_past** to 365.
+
+### 2.b Configure the crawler for arguflow
+
+Edit the `secrets.toml` file and make the following changes
+- Change `USE_ARGUFLOW` to true
+- Change `api_key` to your generated api_key
+- Change `endpoint` to the api url of your arguflow instance
 
 ### 3. Run the crawler
 
@@ -134,6 +141,12 @@ vectara:
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout: 45
 
+USE_ARGUFLOW: false
+
+arguflow:
+  # Your arguflow endpoint
+  endpoint: https://
+
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
   crawler_type: XXX
@@ -160,6 +173,11 @@ api_key="<VECTARA-API-KEY-2>"
 [profile3]
 api_key="<VECTARA-API-KEY-3>"
 MOTION_API_KEY="<YOUR-NOTION-API-KEY>
+
+[arguflow-default]
+USE_ARGUFLOW=true
+api_key = "...arguflow-api-key..."
+endpoint = "https://your-arguflow-endpoint.com/api"
 ```
 
 This allows easy secrets management when you have multiple crawl jobs that may not share the same secrets. For example when you have a different Vectara API key for indexing differnet corpora.
