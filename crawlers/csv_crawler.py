@@ -11,9 +11,10 @@ class CsvCrawler(Crawler):
         csv_path = self.cfg.csv_crawler.csv_path
         csv_file = '/home/vectara/data/file.csv'
         doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
+        sep = self.cfg.csv_crawler.get("separator", ",")
 
         all_columns = text_columns + metadata_columns
-        df = pd.read_csv(csv_file, usecols=all_columns)
+        df = pd.read_csv(csv_file, usecols=all_columns, sep=sep)
         
         logging.info(f"indexing {len(df)} rows from the CSV file {csv_path}")
 

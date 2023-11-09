@@ -80,12 +80,14 @@ csv_crawler:
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]
+    separator: ','
 ```
 The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV file.
 - `select_condition` optional condition to filter rows in the table by
 - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
 - `metadata_columns` a list of column names that we want to use as metadata
+- `separator` a string that will be used as a separator in the CSV file (default ',')
 
 In the above example, the crawler would
 1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
