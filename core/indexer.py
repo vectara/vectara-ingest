@@ -291,19 +291,25 @@ class Indexer(object):
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
-        succeeded = self.index_segments(doc_id=slugify(url), parts=parts, metadatas=[{}]*len(parts), 
-                                        doc_metadata=metadata, title=extracted_title)
+        succeeded = self.index_segments(doc_id=slugify(url), texts=parts,
+                                        doc_metadata=metadata, doc_title=extracted_title)
         return succeeded
 
-    def index_segments(self, doc_id: str, parts: List[str], metadatas: List[Dict[str, Any]], doc_metadata: Dict[str, Any] = {}, title: str = "") -> bool:
+    def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
+                       doc_metadata: Dict[str, Any] = {}, doc_title: str = "") -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
         """
+        if titles is None:
+            titles = ["" for _ in range(len(texts))]
+        if metadatas is None:
+            metadatas = [{} for _ in range(len(texts))]
+
         document = {}
         document["documentId"] = doc_id
-        if title:
-            document["title"] = title
-        document["section"] = [{"text": part, "metadataJson": json.dumps(md)} for part,md in zip(parts,metadatas)]  # type: ignore
+        if len(doc_title)>0:
+            document["title"] = doc_title
+        document["section"] = [{"text": text, "title": title, "metadataJson": json.dumps(md)} for text,title,md in zip(texts,titles,metadatas)]  # type: ignore
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
         return self.index_document(document)
@@ -332,11 +338,11 @@ class Indexer(object):
         # if file size is more than 50MB, then we extract the text locally and send over with standard API
         if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
             elements = partition(filename)
-            parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+            texts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
             titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
             title = titles[0] if len(titles)>0 else 'unknown'
-            succeeded = self.index_segments(doc_id=slugify(filename), parts=parts, metadatas=[{}]*len(parts), 
-                                            doc_metadata=metadata, title=title)
+            succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
+                                            doc_metadata=metadata, doc_title=title)
             logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
             return succeeded
 

@@ -64,6 +64,7 @@ The database crawler can be used to read data from a relational database and ind
 - `select_condition` optional condition to filter rows in the table by
 - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
+- `title_column` is an optional column name that will hold textual information to be used as title
 - `metadata_columns` a list of column names that we want to use as metadata
 
 In the above example, the crawler would
@@ -86,6 +87,7 @@ The csv crawler is similar to the database crawler, but instead of pulling data 
 - `select_condition` optional condition to filter rows in the table by
 - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
+- `title_column` is an optional column name that will hold textual information to be used as title
 - `metadata_columns` a list of column names that we want to use as metadata
 - `separator` a string that will be used as a separator in the CSV file (default ',')
 

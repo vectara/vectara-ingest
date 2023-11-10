@@ -7,6 +7,7 @@ class CsvCrawler(Crawler):
 
     def crawl(self) -> None:
         text_columns = list(self.cfg.csv_crawler.text_columns)
+        title_column = list(self.cfg.csv_crawler.title_column)
         metadata_columns = list(self.cfg.csv_crawler.metadata_columns)
         csv_path = self.cfg.csv_crawler.csv_path
         csv_file = '/home/vectara/data/file.csv'
@@ -19,14 +20,17 @@ class CsvCrawler(Crawler):
         logging.info(f"indexing {len(df)} rows from the CSV file {csv_path}")
 
         def index_df(doc_id: str, title: str, df: pd.DataFrame) -> None:
-            parts = []
+            texts = []
+            titles = []
             metadatas = []
             for _, row in df.iterrows():
+                titles.append(row[title_column])
                 text = ' - '.join(str(x) for x in row[text_columns].tolist() if x) + '\n'
-                parts.append(unicodedata.normalize('NFD', text))
+                texts.append(unicodedata.normalize('NFD', text))
                 metadatas.append({column: row[column] for column in metadata_columns})
             logging.info(f"Indexing df for '{doc_id}' with ({len(df)}) rows")
-            self.indexer.index_segments(doc_id, parts, metadatas, title=title, doc_metadata = {'source': 'csv'})
+            self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
+                                        doc_title=title, doc_metadata = {'source': 'csv'})
 
         if doc_id_columns:
             grouped = df.groupby(doc_id_columns)

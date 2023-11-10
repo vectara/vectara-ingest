@@ -71,7 +71,9 @@ class NotionCrawler(Crawler):
             doc_id = page['url']
             if len(segments)>0:
                 logging.info(f"Indexing {len(segments)} segments in page {doc_id}")
-                succeeded = self.indexer.index_segments(doc_id, segments, metadatas, doc_metadata={'source': 'notion', 'title': title, 'url': page['url']})
+                succeeded = self.indexer.index_segments(doc_id, texts=segments, titles=None, metadatas=metadatas, 
+                                                        doc_metadata={'source': 'notion', 'title': title, 'url': page['url']},
+                                                        doc_title=title)
                 if succeeded:
                     logging.info(f"Indexed notion page {doc_id}")
                 else:
