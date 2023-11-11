@@ -307,7 +307,7 @@ class Indexer(object):
 
         document = {}
         document["documentId"] = doc_id
-        if len(doc_title)>0:
+        if doc_title is not None and len(doc_title)>0:
             document["title"] = doc_title
         document["section"] = [{"text": text, "title": title, "metadataJson": json.dumps(md)} for text,title,md in zip(texts,titles,metadatas)]  # type: ignore
         if doc_metadata:
