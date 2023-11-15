@@ -94,9 +94,11 @@ class HubspotCrawler(Crawler):
                         logging.info(f"Indexing email with doc_id '{doc_id}' and subject '{email_subject}'")
                         succeeded = self.indexer.index_segments(
                             doc_id=doc_id,
-                            parts=[cleaned_email_text],
+                            texts=[cleaned_email_text],
+                            titles=None,
                             metadatas=[metadata],
-                            doc_metadata={'source': 'hubspot', 'title': email_subject, 'url': email_url}
+                            doc_metadata={'source': 'hubspot', 'title': email_subject, 'url': email_url},
+                            doc_title=email_subject
                         )
 
                         if succeeded:
