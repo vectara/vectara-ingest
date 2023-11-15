@@ -1,3 +1,4 @@
+import base64
 import logging
 import json
 import os
@@ -348,3 +349,168 @@ class Indexer(object):
 
         return self._index_file(filename, uri, metadata)
     
+class ArguflowIndexer(Indexer):
+
+    def __init__(self, cfg: OmegaConf, endpoint: str, api_key: str, reindex: bool = True, remove_code: bool = True) -> None:
+        super().__init__(cfg, endpoint, "", 0, api_key, reindex=reindex, remove_code=remove_code)
+
+    # delete document; returns True if successful, False otherwise
+    def delete_chunk(self, tracking_id: str) -> bool:
+        """
+        Delete a chunk from Arguflow dataset
+
+        Args:
+            url (str): URL of the page to delete.
+            tracking_id (str): ID of the document to delete.
+
+        Returns:
+            bool: True if the delete was successful, False otherwise.
+        """
+        api_endpoint = f"{self.endpoint}/card/tracking/{tracking_id}"
+
+        headers = {
+            "Authorization": self.api_key,
+            "Content-type": "application/json"
+        }
+
+        response = self.session.delete(api_endpoint, headers=headers)
+
+        if response.status_code != 204:
+            logging.error(f"Failed to delete document {tracking_id} with status code {response.status_code}")
+            return False
+
+        return True
+
+    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Index a file on local file system by uploading it to the Arguflow
+        Args:
+            filename (str): Name of the PDF file to create.
+            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
+            metadata (dict): Metadata for the document.
+        Returns:
+            bool: True if the upload was successful, False otherwise.
+        """
+
+        if os.path.exists(filename) == False:
+            logging.error(f"File {filename} does not exist")
+            return False
+
+        api_endpoint = f"{self.endpoint}/file"
+
+        request = {
+            "base64_docx_file": base64.b64encode(open(filename, 'rb').read()),
+            "file_mime_type": "",
+            "file_name": filename,
+            "metadata": metadata,
+            "private": False,
+            "create_cards": True,
+        }
+
+        post_headers = { 
+            "Authorization": self.api_key,
+            "Content-type": "application/json"
+        }
+
+        try:
+            data = json.dumps(request)
+        except Exception:
+            logging.info(f"Can't serialize request {request}, skipping")   
+            return False
+
+        try:
+            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+        except Exception as e:
+            logging.info(f"Exception {e} while uploading file {filename}")
+            return False
+
+        if response.status_code != 200:
+            logging.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
+            return False
+
+        logging.info(f"REST upload for {uri} succeesful")
+        return True
+
+    def _create_empty_collection(self, document: Dict[str, Any]) -> Tuple[bool, str]:
+        api_endpoint = f"{self.endpoint}/card_collection"
+        request = {
+            "description": document.get("description", ""),
+            "name": document.get("title", ""),
+            "is_public": True,
+        }
+
+        post_headers = { 
+            "Authorization": self.api_key,
+            "Content-type": "application/json"
+        }
+
+        try:
+            data = json.dumps(request)
+        except Exception:
+            logging.info(f"Can't serialize request {request}, skipping")   
+            return (False, "")
+
+        try:
+            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+        except Exception as e:
+            logging.info(f"Exception {e} while indexing document {document['documentId']}")
+            return (False, "")
+        
+        if response.status_code != 200:
+            logging.info(f"Failed to create collection for {document['documentId']}, status code {response.status_code}, reason {response.reason}, text {response.text}")
+            return (False, "")
+        
+        return (True, response.json()["id"])
+
+
+    def _index_document(self, document: Dict[str, Any]) -> bool:
+        """
+        Index a document (by uploading it to the Vectara corpus) from the document dictionary
+        """
+        api_endpoint = f"{self.endpoint}/card"
+        documentId = document["documentId"]
+
+        post_headers = { 
+            "Authorization": self.api_key,
+            "Content-type": "application/json"
+        }
+
+        # Create Empty Collection
+        (work, collection_uuid) = self._create_empty_collection(document)
+        if not work:
+            return False
+
+        all_requests = [{
+            "card_html": section["text"],
+            "metadata": section["metadataJson"],
+            "tracking_id": documentId + str(i),
+            "collection_id": collection_uuid,
+        } for i, section in enumerate(document["section"])]
+
+
+        for request in all_requests:
+            try:
+                data = json.dumps(request)
+            except Exception as e:
+                logging.info(f"Can't serialize request {request}, skipping")   
+                return False
+
+            try:
+                response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+            except Exception as e:
+                logging.info(f"Exception {e} while indexing document {document['documentId']}")
+                return False
+
+            if response.status_code == 409:
+                logging.info(f"Document {documentId} already exists, skipping")
+                if self.reindex:
+                    self.delete_chunk(request["tracking_id"])
+                    response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+            if response.status_code != 200:
+                logging.error("REST upload failed with code %d, reason %s, text %s",
+                              response.status_code,
+                              response.reason,
+                              response.text)
+                return False
+
+        return True
