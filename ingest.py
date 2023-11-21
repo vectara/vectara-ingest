@@ -120,7 +120,7 @@ def main() -> None:
         # default (otherwise) - add to vectara config
         OmegaConf.update(cfg['vectara'], k, v)
 
-    endpoint = cfg.vectara.endpoint if cfg.vectara.endpoint is not None else 'api.vectara.io'
+    endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     customer_id = cfg.vectara.customer_id
     corpus_id = cfg.vectara.corpus_id
     api_key = cfg.vectara.api_key
