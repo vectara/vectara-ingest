@@ -33,6 +33,10 @@ elif [[ "$crawler_type" == "csv" ]]; then
     # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
     csv_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['csv_path'])"`
     docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -v "$csv_path:/home/vectara/data/file.csv" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
+elif [[ "$crawler_type" == "json" ]]; then
+    # special handling of "JSON crawler" where we need to mount the JSON file under /home/vectara/data
+    json_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['json_crawler']['json_path'])"`
+    docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -v "$json_path:/home/vectara/data/file.json" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 else
     docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 fi

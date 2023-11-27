@@ -96,6 +96,17 @@ In the above example, the crawler would
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
 
+### JSON crawler
+
+```yaml
+...
+json_crawler:
+    json_path: "/path/to/file.JSON"
+```
+The JSON crawler accepts a single JSON file that is an array of JSON objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats) and uploads them each as a separate document to Vectara.
+
+This crawler has no parameters.
+
 ### RSS crawler
 
 ```yaml
