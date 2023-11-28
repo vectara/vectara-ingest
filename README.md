@@ -101,7 +101,7 @@ This section explains how to configure the `vectara-ingest` crawler for a websit
       
    1. Change `rss_crawler.days_past` to `365`.
 
-### Step 3: Run the crawler
+## Step 3: Run the crawler
 
 1. Ensure that Docker is running.
 
@@ -128,7 +128,7 @@ This section explains how to configure the `vectara-ingest` crawler for a websit
    docker logs -f vingest
    ```
 
-### Step 4: Try queries on your corpus
+## Step 4: Try queries on your corpus
 
 While your crawler is ingesting data into your Vectara corpus, you can try  queries against your corpus on the Vectara Console, click **Data > Your Corpus Name** and type in a query such as "What is a maker schedule?"
 
