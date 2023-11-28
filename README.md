@@ -34,7 +34,7 @@ This guide explains how to create a basic crawler to scrape content from [Paul G
 
 ## Prerequisites
 * [Free Vectara account](https://console.vectara.com/signup)
-* Crearted data corpus
+* Created data corpus
 * [API key](https://docs.vectara.com/docs/api-keys)
 * Write access to the corpus
 * [Python 3.8 (or higher)](https://www.python.org/downloads/)
