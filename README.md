@@ -16,81 +16,126 @@
   </a>
 </p>
 
-## About
+# About `vectara-ingest`
+This project allows you to crawl datasets and ingest them into Vectara by using pre-built or custom crawlers. You can use Vectara’s [APIs](https://docs.vectara.com/docs/) to create conversational experiences&mdash;such as chatbots, semantic search, and workplace search&mdash;from your data.
 
-Crawl datasets and ingest them into Vectara using pre-built crawlers or by building your own. With Vectara’s [APIs](https://docs.vectara.com/docs/) you can create conversational experiences with your data, such as chatbots, semantic search, and workplace search.
+For more information about this repository, see [Code Organization](#code-organization) and [Crawling](#crawling).
 
-`vectara-ingest` is an open source Python project that demonstrates how to crawl datasets and ingest them into Vectara. It provides a step-by-step guide on building your own crawler, as well as pre-built crawlers for ingesting data from sources such as: websites, RSS feeds, Jira, Notion, Docusaurus and more.
+`vectara-ingest` is an open source Python project that demonstrates how to crawl datasets and ingest them into Vectara. It provides a step-by-step guide on building your own crawler and some pre-built crawlers for ingesting data from sources such as:
 
-## Quickstart
+* Websites
+* RSS feeds
+* Jira tickets
+* Notion notes
+* Docusaurus documents
 
-Let’s create a basic crawler to scrape content from [Paul Graham's website](http://www.paulgraham.com/index.html), and ingest it into Vectara. This guide assumes you’ve already [signed up for a free Vectara account](https://console.vectara.com/signup), created a corpus to contain your data (default settings are fine), and created an [API key](https://docs.vectara.com/docs/api-keys) with write-access to this corpus.
+# Getting Started Guide
+This guide explains how to create a basic crawler to scrape content from [Paul Graham's website](http://www.paulgraham.com/index.html), and ingest it into Vectara.
 
-### 1. Install dependencies
+## Prerequisites
+* [Free Vectara account](https://console.vectara.com/signup)
+* Crearted data corpus
+* [API key](https://docs.vectara.com/docs/api-keys)
+* Write access to the corpus
+* [Python 3.8 (or higher)](https://www.python.org/downloads/)
+* [pyyaml](https://pypi.org/project/PyYAML/)
+* [Docker](https://docs.docker.com/engine/install/)
 
-Install [python >= 3.8](https://www.python.org/downloads/) if it's not already installed.
+## Step 1: Clone the `vectara-ingest` repository
+This section explains how to clone the `vectara-ingest` repository to your machine.
 
-Install [pyyaml](https://pypi.org/project/PyYAML/): `pip3 install pyyaml`.
+### On Linux
+Open a terminal session and clone the repository to a directory on your machine:
 
-Install [Docker](https://docs.docker.com/engine/install/).
-
-For Windows, 
-- Start a Windows Powershell terminal
-- Update WSL: `wsl --update`
-- Ensure WSL has the right version of Linux available: `wsl --install ubuntu-20.04` 
-
-Clone this repository:
-
-```sh
+```bash
 git clone https://github.com/vectara/vectara-ingest.git
 ```
 
-### 2. Configure the crawler
+### On Windows
+1. Open a Windows PowerShell terminal.
+  
+1. Update your Windows Subsystem for Linux (WSL):
 
-Duplicate the `secrets.example.toml` file and rename the copy to `secrets.toml`.
+   ```bash
+   wsl --update
+   ```
+   
+1. Ensure that WSL has the correct version of Linux:
 
-Edit the `secrets.toml` file and change the **api_key** value to your Vectara API Key.
+   ```bash
+   wsl --install ubuntu-20.04
+   ```
+   
+1. Open your Linux terminal and clone the repository to a directory on your machine:
 
-Since the Paul Graham website does not have a standard sitemap, you're going to crawl its content using the [RSS feed](http://www.paulgraham.com/rss.html) built by Aaron Swartz. You can do this by looking inside the `config/` directory, duplicating the `news-bbc.yaml` config file, and renaming it to `pg-rss.yaml`.
+   ```bash
+   git clone https://github.com/vectara/vectara-ingest.git
+   ```
 
-Edit the `pg-rss.yaml` file and make the following changes:
+## Step 2: Configure the crawler
+This section explains how to configure the `vectara-ingest` crawler for a website without a standard sitemap&mdash;the crawler uses the [RSS feed](http://www.paulgraham.com/rss.html) instead.
 
-- Change **vectara.corpus_id** value to the ID of the corpus into which you want to ingest the content of the website.
-- Change **vectara.account_id** value to the ID of your account. You can click on your username in the top-right corner to copy it to your clipboard.
-- Change **rss_crawler.source** to `pg`.
-- Change **rss_crawler.rss_pages** to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]`.
-- Change **rss_crawler.days_past** to 365.
+1. Navigate to the directory that you have cloned.
 
-### 3. Run the crawler
+1. Copy the `secrets.example.toml` to `secrets.toml`.
 
-Make sure the Docker app is running.
+1. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
-Then execute the run script from the root directory using your config file to tell it what to crawl and where to ingest the data, assigning the “default” profile from your secrets file:
+   To retrieve your API key from the Vectara console, click **API Access > API Keys**.
 
-Start the crawler job:
-```sh
-bash run.sh config/pg-rss.yaml default
-```
-For Microsoft Windows, make sure you run this command from within the WSL 2 environment (after running `wsl` to enter the Linux environment).
+1. In the `config/` directory, copy the `news-bbc.yaml` config file to `pg-rss.yaml`.
 
-The crawler executes inside of a [Docker container](https://www.docker.com/resources/what-container/) to protect your system’s resources and make it easier to move your crawlers to the cloud. This is a good time to grab a coffee or snack – the container needs to install a lot of dependencies, which will take some time.
+1. Edit the `pg-rss.yaml` file and make the following changes:
 
-When the container is set up, the process will exit and you’ll be able to track your crawler’s progress:
+   1. Change the `vectara.corpus_id` value to the ID of the corpus into which you want to ingest the content of the website.
 
-```
-docker logs -f vingest
-```
+      To retrieve your corpus ID from the Vectara console, click **Data > Your Corpus Name**.
+      
+   1. Change the `vectara.account_id` value to the ID of your account.
 
-### 4. Done!
+      To retrieve your account ID from the Vectara console, click your username in the upper-right corner.
 
-Paul Graham is a prolific writer, so ingesting all of his work might take a few minutes. But even while your crawler ingesting data into your Vectara corpus, you can build applications that query it! Try out some sample queries with the Vectara Console ("search" tab) -- one of my favorites is "What is a maker schedule?"
+   1. Change `rss_crawler.source` to `pg`.
+      
+   1. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]`.
+      
+   1. Change `rss_crawler.days_past` to `365`.
+
+### Step 3: Run the crawler
+
+1. Ensure that Docker is running.
+
+1. Run the script from the directory that you cloned and specify your `.yaml` configuration file and your `default` profile from the `secrets.toml` file.
+
+   ```bash
+   bash run.sh config/pg-rss.yaml default
+   ```
+   
+   **Note:**
+   * On Linux, ensure that the `run.sh` file is executable by running the following command:
+  
+     ```bash
+     cmhod +x run.sh
+     ```
+
+   * On Windows, ensure that you run this command from within the WSL 2 environment.
+
+   **Note:** To protect your system's resources and make it easier to move your crawlers to the cloud, the crawler executes inside a Docker container. This is a lengthy process because in involves numerous dependencies
+
+1. When the container is set up, you can track your crawler’s progress:
+
+   ```bash
+   docker logs -f vingest
+   ```
+
+### Step 4: Try queries on your corpus
+
+While your crawler is ingesting data into your Vectara corpus, you can try  queries against your corpus on the Vectara Console, click **Data > Your Corpus Name** and type in a query such as "What is a maker schedule?"
 
 ## Code organization
-
 The codebase includes the following components.
 
 ### `core/` directory
-
 Fundamental utilities depended upon by the crawlers:
 
 - **`ingest.py`:** The main entry point for a crawl job.
@@ -100,19 +145,15 @@ Fundamental utilities depended upon by the crawlers:
 - **`utils.py`:** Some utility functions used by the other code.
 
 ### `crawlers/` directory
-
 Includes implementations of the various specific crawlers.
 
 ### `config/` directory
-
 Includes example YAML configuration files for various crawling jobs.
 
 ### `run.sh`
-
 The main shell script to execute when you want to launch a crawl job (see below for more details).
 
 ### `Dockerfile`
-
 Defines the Docker container image.
 
 ## Crawling
