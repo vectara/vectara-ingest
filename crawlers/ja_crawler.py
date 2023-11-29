@@ -5,7 +5,7 @@ import json
 def is_valid(json_object):
     return 'documentId' in json_object and 'section' in json_object
 
-class JsonCrawler(Crawler):
+class JACrawler(Crawler):
 
     def crawl(self) -> None:
         json_file = '/home/vectara/data/file.json'
