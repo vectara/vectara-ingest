@@ -100,12 +100,12 @@ In the above example, the crawler would
 
 ```yaml
 ...
-ja_crawler:
+buldupload_crawler:
     json_path: "/path/to/file.JSON"
 ```
-The JA (Jason Array) crawler accepts a single JSON file that is an array of Vectara JSON document objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats). It then iterates through these document objects, and uploads them one by one to Vevctara.
+The Bulk Upload crawler accepts a single JSON file that is an array of Vectara JSON document objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats). It then iterates through these document objects, and uploads them one by one to Vevctara.
 
-This crawler has no parameters.
+This bulk upload crawler has no parameters.
 
 ### RSS crawler
 
