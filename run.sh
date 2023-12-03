@@ -40,4 +40,10 @@ elif [[ "$crawler_type" == "buldupload" ]]; then
 else
     docker run -d --platform=linux/amd64 -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest vectara-ingest
 fi
-echo "Ingest job is running. You can try 'docker logs -f vingest' to see the progress."
+
+if [ $? -eq 0 ]; then
+  echo "Success! Ingest job is running."
+  echo "You can try 'docker logs -f vingest' to see the progress."
+else
+  echo "Ingest container failed to start. Please check the messages above."
+fi
