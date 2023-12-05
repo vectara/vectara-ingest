@@ -38,7 +38,7 @@ This guide explains how to create a basic crawler to scrape content from [Paul G
 * [API key](https://docs.vectara.com/docs/api-keys)
 * Write access to the corpus
 * [Python 3.8 (or higher)](https://www.python.org/downloads/)
-* [pyyaml](https://pypi.org/project/PyYAML/)
+* [pyyaml](https://pypi.org/project/PyYAML/) - install with: `pip install pyyaml`
 * [Docker](https://docs.docker.com/engine/install/)
 
 ## Step 1: Clone the `vectara-ingest` repository
@@ -73,33 +73,33 @@ git clone https://github.com/vectara/vectara-ingest.git
    ```
 
 ## Step 2: Configure the crawler
-This section explains how to configure the `vectara-ingest` crawler for a website without a standard sitemap&mdash;the crawler uses the [RSS feed](http://www.paulgraham.com/rss.html) instead.
+For our example we would index the content of https://www.paulgraham.com website to Vectara. Since this website does not provide a sitemap, but does provide an [RSS feed](http://www.paulgraham.com/rss.html), we will use the vectara-ingest RSS crawler instead.
 
 1. Navigate to the directory that you have cloned.
 
-1. Copy the `secrets.example.toml` to `secrets.toml`.
+2. Copy the `secrets.example.toml` to `secrets.toml`.
 
-1. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
+3. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
    To retrieve your API key from the Vectara console, click **API Access > API Keys**.
 
-1. In the `config/` directory, copy the `news-bbc.yaml` config file to `pg-rss.yaml`.
+4. In the `config/` directory, copy the `news-bbc.yaml` config file to `pg-rss.yaml`.
 
-1. Edit the `pg-rss.yaml` file and make the following changes:
+5. Edit the `pg-rss.yaml` file and make the following changes:
 
    1. Change the `vectara.corpus_id` value to the ID of the corpus into which you want to ingest the content of the website.
 
       To retrieve your corpus ID from the Vectara console, click **Data > Your Corpus Name**.
       
-   1. Change the `vectara.account_id` value to the ID of your account.
+   2. Change the `vectara.account_id` value to the ID of your account.
 
       To retrieve your account ID from the Vectara console, click your username in the upper-right corner.
 
-   1. Change `rss_crawler.source` to `pg`.
+   3. Change `rss_crawler.source` to `pg`.
       
-   1. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]`.
+   4. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]`.
       
-   1. Change `rss_crawler.days_past` to `365`.
+   5. Change `rss_crawler.days_past` to `365`.
 
 ## Step 3: Run the crawler
 
