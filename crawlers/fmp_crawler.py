@@ -75,11 +75,13 @@ class FmpCrawler(Crawler):
                     for key in data.keys():
                         if type(data[key])==str:
                             continue
+                        # data[key] is a list of dicts
                         for item_dict in data[key]:
                             for title, values in item_dict.items():
-                                values = [v for v in values if v and type(v)==str and len(v)>=10]
-                                if len(values)>0 and len(' '.join(values))>100:
-                                    document['section'].append({'title': f'{key} - {title}', 'text': '\n'.join(values)})
+                                values = [v for v in values if v and type(v)==str and len(v)>=50]
+                                text = '\n'.join(values)
+                                if len(values)>0 and len(text)>100:
+                                    document['section'].append({'title': title, 'text': text})
                     if len(document['section'])>0:
                         self.index_doc(document)
 
