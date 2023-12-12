@@ -105,7 +105,7 @@ class WebsiteCrawler(Crawler):
         urls = list(set(urls))
 
         # crawl all URLs
-        logging.info(f"Collected {len(urls)} URLs to crawel and index")
+        logging.info(f"Collected {len(urls)} URLs to crawl and index")
 
         # print some file types
         file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))
