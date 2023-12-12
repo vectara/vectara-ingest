@@ -51,7 +51,7 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str, debug: bool = False) -> Tuple[str, str, List[str]]:
+    def fetch_content_with_timeout(self, url: str, debug: bool = False) -> Tuple[str, str]:
         '''
         Fetch content from a URL with a timeout.
         Args:
@@ -72,20 +72,15 @@ class Indexer(object):
             if debug:
                 page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
             content = page.content()
-
             out_url = page.url
-            links_elements = page.query_selector_all("a")
-            links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
         except PlaywrightTimeoutError:
             logging.info(f"Page loading timed out for {url}")
             content = ''
             out_url = ''
-            links = []
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
             content = ''
             out_url = ''
-            links = []
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
@@ -94,7 +89,7 @@ class Indexer(object):
             if page:
                 page.close()
             
-        return out_url, content, links
+        return out_url, content
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -283,7 +278,7 @@ class Indexer(object):
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                actual_url, html_content, _ = self.fetch_content_with_timeout(url)
+                actual_url, html_content = self.fetch_content_with_timeout(url)
                 if html_content is None or len(html_content)<3:
                     return False
                 if self.detected_language is None:
