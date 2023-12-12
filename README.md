@@ -173,7 +173,7 @@ vectara:
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
   # timeout (optional); sets the URL crawling timeout in seconds
-  timeout: 45
+  timeout:60
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)

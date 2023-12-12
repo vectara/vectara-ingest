@@ -14,7 +14,7 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, add_www
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -39,7 +39,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.remove_code = remove_code
-        self.timeout = cfg.vectara.get("timeout", 30)
+        self.timeout = cfg.vectara.get("timeout", 60)
         self.detected_language: Optional[str] = None
 
         self.setup()
@@ -148,7 +148,7 @@ class Indexer(object):
                     logging.info(f"REST upload for {uri} successful (reindex)")
                     return True
                 else:
-                    logging.info(f"REST upload for {uri} failed with code = {response.status_code}, text = {response.text}")
+                    logging.info(f"REST upload for {uri} (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
         elif response.status_code != 200:
@@ -274,7 +274,7 @@ class Indexer(object):
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                actual_url, html_content = self.fetch_content_with_timeout(url)
+                actual_url, html_content = self.fetch_content_with_timeout(add_www(url))
                 if html_content is None or len(html_content)<3:
                     return False
                 if self.detected_language is None:
@@ -291,7 +291,8 @@ class Indexer(object):
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
-        succeeded = self.index_segments(doc_id=slugify(url), texts=parts,
+        doc_id = slugify(url)
+        succeeded = self.index_segments(doc_id=doc_id, texts=parts,
                                         doc_metadata=metadata, doc_title=extracted_title)
         return succeeded
 

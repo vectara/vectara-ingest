@@ -97,9 +97,10 @@ class WebsiteCrawler(Crawler):
             all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
-        urls = all_urls
-        if url_regex:
-            urls = [u for u in urls if any([r.match(u) for r in url_regex])]
+        if url_regex and len(url_regex)>0:
+            urls = [u for u in all_urls if any([r.match(u) for r in url_regex])]
+        else:
+            urls = [u for u in all_urls if u.startswith('http')]
         urls = [u for u in urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
         urls = list(set(urls))
 

@@ -41,7 +41,7 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optiona
 
         # Find all anchor tags and their href attributes
         new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]
-        new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and any([r.match(u) for r in url_regex])]
+        new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and (len(url_regex)==0 or any([r.match(u) for r in url_regex]))]
         new_urls = list(set(new_urls))
         visited.update(new_urls)
         for new_url in new_urls:
@@ -103,9 +103,9 @@ class Crawler(object):
                     f"Invalid URL: {url} (status code={response.status_code}, reason={response.reason})"
                 )
 
-        if title is None:
+        if title is None or len(title)==0:
             soup = BeautifulSoup(response.text, "html.parser")
-            title = soup.title.string
+            title = str(soup.title)
 
         # convert to local file (PDF)
         filename = slugify(url) + ".pdf"
