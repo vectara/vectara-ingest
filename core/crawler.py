@@ -17,35 +17,31 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optional[Set[str]]=None, session: Optional[requests.Session]=None) -> Set[str]:
+            
+def recursive_crawl(url: str, depth: int, url_regex: List[Any], indexer: Indexer, visited: Optional[Set[str]]=None) -> Set[str]:
     if depth <= 0:
         return set() if visited is None else set(visited)
 
     if visited is None:
         visited = set()
-    if session is None:
-        session = requests.Session()
 
     # For binary files - we don't extract links from them, nor are they included in the crawled URLs list
-    # for document files (like PPT, DOCX, etc) we don't extract links from the, but they ARE included in the crawled URLs list
     url_without_fragment = url.split("#")[0]
     if any([url_without_fragment.endswith(ext) for ext in binary_extensions]):
         return visited
     visited.add(url)
+
+    # for document files (like PPT, DOCX, etc) we don't extract links from the, but they ARE included in the crawled URLs list
     if any([url_without_fragment.endswith(ext) for ext in doc_extensions]):
         return visited
 
     try:
-        response = session.get(url, headers=get_headers)
-        soup = BeautifulSoup(response.content, "html.parser")
-
-        # Find all anchor tags and their href attributes
-        new_urls = [urljoin(url, link["href"]) for link in soup.find_all("a") if "href" in link.attrs]
+        _, _, new_urls = indexer.fetch_content_with_timeout(url)
         new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and (len(url_regex)==0 or any([r.match(u) for r in url_regex]))]
         new_urls = list(set(new_urls))
         visited.update(new_urls)
         for new_url in new_urls:
-            visited = recursive_crawl(new_url, depth-1, url_regex, visited, session)
+            visited = recursive_crawl(new_url, depth-1, url_regex, indexer, visited)
     except Exception as e:
         logging.info(f"Error {e} in recursive_crawl for {url}")
         pass
@@ -55,13 +51,13 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], visited: Optiona
 
 class Crawler(object):
     """
-    Base class for a crawler that indexes documents to a Vectara corpus.
+    Base class for a crawler that indexes documents into a Vectara corpus.
 
     Args:
         endpoint (str): Endpoint for the Vectara API.
         customer_id (str): ID of the Vectara customer.
-        token (str): Bearer JWT token
         corpus_id (int): ID of the Vectara corpus to index to.
+        api_key (str): API key to use for indexing into Vectara
     """
 
     def __init__(

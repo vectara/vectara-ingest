@@ -39,25 +39,18 @@ def remove_anchor(url: str) -> str:
     url_without_anchor = urlunparse(parsed._replace(fragment=""))
     return url_without_anchor
 
-def add_www(url: str):
-    """Add 'www' to a URL if it doesn't have it already."""
-    return url if 'www.' in url.split('/')[2] else url.replace('//', '//www.', 1)
-
 def normalize_url(url: str) -> str:
-    """Normalize a URL by removing 'www', and query parameters."""    
+    """Normalize a URL by removing query parameters."""    
     # Prepend with 'http://' if URL has no scheme
     if '://' not in url:
         url = 'http://' + url
     p = urlparse(url)
-    
-    # Remove 'www.'
-    netloc = p.netloc.replace('www.', '')
-    
+        
     # Remove query parameters
     path = p.path.split('?', 1)[0]
 
     # Reconstruct URL with scheme, without 'www', and query parameters
-    return ParseResult(p.scheme, netloc, path, '', '', '').geturl()
+    return ParseResult(p.scheme, p.netloc, path, '', '', '').geturl()
 
 def clean_urls(urls: Set[str]) -> List[str]:
     return list(set(normalize_url(url) for url in urls))

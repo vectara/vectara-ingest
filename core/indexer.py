@@ -14,13 +14,14 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, add_www
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from unstructured.partition.auto import partition
 import unstructured as us
+
 
 class Indexer(object):
     """
@@ -50,12 +51,12 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str) -> Tuple[str, str] :
+    def fetch_content_with_timeout(self, url: str, debug: bool = False) -> Tuple[str, str, List[str]]:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
-            timeout (int, optional): Timeout in seconds. Defaults to 30.
+            debug (bool): Whether to enable playwright debug logging.
         Returns:
             str: Content from the URL.
         '''
@@ -63,20 +64,28 @@ class Indexer(object):
         try:
             context = self.browser.new_context()
             page = context.new_page()
+            page.goto(url, timeout=self.timeout*1000)
             page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
-            page.goto(url, timeout=self.timeout*1000)
+            if debug:
+                page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
             content = page.content()
+
             out_url = page.url
+            links_elements = page.query_selector_all("a")
+            links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
         except PlaywrightTimeoutError:
             logging.info(f"Page loading timed out for {url}")
-            return '', ''
+            content = ''
+            out_url = ''
+            links = []
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
             content = ''
             out_url = ''
+            links = []
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
@@ -85,7 +94,7 @@ class Indexer(object):
             if page:
                 page.close()
             
-        return out_url, content
+        return out_url, content, links
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -274,7 +283,7 @@ class Indexer(object):
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                actual_url, html_content = self.fetch_content_with_timeout(add_www(url))
+                actual_url, html_content, _ = self.fetch_content_with_timeout(url)
                 if html_content is None or len(html_content)<3:
                     return False
                 if self.detected_language is None:

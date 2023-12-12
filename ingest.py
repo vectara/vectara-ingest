@@ -72,7 +72,6 @@ def main() -> None:
     Reads the necessary environment variables and sets up the web crawler
     accordingly. Starts the crawl loop and logs the progress and errors.
     """
-
     if len(sys.argv) != 3:
         logging.info("Usage: python ingest.py <config_file> <secrets-profile>")
         return
