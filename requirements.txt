@@ -27,7 +27,7 @@ pandas==1.5.3
 ratelimiter==1.2.0
 python-dateutil==2.8.2
 playwright==1.36.0
-unstructured==0.8.1
+unstructured==0.11.2
 pdf2image==1.16.3
 tabulate==0.9.0
 pytesseract==0.3.10
@@ -36,7 +36,7 @@ nbconvert==7.2.10
 nbformat==5.8.0
 docutils==0.20.1
 arxiv==1.4.7
-goose3==3.1.16
+goose3==3.1.17
 sqlalchemy==2.0.14
 pymysql==1.0.3
 pg8000==1.29.8

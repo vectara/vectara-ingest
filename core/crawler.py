@@ -35,7 +35,7 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], indexer: Indexer
         return visited
 
     try:
-        _, _, _, new_urls = indexer.fetch_page_contents(url)
+        _, _, new_urls = indexer.fetch_page_contents(url)
         new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and (len(url_regex)==0 or any([r.match(u) for r in url_regex]))]
         new_urls = list(set(new_urls))
         visited.update(new_urls)
