@@ -51,3 +51,4 @@ jieba==0.42.1
 langdetect==1.0.9
 ray==2.7.1
 synapseclient==2.7.2
+python-magic==0.4.27

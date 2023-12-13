@@ -9,9 +9,6 @@ from core.pdf_convert import PDFConverter
 from core.utils import binary_extensions, doc_extensions
 from slugify import slugify
 
-import asyncio
-from playwright.sync_api import sync_playwright
-
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -38,11 +35,9 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], indexer: Indexer
         return visited
 
     try:
-        _, _, new_urls = indexer.fetch_page_contents(url)
-        logging.info(f"DEBUG A: new_urls = {new_urls}")
+        _, _, _, new_urls = indexer.fetch_page_contents(url)
         new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and (len(url_regex)==0 or any([r.match(u) for r in url_regex]))]
         new_urls = list(set(new_urls))
-        logging.info(f"DEBUG B: new_urls = {new_urls}")
         visited.update(new_urls)
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, url_regex, indexer, visited)

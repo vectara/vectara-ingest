@@ -13,6 +13,8 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
+import mimetypes
+import magic
 
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
 from core.extract import get_content_and_title
@@ -21,6 +23,14 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 from unstructured.partition.auto import partition
 import unstructured as us
+
+get_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
 
 class Indexer(object):
     """
@@ -50,50 +60,63 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_page_contents(self, url: str, debug: bool = False) -> Tuple[str, str, List[str]]:
+
+    def fetch_page_contents(self, url: str, debug: bool = False) -> Tuple[str, str, str, List[str]]:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
             debug (bool): Whether to enable playwright debug logging.
         Returns:
-            actual url, page content, list of links
+            content_type, content, actual url, list of links
         '''
+        url = url.split("#")[0]     # remove fragment, if exists
         page = context = None
+        content = ''
+        content_type = None
+        links = []
+        out_url = url
         try:
             context = self.browser.new_context()
             page = context.new_page()
-            page.goto(url, timeout=self.timeout*1000)
+            page.set_extra_http_headers(get_headers)
             page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
             if debug:
                 page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
-            content = page.content()
 
+            def handle_download(download):
+                download_path = download.path()
+                logging.info(f"DEBUG filepath = {download_path}, type={type(download_path)}")
+                mime_type = mimetypes.guess_type(str(download_path))[0]
+                logging.info(f"DEBUG mime_type={mime_type}, filepath={download_path}")
+                with open(download_path, 'r') as file:
+                    return mime_type, file.read(), url, []
+
+            page.on("download", handle_download)
+
+            response = page.goto(url, timeout=self.timeout*1000)
+            content_type = response.headers['content-type']
+            content = page.content()
             out_url = page.url
             links_elements = page.query_selector_all("a")
             links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
+            
         except PlaywrightTimeoutError:
             logging.info(f"Page loading timed out for {url}")
-            content = ''
-            out_url = ''
-            links = []
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
-            content = ''
-            out_url = ''
-            links = []
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
-            if context:
-                context.close()
             if page:
                 page.close()
+            if context:
+                context.close()
             
-        return out_url, content, links
+        return content_type, content, out_url, links
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -231,29 +254,26 @@ class Indexer(object):
         """
         st = time.time()
         try:
-            headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-            }
-            response = self.session.get(url, headers=headers, timeout=self.timeout)
-            if response.status_code != 200:
-                logging.info(f"Page {url} is unavailable ({response.status_code})")
+            content_type, content, actual_url, _ = self.fetch_page_contents(url)
+            if content is None or len(content)<3:
                 return False
-            else:
-                content_type = str(response.headers["Content-Type"])
+            if self.detected_language is None:
+                soup = BeautifulSoup(content, 'html.parser')
+                body_text = soup.body.get_text()
+                self.detected_language = detect_language(body_text)
+                logging.info(f"The detected language is {self.detected_language}")
         except Exception as e:
-            logging.info(f"Failed to crawl {url} to get content_type, skipping...")
+            import traceback
+            logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
             return False
         
         # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
         # If PDF then use partition from  "unstructured.io" to extract the content
         if content_type == 'application/pdf' or url.endswith(".pdf"):
             try:
-                response = self.session.get(url, timeout=self.timeout)
-                response.raise_for_status()
                 fname = 'tmp.pdf'
                 with open(fname, 'wb') as f:
-                    f.write(response.content)
+                    f.write(content)
                 elements = partition(fname)
                 parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
                 titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
@@ -264,9 +284,7 @@ class Indexer(object):
 
         # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
         elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            dl_content = response.content.decode('utf-8')
+            dl_content = content.decode('utf-8')
             if url.endswith('rst'):
                 html_content = docutils.core.publish_string(dl_content, writer_name='html')
             elif url.endswith('md'):
@@ -282,16 +300,13 @@ class Indexer(object):
         # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                actual_url, html_content, _ = self.fetch_page_contents(url)
-                if html_content is None or len(html_content)<3:
-                    return False
                 if self.detected_language is None:
-                    soup = BeautifulSoup(html_content, 'html.parser')
+                    soup = BeautifulSoup(content, 'html.parser')
                     body_text = soup.body.get_text()
                     self.detected_language = detect_language(body_text)
                     logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
-                text, extracted_title = get_content_and_title(html_content, url, self.detected_language, self.remove_code)
+                text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
@@ -300,6 +315,7 @@ class Indexer(object):
                 return False
 
         doc_id = slugify(url)
+
         succeeded = self.index_segments(doc_id=doc_id, texts=parts,
                                         doc_metadata=metadata, doc_title=extracted_title)
         return succeeded
