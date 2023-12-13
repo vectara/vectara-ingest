@@ -13,8 +13,6 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import docutils.core
-import mimetypes
-import magic
 
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
 from core.extract import get_content_and_title
