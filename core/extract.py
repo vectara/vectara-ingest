@@ -102,7 +102,7 @@ def get_content_with_goose3(html_content: str, url: str, detected_language: str)
         else:
             title = ""
             text = ""
-            logging.info(f"{detected_language} is not supported by Goose")
+            logging.info(f"The language with code {detected_language} is not supported by Goose")
             return text, title
     except Exception as e:
         title = ""
