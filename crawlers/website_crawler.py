@@ -88,8 +88,10 @@ class WebsiteCrawler(Crawler):
                 tree = sitemap_tree_for_homepage(homepage)
                 urls = [page.url for page in tree.all_pages()]
             elif self.cfg.website_crawler.pages_source == "crawl":
-                urls_set = recursive_crawl(homepage, self.cfg.website_crawler.max_depth, url_regex=url_regex)
+                max_depth = self.cfg.website_crawler.get("max_depth", 3)
+                urls_set = recursive_crawl(homepage, max_depth, url_regex=url_regex, indexer=self.indexer)
                 urls = clean_urls(urls_set)
+                urls = list(set(urls_set))
             else:
                 logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
                 return
@@ -97,14 +99,15 @@ class WebsiteCrawler(Crawler):
             all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
-        urls = all_urls
-        if url_regex:
-            urls = [u for u in urls if any([r.match(u) for r in url_regex])]
+        if url_regex and len(url_regex)>0:
+            urls = [u for u in all_urls if any([r.match(u) for r in url_regex])]
+        else:
+            urls = [u for u in all_urls if u.startswith('http')]
         urls = [u for u in urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
         urls = list(set(urls))
 
         # crawl all URLs
-        logging.info(f"Collected {len(urls)} URLs to crawel and index")
+        logging.info(f"Collected {len(urls)} URLs to crawl and index")
 
         # print some file types
         file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))

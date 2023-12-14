@@ -12,18 +12,21 @@ archive_extensions = ["zip", "gz", "tar", "bz2", "7z", "rar"]
 binary_extensions = archive_extensions + img_extensions + doc_extensions
 
 def remove_code_from_html(html_text: str) -> str:
+    """Remove code and script tags from HTML."""
     soup = BeautifulSoup(html_text, 'html.parser')
     for tag in soup.find_all(['code', 'script']):
         tag.decompose()
     return str(soup)
 
 def html_to_text(html: str, include_code: bool = True) -> str:
+    """Convert HTML to text."""
     if not include_code:
         html = remove_code_from_html(html)
     soup = BeautifulSoup(html, features='html.parser')
     return soup.get_text()
 
 def create_session_with_retries(retries: int = 3) -> requests.Session:
+    """Create a requests session with retries."""
     session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(max_retries=retries)
     session.mount('http://', adapter)
@@ -31,26 +34,23 @@ def create_session_with_retries(retries: int = 3) -> requests.Session:
     return session
 
 def remove_anchor(url: str) -> str:
+    """Remove the anchor from a URL."""
     parsed = urlparse(url)
     url_without_anchor = urlunparse(parsed._replace(fragment=""))
     return url_without_anchor
 
-
 def normalize_url(url: str) -> str:
-    """Normalize a URL by removing 'www', and query parameters."""    
+    """Normalize a URL by removing query parameters."""    
     # Prepend with 'http://' if URL has no scheme
     if '://' not in url:
         url = 'http://' + url
     p = urlparse(url)
-    
-    # Remove 'www.'
-    netloc = p.netloc.replace('www.', '')
-    
+        
     # Remove query parameters
     path = p.path.split('?', 1)[0]
 
     # Reconstruct URL with scheme, without 'www', and query parameters
-    return ParseResult(p.scheme, netloc, path, '', '', '').geturl()
+    return ParseResult(p.scheme, p.netloc, path, '', '', '').geturl()
 
 def clean_urls(urls: Set[str]) -> List[str]:
     return list(set(normalize_url(url) for url in urls))

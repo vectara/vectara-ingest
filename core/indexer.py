@@ -22,6 +22,14 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from unstructured.partition.auto import partition
 import unstructured as us
 
+get_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
 class Indexer(object):
     """
     Vectara API class.
@@ -39,7 +47,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = reindex
         self.remove_code = remove_code
-        self.timeout = cfg.vectara.get("timeout", 30)
+        self.timeout = cfg.vectara.get("timeout", 60)
         self.detected_language: Optional[str] = None
 
         self.setup()
@@ -50,42 +58,70 @@ class Indexer(object):
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
 
-    def fetch_content_with_timeout(self, url: str) -> Tuple[str, str] :
+    def url_triggers_download(self, url: str) -> bool:
+        download_triggered = False
+        context = self.browser.new_context()
+
+        # Define the event listener for download
+        def on_download(download):
+            nonlocal download_triggered
+            download_triggered = True
+
+        page = context.new_page()
+        page.set_extra_http_headers(get_headers)
+        page.on('download', on_download)
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+        except Exception as e:
+            pass
+
+        page.close()
+        context.close()
+        return download_triggered
+
+    def fetch_page_contents(self, url: str, debug: bool = False) -> Tuple[str, str, List[str]]:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
-            timeout (int, optional): Timeout in seconds. Defaults to 30.
+            debug (bool): Whether to enable playwright debug logging.
         Returns:
-            str: Content from the URL.
+            content, actual url, list of links
         '''
         page = context = None
+        content = ''
+        links = []
+        out_url = url
         try:
             context = self.browser.new_context()
             page = context.new_page()
+            page.set_extra_http_headers(get_headers)
             page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
+            if debug:
+                page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
+
             page.goto(url, timeout=self.timeout*1000)
             content = page.content()
             out_url = page.url
+            links_elements = page.query_selector_all("a")
+            links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
+            
         except PlaywrightTimeoutError:
             logging.info(f"Page loading timed out for {url}")
-            return '', ''
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
-            content = ''
-            out_url = ''
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
-            if context:
-                context.close()
             if page:
                 page.close()
+            if context:
+                context.close()
             
-        return out_url, content
+        return content, out_url, links
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -148,7 +184,7 @@ class Indexer(object):
                     logging.info(f"REST upload for {uri} successful (reindex)")
                     return True
                 else:
-                    logging.info(f"REST upload for {uri} failed with code = {response.status_code}, text = {response.text}")
+                    logging.info(f"REST upload for {uri} (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
         elif response.status_code != 200:
@@ -222,76 +258,66 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         st = time.time()
-        try:
-            headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-            }
-            response = self.session.get(url, headers=headers, timeout=self.timeout)
-            if response.status_code != 200:
-                logging.info(f"Page {url} is unavailable ({response.status_code})")
-                return False
+        url = url.split("#")[0]     # remove fragment, if exists
+
+        if self.url_triggers_download(url):
+            file_path = 'tmpfile'
+            response = self.session.get(url, stream=True)
+            if response.status_code == 200:
+                with open(file_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192): 
+                        f.write(chunk)
+                logging.info(f"File downloaded successfully and saved as {file_path}")
             else:
-                content_type = str(response.headers["Content-Type"])
-        except Exception as e:
-            logging.info(f"Failed to crawl {url} to get content_type, skipping...")
-            return False
-        
-        # read page content: everything is translated into various segments (variable "elements") so that we can use index_segment()
-        # If PDF then use partition from  "unstructured.io" to extract the content
-        if content_type == 'application/pdf' or url.endswith(".pdf"):
-            try:
-                response = self.session.get(url, timeout=self.timeout)
-                response.raise_for_status()
-                fname = 'tmp.pdf'
-                with open(fname, 'wb') as f:
-                    f.write(response.content)
-                elements = partition(fname)
-                parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-                titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-                extracted_title = titles[0] if len(titles)>0 else 'unknown'
-            except Exception as e:
-                logging.info(f"Failed to crawl {url} to get PDF content with error {e}, skipping...")
+                logging.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
+            # parse downloaded file
+            if url.endswith(".pdf"):
+                try:
+                    elements = partition(file_path)
+                    parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+                    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
+                    extracted_title = titles[0] if len(titles)>0 else 'unknown'
+                except Exception as e:
+                    logging.info(f"Failed to crawl {url} to get PDF content with error {e}, skipping...")
+                    return False
 
-        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-        elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            dl_content = response.content.decode('utf-8')
-            if url.endswith('rst'):
-                html_content = docutils.core.publish_string(dl_content, writer_name='html')
-            elif url.endswith('md'):
-                html_content = markdown.markdown(dl_content)
-            elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
-                exporter = HTMLExporter()
-                html_content, _ = exporter.from_notebook_node(nb)
-            extracted_title = url.split('/')[-1]      # no title in these files, so using file name
-            text = html_to_text(html_content, self.remove_code)
-            parts = [text]
+            # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+            elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
+                dl_content = content.decode('utf-8')
+                if url.endswith('rst'):
+                    html_content = docutils.core.publish_string(dl_content, writer_name='html')
+                elif url.endswith('md'):
+                    html_content = markdown.markdown(dl_content)
+                elif url.lower().endswith('ipynb'):
+                    nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
+                    exporter = HTMLExporter()
+                    html_content, _ = exporter.from_notebook_node(nb)
+                extracted_title = url.split('/')[-1]      # no title in these files, so using file name
+                text = html_to_text(html_content, self.remove_code)
+                parts = [text]            
 
-        # for everything else, use PlayWright as we may want it to render JS on the page before reading the content
         else:
             try:
-                actual_url, html_content = self.fetch_content_with_timeout(url)
-                if html_content is None or len(html_content)<3:
+                content, actual_url, _ = self.fetch_page_contents(url)
+                if content is None or len(content)<3:
                     return False
                 if self.detected_language is None:
-                    soup = BeautifulSoup(html_content, 'html.parser')
+                    soup = BeautifulSoup(content, 'html.parser')
                     body_text = soup.body.get_text()
                     self.detected_language = detect_language(body_text)
                     logging.info(f"The detected language is {self.detected_language}")
                 url = actual_url
-                text, extracted_title = get_content_and_title(html_content, url, self.detected_language, self.remove_code)
+                text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
                 parts = [text]
                 logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
                 import traceback
                 logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
-
-        succeeded = self.index_segments(doc_id=slugify(url), texts=parts,
+        
+        doc_id = slugify(url)
+        succeeded = self.index_segments(doc_id=doc_id, texts=parts,
                                         doc_metadata=metadata, doc_title=extracted_title)
         return succeeded
 
