@@ -18,11 +18,12 @@ Let's go through each of these crawlers to explain how they work and how to cust
 ...
 website_crawler:
     urls: [https://vectara.com]
-    url_regex: []
+    pos_regex: []
+    neg_regex: []
     delay: 1
     pages_source: sitemap
-    extraction: playwright
     max_depth: 3      # only needed if pages_source is set to 'crawl'
+    extraction: playwright
     ray_workers: 0
 ...
 ```
@@ -32,14 +33,15 @@ The website crawler indexes the content of a given web site. It supports two mod
 2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
 
 The `extraction` parameter defines how page content is extracted from URLs. 
-1. The default value is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. This is the preferred method as the rendering operation is helpful to extract any text that may be due to Javascript or other scriping execution. 
-2. The other option is `playwright` which results in using [playwright](https://playwright.dev/) to render the page content including JS and then extracting the HTML.
+1. The default (and better) option is `playwright` which results in using [playwright](https://playwright.dev/) to render the page content including JS and then extracting the HTML.
+2. The other option is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. This is the preferred method as the rendering operation is helpful to extract any text that may be due to Javascript or other scriping execution. 
 
-`delay` specifies the number of seconds to wait between to consecutive requests to avoid rate limiting issues. 
+Other parameters:
+- `delay` specifies the number of seconds to wait between consecutive requests to avoid rate limiting issues. 
+- `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion
+- `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
 
-`url_regex` if it exists defines a regular expression that is used to filter URLs. For example, if I want only the developer pages from vectara.com to be indexed, I can use ".*vectara.com/developer.*" 
-
-`ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
+`ray_workers`, if it exists, defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
 
 ### Database crawler

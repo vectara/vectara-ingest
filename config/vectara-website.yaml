@@ -10,6 +10,6 @@ website_crawler:
   urls: ["https://vectara.com"]
   delay: 1
   pages_source: sitemap
-  url_regex: [".*"]
+  pos_regex: [".*"]
   extraction: playwright
   ray_workers: 0

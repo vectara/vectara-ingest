@@ -9,6 +9,7 @@ crawling:
 website_crawler:
   urls: [https://sf.gov]
   delay: 1
-  url_regex: [".*sf.gov.*"]
+  pos_regex: [".*sf.gov.*"]
+  neg_regex: [".*sf.gov/es/.*", ".*sf.gov/fil/.*", ".*sf.gov/zh-hant/.*"]
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
   extraction: playwright # pdf or playwright

@@ -245,17 +245,31 @@ To run `vectara-ingest` locally, perform the following steps:
 3. Enter the directory with `cd vectara-ingest`.
 4. Choose the configuration file for your project and run `bash run.sh config/<config-file>.yaml <profile>`. This command creates the Docker container locally, configures it with the parameters specified in your configuration file (with secrets taken from the appropriate `<profile>` in `secrets.toml`), and starts up the Docker container.
 
-### Cloud deployment
+### Cloud deployment on Render
 
-`vectara-ingest` can be easily deployed on any cloud platform such as AWS, Azure or GCP.
+If you want your `vectara-ingest` to run on [Render](https://render.com/), please follow these steps:
 
-1. Create your configuration file for the project under the `config/` directory.
-2. Run `docker build . --tag=vectara-ingest:latest` to generate the Docker container.
-3. Push the docker to the cloud specific docker container registry:
-   - [AWS instructions](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/docker-basics.html).
-   - [Azure instructions](https://learn.microsoft.com/en-us/azure/container-apps/get-started-existing-container-image-portal?pivots=container-apps-private-registry).
-   - [GCP instructions](https://cloud.google.com/run/docs/quickstarts/build-and-deploy).
-4. Launch the container on a VM instance based on the Docker image now hosted in your cloud environment.
+1. <b>Sign Up/Log In</b>: If you don't have a Render account, you'll need to create one. If you already have one, just log in.
+2. <b>Create New Service</b>: Once you're logged in, click on the "New" button usually found on the dashboard and select "Background Worker".
+3. Choose "Deploy an existing image from a registry" and click "Next"
+Specify Docker Image: In the "Image URL" fill in "vectara/vectara-ingest" and click "Next"
+4. Choose a name for your deployment (e.g. "vectara-ingest"), and if you need to pick a region or leave the default. Then pick your instance type.
+5. Click "Create Web Service"
+6. Click "Environment", then "Add Secret File": name the file config.yaml, and copy the contents of the config.yaml for your crawler
+7. Assuming you have a secrets.toml file with multiple profiles and you want to use the secrets for the profile <my-profile>, click "Environment", then "Add Secret File": name the file secrets.toml, and copy only the contents of <my-profile> from the secrets.toml to this file (incuding the profile name)
+8. Click "Settings" and go to "Docker Command" and click "Edit", the put in the following command:
+`/bin/bash -c mkdir /home/vectara/env && cp /etc/secrets/config.yaml /home/vectara/env/ && cp /etc/secrets/secrets.toml /home/vectara/env/ && python3 ingest.py /home/vectara/env/config.yaml <my-profile>"`
+
+Then click "Save Changes", and your application should now be deployed.
+
+Note:
+* Hosting in this way does not support the CSV or folder crawlers.
+* Where vectara-ingest uses `playwright` to crawl content (e.g. website crawler or docs crawler), the Render instance may require more RAM to work properly with headless browser.
+
+### Cloud deployment on Cloud VM
+
+`vectara-ingest` can be easily deployed on any cloud platform such as AWS, Azure or GCP. You simply create a cloud VM and follow the local-deployment instructions after 
+you SSH into that machine.
 
 ### docker-hub
 
