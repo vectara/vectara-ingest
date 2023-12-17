@@ -18,7 +18,8 @@ get_headers = {
 }
 
             
-def recursive_crawl(url: str, depth: int, url_regex: List[Any], indexer: Indexer, visited: Optional[Set[str]]=None) -> Set[str]:
+def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
+                    indexer: Indexer, visited: Optional[Set[str]]=None) -> Set[str]:
     if depth <= 0:
         return set() if visited is None else set(visited)
 
@@ -36,11 +37,15 @@ def recursive_crawl(url: str, depth: int, url_regex: List[Any], indexer: Indexer
 
     try:
         _, _, new_urls = indexer.fetch_page_contents(url)
-        new_urls = [u for u in new_urls if u not in visited and u.startswith('http') and (len(url_regex)==0 or any([r.match(u) for r in url_regex]))]
+        new_urls = [u for u in new_urls 
+                    if      u not in visited and u.startswith('http') 
+                    and     (len(pos_regex)==0 or any([r.match(u) for r in pos_regex]))
+                    and     (len(neg_regex)==0 or (not any([r.match(u) for r in neg_regex]))) 
+                   ]
         new_urls = list(set(new_urls))
         visited.update(new_urls)
         for new_url in new_urls:
-            visited = recursive_crawl(new_url, depth-1, url_regex, indexer, visited)
+            visited = recursive_crawl(new_url, depth-1, pos_regex, neg_regex, indexer, visited)
     except Exception as e:
         logging.info(f"Error {e} in recursive_crawl for {url}")
         pass

@@ -72,14 +72,8 @@ class PageCrawlWorker(object):
 class WebsiteCrawler(Crawler):
     def crawl(self) -> None:
         base_urls = self.cfg.website_crawler.urls
-
-        if "url_regex" in self.cfg.website_crawler:
-            url_regex = [re.compile(r) for r in self.cfg.website_crawler.url_regex]
-            logging.info(
-                f"Filtering URLs by these regular expressions: {self.cfg.website_crawler.url_regex}"
-            )
-        else:
-            url_regex = []
+        self.pos_regex = [re.compile(r) for r in self.cfg.website_crawler.get("pos_regex", [])]
+        self.neg_regex = [re.compile(r) for r in self.cfg.website_crawler.get("neg_regex", [])]
 
         # grab all URLs to crawl from all base_urls
         all_urls = []
@@ -89,7 +83,9 @@ class WebsiteCrawler(Crawler):
                 urls = [page.url for page in tree.all_pages()]
             elif self.cfg.website_crawler.pages_source == "crawl":
                 max_depth = self.cfg.website_crawler.get("max_depth", 3)
-                urls_set = recursive_crawl(homepage, max_depth, url_regex=url_regex, indexer=self.indexer)
+                urls_set = recursive_crawl(homepage, max_depth, 
+                                           pos_regex=self.pos_regex, neg_regex=self.neg_regex, 
+                                           indexer=self.indexer)
                 urls = clean_urls(urls_set)
                 urls = list(set(urls_set))
             else:
@@ -99,11 +95,11 @@ class WebsiteCrawler(Crawler):
             all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
-        if url_regex and len(url_regex)>0:
-            urls = [u for u in all_urls if any([r.match(u) for r in url_regex])]
-        else:
-            urls = [u for u in all_urls if u.startswith('http')]
-        urls = [u for u in urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
+        urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
+        if self.pos_regex and len(self.pos_regex)>0:
+            urls = [u for u in all_urls if any([r.match(u) for r in self.pos_regex])]
+        if self.neg_regex and len(self.neg_regex)>0:
+            urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_regex])]
         urls = list(set(urls))
 
         # crawl all URLs

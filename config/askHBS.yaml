@@ -8,7 +8,7 @@ crawling:
 
 website_crawler:
   urls: ["https://www.hbs.edu"]
-  url_regex: [".*hbs.edu.*"]
+  pos_regex: [".*hbs.edu.*"]
   delay: 1
   pages_source: sitemap
   extraction: playwright
