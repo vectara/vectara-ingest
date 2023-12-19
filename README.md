@@ -135,13 +135,18 @@ While your crawler is ingesting data into your Vectara corpus, you can try  quer
 ## Code organization
 The codebase includes the following components.
 
+### main folder
+- **`run.sh`:** The main shell script to execute when you want to launch a crawl job (see below for more details).
+- **`ingest.py`:** The main entry point for a crawl job.
+- **`Dockerfile`:** The Docker image definition file
+
 ### `core/` directory
 Fundamental utilities depended upon by the crawlers:
 
-- **`ingest.py`:** The main entry point for a crawl job.
 - **`indexer.py`:** Defines the `Indexer` class which implements helpful methods to index data into Vectara such as `index_url`, `index_file()` and `index_document()`.
 - **`crawler.py`:** Defines the `Crawler` class which implements a base class for crawling, where each specific crawler should implement the `crawl()` method specific to its type.
 - **`pdf_convert.py`:** Helper class to convert URLs into local PDF documents.
+- **`extract.py`:** Utilities for text extraction from HTML
 - **`utils.py`:** Some utility functions used by the other code.
 
 ### `crawlers/` directory
@@ -149,12 +154,6 @@ Includes implementations of the various specific crawlers.
 
 ### `config/` directory
 Includes example YAML configuration files for various crawling jobs.
-
-### `run.sh`
-The main shell script to execute when you want to launch a crawl job (see below for more details).
-
-### `Dockerfile`
-Defines the Docker container image.
 
 ## Crawling
 
@@ -240,7 +239,7 @@ The project is designed to be used within a Docker container, so that a crawl jo
 
 To run `vectara-ingest` locally, perform the following steps:
 
-1. Make sure you have [Docker installed](https://docs.docker.com/engine/install/) on your machine.
+1. Make sure you have [Docker installed](https://docs.docker.com/engine/install/) on your machine, and that there is enough memory and storage to build the docker image.
 2. Clone this repo locally with `git clone https://github.com/vectara/vectara-ingest.git`.
 3. Enter the directory with `cd vectara-ingest`.
 4. Choose the configuration file for your project and run `bash run.sh config/<config-file>.yaml <profile>`. This command creates the Docker container locally, configures it with the parameters specified in your configuration file (with secrets taken from the appropriate `<profile>` in `secrets.toml`), and starts up the Docker container.
