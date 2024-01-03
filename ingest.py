@@ -88,8 +88,14 @@ def main() -> None:
     if profile_name not in env_dict:
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
         return
-    env_dict = env_dict[profile_name]
+    
+    # Add all keys from "general" section to the vectara config
+    general_dict = env_dict['general']
+    for k,v in general_dict.items():
+        OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
 
+    # Add all supported special secrets from the specified profile to the specific crawler config
+    env_dict = env_dict[profile_name]
     for k,v in env_dict.items():
         if k=='HUBSPOT_API_KEY':
             OmegaConf.update(cfg, f'hubspot_crawler.{k.lower()}', v)

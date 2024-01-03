@@ -173,6 +173,12 @@ vectara:
   reindex: false
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout:60
+  # summarize_tables (optional; default False)
+  This option provides special processing for tables inside PDFs.
+  This requires the `secrets.toml` to include a special profile called `general`, 
+  which should include the OPENAI_API_KEY. Using this OPENAI api key, 
+  the code will add table summarization (using OpenAI) as document text while ingesting PDF content.
+  **Note**: this processing is quite slow and will require you to have an additional paid subscription to OpenAI 
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)

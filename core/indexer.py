@@ -14,12 +14,12 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from unstructured.partition.auto import partition
+from unstructured.partition.auto import partition, partition_pdf
 import unstructured as us
 
 get_headers = {
@@ -49,6 +49,11 @@ class Indexer(object):
         self.remove_code = remove_code
         self.timeout = cfg.vectara.get("timeout", 60)
         self.detected_language: Optional[str] = None
+
+        self.summarize_tables = cfg.vectara.get("summarize_tables", False)
+        if cfg.vectara.get("openai_api_key", None) is None:
+            self.summarize_tables = False
+            logging.info("OpenAI API key not found, disabling table summarization")
 
         self.setup()
 
@@ -247,6 +252,23 @@ class Indexer(object):
         logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
         return False
     
+    def _parse_pdf_file(self, filename: str, tables_only: bool = False) -> Tuple[str, List[str]]:
+        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False)
+
+        # get title
+        titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
+        title = titles[0] if len(titles)>0 else 'unknown'
+
+        # get texts (and tables summaries if applicable)
+        summarizer = TableSummarizer(self.cfg.vectara.openai_api_key)
+        texts = [
+            summarizer.summarize_table_text(str(t)) if type(t)==us.documents.elements.Table and self.summarize_tables
+            else str(t)
+            for t in elements
+            if  (tables_only and type(t)==us.documents.elements.Table) or 
+                (not tables_only and type(t)!=us.documents.elements.Title)
+        ]
+        return title, texts
 
     def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
         """
@@ -273,14 +295,7 @@ class Indexer(object):
                 return False
             # parse downloaded file
             if url.endswith(".pdf"):
-                try:
-                    elements = partition(file_path)
-                    parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-                    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-                    extracted_title = titles[0] if len(titles)>0 else 'unknown'
-                except Exception as e:
-                    logging.info(f"Failed to crawl {url} to get PDF content with error {e}, skipping...")
-                    return False
+                extracted_title, parts = self._parse_pdf_file(file_path)
 
             # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
             elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
@@ -362,15 +377,23 @@ class Indexer(object):
             return False
 
         # if file size is more than 50MB, then we extract the text locally and send over with standard API
-        if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
-            elements = partition(filename)
-            texts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-            title = titles[0] if len(titles)>0 else 'unknown'
+        if filename.endswith(".pdf") and get_file_size_in_MB(filename) >= 50:
+            title, texts = self._parse_pdf_file(filename)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
             logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
             return succeeded
 
+        # if table extraction is enabled and the OpenAI key is availabe, the index table summaries
+        if self.summarize_tables and filename.endswith(".pdf"):
+            try:
+                _, texts = self._parse_pdf_file(filename, tables_only=True)
+                self.index_segments(doc_id=slugify(filename + "_tables"), texts=texts,
+                                    doc_metadata=metadata, doc_title="Tables for " + filename)
+            except Exception as e:
+                logging.info(f"Failed to index {filename} with error {e}, skipping...")
+                return False
+
+        # index the file
         return self._index_file(filename, uri, metadata)
     
