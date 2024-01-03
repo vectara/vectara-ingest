@@ -136,7 +136,11 @@ class Indexer(object):
             bool: True if the delete was successful, False otherwise.
         """
         body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
-        post_headers = { 'x-api-key': self.api_key, 'customer-id': str(self.customer_id) }
+        post_headers = { 
+            'x-api-key': self.api_key, 
+            'customer-id': str(self.customer_id), 
+            'X-Source': 'vectara-ingest' 
+        }
         response = self.session.post(
             f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
             verify=True, headers=post_headers)
@@ -163,6 +167,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
+            'X-Source': 'vectara-ingest'
         }
 
         files: Any = {
@@ -209,6 +214,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
+            'X-Source': 'vectara-ingest'
         }
         try:
             data = json.dumps(request)
