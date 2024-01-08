@@ -52,8 +52,9 @@ class Indexer(object):
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
         if cfg.vectara.get("openai_api_key", None) is None:
+            if self.summarize_tables:
+                logging.info("OpenAI API key not found, disabling table summarization")
             self.summarize_tables = False
-            logging.info("OpenAI API key not found, disabling table summarization")
 
         self.setup()
 
