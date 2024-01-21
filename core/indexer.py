@@ -19,7 +19,7 @@ from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from unstructured.partition.auto import partition, partition_pdf
+from unstructured.partition.auto import partition_pdf
 import unstructured as us
 
 get_headers = {
@@ -254,7 +254,8 @@ class Indexer(object):
         return False
     
     def _parse_pdf_file(self, filename: str, tables_only: bool = False) -> Tuple[str, List[str]]:
-        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False)
+        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                 strategy='hi_res', model='yolox')
 
         # get title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]

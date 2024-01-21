@@ -179,6 +179,7 @@ vectara:
   which should include the OPENAI_API_KEY. Using this OPENAI api key, 
   the code will add table summarization (using OpenAI) as document text while ingesting PDF content.
   **Note**: this processing is quite slow and will require you to have an additional paid subscription to OpenAI 
+  See here for some specific [examples](TABLE_SUMMARY.md) of how table summary works
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
