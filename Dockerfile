@@ -39,6 +39,10 @@ RUN poetry install --no-dev
 RUN python3 -m spacy download en_core_web_lg
 RUN playwright install --with-deps firefox
 
+# Fixign issue with onnxruntime
+RUN apt-get install execstack
+RUN execstack -c /usr/local/lib/python3.10/dist-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-310-x86_64-linux-gnu.so
+
 COPY *.py $HOME/
 COPY core/*.py $HOME/core/
 COPY crawlers/ $HOME/crawlers/

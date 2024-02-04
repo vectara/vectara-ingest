@@ -220,8 +220,11 @@ The JIRA crawler indexes issues and comments into Vectara.
 
 ### Notion crawler
 
-The Notion crawler has no specific parameters, except the `NOTION_API_KEY` that needs to be specified in the `secrets.toml` file. 
-The crawler will index any content on your notion instance.
+To setup Notion you will have to setup a [Notion integration](https://www.notion.so/help/create-integrations-with-the-notion-api),
+and [share the pages](https://www.notion.so/help/add-and-manage-connections-with-the-api) you want indexed with this connection.
+
+The Notion crawler has no specific parameters, except the `NOTION_API_KEY` (which is associated with your custom integration)
+that needs to be specified in the `secrets.toml` file. The crawler will index any content on your notion instance.
 
 ### Hubspot crawler
 
