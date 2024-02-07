@@ -1,0 +1,18 @@
+vectara:
+  corpus_id: 2
+  customer_id: 2252938633
+  reindex: true
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  root_domain: https://www.ozon.ru
+  urls:
+    [
+      'https://www.ozon.ru/search/?from_global=true&sorting=new&text=%D1%82%D0%BE%D0%B2%D0%B0%D1%80%D1%8B+%D0%B4%D0%BB%D1%8F+%D0%B4%D0%B5%D0%B2%D0%BE%D1%87%D0%B5%D0%BA'
+    ]
+  max_depth: 6
+  delay: 1
+  pages_source: crawl
+  extraction: playwright

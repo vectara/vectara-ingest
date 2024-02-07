@@ -116,7 +116,7 @@ env.bak/
 venv.bak/
 
 # secrets file in TOML format
-secrets.toml
+# secrets.toml
 
 # Spyder project settings
 .spyderproject

@@ -1,0 +1,14 @@
+vectara:
+  corpus_id: 6
+  customer_id: 2252938633
+  reindex: true
+
+crawling:
+  crawler_type: database
+
+database_crawler:
+  db_url: 'postgresql+psycopg2://postgres.xwnkrqjxeyyfposbfpez:zizdu3-dukhud-xyMxeg@aws-0-eu-central-1.pooler.supabase.com:5432/postgres'
+  db_table: ecommerce
+  doc_id_columns: [product]
+  text_columns: [product]
+  metadata_columns: [category, author, usd, rub, url, image_url]
