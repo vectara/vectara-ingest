@@ -118,7 +118,7 @@ For our example we would index the content of https://www.paulgraham.com website
    * On Linux, ensure that the `run.sh` file is executable by running the following command:
   
      ```bash
-     cmhod +x run.sh
+     chmod +x run.sh  
      ```
 
    * On Windows, ensure that you run this command from within the WSL 2 environment.
