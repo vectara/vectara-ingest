@@ -44,6 +44,10 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
                    ]
         new_urls = list(set(new_urls))
         visited.update(new_urls)
+
+        if len(new_urls) > 0:
+            logging.info(f"collected {len(visited)} URLs so far")
+
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, pos_regex, neg_regex, indexer, visited)
     except Exception as e:
