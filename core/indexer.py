@@ -303,24 +303,24 @@ class Indexer(object):
                 text = html_to_text(html_content, self.remove_code)
                 parts = [text]            
 
-        else:
-            try:
-                content, actual_url, _ = self.fetch_page_contents(url)
-                if content is None or len(content)<3:
+            else:
+                try:
+                    content, actual_url, _ = self.fetch_page_contents(url)
+                    if content is None or len(content)<3:
+                        return False
+                    if self.detected_language is None:
+                        soup = BeautifulSoup(content, 'html.parser')
+                        body_text = soup.body.get_text()
+                        self.detected_language = detect_language(body_text)
+                        logging.info(f"The detected language is {self.detected_language}")
+                    url = actual_url
+                    text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
+                    parts = [text]
+                    logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
+                except Exception as e:
+                    import traceback
+                    logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                     return False
-                if self.detected_language is None:
-                    soup = BeautifulSoup(content, 'html.parser')
-                    body_text = soup.body.get_text()
-                    self.detected_language = detect_language(body_text)
-                    logging.info(f"The detected language is {self.detected_language}")
-                url = actual_url
-                text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
-                parts = [text]
-                logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
-            except Exception as e:
-                import traceback
-                logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
-                return False
         
         doc_id = slugify(url)
         succeeded = self.index_segments(doc_id=doc_id, texts=parts,
