@@ -278,7 +278,7 @@ class Indexer(object):
                 logging.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
             # parse downloaded file
-            if url.endswith(".pdf"):
+            if url.lower().endswith(".pdf"):
                 try:
                     elements = partition(file_path)
                     parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
@@ -290,13 +290,13 @@ class Indexer(object):
 
         else:
             # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-            if url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
+            if url.lower().endswith(".md") or url.lower().endswith(".rst") or url.lower().endswith(".ipynb"):
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 dl_content = response.content.decode('utf-8')
-                if url.endswith('rst'):
+                if url.lower().endswith('rst'):
                     html_content = docutils.core.publish_string(dl_content, writer_name='html')
-                elif url.endswith('md'):
+                elif url.lower().endswith('md'):
                     html_content = markdown.markdown(dl_content)
                 elif url.lower().endswith('ipynb'):
                     nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
