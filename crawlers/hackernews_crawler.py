@@ -58,10 +58,10 @@ class HackernewsCrawler(Crawler):
                     fname = slugify(url) + ".html"
                     with open(fname, 'w') as f:
                         f.write(text)
-                    self.indexer.index_file(fname, uri=url, metadata={'title': title})
+                    self.indexer.index_file(fname, uri=url, metadata={'title': title, 'url': url})
                     os.remove(fname)
                 else:
-                    metadata = {'source': 'hackernews', 'title': title}
+                    metadata = {'source': 'hackernews', 'title': title, 'url': url}
                     self.indexer.index_url(url, metadata=metadata)
             except Exception as e:
                 import traceback

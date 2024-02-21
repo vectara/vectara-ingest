@@ -54,23 +54,26 @@ git clone https://github.com/vectara/vectara-ingest.git
 ### On Windows
 1. Open a Windows PowerShell terminal.
   
-1. Update your Windows Subsystem for Linux (WSL):
+2. Update your Windows Subsystem for Linux (WSL):
 
    ```bash
    wsl --update
    ```
-   
-1. Ensure that WSL has the correct version of Linux:
+
+3. Ensure that WSL has the correct version of Linux:
 
    ```bash
    wsl --install ubuntu-20.04
    ```
    
-1. Open your Linux terminal and clone the repository to a directory on your machine:
+4. Open your **Linux terminal** and clone the repository to a directory on your machine:
 
    ```bash
    git clone https://github.com/vectara/vectara-ingest.git
    ```
+
+Note: make sure you execute step #4 above only within your Linux environment and not in the windows environment. 
+You may need to choose a username for your Ubuntu environment as part of the setup process.
 
 ## Step 2: Configure the crawler
 For our example we would index the content of https://www.paulgraham.com website to Vectara. Since this website does not provide a sitemap, but does provide an [RSS feed](http://www.paulgraham.com/rss.html), we will use the vectara-ingest RSS crawler instead.

@@ -8,7 +8,7 @@ readme = "README.md"
 packages = [{include = "vectara_ingest"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.9,<3.12"
 requests = "2.31.0"
 pdfkit = "1.0.0"
 ultimate-sitemap-parser = "0.5"
@@ -37,7 +37,7 @@ pandas = "1.5.3"
 ratelimiter = "1.2.0"
 python-dateutil = "2.8.2"
 playwright = "1.36.0"
-unstructured = {version = "0.11.6", extras = ["all-docs"]}
+unstructured = {version = "0.12.3", extras = ["all-docs"]}
 pdf2image = "1.16.3"
 tabulate = "0.9.0"
 pytesseract = "0.3.10"

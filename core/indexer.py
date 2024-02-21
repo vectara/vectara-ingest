@@ -142,7 +142,11 @@ class Indexer(object):
             bool: True if the delete was successful, False otherwise.
         """
         body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
-        post_headers = { 'x-api-key': self.api_key, 'customer-id': str(self.customer_id) }
+        post_headers = { 
+            'x-api-key': self.api_key, 
+            'customer-id': str(self.customer_id), 
+            'X-Source': 'vectara-ingest' 
+        }
         response = self.session.post(
             f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
             verify=True, headers=post_headers)
@@ -169,6 +173,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
+            'X-Source': 'vectara-ingest'
         }
 
         files: Any = {
@@ -215,6 +220,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
+            'X-Source': 'vectara-ingest'
         }
         try:
             data = json.dumps(request)
@@ -296,15 +302,25 @@ class Indexer(object):
                 logging.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
             # parse downloaded file
-            if url.endswith(".pdf"):
-                extracted_title, parts = self._parse_pdf_file(file_path)
+            if url.lower().endswith(".pdf"):
+                try:
+                    elements = partition(file_path)
+                    parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
+                    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
+                    extracted_title = titles[0] if len(titles)>0 else 'unknown'
+                except Exception as e:
+                    logging.info(f"Failed to crawl {url} to get PDF content with error {e}, skipping...")
+                    return False
 
+        else:
             # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-            elif url.endswith(".md") or url.endswith(".rst") or url.lower().endswith(".ipynb"):
-                dl_content = content.decode('utf-8')
-                if url.endswith('rst'):
+            if url.lower().endswith(".md") or url.lower().endswith(".rst") or url.lower().endswith(".ipynb"):
+                response = self.session.get(url, timeout=self.timeout)
+                response.raise_for_status()
+                dl_content = response.content.decode('utf-8')
+                if url.lower().endswith('rst'):
                     html_content = docutils.core.publish_string(dl_content, writer_name='html')
-                elif url.endswith('md'):
+                elif url.lower().endswith('md'):
                     html_content = markdown.markdown(dl_content)
                 elif url.lower().endswith('ipynb'):
                     nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
@@ -314,24 +330,24 @@ class Indexer(object):
                 text = html_to_text(html_content, self.remove_code)
                 parts = [text]            
 
-        else:
-            try:
-                content, actual_url, _ = self.fetch_page_contents(url)
-                if content is None or len(content)<3:
+            else:
+                try:
+                    content, actual_url, _ = self.fetch_page_contents(url)
+                    if content is None or len(content)<3:
+                        return False
+                    if self.detected_language is None:
+                        soup = BeautifulSoup(content, 'html.parser')
+                        body_text = soup.body.get_text()
+                        self.detected_language = detect_language(body_text)
+                        logging.info(f"The detected language is {self.detected_language}")
+                    url = actual_url
+                    text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
+                    parts = [text]
+                    logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
+                except Exception as e:
+                    import traceback
+                    logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                     return False
-                if self.detected_language is None:
-                    soup = BeautifulSoup(content, 'html.parser')
-                    body_text = soup.body.get_text()
-                    self.detected_language = detect_language(body_text)
-                    logging.info(f"The detected language is {self.detected_language}")
-                url = actual_url
-                text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
-                parts = [text]
-                logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
-            except Exception as e:
-                import traceback
-                logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
-                return False
         
         doc_id = slugify(url)
         succeeded = self.index_segments(doc_id=doc_id, texts=parts,
