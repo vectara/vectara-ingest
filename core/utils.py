@@ -87,7 +87,7 @@ class TableSummarizer():
             model="gpt-4-1106-preview",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
-                {"role": "user", "content": f"Give a concise summary of the table. Table chunk: {text} "},
+                {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},
             ],
             temperature=0
         )

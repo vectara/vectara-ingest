@@ -30,6 +30,32 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
+def _parse_pdf_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
+    st = time.time()
+    if summarize_tables and openai_api_key is not None:
+        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                 strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+    else:
+        elements = partition_pdf(filename, infer_table_structure=False, extract_images_in_pdf=False)
+
+    # get title
+    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
+    title = titles[0] if len(titles)>0 else 'no title'
+
+    # get texts (and tables summaries if applicable)
+    summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    texts = []
+    for t in elements:
+        if type(t)==us.documents.elements.Table and summarize_tables and openai_api_key is not None:
+            texts.append(summarizer.summarize_table_text(str(t)))
+        else:
+            texts.append(str(t))
+
+    logging.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
+    return title, texts
+
+
+
 class Indexer(object):
     """
     Vectara API class.
@@ -49,6 +75,7 @@ class Indexer(object):
         self.remove_code = remove_code
         self.timeout = cfg.vectara.get("timeout", 60)
         self.detected_language: Optional[str] = None
+        self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
         if cfg.vectara.get("openai_api_key", None) is None:
@@ -145,7 +172,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key, 
             'customer-id': str(self.customer_id), 
-            'X-Source': 'vectara-ingest' 
+            'X-Source': self.x_source
         }
         response = self.session.post(
             f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
@@ -173,7 +200,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
-            'X-Source': 'vectara-ingest'
+            'X-Source': self.x_source
         }
 
         files: Any = {
@@ -220,7 +247,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
-            'X-Source': 'vectara-ingest'
+            'X-Source': self.x_source
         }
         try:
             data = json.dumps(request)
@@ -259,25 +286,6 @@ class Indexer(object):
         logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
         return False
     
-    def _parse_pdf_file(self, filename: str, tables_only: bool = False) -> Tuple[str, List[str]]:
-        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                 strategy='hi_res', model='yolox')
-
-        # get title
-        titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-        title = titles[0] if len(titles)>0 else 'unknown'
-
-        # get texts (and tables summaries if applicable)
-        summarizer = TableSummarizer(self.cfg.vectara.openai_api_key)
-        texts = [
-            summarizer.summarize_table_text(str(t)) if type(t)==us.documents.elements.Table and self.summarize_tables
-            else str(t)
-            for t in elements
-            if  (tables_only and type(t)==us.documents.elements.Table) or 
-                (not tables_only and type(t)!=us.documents.elements.Title)
-        ]
-        return title, texts
-
     def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
@@ -394,24 +402,18 @@ class Indexer(object):
             logging.error(f"File {filename} does not exist")
             return False
 
-        # if file size is more than 50MB, then we extract the text locally and send over with standard API
-        if filename.endswith(".pdf") and get_file_size_in_MB(filename) >= 50:
-            title, texts = self._parse_pdf_file(filename)
+        # Parse locally and index text only in two cases:
+        # 1. File size is more than 50MB (so can't upload to Vectara due to file size limit)
+        # 2. the summarize_tables flag is enabled
+        # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
+        if filename.endswith(".pdf") and (get_file_size_in_MB(filename) >= 50 or self.summarize_tables):
+            openai_api_key = self.cfg.vectara.get("openai_api_key", None)
+            title, texts = _parse_pdf_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
-            logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
+            logging.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
             return succeeded
-
-        # if table extraction is enabled and the OpenAI key is availabe, the index table summaries
-        if self.summarize_tables and filename.endswith(".pdf"):
-            try:
-                _, texts = self._parse_pdf_file(filename, tables_only=True)
-                self.index_segments(doc_id=slugify(filename + "_tables"), texts=texts,
-                                    doc_metadata=metadata, doc_title="Tables for " + filename)
-            except Exception as e:
-                logging.info(f"Failed to index {filename} with error {e}, skipping...")
-                return False
-
-        # index the file
-        return self._index_file(filename, uri, metadata)
+        else:
+            # index the file within Vectara (use FILE UPLOAD API)
+            return self._index_file(filename, uri, metadata)
     
