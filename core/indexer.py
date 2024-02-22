@@ -14,12 +14,12 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from unstructured.partition.auto import partition
+from unstructured.partition.auto import partition_pdf
 import unstructured as us
 
 get_headers = {
@@ -29,6 +29,32 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+def _parse_pdf_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
+    st = time.time()
+    if summarize_tables and openai_api_key is not None:
+        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                 strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+    else:
+        elements = partition_pdf(filename, infer_table_structure=False, extract_images_in_pdf=False)
+
+    # get title
+    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
+    title = titles[0] if len(titles)>0 else 'no title'
+
+    # get texts (and tables summaries if applicable)
+    summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    texts = []
+    for t in elements:
+        if type(t)==us.documents.elements.Table and summarize_tables and openai_api_key is not None:
+            texts.append(summarizer.summarize_table_text(str(t)))
+        else:
+            texts.append(str(t))
+
+    logging.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
+    return title, texts
+
+
 
 class Indexer(object):
     """
@@ -49,6 +75,13 @@ class Indexer(object):
         self.remove_code = remove_code
         self.timeout = cfg.vectara.get("timeout", 60)
         self.detected_language: Optional[str] = None
+        self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
+
+        self.summarize_tables = cfg.vectara.get("summarize_tables", False)
+        if cfg.vectara.get("openai_api_key", None) is None:
+            if self.summarize_tables:
+                logging.info("OpenAI API key not found, disabling table summarization")
+            self.summarize_tables = False
 
         self.setup()
 
@@ -139,7 +172,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key, 
             'customer-id': str(self.customer_id), 
-            'X-Source': 'vectara-ingest' 
+            'X-Source': self.x_source
         }
         response = self.session.post(
             f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
@@ -167,7 +200,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
-            'X-Source': 'vectara-ingest'
+            'X-Source': self.x_source
         }
 
         files: Any = {
@@ -214,7 +247,7 @@ class Indexer(object):
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
-            'X-Source': 'vectara-ingest'
+            'X-Source': self.x_source
         }
         try:
             data = json.dumps(request)
@@ -253,7 +286,6 @@ class Indexer(object):
         logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
         return False
     
-
     def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
@@ -370,16 +402,18 @@ class Indexer(object):
             logging.error(f"File {filename} does not exist")
             return False
 
-        # if file size is more than 50MB, then we extract the text locally and send over with standard API
-        if filename.endswith(".pdf") and get_file_size_in_MB(filename) > 50:
-            elements = partition(filename)
-            texts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-            titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-            title = titles[0] if len(titles)>0 else 'unknown'
+        # Parse locally and index text only in two cases:
+        # 1. File size is more than 50MB (so can't upload to Vectara due to file size limit)
+        # 2. the summarize_tables flag is enabled
+        # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
+        if filename.endswith(".pdf") and (get_file_size_in_MB(filename) >= 50 or self.summarize_tables):
+            openai_api_key = self.cfg.vectara.get("openai_api_key", None)
+            title, texts = _parse_pdf_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
-            logging.info(f"For file {filename}, indexing text only since file size is larger than 50MB")
+            logging.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
             return succeeded
-
-        return self._index_file(filename, uri, metadata)
+        else:
+            # index the file within Vectara (use FILE UPLOAD API)
+            return self._index_file(filename, uri, metadata)
     

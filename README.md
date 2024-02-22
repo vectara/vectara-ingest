@@ -176,6 +176,14 @@ vectara:
   reindex: false
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout:60
+  # summarize_tables (optional; default False)
+  # This option provides special processing for tables inside PDFs.
+  # This requires the `secrets.toml` to include a special profile called `general`, 
+  # which should include the OPENAI_API_KEY. Using this OPENAI api key, 
+  # the code will add table summarization (using OpenAI) as document text while # ingesting PDF content.
+  # **Note**: this processing is quite slow and will require you to have an additional paid subscription to OpenAI. The code uses the "detectron2_onnx" unstructured model which is fastest. You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
+  # See here for some specific [examples](TABLE_SUMMARY.md) of how table summary works
+  summarize_table: false
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)

@@ -5,6 +5,7 @@ import re
 from langdetect import detect
 from typing import List, Set
 import os
+from openai import OpenAI
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
@@ -77,3 +78,18 @@ def get_file_size_in_MB(file_path: str) -> float:
     file_size_MB = file_size_bytes / (1024 * 1024)    
     return file_size_MB
 
+class TableSummarizer():
+    def __init__(self, openai_api_key: str):
+        self.client = OpenAI(api_key=openai_api_key)
+
+    def summarize_table_text(self, text: str):
+        response = self.client.chat.completions.create(
+            model="gpt-4-1106-preview",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
+                {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},
+            ],
+            temperature=0
+        )
+        return response.choices[0].message.content
+        
