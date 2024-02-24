@@ -2,7 +2,6 @@ import logging
 from crawlers.csv_crawler import CsvCrawler
 import sqlalchemy
 import pandas as pd
-import unicodedata
 
 class DatabaseCrawler(CsvCrawler):
 
@@ -27,5 +26,14 @@ class DatabaseCrawler(CsvCrawler):
         df = pd.read_sql_query(sqlalchemy.text(query), conn)
         logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
 
+        # update source_type to DB (override from CsvCrawler)
+        self.source_type = 'db'
+
+        # Custom update for x-source with DB type
+        # Example: vectara-ingest-db-mysql or vectara-ingest-db-postgres
+        db_type = db_url.split(":")[0].split("+")[0]
+        self.indexer.x_source = f'vectara-ingest-db-{db_type}'
+
+        # index the data
         doc_id_columns = list(self.cfg.database_crawler.get("doc_id_columns", None))
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns)

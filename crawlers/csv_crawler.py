@@ -5,6 +5,8 @@ import unicodedata
 
 class CsvCrawler(Crawler):
 
+    source_type = "csv"
+
     def index_dataframe(self, df: pd.DataFrame, text_columns, title_column, metadata_columns, doc_id_columns) -> None:
         all_columns = text_columns + metadata_columns
         if title_column:
@@ -24,7 +26,7 @@ class CsvCrawler(Crawler):
             if len(titles)==0:
                 titles = None
             self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
-                                        doc_title=title, doc_metadata = {'source': 'csv'})
+                                        doc_title=title, doc_metadata = {'source': self.source_type})
 
         if doc_id_columns:
             grouped = df.groupby(doc_id_columns)
