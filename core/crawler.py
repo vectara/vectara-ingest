@@ -20,19 +20,23 @@ get_headers = {
             
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
                     indexer: Indexer, visited: Optional[Set[str]]=None) -> Set[str]:
-    if depth <= 0:
-        return set() if visited is None else set(visited)
-
     if visited is None:
         visited = set()
 
     # For binary files - we don't extract links from them, nor are they included in the crawled URLs list
-    # for document files (like PPT, DOCX, etc) we don't extract links from the, but they ARE included in the crawled URLs list
     url_without_fragment = url.split("#")[0]
     if any([url_without_fragment.endswith(ext) for ext in binary_extensions]):
         return visited
+
+    # add the current URL
     visited.add(url)
+
+    # for document files (like PPT, DOCX, etc) we don't extract links from the, but the link itself is included. 
     if any([url_without_fragment.endswith(ext) for ext in doc_extensions]):
+        return visited
+
+    # if we reached the maximum depth, stop abd return the visited URLs
+    if depth <= 0:
         return visited
 
     try:
