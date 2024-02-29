@@ -31,11 +31,11 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
     # add the current URL
     visited.add(url)
 
-    # for document files (like PPT, DOCX, etc) we don't extract links from the, but the link itself is included. 
+    # for document files (like PPT, DOCX, etc) we don't extract links from the URL, but the link itself is included. 
     if any([url_without_fragment.endswith(ext) for ext in doc_extensions]):
         return visited
 
-    # if we reached the maximum depth, stop abd return the visited URLs
+    # if we reached the maximum depth, stop and return the visited URLs
     if depth <= 0:
         return visited
 
