@@ -6,7 +6,7 @@ import logging
 from typing import Set, Optional, List, Any
 from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
-from core.utils import binary_extensions, doc_extensions
+from core.utils import img_extensions, doc_extensions, archive_extensions
 from slugify import slugify
 
 get_headers = {
@@ -23,9 +23,9 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
     if visited is None:
         visited = set()
 
-    # For binary files - we don't extract links from them, nor are they included in the crawled URLs list
+    # For archive or image - we don't extract links from them, nor are they included in the crawled URLs list
     url_without_fragment = url.split("#")[0]
-    if any([url_without_fragment.endswith(ext) for ext in binary_extensions]):
+    if any([url_without_fragment.endswith(ext) for ext in (archive_extensions + img_extensions)]):
         return visited
 
     # add the current URL
