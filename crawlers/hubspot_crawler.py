@@ -2,33 +2,16 @@ import logging
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
-from core.utils import clean_email_text
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
+from core.utils import clean_email_text, mask_pii
 import datetime
 
 from typing import Any, Dict, List, Tuple
-
-# Initialize Presidio Analyzer and Anonymizer
-analyzer = AnalyzerEngine()
-anonymizer = AnonymizerEngine()
-
 
 class HubspotCrawler(Crawler):
 
     def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
-
-
-    def mask_pii(self, text: str) -> str:
-        # Analyze and anonymize PII data
-        results = analyzer.analyze(text=text,
-                    entities=["PHONE_NUMBER", "CREDIT_CARD", "EMAIL_ADDRESS", "IBAN_CODE", "PERSON", "US_BANK_NUMBER", "US_PASSPORT", "US_SSN", "LOCATION"],
-                    language='en')    
-        anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
-        return str(anonymized_text.text)
-
 
     def crawl(self) -> None:
         logging.info("Starting HubSpot Crawler.")
@@ -80,7 +63,7 @@ class HubspotCrawler(Crawler):
                             logging.info(f"Email '{email_subject}' has no text. Skipping indexing.")
                             continue
                         
-                        masked_email_text = self.mask_pii(email_text)
+                        masked_email_text = mask_pii(email_text)
                         cleaned_email_text = clean_email_text(masked_email_text)
                         
                         metadata = {
