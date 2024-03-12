@@ -80,7 +80,7 @@ For our example we would index the content of https://www.paulgraham.com website
 
 1. Navigate to the directory that you have cloned.
 
-2. Copy the `secrets.example.toml` to `secrets.toml`.
+2. Copy the `secrets.example.toml` to `secrets.toml`. 
 
 3. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
@@ -170,12 +170,16 @@ Each configuration YAML file includes a set of standard variables, for example:
 vectara:
   # the corpus ID for indexing
   corpus_id: 4
+  
   # the Vectara customer ID
   customer_id: 1234567
+  
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
+  
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout:60
+  
   # summarize_tables (optional; default False)
   # This option provides special processing for tables inside PDFs.
   # This requires the `secrets.toml` to include a special profile called `general`, 
@@ -184,6 +188,12 @@ vectara:
   # **Note**: this processing is quite slow and will require you to have an additional paid subscription to OpenAI. The code uses the "detectron2_onnx" unstructured model which is fastest. You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
   # See here for some specific [examples](TABLE_SUMMARY.md) of how table summary works
   summarize_table: false
+  
+  # Whether masking of PII is attempted on all text fields (title, text, metadata values)
+  # Notes: 
+  # 1. This masking is never done on files uploaded to Vectara directly (via e.g. indexer.index_file())
+  # 2. Masking is done using Microsoft Presidio PII analyzer and anonymizer, and is limited to English only
+  mask_pii: false
 
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
