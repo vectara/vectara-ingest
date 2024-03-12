@@ -80,7 +80,7 @@ For our example we would index the content of https://www.paulgraham.com website
 
 1. Navigate to the directory that you have cloned.
 
-2. Copy the `secrets.example.toml` to `secrets.toml`.
+2. Copy the `secrets.example.toml` to `secrets.toml`. 
 
 3. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
