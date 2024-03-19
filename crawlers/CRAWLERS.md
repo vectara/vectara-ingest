@@ -261,6 +261,27 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `s3_path`: a valid S3 location where the files to index reside
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 
+### Slack crawler
+To use the slack crawler you need to create slack bot app and give it permissions. Following are the steps.
+- **Create a Slack App**: Log in to your Slack workspace and navigate to the Slack API website. Click on "Your Apps" and then "Create New App." Provide a name for your app, select the workspace where you want to install it, and click "Create App."
+
+- **Configure Basic Information**: In the app settings, you can configure various details such as the app name, icon, and description. Make sure to fill out the necessary information accurately.
+
+- **Install the Bot to Your Workspace**: Once you've configured your app, navigate to the "Install App" section. Click on the "Install App to Workspace" button to add the bot to your Slack workspace. This step will generate an OAuth access token that you'll need to use to authenticate your bot.
+
+- **Add User Token Scope**: To add user token scope, navigate to the "OAuth & Permissions" section in your app settings. Under the "OAuth Tokens for Your Workspace" section, you'll need to add  `users:read`, `channel:read`, `channel:history` scopes.
+
+- **Save Changes**: Make sure to save any changes you've made to your app settings.
+
+- Place the generated user token in `secrets.toml`.
+  - `SLACK_USER_TOKEN= <user_token>`
+```yaml
+...
+slack_crawler:
+  days_past: 30
+  channels_to_skip: ["alerts"]
+  retries: 5
+```
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara

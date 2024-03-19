@@ -1,4 +1,5 @@
 import time
+import re
 import json
 import logging
 import datetime
@@ -48,7 +49,7 @@ def get_datetime_from_epoch(epoch_time):
         output: 2021-07-27 15:00:00
     :param epoch_time: timestamp of a message.
     """
-    return datetime.datetime.fromtimestamp(float(epoch_time)).strftime('%Y-%m-%d %H:%M:%S')
+    return datetime.datetime.fromtimestamp(float(epoch_time)).strftime('%Y-%m-%d %H:%M')
 
 
 def get_doc_metadata(channel, message, users_info):
@@ -132,16 +133,19 @@ def get_document(channel, message, users_info):
     :return:
     """
 
-    doc_text = message.get("text", None)
+    doc_text = message.get("text", '')
     doc_id = f'vectara_{channel["id"]}_{message["ts"]}'
     doc_metadata = get_doc_metadata(channel, message, users_info)
     sections = []
 
-    if doc_text is None:
+    if doc_text == '':
         if message.get("subtype") == "bot_message":
+            previous_messages = []  # using to avoid appending duplicate messages in the document
             for attachment in message.get("attachments", []):
                 doc_text = f'{attachment.get("text", "")}\n'
-                sections.append({"text": doc_text})
+                if doc_text not in previous_messages:
+                    sections.append({"text": doc_text})
+                    previous_messages.append(doc_text)
 
         else:
             return None
@@ -177,6 +181,41 @@ def handle_incomplete_request_error(api_name, error, retry_delay=30):
     logging.error(f"IncompleteRead error occurred: {error}")
     logging.info(f"Will retry to fetch the {api_name} after 30 seconds")
     time.sleep(retry_delay)  # wait for 30 seconds before sending another request
+
+
+def replace_ampersand(message):
+    if "&amp;" in message:
+        text = message.get("text").replace("&amp;", "&")
+        message["text"] = text
+
+
+def remove_duplicate_urls(message):
+    """
+    Slack messages show urls multiple times in the text, so we are removing duplicates
+    to make the text cleaner.
+    Example:
+        input text:  Apple &amp; Grok LLM news, plus this knowledge processing unit (KPU) thing.
+        \n<https://x.com/rowancheung/status/1769509530776338895?s=46
+        |https://x.com/rowancheung/status/1769509530776338895?s=46>
+
+        output text:  Apple &amp; Grok LLM news, plus this knowledge processing unit (KPU) thing.
+        \n<https://x.com/rowancheung/status/1769509530776338895?s=46>
+
+    :return:
+    """
+    for attachment in message.get('attachments', []):
+        if attachment.get("original_url", None):
+            url = attachment["original_url"]
+            message["text"] = message["text"].replace(f"|{url}", "")
+
+
+def contains_url(message):
+    # Regular expression pattern to match URLs
+    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    # Search for URLs in the message
+    match = re.search(url_pattern, message)
+    # Return True if a URL is found, False otherwise
+    return bool(match)
 
 
 class SlackCrawler(Crawler):
@@ -287,6 +326,9 @@ class SlackCrawler(Crawler):
 
         # fetch the threaded messages for each message
         for msg in messages:
+            replace_ampersand(msg)
+            if contains_url(msg.get("text")):
+                remove_duplicate_urls(msg)
             if 'reply_count' in msg:
                 replies = self.get_message_replies(channel["id"], msg["ts"], users_info)
                 msg["replies_content"] = replies
@@ -308,7 +350,7 @@ class SlackCrawler(Crawler):
         for _ in range(self.retries):
             try:
                 replies_response = self.client.conversations_replies(channel=channel_id, ts=message_ts)
-                replies = replies_response["messages"]
+                replies = replies_response["messages"][1:]  # skipping the 1st message since it's a parent message
                 replace_user_id_with_user_handler(replies, users_info)
                 return replies
 
@@ -344,5 +386,5 @@ class SlackCrawler(Crawler):
                 if document is not None:
                     self.indexer.index_document(document)
                 else:
-                    link = construct_url_of_message(messages, channel_id)
+                    link = construct_url_of_message(msg, channel_id)
                     logging.info(f"Unable to find  text fot the message: {link}")
