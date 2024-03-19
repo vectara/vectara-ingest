@@ -1,3 +1,4 @@
+import time
 import json
 import logging
 import datetime
@@ -110,6 +111,74 @@ def replace_user_id_with_user_handler(messages, users_info):
         logging.error(f"Error replacing user id's with user handlers: {e}")
 
 
+def get_document(channel, message, users_info):
+    """
+    Returns the document to indexed in vectara
+
+    Example output : {
+        "documentId": "vectara_123_1234556",
+        "metadataJson": {"author": "Vectara"},
+        "section": [{"text": "Slack messages info"},
+        {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
+    }
+
+   To create a unique doc id workspace name, channel id and message timestamp are being used.
+   Because slack claims the message timestamp with in a channel would be unique.
+   Docs: https://api.slack.com/messaging/retrieving
+
+    :param channel:
+    :param message:
+    :param users_info:
+    :return:
+    """
+
+    doc_text = message.get("text", "")
+    doc_id = f'vectara_{channel["id"]}_{message["ts"]}'
+    doc_metadata = get_doc_metadata(channel, message, users_info)
+    sections = []
+
+    if doc_text is None:
+        if message.get("subtype") == "bot_message":
+            for attachment in message.get("attachments", []):
+                doc_text = f'{attachment.get("text", "")}\n'
+                sections.append({"text": doc_text})
+
+        else:
+            return None
+    else:
+        sections.append({"text": doc_text})
+        if message.get("replies_content"):
+            for reply in message.get("replies_content"):
+                try:
+                    sections.append({
+                        "text": reply.get("text"),
+                        "metadataJson": json.dumps({
+                            "replier": users_info[reply["user"]],
+                            "reply_time": get_datetime_from_epoch(reply["ts"])
+                        })
+                    })
+                except KeyError:
+                    continue
+
+    return {
+        "documentId": doc_id,
+        "metadataJson": doc_metadata,
+        "section": sections
+    }
+
+
+def handle_ratelimit_error(api_name, error, retry_delay=60):
+    logging.error(f"rate limit error occurred: {error}")
+    logging.info(f"Will retry to fetch the {api_name} after 60 seconds")
+    time.sleep(retry_delay)  # wait for 60 seconds before sending another request
+
+
+def handle_incomplete_request_error(api_name, error, retry_delay=30):
+    logging.error(f"IncompleteRead error occurred: {error}")
+    logging.info(f"Will retry to fetch the {api_name} after 30 seconds")
+    time.sleep(retry_delay)  # wait for 30 seconds before sending another request
+
+
 class SlackCrawler(Crawler):
     def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
@@ -117,27 +186,35 @@ class SlackCrawler(Crawler):
         self.client = WebClient(token=self.user_token)
         self.days_past = self.cfg.slack_crawler.get("days_past", None)
         self.channels_to_skip = self.cfg.slack_crawler.get("channels_to_skip", [])
-        self.connection_retries = self.cfg.slack_crawlers.get("connection_retries", 5)
+        self.connection_retries = self.cfg.slack_crawler.get("connection_retries", 5)
 
     def get_users_info(self):
         """
         Returns the list of the users of the workspace.
         API docs: https://api.slack.com/methods/users.list
         """
-        try:
-            for _ in range(self.connection_retries):
-                try:
-                    users_info = {}
-                    users_response = self.client.users_list()
-                    users = users_response["members"]
-                    for user in users:
-                        users_info[user["id"]] = user["profile"]["display_name_normalized"]
+        for _ in range(self.connection_retries):
+            try:
+                users_info = {}
+                users_response = self.client.users_list()
+                users = users_response["members"]
+                for user in users:
+                    users_info[user["id"]] = user["profile"]["display_name_normalized"]
 
-                    return users_info
-                except IncompleteRead as e:
-                    logging.error(f"Error: {e}")
-        except KeyError as e:
-            logging.error(f"Error while fetching the users info: {e}")
+                logging.info("Users information retrieved")
+                return users_info
+
+            except IncompleteRead as e:
+                handle_incomplete_request_error("users", e)
+
+            except SlackApiError as e:
+                if e.response["error"] == "ratelimited":
+                    handle_ratelimit_error("users", e)
+                else:
+                    logging.error(f"Error while fetching the users: {e}")
+
+            except KeyError as e:
+                logging.error(f"Error while fetching the users info: {e}")
 
     def get_channels(self):
         """
@@ -153,16 +230,24 @@ class SlackCrawler(Crawler):
                     for channel in result["channels"]:
                         channels.append(channel)
 
+                logging.info("channels retrieved")
                 return channels
-            except IncompleteRead as e:
-                logging.error(f"Error: {e}")
 
-    def get_messages_of_channel(self, channel_id, users_info):
+            except IncompleteRead as e:
+                handle_incomplete_request_error("channels", e)
+
+            except SlackApiError as e:
+                if e.response["error"] == "ratelimited":
+                    handle_ratelimit_error("channels", e)
+                else:
+                    logging.error(f"Error while fetching the messages: {e}")
+
+    def get_messages_of_channel(self, channel, users_info):
         """
         Retrieves messages of a channel.
         API docs: https://api.slack.com/methods/conversations.history
-        :param channel_id:
-        :param users_info:
+        :param channel: channel to retrieve messages
+        :param users_info: users information
         :return:
         """
         messages = []
@@ -179,11 +264,17 @@ class SlackCrawler(Crawler):
                     # limit represent number of messages to return in a request. Default value is 100 and
                     # max is 999. Slack recommends no more than 200 results at a time.
                     # Check API docs for more detail.
-                    response = self.client.conversations_history(channel=channel_id, oldest=last_message_timestamp,
+                    response = self.client.conversations_history(channel=channel["id"], oldest=last_message_timestamp,
                                                                  cursor=cursor,
                                                                  limit=200)
                 except IncompleteRead as e:
-                    logging.error(f"IncompleteRead error occurred: {e}")
+                    handle_incomplete_request_error("messages", e)
+
+                except SlackApiError as e:
+                    if e.response["error"] == "ratelimited":
+                        handle_ratelimit_error("messages", e)
+                    else:
+                        logging.error(f"Error while fetching the messages: {e}")
 
             if response is not None:
                 messages += response["messages"]
@@ -192,10 +283,12 @@ class SlackCrawler(Crawler):
                     break
                 cursor = response["response_metadata"]["next_cursor"]
 
+        logging.info(f"messages fetched successfully for channel `{channel['name']}`")
+
         # fetch the threaded messages for each message
         for msg in messages:
             if 'reply_count' in msg:
-                replies = self.get_message_replies(channel_id, msg["ts"], users_info)
+                replies = self.get_message_replies(channel["id"], msg["ts"], users_info)
                 msg["replies_content"] = replies
 
         replace_user_id_with_user_handler(messages, users_info)
@@ -218,50 +311,38 @@ class SlackCrawler(Crawler):
                 replies = replies_response["messages"]
                 replace_user_id_with_user_handler(replies, users_info)
                 return replies
+
             except IncompleteRead as e:
-                logging.error(f"IncompleteRead error occurred: {e}")
+                handle_incomplete_request_error("threaded messages", e)
+
+            except SlackApiError as e:
+                if e.response["error"] == "ratelimited":
+                    handle_ratelimit_error("threaded messages", e)
+                else:
+                    logging.error(f"Error while fetching the threaded messages: {e}")
 
     def crawl(self) -> None:
-        try:
-            users_info = self.get_users_info()
-            channels = self.get_channels()
-            for channel in channels:
-                channel_id = channel["id"]
-                if channel["name"] in self.channels_to_skip:
-                    continue
+        """
+        crawl the Slack messages in the following sequence.
+        Retrieve all the users and their information.
+        Retrieve all channels and their messages.
+        Construct document that we are going to index in vectara
 
-                messages = self.get_messages_of_channel(channel_id, users_info)
-                for msg in messages:
-                    doc_text = msg.get("text", "")
-                    doc_id = f'vectara_{channel_id}_{msg["ts"]}'
-                    doc_metadata = get_doc_metadata(channel, msg, users_info)
+        :return:
+        """
+        users_info = self.get_users_info()
+        channels = self.get_channels()
 
-                    sections = []
-                    if msg.get("replies_content"):
-                        for reply in msg.get("replies_content"):
-                            try:
-                                sections.append({
-                                    "text": reply.get("text"),
-                                    "metadata": json.dumps({
-                                        "replier": users_info[reply["user"]],
-                                        "reply_time": get_datetime_from_epoch(reply["ts"])
-                                    })
-                                })
-                            except KeyError:
-                                continue
+        for channel in channels:
+            channel_id = channel["id"]
+            if channel["name"] in self.channels_to_skip:
+                continue
 
-                    if doc_text is None and msg.get("subtype") == "bot_message":
-                        for attachment in msg.get("attachments", []):
-                            doc_text = f'{attachment.get("text", "")}\n'
-
-                    document = {
-                        "documentId": doc_id,
-                        "metadataJson": doc_metadata,
-                        "description": doc_text,
-                    }
-                    if len(sections) > 0:
-                        document["sections"] = sections
-
+            messages = self.get_messages_of_channel(channel, users_info)
+            for msg in messages:
+                document = get_document(channel, msg, users_info)
+                if document is not None:
                     self.indexer.index_document(document)
-        except SlackApiError as e:
-            logging.error(f"Error: {e}")
+                else:
+                    link = construct_url_of_message(messages, channel_id)
+                    logging.info(f"Unable to find  text fot the message: {link}")

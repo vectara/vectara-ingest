@@ -90,9 +90,9 @@ def main() -> None:
         return
     
     # Add all keys from "general" section to the vectara config
-    general_dict = env_dict['general']
-    for k,v in general_dict.items():
-        OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
+    # general_dict = env_dict['general']
+    # for k,v in general_dict.items():
+    #     OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
 
     # Add all supported special secrets from the specified profile to the specific crawler config
     env_dict = env_dict[profile_name]
