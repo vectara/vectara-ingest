@@ -9,4 +9,4 @@ crawling:
 slack_crawler:
   days_past: 30
   channels_to_skip: ["alerts"]
-  connection_retries: 5
+  retries: 5

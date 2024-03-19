@@ -132,7 +132,7 @@ def get_document(channel, message, users_info):
     :return:
     """
 
-    doc_text = message.get("text", "")
+    doc_text = message.get("text", None)
     doc_id = f'vectara_{channel["id"]}_{message["ts"]}'
     doc_metadata = get_doc_metadata(channel, message, users_info)
     sections = []
@@ -186,14 +186,14 @@ class SlackCrawler(Crawler):
         self.client = WebClient(token=self.user_token)
         self.days_past = self.cfg.slack_crawler.get("days_past", None)
         self.channels_to_skip = self.cfg.slack_crawler.get("channels_to_skip", [])
-        self.connection_retries = self.cfg.slack_crawler.get("connection_retries", 5)
+        self.retries = self.cfg.slack_crawler.get("retries", 5)
 
     def get_users_info(self):
         """
         Returns the list of the users of the workspace.
         API docs: https://api.slack.com/methods/users.list
         """
-        for _ in range(self.connection_retries):
+        for _ in range(self.retries):
             try:
                 users_info = {}
                 users_response = self.client.users_list()
@@ -223,7 +223,7 @@ class SlackCrawler(Crawler):
         """
 
         channels = []
-        for _ in range(self.connection_retries):
+        for _ in range(self.retries):
             try:
                 for result in self.client.conversations_list():
 
@@ -258,7 +258,7 @@ class SlackCrawler(Crawler):
             last_message_timestamp = str(get_timestamp(self.days_past))
 
         while True:
-            for _ in range(self.connection_retries):
+            for _ in range(self.retries):
                 try:
 
                     # limit represent number of messages to return in a request. Default value is 100 and
@@ -305,7 +305,7 @@ class SlackCrawler(Crawler):
         :param users_info: list of Slack users
         :return:
         """
-        for _ in range(self.connection_retries):
+        for _ in range(self.retries):
             try:
                 replies_response = self.client.conversations_replies(channel=channel_id, ts=message_ts)
                 replies = replies_response["messages"]
