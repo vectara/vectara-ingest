@@ -14,7 +14,7 @@ import nbformat
 import markdown
 import docutils.core
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii
 from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -84,6 +84,11 @@ class Indexer(object):
             self.summarize_tables = False
 
         self.setup()
+
+    def mask_pii(self, text: str) -> str:
+        if self.cfg.vectara.get("mask_pii", False):
+            return mask_pii(text)
+        return text
 
     def setup(self):
         self.session = create_session_with_retries()
@@ -370,14 +375,20 @@ class Indexer(object):
             titles = ["" for _ in range(len(texts))]
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
+        else:
+            metadatas = [{k:self.mask_pii(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
         document["documentId"] = doc_id
         if doc_title is not None and len(doc_title)>0:
-            document["title"] = doc_title
-        document["section"] = [{"text": text, "title": title, "metadataJson": json.dumps(md)} for text,title,md in zip(texts,titles,metadatas)]  # type: ignore
+            document["title"] = self.mask_pii(doc_title)
+        document["section"] = [
+            {"text": self.mask_pii(text), "title": self.mask_pii(title), "metadataJson": json.dumps(md)} 
+            for text,title,md in zip(texts,titles,metadatas)
+        ]
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
+
         return self.index_document(document)
 
     def index_document(self, document: Dict[str, Any]) -> bool:
@@ -405,6 +416,7 @@ class Indexer(object):
         # 1. File size is more than 50MB (so can't upload to Vectara due to file size limit)
         # 2. the summarize_tables flag is enabled
         # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
+
         if filename.endswith(".pdf") and (get_file_size_in_MB(filename) >= 50 or self.summarize_tables):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             title, texts = _parse_pdf_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)

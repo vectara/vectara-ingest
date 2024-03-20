@@ -7,6 +7,13 @@ from typing import List, Set
 import os
 from openai import OpenAI
 
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+# Initialize Presidio Analyzer and Anonymizer
+analyzer = AnalyzerEngine()
+anonymizer = AnonymizerEngine()
+
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
 archive_extensions = ["zip", "gz", "tar", "bz2", "7z", "rar"]
@@ -84,7 +91,7 @@ class TableSummarizer():
 
     def summarize_table_text(self, text: str):
         response = self.client.chat.completions.create(
-            model="gpt-4-1106-preview",
+            model="gpt-4-1106-preview",   # GPT4-Turbo
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
                 {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},
@@ -92,4 +99,15 @@ class TableSummarizer():
             temperature=0
         )
         return response.choices[0].message.content
-        
+
+def mask_pii(text: str) -> str:
+    # Analyze and anonymize PII data in the text
+    results = analyzer.analyze(
+        text=text,
+        entities=["PHONE_NUMBER", "CREDIT_CARD", "EMAIL_ADDRESS", "IBAN_CODE", "PERSON", 
+                  "US_BANK_NUMBER", "US_PASSPORT", "US_SSN", "LOCATION"],
+        language='en')    
+    anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
+    return str(anonymized_text.text)
+
+
