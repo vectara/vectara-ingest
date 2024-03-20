@@ -63,6 +63,7 @@ ray = "2.7.1"
 synapseclient = "2.7.2"
 python-magic = "0.4.27"
 openai = "1.6.1"
+slack-sdk="3.27.1"
 
 [build-system]
 requires = ["poetry-core"]

@@ -103,6 +103,9 @@ def main() -> None:
         if k=='NOTION_API_KEY':
             OmegaConf.update(cfg, f'notion_crawler.{k.lower()}', v)
             continue
+        if k=='SLACK_USER_TOKEN':
+            OmegaConf.update(cfg, f'slack_crawler.{k.lower()}', v)
+            continue
         if k=='DISCOURSE_API_KEY':
             OmegaConf.update(cfg, f'discourse_crawler.{k.lower()}', v)
             continue

@@ -1,0 +1,12 @@
+vectara:
+  corpus_id: 1
+  customer_id: 246431873
+  reindex: true
+  
+crawling:
+  crawler_type: slack
+
+slack_crawler:
+  days_past: 30
+  channels_to_skip: ["alerts"]
+  retries: 5
