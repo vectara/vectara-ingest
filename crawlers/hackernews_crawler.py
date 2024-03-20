@@ -93,7 +93,7 @@ class HackernewsCrawler(Crawler):
 
     def crawl(self) -> None:
         # Retrieve the IDs of the top N_ARTICLES stories
-        resp1= self.session.get(self.db_url + 'topstories.json')
+        resp1 = self.session.get(self.db_url + 'topstories.json')
         resp2 = self.session.get(self.db_url + 'newstories.json')
         resp3 = self.session.get(self.db_url + 'beststories.json')
         resp4 = self.session.get(self.db_url + 'showstories.json')
