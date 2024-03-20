@@ -54,6 +54,10 @@ class HackernewsCrawler(Crawler):
             logging.info(f"Skipping story {id} because most recent comment is older than {self.days_back} days")
             return
             
+        if len(texts) == 0:
+            logging.info(f"Skipping story {id} because it has no text")
+            return
+        
         self.indexer.index_segments(doc_id=doc_id, 
                                     texts=texts, titles=titles, metadatas=None,
                                     doc_metadata=doc_metadata, doc_title=doc_title)
