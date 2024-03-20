@@ -136,6 +136,21 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `delay` defines the number of seconds between to wait between news articles, so as to make the crawl more friendly to the hosting site.
 - `extraction` defines how we process URLs (pdf or html) as as with the website crawler.
 
+### Hackernews crawler
+
+```yaml
+...
+hackernews_crawler:
+  max_articles: 1000
+  days_past: 3
+  days_past_comprehensive: false
+```
+
+The hackernews crawler can be used to crawl stories and comments from hacker news.
+- `max_articles` specifies a limit to the number of stories crawled. 
+- `days_past` specifies the number of days backward to crawl, based on the top, new, ask, show and best story lists. For example with a value of 3 as in this example, the crawler will only index stories if the story or any comment in the story was published or updated in the last 3 days.
+- `days_past_comprehensive` if true, then the crawler performs a comprehensive search for ALL stories published within the last `days_past` days (which takes longer to run)
+
 ### Docs crawler
 
 ```yaml
@@ -265,6 +280,5 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
 - `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
-- `Hacker News` crawler: crawls the best, most recent an most popular Hacker News stories
 - `PMC` crawler: crawls medical articles from PubMed Central and indexes them into Vectara.
 - `Arxiv` crawler: crawls the top (most cited or latest) Arxiv articles about a topic and indexes them into Vectara.

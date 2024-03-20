@@ -13,6 +13,7 @@ class HackernewsCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.N_ARTICLES = self.cfg.hackernews_crawler.max_articles
         self.days_back = self.cfg.hackernews_crawler.get("days_back", 3)
+        self.days_back_comprehensive = self.cfg.hackernews_crawler.get("days_back_comprehensive", False)
         self.indexer.reindex = True     # always reindex with hackernews, since it depends on comments
         self.db_url = 'https://hacker-news.firebaseio.com/v0/'
         self.session = create_session_with_retries()
@@ -57,12 +58,52 @@ class HackernewsCrawler(Crawler):
                                     texts=texts, titles=titles, metadatas=None,
                                     doc_metadata=doc_metadata, doc_title=doc_title)
 
+    def fetch_stories_before_n_days(self, days: int = 7):
+        # Find the current highest item ID
+        max_item_response = self.session.get("https://hacker-news.firebaseio.com/v0/maxitem.json")
+        max_item_id = max_item_response.json()
+
+        # Calculate the cutoff timestamp
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
+        logging.info(f"Fetching stories from the last {days} days, cutoff date={cutoff_date}")
+        
+        # List to hold IDs of stories before and up to N days ago
+        stories_ids = []
+        
+        # Iterate backwards from the current highest ID
+        for item_id in range(max_item_id, 0, -1):
+            item_response = self.session.get(f"https://hacker-news.firebaseio.com/v0/item/{item_id}.json")
+            item = item_response.json()
+
+            # Check if item is a story and was published within the desired time frame
+            if item and item.get("type") == "story":
+                item_date = datetime.datetime.fromtimestamp(item.get("time"))
+                logging.info(f"Checking item {item_id}, with date {item_date}")
+                if item_date >= cutoff_date:
+                    stories_ids.append(item_id)
+                else:
+                    # Once you reach an item older than the desired range, break the loop
+                    break                    
+        return stories_ids
+
     def crawl(self) -> None:
         # Retrieve the IDs of the top N_ARTICLES stories
         resp1= self.session.get(self.db_url + 'topstories.json')
         resp2 = self.session.get(self.db_url + 'newstories.json')
         resp3 = self.session.get(self.db_url + 'beststories.json')
-        top_ids = list(set(list(resp1.json()) + list(resp2.json()) + list(resp3.json())))[:self.N_ARTICLES]
+        resp4 = self.session.get(self.db_url + 'showstories.json')
+        resp5 = self.session.get(self.db_url + 'askstories.json')
+        stories_by_list = list(set(list(resp1.json()) + list(resp2.json()) + list(resp3.json()) + 
+                           list(resp4.json()) + list(resp5.json())))
+        logging.info(f"Retrieved {len(stories_by_list)} top, new, best, show, and ask stories")
+
+        if self.days_back_comprehensive:
+            stories_by_date = self.fetch_stories_before_n_days(self.days_back)
+            logging.info(f"Retrieved {len(stories_by_date)} stories from the last {self.days_back} days")
+        else:
+            stories_by_date = []
+
+        top_ids = list(set(list(stories_by_list) + list(stories_by_date)))[:self.N_ARTICLES]
         num_ids = len(top_ids)
         logging.info(f"Crawling {num_ids} stories")
 

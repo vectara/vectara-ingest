@@ -8,3 +8,5 @@ crawling:
 
 hackernews_crawler:
   max_articles: 1000
+  days_back: 3
+  days_back_comprehensive: false

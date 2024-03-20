@@ -1,10 +1,13 @@
-from bs4 import BeautifulSoup
 import requests
+from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult
+
+from bs4 import BeautifulSoup
 import re
-from langdetect import detect
 from typing import List, Set
 import os
+
+from langdetect import detect
 from openai import OpenAI
 
 from presidio_analyzer import AnalyzerEngine
@@ -36,7 +39,12 @@ def html_to_text(html: str, include_code: bool = True) -> str:
 def create_session_with_retries(retries: int = 3) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=retries)
+    retry_strategy = Retry(
+        total=retries,
+        status_forcelist=[429, 500, 502, 503, 504],  # A set of integer HTTP status codes that we should force a retry on.
+        backoff_factor=1,
+    )
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
