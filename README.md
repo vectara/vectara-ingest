@@ -143,6 +143,7 @@ The codebase includes the following components.
 - **`ingest.py`:** The main entry point for a crawl job.
 - **`Dockerfile`:** The Docker image definition file
 
+- 
 ### `core/` directory
 Fundamental utilities depended upon by the crawlers:
 
@@ -179,7 +180,14 @@ vectara:
   
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout:60
+
+  # flag: remove code or not from HTML
+  remove_code: true
   
+  # flag: should text extraction from web pages use special processing to remove boilerplate
+  # this may be useful when processing news pages or others which have a lot of advertising content
+  remove_boilerplate: false
+
   # summarize_tables (optional; default False)
   # This option provides special processing for tables inside PDFs.
   # This requires the `secrets.toml` to include a special profile called `general`, 

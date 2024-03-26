@@ -30,13 +30,17 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def _parse_pdf_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
+def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
     st = time.time()
-    if summarize_tables and openai_api_key is not None:
-        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                 strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+
+    if filename.endswith(".pdf"):
+        if summarize_tables and openai_api_key is not None:
+            elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                     strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+        else:
+            elements = partition_pdf(filename, infer_table_structure=False, extract_images_in_pdf=False)
     else:
-        elements = partition_pdf(filename, infer_table_structure=False, extract_images_in_pdf=False)
+        elements = partition(filename)
 
     # get title
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
@@ -65,15 +69,16 @@ class Indexer(object):
         corpus_id (int): ID of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True, remove_code: bool = True) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True) -> None:
         self.cfg = cfg
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
         self.api_key = api_key
         self.reindex = reindex
-        self.remove_code = remove_code
-        self.timeout = cfg.vectara.get("timeout", 60)
+        self.remove_code = cfg.vectara.get("remove_code", True)
+        self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
+        self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
 
@@ -141,7 +146,7 @@ class Indexer(object):
             if debug:
                 page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
 
-            page.goto(url, timeout=self.timeout*1000)
+            page.goto(url, timeout=self.timeout*1000, wait_until="networkidle")
             content = page.content()
             out_url = page.url
             links_elements = page.query_selector_all("a")
@@ -151,6 +156,8 @@ class Indexer(object):
             logging.info(f"Page loading timed out for {url}")
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
+            import traceback   ### TEMP
+            logging.info(f"Traceback = {traceback.format_exc()}")  ### TEMP
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
@@ -353,7 +360,11 @@ class Indexer(object):
                         self.detected_language = detect_language(body_text)
                         logging.info(f"The detected language is {self.detected_language}")
                     url = actual_url
-                    text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
+                    if self.remove_boilerplate:
+                        text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
+                    else:
+                        extracted_title = BeautifulSoup(content, 'html.parser').title.text
+                        text = html_to_text(content, self.remove_code)
                     parts = [text]
                     logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
                 except Exception as e:
@@ -389,6 +400,8 @@ class Indexer(object):
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
 
+        logging.info(f"Indexing document {doc_id} with {document}")
+
         return self.index_document(document)
 
     def index_document(self, document: Dict[str, Any]) -> bool:
@@ -417,9 +430,11 @@ class Indexer(object):
         # 2. the summarize_tables flag is enabled
         # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
 
-        if filename.endswith(".pdf") and (get_file_size_in_MB(filename) >= 50 or self.summarize_tables):
+        large_file_extensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt', '.md', '.rst', '.epub', '.html', '.htm']
+        if (any(filename.endswith(extension) for extension in large_file_extensions) and
+            (get_file_size_in_MB(filename) >= 50 or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = _parse_pdf_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
+            title, texts = _parse_local_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
             logging.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
