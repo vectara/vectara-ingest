@@ -156,8 +156,6 @@ class Indexer(object):
             logging.info(f"Page loading timed out for {url}")
         except Exception as e:
             logging.info(f"Page loading failed for {url} with exception '{e}'")
-            import traceback   ### TEMP
-            logging.info(f"Traceback = {traceback.format_exc()}")  ### TEMP
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
