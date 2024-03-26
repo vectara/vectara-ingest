@@ -78,6 +78,8 @@ class HackernewsCrawler(Crawler):
         for inx, item_id in enumerate(range(max_item_id, 0, -1)):
             item_response = self.session.get(f"https://hacker-news.firebaseio.com/v0/item/{item_id}.json")
             item = item_response.json()
+            if item is None:
+                continue
             item_date = datetime.datetime.fromtimestamp(item.get("time"))
             if inx % 100 == 0:
                 logging.info(f"Checked {inx} items so far, lates item with date {item_date}")

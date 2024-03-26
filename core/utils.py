@@ -29,11 +29,24 @@ def remove_code_from_html(html_text: str) -> str:
         tag.decompose()
     return str(soup)
 
-def html_to_text(html: str, include_code: bool = True) -> str:
+def html_to_text(html: str, remove_code: bool = False) -> str:
     """Convert HTML to text."""
-    if not include_code:
+    if remove_code:
         html = remove_code_from_html(html)
+
+    # Add spaces before and after list items
     soup = BeautifulSoup(html, features='html.parser')
+    for ul in soup.find_all(['ul', 'ol']):
+        # Add a space before the list if it directly follows text (e.g., a paragraph)
+        prev_sib = ul.find_previous_sibling()
+        if prev_sib and prev_sib.name not in ['ul', 'ol', 'li']:  # Avoid double-spacing with adjacent lists
+            ul.insert_before(' ')  # Insert a space before the list
+        for li in ul.find_all('li'):
+            # Insert a space at the beginning of each list item
+            li.insert_before(' ')
+            # Optionally, insert a space at the end of each list item
+            # li.append(' ')
+
     return soup.get_text()
 
 def create_session_with_retries(retries: int = 3) -> requests.Session:
