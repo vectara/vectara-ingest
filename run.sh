@@ -15,12 +15,27 @@ if [ ! -f "$1" ]; then
   exit 2
 fi
 
+if [ ! -f secrets.toml ]; then
+  echo "Error: secrets.toml file does not exist, please create one following the README instructions"
+  exit 3
+fi
+
 mkdir -p ~/tmp/mount
 cp secrets.toml ~/tmp/mount
 cp $1 ~/tmp/mount/
 
+sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('summarize_tables', 'false'))" | tr '[:upper:]' '[:lower:]'`
+mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
+
 tag="vectara-ingest"
-docker build . --tag="$tag:latest"
+export DOCKER_BUILDKIT=1
+if [[ "$sum_tables" == "true" || "$mask_pii" == "true" ]]; then
+    echo "Building with extra features"
+    docker buildx build --build-arg INSTALL_EXTRA="true" . --tag="$tag:latest"
+else
+  docker buildx build --build-arg INSTALL_EXTRA="false" . --tag="$tag:latest"
+fi
+
 docker container inspect vingest &>/dev/null && docker rm -f vingest
 
 crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`

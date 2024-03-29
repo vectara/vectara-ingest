@@ -33,13 +33,16 @@ RUN pip3 install poetry
 COPY poetry.lock pyproject.toml $HOME/
 RUN poetry config virtualenvs.create false
 RUN poetry install --only main
-
-RUN python3 -m spacy download en_core_web_lg
 RUN playwright install --with-deps firefox
 
-# Fixing issue with onnxruntime
-RUN apt-get install execstack
-RUN execstack -c /usr/local/lib/python3.10/dist-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-310-x86_64-linux-gnu.so
+# Install additional large libraries for unstructured inference and PII detection
+ARG INSTALL_EXTRA=false
+RUN echo $INSTALL_EXTRA >> qq.txt
+COPY requirements.txt $HOME/
+RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
+        pip3 install -r requirements.txt && \
+        python3 -m spacy download en_core_web_lg; \
+    fi
 
 COPY *.py $HOME/
 COPY core/*.py $HOME/core/

@@ -10,12 +10,14 @@ import os
 from langdetect import detect
 from openai import OpenAI
 
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+    analyzer = AnalyzerEngine()
+    anonymizer = AnonymizerEngine()
+except ImportError:
+    print("Presidio is not installed. if PII detection and masking is requested - it will not work.")
 
-# Initialize Presidio Analyzer and Anonymizer
-analyzer = AnalyzerEngine()
-anonymizer = AnonymizerEngine()
 
 img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
 doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]

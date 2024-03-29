@@ -19,7 +19,7 @@ from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from unstructured.partition.auto import partition_pdf, partition
+from unstructured.partition.auto import partition
 import unstructured as us
 
 get_headers = {
@@ -33,12 +33,14 @@ get_headers = {
 def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
     st = time.time()
 
-    if filename.endswith(".pdf"):
-        if summarize_tables and openai_api_key is not None:
+    if filename.endswith(".pdf") and summarize_tables and openai_api_key is not None:
+        try:
+            from unstructured.partition.auto import partition_pdf
             elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                     strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
-        else:
-            elements = partition_pdf(filename, infer_table_structure=False, extract_images_in_pdf=False)
+                                        strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+        except ImportError:
+            logging.error("Failed to import unstructured.partition.auto.partition_pdf")
+            elements = partition(filename)
     else:
         elements = partition(filename)
 
@@ -359,6 +361,7 @@ class Indexer(object):
                         logging.info(f"The detected language is {self.detected_language}")
                     url = actual_url
                     if self.remove_boilerplate:
+                        logging.info(f"Removing boilerplate from content of {url}, and extracting important text only")
                         text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
                     else:
                         extracted_title = BeautifulSoup(content, 'html.parser').title.text
