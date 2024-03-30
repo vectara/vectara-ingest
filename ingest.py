@@ -90,7 +90,7 @@ def main() -> None:
         return
     
     # Add all keys from "general" section to the vectara config
-    general_dict = env_dict['general']
+    general_dict = env_dict.get('general', {})
     for k,v in general_dict.items():
         OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
 

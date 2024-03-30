@@ -143,6 +143,7 @@ The codebase includes the following components.
 - **`ingest.py`:** The main entry point for a crawl job.
 - **`Dockerfile`:** The Docker image definition file
 
+- 
 ### `core/` directory
 Fundamental utilities depended upon by the crawlers:
 
@@ -179,7 +180,14 @@ vectara:
   
   # timeout (optional); sets the URL crawling timeout in seconds
   timeout:60
+
+  # flag: remove code or not from HTML
+  remove_code: true
   
+  # flag: should text extraction from web pages use special processing to remove boilerplate
+  # this may be useful when processing news pages or others which have a lot of advertising content
+  remove_boilerplate: false
+
   # summarize_tables (optional; default False)
   # This option provides special processing for tables inside PDFs.
   # This requires the `secrets.toml` to include a special profile called `general`, 
@@ -187,7 +195,7 @@ vectara:
   # the code will add table summarization (using OpenAI) as document text while # ingesting PDF content.
   # **Note**: this processing is quite slow and will require you to have an additional paid subscription to OpenAI. The code uses the "detectron2_onnx" unstructured model which is fastest. You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
   # See here for some specific [examples](TABLE_SUMMARY.md) of how table summary works
-  summarize_table: false
+  summarize_tables: false
   
   # Whether masking of PII is attempted on all text fields (title, text, metadata values)
   # Notes: 
@@ -225,7 +233,9 @@ MOTION_API_KEY="<YOUR-NOTION-API-KEY>
 
 This allows easy secrets management when you have multiple crawl jobs that may not share the same secrets. For example when you have a different Vectara API key for indexing differnet corpora.
 
-Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the secrets file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
+Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the `secrets.toml` file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
+
+If you are using the table summarization feature, which utilizes OPENAI, you have to provide your own OPENAI API key. In this case, you would need to put that key under the `[general]` profile. This is a special profile name reserved for this purpose.
 
 ### Indexer Class
 
@@ -235,8 +245,8 @@ The `Indexer` class provides useful functionality to index documents into Vectar
 
 ##### `index_url()`
 
-This is probably the most useful method. It takes a URL as input and extracts the content from that URL (using the `playwright` and `Goose3` libraries), then sends that content to Vectara using the standard indexing API. If the URL points to a PDF document, special care is taken to ensure proper processing.
-Please note that we use `Goose3` to extract the main (most important) content of the article, ignoring links, ads and other not-important content. If your crawled content has different requirements you can change the code to use a different extraction mechanism (html to text).
+This is probably the most useful method. It takes a URL as input and extracts the content from that URL (using the `playwright` library), then sends that content to Vectara using the standard indexing API. If the URL points to a PDF document, special care is taken to ensure proper processing.
+Please note that the special flag `remove_boilerplate` can be set to true if you want the content to be stripped of boilerplate text (e.g. advertising content). In this case the indexer uses `Goose3` and `justext` to extract the main (most important) content of the article, ignoring links, ads and other not-important content. 
 
 ##### `index_file()`
 
