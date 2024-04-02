@@ -73,6 +73,7 @@ def get_doc_metadata(channel, message, users_info):
     metadata = {}
     try:
         metadata.update({
+            "source": "slack",
             "channel": channel["name"],
             "author": users_info.get(message.get("user"), "bot"),
             "message_time": get_datetime_from_epoch(message["ts"]),
@@ -135,6 +136,8 @@ def get_document(channel, message, users_info):
 
     doc_text = message.get("text", '')
     doc_id = f'vectara_{channel["id"]}_{message["ts"]}'
+    message_date = datetime.datetime.fromtimestamp(float(message["ts"])).strftime('%Y-%m-%d')
+    title = f'{users_info.get(message.get("user"), "bot")}@{channel["name"]} - {message_date}'
     doc_metadata = get_doc_metadata(channel, message, users_info)
     sections = []
 
@@ -166,6 +169,7 @@ def get_document(channel, message, users_info):
 
     return {
         "documentId": doc_id,
+        "title": title,
         "metadataJson": doc_metadata,
         "section": sections
     }
