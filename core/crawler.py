@@ -8,6 +8,8 @@ from core.indexer import Indexer
 from core.pdf_convert import PDFConverter
 from core.utils import img_extensions, doc_extensions, archive_extensions
 from slugify import slugify
+from urllib.parse import urlparse
+
 
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
@@ -16,6 +18,10 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+def url_is_relative(url: str) -> bool:
+    parsed_url = urlparse(url)
+    return not parsed_url.scheme and not parsed_url.netloc
 
             
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
@@ -41,7 +47,7 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
 
     try:
         _, _, new_urls = indexer.fetch_page_contents(url)
-        new_urls = [urljoin(url, u) if u[0]=='/' else u for u in new_urls]  # convert all new URLs to absolute URLs
+        new_urls = [urljoin(url, u) if url_is_relative(u) else u for u in new_urls]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
                     if      u not in visited and u.startswith('http') 
                     and     (len(pos_regex)==0 or any([r.match(u) for r in pos_regex]))
