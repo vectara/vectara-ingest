@@ -3,7 +3,7 @@ import os
 from usp.tree import sitemap_tree_for_homepage
 from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
-from core.utils import clean_urls, archive_extensions, img_extensions
+from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension
 from core.indexer import Indexer
 import re
 from typing import List, Set
@@ -106,7 +106,8 @@ class WebsiteCrawler(Crawler):
         logging.info(f"Collected {len(urls)} URLs to crawl and index")
 
         # print some file types
-        file_types = list(set([u[-10:].split('.')[-1] for u in urls if '.' in u[-10:]]))
+        file_types = list(set([get_file_extension(u) for u in urls]))
+        file_types = [t for t in file_types if t != ""]
         logging.info(f"File types = {file_types}")
 
         delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)            # seconds between requests

@@ -1,6 +1,7 @@
 import requests
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 import re
@@ -107,6 +108,13 @@ def get_file_size_in_MB(file_path: str) -> float:
     file_size_bytes = os.path.getsize(file_path)
     file_size_MB = file_size_bytes / (1024 * 1024)    
     return file_size_MB
+
+def get_file_extension(url):
+    # Parse the URL to get the path component
+    path = urlparse(url).path
+    # Use pathlib to extract the file extension
+    return Path(path).suffix.lower()
+
 
 class TableSummarizer():
     def __init__(self, openai_api_key: str):
