@@ -8,9 +8,11 @@
 
 `vectara-ingest` includes a number of crawlers that make it easy to crawl data sources and index the results into Vectara.
 
-`vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in Indexer.index_url to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. `vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
+If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in `Indexer.index_url` to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. 
 
-Let's go through each of these crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
+`vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
+
+Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
 ### Website crawler
 
@@ -21,7 +23,7 @@ website_crawler:
     pos_regex: []
     neg_regex: []
     delay: 1
-    pages_source: sitemap
+    pages_source: crawl
     max_depth: 3      # only needed if pages_source is set to 'crawl'
     extraction: playwright
     ray_workers: 0
@@ -29,19 +31,19 @@ website_crawler:
 ```
 
 The website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
-1. `sitemap`: in this mode the crawler retrieves the sitemap of the target websites (`urls`: list of URLs) and indexes all the URLs listed in each sitemap. Note that some sitemaps are partial only and do not list all content of the website - in those cases, `crawl` may be a better option.
-2. `crawl`: in this mode the crawler starts from the homepage and crawls the website, following links no more than `max_depth`
+1. `sitemap`: in this mode the crawler retrieves the sitemap for each of the target websites (specificed in the `urls` parameter) and indexes all the URLs listed in each sitemap. Note that some sitemaps are partial only and do not list all content of the website - in those cases, `crawl` may be a better option.
+2. `crawl`: in this mode for each url specified in `urls`, the crawler starts there and crawls the website recursively, following links no more than `max_depth`.
 
 The `extraction` parameter defines how page content is extracted from URLs. 
 1. The default (and better) option is `playwright` which results in using [playwright](https://playwright.dev/) to render the page content including JS and then extracting the HTML.
-2. The other option is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. This is the preferred method as the rendering operation is helpful to extract any text that may be due to Javascript or other scriping execution. 
+2. The other option is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. 
 
 Other parameters:
 - `delay` specifies the number of seconds to wait between consecutive requests to avoid rate limiting issues. 
-- `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion
-- `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
+- `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion.
+- `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion.
 
-`ray_workers`, if it exists, defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
+`ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
 
 ### Database crawler
@@ -64,15 +66,15 @@ The database crawler can be used to read data from a relational database and ind
   - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
 - `db_table` the table name in the database
 - `select_condition` optional condition to filter rows in the table by
-- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
-- `text_columns` a list of column names that include textual information we want to use 
-- `title_column` is an optional column name that will hold textual information to be used as title
-- `metadata_columns` a list of column names that we want to use as metadata
+- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. The crawler will also use the content in these columns (concatenated) as the title for that row in the Vectara document. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
+- `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
+- `title_column` is an optional column name that will hold textual information to be used as title at the document level.
+- `metadata_columns` a list of column names that we want to use as metadata.
 
 In the above example, the crawler would
 1. Include all rows in the database "yelp" that are from the city of New Orleans (`SELECT * FROM yelp WHERE city='New Orleans'`)
 2. Group all rows that have the same values for `postal_code` into the same Vectara document
-3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `business_name` and `review_text` and including the meta-data fields `city`, `state` and `postal_code`.
+3. Each such Vectara document that is indexed, will include several sections (one per row), each representing the textual fields `business_name` and `review_text` and including the meta-data fields `city`, `state` and `postal_code`.
 
 ### CSV crawler
 
@@ -98,14 +100,14 @@ In the above example, the crawler would
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
 
-### JSON crawler
+### Bulk Upload crawler
 
 ```yaml
 ...
-buldupload_crawler:
+bulkupload_crawler:
     json_path: "/path/to/file.JSON"
 ```
-The Bulk Upload crawler accepts a single JSON file that is an array of Vectara JSON document objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats). It then iterates through these document objects, and uploads them one by one to Vevctara.
+The Bulk Upload crawler accepts a single JSON file that is an array of Vectara JSON document objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats). It then iterates through these document objects, and uploads them one by one to Vectara.
 
 This bulk upload crawler has no parameters.
 
@@ -130,11 +132,11 @@ rss_crawler:
 ```
 
 The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news sites. In the example above, the rss_crawler is configured to crawl various newsfeeds from the BBC. 
-- `source` specifies the name of the rss data feed
+- `source` specifies the name of the rss data feed.
 - `rss_pages` defines one or more RSS feed locations. 
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds between to wait between news articles, so as to make the crawl more friendly to the hosting site.
-- `extraction` defines how we process URLs (pdf or html) as as with the website crawler.
+- `extraction` defines how text is extracted from the URLs referred to by the RSS feed, in a similar fashion to the website crawler above.
 
 ### Hackernews crawler
 
@@ -159,6 +161,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     docs_repo: "https://github.com/vectara/vectara-docs"
     docs_homepage: "https://docs.vectara.com/docs"
     docs_system: "docusaurus"
+    extensions_to_ignore: ["ipynb", "txt"]
     ray_workers: 0
 ```
 
@@ -168,9 +171,9 @@ It has two parameters
 - `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion
 - `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
-- `doc_system` defines the type of documentation system we will crawl for content. Currently supported `docusaurus` or `readthedocs`
+- `doc_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
-Note that ray with docker does not work on Mac M1/M2 machines.
+Note that Ray with docker does not work on Mac M1/M2 machines.
 
 
 ### Discourse crawler
@@ -255,7 +258,7 @@ The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.githu
     extensions: ['.pdf']
 ```
 
-The folder crawler simple indexes all content that's in a specified local folder.
+The folder crawler indexes all files specified from a local folder.
 - `path`: the local folder location
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 - `source`: a string that is added to each file's metadata under the "source" field
@@ -276,6 +279,15 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 
 ### Slack crawler
+
+```yaml
+...
+slack_crawler:
+  days_past: 30
+  channels_to_skip: ["alerts"]
+  retries: 5
+```
+
 To use the slack crawler you need to create slack bot app and give it permissions. Following are the steps.
 - **Create a Slack App**: Log in to your Slack workspace and navigate to the Slack API website. Click on "Your Apps" and then "Create New App." Provide a name for your app, select the workspace where you want to install it, and click "Create App."
 
@@ -289,13 +301,7 @@ To use the slack crawler you need to create slack bot app and give it permission
 
 - Place the generated user token in `secrets.toml`.
   - `SLACK_USER_TOKEN= <user_token>`
-```yaml
-...
-slack_crawler:
-  days_past: 30
-  channels_to_skip: ["alerts"]
-  retries: 5
-```
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
