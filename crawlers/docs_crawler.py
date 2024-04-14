@@ -134,7 +134,7 @@ class DocsCrawler(Crawler):
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
-            ray.init(num_cpus=ray_workers, log_to_driver=True)
+            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(UrlCrawlWorker).remote(self.indexer) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
