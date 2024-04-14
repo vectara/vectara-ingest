@@ -158,11 +158,12 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
 ```yaml
 ...
   docs_crawler:
-    docs_repo: "https://github.com/vectara/vectara-docs"
-    docs_homepage: "https://docs.vectara.com/docs"
-    docs_system: "docusaurus"
-    extensions_to_ignore: ["ipynb", "txt"]
-    ray_workers: 0
+    base_urls: ["https://docs.vectara.com/docs"]
+    pos_regex: [".*vectara.com/docs.*"]
+    neg_regex: [".*vectara.com/docs/rest-api/.*"]
+    extensions_to_ignore: ["php", "java", "py", "js"]
+    docs_system: docusaurus
+    remove_code: true
 ```
 
 The Docs crawler processes and indexes content published on different documentation systems.
