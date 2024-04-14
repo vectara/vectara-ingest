@@ -28,7 +28,7 @@ cp $1 ~/tmp/mount/
 # Build docker container
 ARCH=$(uname -m)
 if [[ "$ARCH" != "arm64" ]]; then
-    ARCH="x86"
+    ARCH="amd64"
 fi
 
 # Determine the build command based on the availability of Buildx
