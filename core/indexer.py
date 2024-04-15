@@ -150,7 +150,7 @@ class Indexer(object):
             if debug:
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
-            page.goto(url, timeout=self.timeout*1000, wait_until="networkidle")
+            page.goto(url, timeout=self.timeout*1000, wait_until="load")
             content = page.content()
             out_url = page.url
             links_elements = page.query_selector_all("a")
@@ -158,10 +158,12 @@ class Indexer(object):
             
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url}")
+
         except Exception as e:
             self.logger.info(f"Page loading failed for {url} with exception '{e}'")
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
+        
         finally:
             if page:
                 page.close()
