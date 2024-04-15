@@ -3584,20 +3584,6 @@ files = [
 full = ["numpy"]
 
 [[package]]
-name = "ratelimiter"
-version = "1.2.0"
-description = "Simple python rate limiting object"
-optional = false
-python-versions = "*"
-files = [
-    {file = "ratelimiter-1.2.0-py2.py3-none-any.whl", hash = "sha256:d22d933016b803df8c08e6532b9b84678bf4557164d611a4817db9e5434fcd72"},
-    {file = "ratelimiter-1.2.0.tar.gz", hash = "sha256:f724b256264afdeab0225ec174728b0f8af1afd1cc122463150daf226b411fb6"},
-]
-
-[package.extras]
-test = ["pytest (>=3.0)", "pytest-asyncio"]
-
-[[package]]
 name = "ray"
 version = "2.9.3"
 description = "Ray provides a simple, universal API for building distributed applications."
@@ -4739,4 +4725,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "8f08e7ade1b729fae6abbc180f6654d08731e9e5f18413741b46e8ec98e72bd2"
+content-hash = "aea7252361d3780ec544d14de64b71279adb8bb12af56851a826facf7a08617e"

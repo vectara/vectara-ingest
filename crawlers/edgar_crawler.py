@@ -4,10 +4,9 @@ import time
 from bs4 import BeautifulSoup 
 import pandas as pd
 import datetime
-from ratelimiter import RateLimiter
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, RateLimiter
 
 from typing import Dict, List
 
@@ -37,8 +36,7 @@ def get_filings(cik: str, start_date_str: str, end_date_str: str, filing_type: s
     
     filings: List[Dict[str, str]] = []
     current_start = 0
-    rate_limiter = RateLimiter(max_calls=1, period=1)
-    
+    rate_limiter = RateLimiter(1)
     session = create_session_with_retries()
 
     while True:
@@ -88,7 +86,7 @@ class EdgarCrawler(Crawler):
         self.end_date = self.cfg.edgar_crawler.end_date
 
     def crawl(self) -> None:
-        rate_limiter = RateLimiter(max_calls=1, period=1)
+        rate_limiter = RateLimiter(5)
         for ticker in self.tickers:
             logging.info(f"downloading 10-Ks for {ticker}")
             
