@@ -148,7 +148,7 @@ class Indexer(object):
             if debug:
                 page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
 
-            page.goto(url, timeout=self.timeout*1000, wait_until="networkidle")
+            page.goto(url, timeout=self.timeout*1000, wait_until="load")
             content = page.content()
             out_url = page.url
             links_elements = page.query_selector_all("a")
