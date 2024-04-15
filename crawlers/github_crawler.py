@@ -79,7 +79,7 @@ class GithubCrawler(Crawler):
         self.owner = self.cfg.github_crawler.owner
         self.repos = self.cfg.github_crawler.repos
         self.crawl_code = self.cfg.github_crawler.crawl_code
-        self.rate_limiter = RateLimiter(2)
+        self.rate_limiter = RateLimiter(self.cfg.github_crawler.get("num_per_second", 2))
         self.session = create_session_with_retries()
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)

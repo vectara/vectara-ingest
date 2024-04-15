@@ -214,12 +214,16 @@ The mediawiki crawler first looks at media statistics to determine the most view
     owner: "vectara"
     repos: ["getting-started", "protos", "slackbot", "magazine-search-demo", "web-crawler", "Search-UI", "hotel-reviews-demo"]
     crawl_code: false
+    num_per_second: 2
+
 ```
 
 The GitHub crawler indexes content from GitHub repositories into Vectara. 
 - `repos`: list of repository names to crawl
 - `owner`: GitHub repository owner
 - `crawl_code`: by default the crawler indexes only issues and comments; if this is set to True it will also index the source code (but that's usually not recommended).
+- `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
+
 
 It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file under the specific profile you're going to use. The GITHUB_TOKEN (see [here](https://docs.github.com/en/enterprise-server@3.10/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for how to create one for yourself) ensures you don't run against rate limits.
 
