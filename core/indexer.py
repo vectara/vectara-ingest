@@ -39,7 +39,7 @@ def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str
             elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
                                         strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
         except ImportError:
-            logging.error("Failed to import unstructured.partition.auto.partition_pdf")
+            self.logger.error("Failed to import unstructured.partition.auto.partition_pdf")
             elements = partition(filename)
     else:
         elements = partition(filename)
@@ -57,7 +57,7 @@ def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str
         else:
             texts.append(str(t))
 
-    logging.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
+    self.logger.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
     return title, texts
 
 
@@ -71,23 +71,25 @@ class Indexer(object):
         corpus_id (int): ID of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, reindex: bool = True) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
         self.cfg = cfg
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
         self.api_key = api_key
-        self.reindex = reindex
+        self.reindex = cfg.vectara.get("reindex", False)
+        self.verbose = cfg.vectara.get("verbose", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
+        self.logger = logging.getLogger()
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables:
-                logging.info("OpenAI API key not found, disabling table summarization")
+                self.logger.info("OpenAI API key not found, disabling table summarization")
             self.summarize_tables = False
 
         self.setup()
@@ -97,7 +99,7 @@ class Indexer(object):
             return mask_pii(text)
         return text
 
-    def setup(self):
+    def setup(self) -> None:
         self.session = create_session_with_retries()
         # Create playwright browser so we can reuse it across all Indexer operations
         self.p = sync_playwright().start()
@@ -146,7 +148,7 @@ class Indexer(object):
                 else route.continue_() 
             ) 
             if debug:
-                page.on('console', lambda msg: logging.info(f"playwright debug: {msg.text})"))
+                page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
             page.goto(url, timeout=self.timeout*1000, wait_until="load")
             content = page.content()
@@ -155,11 +157,13 @@ class Indexer(object):
             links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
             
         except PlaywrightTimeoutError:
-            logging.info(f"Page loading timed out for {url}")
+            self.logger.info(f"Page loading timed out for {url}")
+
         except Exception as e:
-            logging.info(f"Page loading failed for {url} with exception '{e}'")
+            self.logger.info(f"Page loading failed for {url} with exception '{e}'")
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
+        
         finally:
             if page:
                 page.close()
@@ -191,7 +195,7 @@ class Indexer(object):
             verify=True, headers=post_headers)
         
         if response.status_code != 200:
-            logging.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
+            self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
     
@@ -206,7 +210,7 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         if os.path.exists(filename) == False:
-            logging.error(f"File {filename} does not exist")
+            self.logger.error(f"File {filename} does not exist")
             return False
 
         post_headers = { 
@@ -231,17 +235,17 @@ class Indexer(object):
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
                     files=files, verify=True, headers=post_headers)
                 if response.status_code == 200:
-                    logging.info(f"REST upload for {uri} successful (reindex)")
+                    self.logger.info(f"REST upload for {uri} successful (reindex)")
                     return True
                 else:
-                    logging.info(f"REST upload for {uri} (reindex) failed with code = {response.status_code}, text = {response.text}")
+                    self.logger.info(f"REST upload for {uri} (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
         elif response.status_code != 200:
-            logging.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
+            self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
-        logging.info(f"REST upload for {uri} succeesful")
+        self.logger.info(f"REST upload for {uri} succeesful")
         return True
 
     def _index_document(self, document: Dict[str, Any]) -> bool:
@@ -264,17 +268,17 @@ class Indexer(object):
         try:
             data = json.dumps(request)
         except Exception as e:
-            logging.info(f"Can't serialize request {request}, skipping")   
+            self.logger.info(f"Can't serialize request {request}, skipping")   
             return False
 
         try:
             response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
         except Exception as e:
-            logging.info(f"Exception {e} while indexing document {document['documentId']}")
+            self.logger.info(f"Exception {e} while indexing document {document['documentId']}")
             return False
 
         if response.status_code != 200:
-            logging.error("REST upload failed with code %d, reason %s, text %s",
+            self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
                           response.text)
@@ -285,17 +289,17 @@ class Indexer(object):
            ("ALREADY_EXISTS" in result["status"]["code"] or \
             ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
             if self.reindex:
-                logging.info(f"Document {document['documentId']} already exists, re-indexing")
+                self.logger.info(f"Document {document['documentId']} already exists, re-indexing")
                 self.delete_doc(document['documentId'])
                 response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
                 return True
             else:
-                logging.info(f"Document {document['documentId']} already exists, skipping")
+                self.logger.info(f"Document {document['documentId']} already exists, skipping")
                 return False
         if "status" in result and result["status"] and "OK" in result["status"]["code"]:
             return True
         
-        logging.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
         return False
     
     def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
@@ -317,9 +321,9 @@ class Indexer(object):
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192): 
                         f.write(chunk)
-                logging.info(f"File downloaded successfully and saved as {file_path}")
+                self.logger.info(f"File downloaded successfully and saved as {file_path}")
             else:
-                logging.info(f"Failed to download file. Status code: {response.status_code}")
+                self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
             # parse downloaded file
             try:
@@ -328,7 +332,7 @@ class Indexer(object):
                 titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
                 extracted_title = titles[0] if len(titles)>0 else 'unknown'
             except Exception as e:
-                logging.info(f"Failed to crawl {url} - extracting content from file failed, with error {e}, skipping...")
+                self.logger.info(f"Failed to crawl {url} - extracting content from file failed, with error {e}, skipping...")
                 return False
 
         else:
@@ -358,19 +362,20 @@ class Indexer(object):
                         soup = BeautifulSoup(content, 'html.parser')
                         body_text = soup.body.get_text()
                         self.detected_language = detect_language(body_text)
-                        logging.info(f"The detected language is {self.detected_language}")
+                        self.logger.info(f"The detected language is {self.detected_language}")
                     url = actual_url
                     if self.remove_boilerplate:
-                        logging.info(f"Removing boilerplate from content of {url}, and extracting important text only")
+                        if self.verbose:
+                            self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
                         text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
                     else:
                         extracted_title = BeautifulSoup(content, 'html.parser').title.text
                         text = html_to_text(content, self.remove_code)
                     parts = [text]
-                    logging.info(f"retrieving content took {time.time()-st:.2f} seconds")
+                    self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
                 except Exception as e:
                     import traceback
-                    logging.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
+                    self.logger.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                     return False
         
         doc_id = slugify(url)
@@ -401,7 +406,8 @@ class Indexer(object):
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
 
-        logging.info(f"Indexing document {doc_id} with {document}")
+        if self.verbose:
+            self.logger.info(f"Indexing document {doc_id} with {document}")
 
         return self.index_document(document)
 
@@ -423,7 +429,7 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         if os.path.exists(filename) == False:
-            logging.error(f"File {filename} does not exist")
+            self.logger.error(f"File {filename} does not exist")
             return False
 
         # Parse locally and index text only in two cases:
@@ -438,7 +444,7 @@ class Indexer(object):
             title, texts = _parse_local_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
-            logging.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
+            self.logger.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
             return succeeded
         else:
             # index the file within Vectara (use FILE UPLOAD API)

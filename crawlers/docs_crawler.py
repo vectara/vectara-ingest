@@ -4,34 +4,37 @@ import logging
 from urllib.parse import urljoin, urlparse
 import re
 from collections import deque
-from ratelimiter import RateLimiter
-from core.utils import create_session_with_retries, binary_extensions
+from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging
 from typing import Tuple, Set
 from core.indexer import Indexer
 import psutil
 import ray
 
 class UrlCrawlWorker(object):
-    def __init__(self, indexer: Indexer):
+    def __init__(self, indexer: Indexer, num_per_second: int):
         self.indexer = indexer
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.rate_limiter = RateLimiter(num_per_second)
 
     def setup(self):
         self.indexer.setup()
+        setup_logging()
 
     def process(self, url: str, source: str):
+        if url is None:
+            logging.info(f"URL is None, skipping")
+            return -1
         metadata = {"source": source, "url": url}
-        self.logger.info(f"Crawling and indexing {url}")
+        logging.info(f"Crawling and indexing {url}")
         try:
-            succeeded = self.indexer.index_url(url, metadata=metadata)
+            with self.rate_limiter:
+                succeeded = self.indexer.index_url(url, metadata=metadata)
             if not succeeded:
-                self.logger.info(f"Indexing failed for {url}")
+                logging.info(f"Indexing failed for {url}")
             else:
-                self.logger.info(f"Indexing {url} was successful")
+                logging.info(f"Indexing {url} was successful")
         except Exception as e:
             import traceback
-            self.logger.error(
+            logging.error(
                 f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
@@ -53,8 +56,7 @@ class DocsCrawler(Crawler):
             'User-Agent': 'Mozilla/5.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
-        with self.rate_limiter:
-            response = self.session.get(url, headers=headers)
+        response = self.session.get(url, headers=headers)
         if response.status_code != 200:
             logging.info(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None
@@ -73,9 +75,9 @@ class DocsCrawler(Crawler):
         page_content = BeautifulSoup(response.content, 'lxml')
         return url, page_content
 
-    def collect_urls(self, base_url: str) -> None:
+    def collect_urls(self, base_url: str, num_per_second: int) -> None:
         new_urls = deque([base_url])
-
+        rate_limiter = RateLimiter(num_per_second)
         # Crawl each URL in the queue
         while len(new_urls):
             n_urls = len(self.crawled_urls)
@@ -86,7 +88,8 @@ class DocsCrawler(Crawler):
             url = new_urls.popleft()
 
             try:
-                url, page_content = self.get_url_content(url)
+                with rate_limiter:
+                    url, page_content = self.get_url_content(url)
                 self.crawled_urls.add(url)
 
                 # Find all the new URLs in the page's content and add them into the queue
@@ -121,28 +124,29 @@ class DocsCrawler(Crawler):
         self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.get("neg_regex", [])]
 
         self.session = create_session_with_retries()
-        self.rate_limiter = RateLimiter(max_calls=2, period=1)
 
-        for base_url in self.cfg.docs_crawler.base_urls:
-            self.collect_urls(base_url)
-
-        logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         source = self.cfg.docs_crawler.docs_system
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
+        num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
+
+        for base_url in self.cfg.docs_crawler.base_urls:
+            self.collect_urls(base_url, num_per_second=num_per_second)
+
+        logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(UrlCrawlWorker).remote(self.indexer) for _ in range(ray_workers)]
+            actors = [ray.remote(UrlCrawlWorker).remote(self.indexer, num_per_second) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), self.crawled_urls))
                 
         else:
-            crawl_worker = UrlCrawlWorker(self.indexer)
+            crawl_worker = UrlCrawlWorker(self.indexer, num_per_second)
             for inx, url in enumerate(self.crawled_urls):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(self.crawled_urls)}")

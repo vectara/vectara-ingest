@@ -179,7 +179,10 @@ vectara:
   reindex: false
   
   # timeout: sets the URL crawling timeout in seconds (optional)
-  timeout:60
+  timeout: 90
+
+  # flag: if true, will print extra debug messages when active
+  verbose: false
 
   # flag: remove code or not from HTML (optional)
   remove_code: true

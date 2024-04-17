@@ -8,8 +8,7 @@ import base64
 from datetime import datetime
 import markdown
 
-from ratelimiter import RateLimiter
-from core.utils import create_session_with_retries, html_to_text
+from core.utils import create_session_with_retries, html_to_text, RateLimiter
 
 from typing import List, Any
 
@@ -80,7 +79,7 @@ class GithubCrawler(Crawler):
         self.owner = self.cfg.github_crawler.owner
         self.repos = self.cfg.github_crawler.repos
         self.crawl_code = self.cfg.github_crawler.crawl_code
-        self.rate_limiter = RateLimiter(max_calls=1, period=1)
+        self.rate_limiter = RateLimiter(self.cfg.github_crawler.get("num_per_second", 2))
         self.session = create_session_with_retries()
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount('http://', adapter)

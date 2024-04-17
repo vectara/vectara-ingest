@@ -9,6 +9,6 @@ crawling:
 website_crawler:
   urls: [https://www.illinoislegalaid.org/]
   pos_regex: [".*illinoislegalaid.*"]
-  delay: 1
+  num_per_second: 1
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
   extraction: playwright # pdf or playwright

@@ -25,7 +25,8 @@ def url_is_relative(url: str) -> bool:
 
             
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
-                    indexer: Indexer, visited: Optional[Set[str]]=None) -> Set[str]:
+                    indexer: Indexer, visited: Optional[Set[str]]=None, 
+                    verbose: bool = False) -> Set[str]:
     if visited is None:
         visited = set()
 
@@ -58,11 +59,13 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
 
         if len(new_urls) > 0:
             logging.info(f"collected {len(visited)} URLs so far")
+            if verbose:
+                print(f"URLs so far: {visited}")
 
         for new_url in new_urls:
-            visited = recursive_crawl(new_url, depth-1, pos_regex, neg_regex, indexer, visited)
+            visited = recursive_crawl(new_url, depth-1, pos_regex, neg_regex, indexer, visited, verbose)
     except Exception as e:
-        logging.info(f"Error {e} in recursive_crawl for {url}")
+        logging.error(f"Error {e} in recursive_crawl for {url}")
         pass
 
     return set(visited)
@@ -88,8 +91,8 @@ class Crawler(object):
         api_key: str,
     ) -> None:
         self.cfg: DictConfig = DictConfig(cfg)
-        reindex = self.cfg.vectara.get("reindex", False)
-        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key, reindex)
+        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key)
+        self.verbose = cfg.vectara.get("verbose", False)
 
     def url_to_file(self, url: str, title: str) -> str:
         """

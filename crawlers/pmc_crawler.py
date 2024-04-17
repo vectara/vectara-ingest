@@ -3,11 +3,10 @@ import os
 from Bio import Entrez
 import json
 from bs4 import BeautifulSoup
-from ratelimiter import RateLimiter
 import xmltodict
 from datetime import datetime, timedelta
 from typing import Set, List, Dict, Any
-from core.utils import html_to_text, create_session_with_retries
+from core.utils import html_to_text, create_session_with_retries, RateLimiter
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 
@@ -33,6 +32,7 @@ class PmcCrawler(Crawler):
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         self.site_urls: Set[str] = set()
         self.crawled_pmc_ids: Set[str] = set()
+        self.rate_limiter = RateLimiter(self.cfg.pmc_crawler.get("num_per_second", 3))
         self.session = create_session_with_retries()
 
     def index_papers_by_topic(self, topic: str, n_papers: int) -> None:
@@ -44,7 +44,6 @@ class PmcCrawler(Crawler):
         logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
 
         # index the papers
-        rate_limiter = RateLimiter(max_calls=3, period=1)
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
         for i, pmc_id in enumerate(papers):
             if i%100 == 0:
@@ -54,7 +53,7 @@ class PmcCrawler(Crawler):
 
             params = {"db": "pmc", "id": pmc_id, "retmode": "xml", "tool": "python_script", "email": email}
             try:
-                with rate_limiter:
+                with self.rate_limiter:
                     response = self.session.get(base_url, params=params)
             except Exception as e:
                 logging.info(f"Failed to download paper {pmc_id} due to error {e}, skipping")
@@ -146,7 +145,6 @@ class PmcCrawler(Crawler):
     def index_medline_plus(self, topics: List[str]) -> None:
         xml_dict = self._get_xml_dict()
         logging.info(f"Indexing {xml_dict['health-topics']['@total']} health topics from MedlinePlus")    
-        rate_limiter = RateLimiter(max_calls=3, period=1)
 
         for ht in xml_dict['health-topics']['health-topic']:
             title = ht['@title']
@@ -196,7 +194,7 @@ class PmcCrawler(Crawler):
                     continue
                 else:
                     self.site_urls.add(site_url)
-                with rate_limiter:
+                with self.rate_limiter:
                     succeeded = self.indexer.index_url(site_url, metadata={'url': site_url, 'source': 'medline_plus', 'title': site_title})
 
     def crawl(self) -> None:

@@ -4,10 +4,9 @@ import time
 from bs4 import BeautifulSoup 
 import pandas as pd
 import datetime
-from ratelimiter import RateLimiter
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, RateLimiter
 
 from typing import Dict, List
 
@@ -26,7 +25,7 @@ def get_headers() -> Dict[str, str]:
     }
     return headers
 
-def get_filings(cik: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
+def get_filings(num_per_second: int, cik: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
     base_url = "https://www.sec.gov/cgi-bin/browse-edgar"
     params = {
         "action": "getcompany", "CIK": cik, "type": filing_type, "dateb": "", "owner": "exclude", 
@@ -37,8 +36,7 @@ def get_filings(cik: str, start_date_str: str, end_date_str: str, filing_type: s
     
     filings: List[Dict[str, str]] = []
     current_start = 0
-    rate_limiter = RateLimiter(max_calls=1, period=1)
-    
+    rate_limiter = RateLimiter(num_per_second)
     session = create_session_with_retries()
 
     while True:
@@ -86,14 +84,15 @@ class EdgarCrawler(Crawler):
         self.tickers = self.cfg.edgar_crawler.tickers
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date
+        self.num_per_second = self.cfg.pmc_crawler.get("num_per_second", 5)
+        self.rate_limiter = RateLimiter(self.num_per_second)
 
     def crawl(self) -> None:
-        rate_limiter = RateLimiter(max_calls=1, period=1)
         for ticker in self.tickers:
             logging.info(f"downloading 10-Ks for {ticker}")
             
             cik = ticker_dict[ticker]
-            filings = get_filings(cik, self.start_date, self.end_date, '10-K')
+            filings = get_filings(self.num_per_second, cik, self.start_date, self.end_date, '10-K')
 
             # no more filings in search universe
             if len(filings) == 0:
@@ -104,7 +103,7 @@ class EdgarCrawler(Crawler):
                 title = ticker + '-' + filing['date'] + '-' + filing['html_url'].split("/")[-1].split(".")[0]
                 logging.info(f"indexing document {url}")
                 metadata = {'source': 'edgar', 'url': url, 'title': title}
-                with rate_limiter:
+                with self.rate_limiter:
                     succeeded = self.indexer.index_url(url, metadata=metadata)
                 if not succeeded:
                     logging.info(f"Indexing failed for url {url}")

@@ -15,6 +15,7 @@ RUN apt-get update
 
 ENV HOME /home/vectara
 ENV XDG_RUNTIME_DIR=/tmp
+ENV RAY_DEDUP_LOGS="0"
 WORKDIR ${HOME}
 SHELL ["/bin/bash", "-c"]
 

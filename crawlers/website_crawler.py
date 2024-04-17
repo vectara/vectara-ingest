@@ -1,9 +1,8 @@
 import logging
 import os
 from usp.tree import sitemap_tree_for_homepage
-from ratelimiter import RateLimiter
 from core.crawler import Crawler, recursive_crawl
-from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension
+from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging
 from core.indexer import Indexer
 import re
 from typing import List, Set
@@ -17,53 +16,50 @@ logging.getLogger("usp.helpers").setLevel(logging.ERROR)
 
 
 class PageCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler):
+    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
         self.crawler = crawler
         self.indexer = indexer
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.rate_limiter = RateLimiter(num_per_second)
 
     def setup(self):
         self.indexer.setup()
+        setup_logging()
 
-    def process(self, url: str, extraction: str, delay: int, source: str):
-        rate_limiter = RateLimiter(
-            max_calls=1, period=delay                                   # at most 1 call every `delay` seconds
-        )
+    def process(self, url: str, extraction: str, source: str):
         metadata = {"source": source, "url": url}
         if extraction == "pdf":
             try:
-                with rate_limiter:
+                with self.rate_limiter:
                     filename = self.crawler.url_to_file(url, title="")
             except Exception as e:
-                self.logger.error(f"Error while processing {url}: {e}")
+                logging.error(f"Error while processing {url}: {e}")
                 return -1
             try:
                 succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
                 if not succeeded:
-                    self.logger.info(f"Indexing failed for {url}")
+                    logging.info(f"Indexing failed for {url}")
                 else:
                     if os.path.exists(filename):
                         os.remove(filename)
-                    self.logger.info(f"Indexing {url} was successful")
+                    logging.info(f"Indexing {url} was successful")
             except Exception as e:
                 import traceback
-                self.logger.error(
+                logging.error(
                     f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                 )
                 return -1
         else:  # use index_url which uses PlayWright
-            self.logger.info(f"Crawling and indexing {url}")
+            logging.info(f"Crawling and indexing {url}")
             try:
-                with rate_limiter:
+                with self.rate_limiter:
                     succeeded = self.indexer.index_url(url, metadata=metadata)
                 if not succeeded:
-                    self.logger.info(f"Indexing failed for {url}")
+                    logging.info(f"Indexing failed for {url}")
                 else:
-                    self.logger.info(f"Indexing {url} was successful")
+                    logging.info(f"Indexing {url} was successful")
             except Exception as e:
                 import traceback
-                self.logger.error(
+                logging.error(
                     f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
                 )
                 return -1
@@ -80,12 +76,12 @@ class WebsiteCrawler(Crawler):
         for homepage in base_urls:
             if self.cfg.website_crawler.pages_source == "sitemap":
                 tree = sitemap_tree_for_homepage(homepage)
-                urls = [page.url for page in tree.all_pages()]
+                urls = list(set([page.url for page in tree.all_pages()]))
             elif self.cfg.website_crawler.pages_source == "crawl":
                 max_depth = self.cfg.website_crawler.get("max_depth", 3)
                 urls_set = recursive_crawl(homepage, max_depth, 
                                            pos_regex=self.pos_regex, neg_regex=self.neg_regex, 
-                                           indexer=self.indexer)
+                                           indexer=self.indexer, visited=set(), verbose=self.indexer.verbose)
                 urls = clean_urls(urls_set)
                 urls = list(set(urls_set))
             else:
@@ -110,7 +106,7 @@ class WebsiteCrawler(Crawler):
         file_types = [t for t in file_types if t != ""]
         logging.info(f"File types = {file_types}")
 
-        delay = max(self.cfg.website_crawler.get("delay", 0.1), 0.1)            # seconds between requests
+        num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
         extraction = self.cfg.website_crawler.get("extraction", "playwright")   # "playwright" or "pdf"
         ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         source = self.cfg.website_crawler.get("source", "website")
@@ -122,15 +118,15 @@ class WebsiteCrawler(Crawler):
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self) for _ in range(ray_workers)]
+            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, extraction=extraction, delay=delay, source=source), urls))
+            _ = list(pool.map(lambda a, u: a.process.remote(u, extraction=extraction, source=source), urls))
                 
         else:
-            crawl_worker = PageCrawlWorker(self.indexer, self)
+            crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
             for inx, url in enumerate(urls):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(urls)}")
-                crawl_worker.process(url, extraction=extraction, delay=delay, source=source)
+                crawl_worker.process(url, extraction=extraction, source=source)

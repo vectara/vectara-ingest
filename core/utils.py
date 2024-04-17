@@ -7,6 +7,11 @@ from bs4 import BeautifulSoup
 import re
 from typing import List, Set
 import os
+import sys
+
+import time
+import threading
+import logging
 
 from langdetect import detect
 from openai import OpenAI
@@ -17,13 +22,23 @@ try:
     analyzer = AnalyzerEngine()
     anonymizer = AnonymizerEngine()
 except ImportError:
-    print("Presidio is not installed. if PII detection and masking is requested - it will not work.")
+    logging.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
 
 
-img_extensions = ["gif", "jpeg", "jpg", "mp3", "mp4", "png", "svg", "bmp", "eps", "ico"]
-doc_extensions = ["doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf", "ps"]
-archive_extensions = ["zip", "gz", "tar", "bz2", "7z", "rar"]
+img_extensions = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
+doc_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
+archive_extensions = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
 binary_extensions = archive_extensions + img_extensions + doc_extensions
+
+def setup_logging():
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+
 
 def remove_code_from_html(html_text: str) -> str:
     """Remove code and script tags from HTML."""
@@ -141,4 +156,38 @@ def mask_pii(text: str) -> str:
     anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
     return str(anonymized_text.text)
 
+# Rate Limiter class
+# Existing packages are not well maintained so we create our own (using ChatGPT)
+class RateLimiter:
+    def __init__(self, max_rate):
+        self.max_rate = max_rate
+        self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.num_executions = 0
+        self.start_time = time.time()
+
+    def __enter__(self):
+        with self.lock:
+            current_time = time.time()
+            elapsed_time = current_time - self.start_time
+
+            if elapsed_time >= 1:
+                # Reset counter and timer after a second
+                self.num_executions = 0
+                self.start_time = current_time
+            else:
+                if self.num_executions >= self.max_rate:
+                    # Wait until the second is up if limit is reached
+                    time_to_wait = 1 - elapsed_time
+                    self.condition.wait(timeout=time_to_wait)
+                    # Reset after waiting
+                    self.num_executions = 0
+                    self.start_time = time.time()
+
+            # Increment the count of executions
+            self.num_executions += 1
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        with self.lock:
+            self.condition.notify()
 
