@@ -2,7 +2,6 @@ import json
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
-from attrdict import AttrDict
 import logging
 import base64
 from datetime import datetime
@@ -127,7 +126,7 @@ class GithubCrawler(Crawler):
 
     def add_comments(self, doc: dict, comments: List[Any]) -> None:
         for d_comment in comments:
-            comment = AttrDict(d_comment)
+            comment = OmegaConf.create(d_comment)
             metadata = {
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
                 'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'updated_at': convert_date(comment.updated_at)
@@ -146,7 +145,7 @@ class GithubCrawler(Crawler):
         # Extract and index pull requests
         prs = g.get_pull_requests("all")
         for d_pr in prs:
-            pr = AttrDict(d_pr)
+            pr = OmegaConf.create(d_pr)
             doc_metadata = {
                 'source': 'github',
                 'id': pr.id, 
@@ -186,7 +185,7 @@ class GithubCrawler(Crawler):
         issues = g.get_issues("all")
         for d_issue in issues:
             # Extract issue metadata
-            issue = AttrDict(d_issue)
+            issue = OmegaConf.create(d_issue)
             title = issue.title
             description = issue.body
             created_at = convert_date(issue.created_at)
