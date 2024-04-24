@@ -10,6 +10,7 @@ packages = [{include = "vectara_ingest"}]
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 requests = "2.31.0"
+certifi = ">=2024.2.2"
 pdfkit = "1.0.0"
 ultimate-sitemap-parser = "0.5"
 authlib = "1.2.0"
