@@ -70,6 +70,7 @@ class WebsiteCrawler(Crawler):
         base_urls = self.cfg.website_crawler.urls
         self.pos_regex = [re.compile(r) for r in self.cfg.website_crawler.get("pos_regex", [])]
         self.neg_regex = [re.compile(r) for r in self.cfg.website_crawler.get("neg_regex", [])]
+        keep_query_params = self.cfg.website_crawler.get('keep_query_params', False)
 
         # grab all URLs to crawl from all base_urls
         all_urls = []
@@ -82,7 +83,7 @@ class WebsiteCrawler(Crawler):
                 urls_set = recursive_crawl(homepage, max_depth, 
                                            pos_regex=self.pos_regex, neg_regex=self.neg_regex, 
                                            indexer=self.indexer, visited=set(), verbose=self.indexer.verbose)
-                urls = clean_urls(urls_set)
+                urls = clean_urls(urls_set, keep_query_params)
                 urls = list(set(urls_set))
             else:
                 logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")

@@ -26,6 +26,7 @@ website_crawler:
     pages_source: crawl
     max_depth: 3      # only needed if pages_source is set to 'crawl'
     extraction: playwright
+    keep_query_params: false
     ray_workers: 0
 ...
 ```
@@ -42,6 +43,9 @@ Other parameters:
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
 - `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion.
 - `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion.
+- `keep_query_params`: if true, maintains the full URL including query params in the URL. If false, then it removes query params from collected URLs.
+ 
+<br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
 `ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
@@ -178,6 +182,7 @@ It has two parameters
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
 
+<br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
 ### Discourse crawler
 

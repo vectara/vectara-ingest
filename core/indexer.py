@@ -32,6 +32,7 @@ get_headers = {
 
 def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
     st = time.time()
+    logger = logging.getLogger()
 
     if filename.endswith(".pdf") and summarize_tables and openai_api_key is not None:
         try:
@@ -39,7 +40,7 @@ def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str
             elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
                                         strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
         except ImportError:
-            self.logger.error("Failed to import unstructured.partition.auto.partition_pdf")
+            logger.error("Failed to import unstructured.partition.auto.partition_pdf")
             elements = partition(filename)
     else:
         elements = partition(filename)
@@ -57,7 +58,7 @@ def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str
         else:
             texts.append(str(t))
 
-    self.logger.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
+    logger.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
     return title, texts
 
 

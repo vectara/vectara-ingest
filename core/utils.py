@@ -86,21 +86,17 @@ def remove_anchor(url: str) -> str:
     url_without_anchor = urlunparse(parsed._replace(fragment=""))
     return url_without_anchor
 
-def normalize_url(url: str) -> str:
+def normalize_url(url: str, keep_query_params: bool = False) -> str:
     """Normalize a URL by removing query parameters."""    
     # Prepend with 'http://' if URL has no scheme
     if '://' not in url:
         url = 'http://' + url
     p = urlparse(url)
-        
-    # Remove query parameters
-    path = p.path.split('?', 1)[0]
+    query = p.query if keep_query_params else ''
+    return ParseResult(p.scheme, p.netloc, p.path, '', query, '').geturl()
 
-    # Reconstruct URL with scheme, without 'www', and query parameters
-    return ParseResult(p.scheme, p.netloc, path, '', '', '').geturl()
-
-def clean_urls(urls: Set[str]) -> List[str]:
-    return list(set(normalize_url(url) for url in urls))
+def clean_urls(urls: Set[str], keep_query_params: bool = False) -> List[str]:
+    return list(set(normalize_url(url, keep_query_params) for url in urls))
 
 def clean_email_text(text: str) -> str:
     """

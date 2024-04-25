@@ -7,10 +7,10 @@ RUN apt-get upgrade -y
 RUN apt-get update
 
 # Download and install stuff
-RUN apt-get install -y -f build-essential xorg libssl-dev libxrender-dev wget git curl
+
+RUN apt-get install -y -f build-essential xorg libssl-dev libxrender-dev wget git curl \
+                          vim wkhtmltopdf libssl-dev unixodbc poppler-utils tesseract-ocr libtesseract-dev 
 RUN apt-get install -y --no-install-recommends xvfb libfontconfig libjpeg-turbo8 xfonts-75dpi fontconfig
-RUN apt-get install -y vim wkhtmltopdf libssl-dev unixodbc
-RUN apt-get install -y poppler-utils tesseract-ocr libtesseract-dev 
 RUN apt-get update
 
 ENV HOME /home/vectara
