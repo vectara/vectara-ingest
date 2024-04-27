@@ -101,6 +101,10 @@ class WebsiteCrawler(Crawler):
 
         # crawl all URLs
         logging.info(f"Collected {len(urls)} URLs to crawl and index")
+        if self.cfg.website_crawler.get("crawl_report", False):
+            with open('/home/vectara/env/crawl_report.txt', 'w') as f:
+                for url in sorted(urls):
+                    f.write(url + '\n')
 
         # print some file types
         file_types = list(set([get_file_extension(u) for u in urls]))

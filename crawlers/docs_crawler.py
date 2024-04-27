@@ -133,6 +133,12 @@ class DocsCrawler(Crawler):
             self.collect_urls(base_url, num_per_second=num_per_second)
 
         logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
+        if self.cfg.docs_crawler.get("crawl_report", False):
+            with open('/home/vectara/env/crawl_report.txt', 'w') as f:
+                for url in sorted(self.crawled_urls):
+                    f.write(url + '\n')
+
+
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
