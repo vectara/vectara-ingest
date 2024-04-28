@@ -72,7 +72,7 @@ def create_session_with_retries(retries: int = 3) -> requests.Session:
     session = requests.Session()
     retry_strategy = Retry(
         total=retries,
-        status_forcelist=[429, 500, 502, 503, 504],  # A set of integer HTTP status codes that we should force a retry on.
+        status_forcelist=[429, 430, 500, 502, 503, 504],  # A set of integer HTTP status codes that we should force a retry on.
         backoff_factor=1,
     )
     adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)

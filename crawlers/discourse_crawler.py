@@ -77,7 +77,6 @@ class DiscourseCrawler(Crawler):
                 section['title'] = post['title']
             document['section'].append(section)
 
-#        logging.info(f"DEBUG doc = {document}")
         self.indexer.index_document(document)
         return posts
 

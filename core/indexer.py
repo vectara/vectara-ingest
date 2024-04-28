@@ -19,9 +19,6 @@ from core.extract import get_content_and_title
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from unstructured.partition.auto import partition
-import unstructured as us
-
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -30,22 +27,18 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str = None) -> Tuple[str, List[str]]:
-    st = time.time()
+def _parse_pdf_file(filename: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
+    import unstructured as us
+    from unstructured.partition.pdf import partition_pdf
+
     logger = logging.getLogger()
-
-    if filename.endswith(".pdf") and summarize_tables and openai_api_key is not None:
-        try:
-            from unstructured.partition.auto import partition_pdf
-            elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                        strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
-        except ImportError:
-            logger.error("Failed to import unstructured.partition.auto.partition_pdf")
-            elements = partition(filename)
+    st = time.time()
+    if summarize_tables and openai_api_key is not None:
+        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                 strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
     else:
-        elements = partition(filename)
+        elements = partition_pdf(filename)
 
-    # get title
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
 
@@ -57,11 +50,8 @@ def _parse_local_file(filename: str, summarize_tables: bool, openai_api_key: str
             texts.append(summarizer.summarize_table_text(str(t)))
         else:
             texts.append(str(t))
-
-    logger.info(f"parsing PDF file {filename} took {time.time()-st:.2f} seconds")
+    logger.info(f"parsing PDF file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
     return title, texts
-
-
 
 class Indexer(object):
     """
@@ -151,14 +141,15 @@ class Indexer(object):
             if debug:
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
-            page.goto(url, timeout=self.timeout*1000, wait_until="load")
+            page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)  # Wait an additional time to handle AJAX or animations
+            links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
+            links = page.evaluate(links_script)
             content = page.content()
             out_url = page.url
-            links_elements = page.query_selector_all("a")
-            links = [link.get_attribute("href") for link in links_elements if link.get_attribute("href")]
-            
+
         except PlaywrightTimeoutError:
-            self.logger.info(f"Page loading timed out for {url}")
+            self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
 
         except Exception as e:
             self.logger.info(f"Page loading failed for {url} with exception '{e}'")
@@ -323,17 +314,9 @@ class Indexer(object):
                     for chunk in response.iter_content(chunk_size=8192): 
                         f.write(chunk)
                 self.logger.info(f"File downloaded successfully and saved as {file_path}")
+                return self.index_file(file_path, url, metadata)
             else:
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
-                return False
-            # parse downloaded file
-            try:
-                elements = partition(file_path)
-                parts = [str(t) for t in elements if type(t)!=us.documents.elements.Title]
-                titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>20]
-                extracted_title = titles[0] if len(titles)>0 else 'unknown'
-            except Exception as e:
-                self.logger.info(f"Failed to crawl {url} - extracting content from file failed, with error {e}, skipping...")
                 return False
 
         else:
@@ -437,15 +420,15 @@ class Indexer(object):
         # 1. File size is more than 50MB (so can't upload to Vectara due to file size limit)
         # 2. the summarize_tables flag is enabled
         # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
-
-        large_file_extensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt', '.md', '.rst', '.epub', '.html', '.htm']
+        size_limit = 50
+        large_file_extensions = ['.pdf'] # ['.doc', '.docx', '.ppt', '.pptx']
         if (any(filename.endswith(extension) for extension in large_file_extensions) and
-            (get_file_size_in_MB(filename) >= 50 or self.summarize_tables)):
+           (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = _parse_local_file(filename, summarize_tables=self.summarize_tables, openai_api_key=openai_api_key)
+            title, texts = _parse_pdf_file(filename, self.summarize_tables, openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
-            self.logger.info(f"For file {filename}, extracting text locally since file size is larger than 50MB")
+            self.logger.info(f"For PDF file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded
         else:
             # index the file within Vectara (use FILE UPLOAD API)

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vectara-ingest"
-version = "1.7.2"
+version = "1.7.6"
 description = "An open source framework to crawl data sources and ingest into Vectara"
 authors = ["Ofer Mendelevitch <ofermend@gmail.com>"]
 license = "Apache-2.0 license"
@@ -21,7 +21,7 @@ google-auth = "2.16.1"
 google-auth-oauthlib = "1.0.0"
 google-auth-httplib2 = "0.1.0"
 google-api-python-client = "2.82.0"
-psutil = "5.9.4"
+psutil = "5.8.0"
 omegaconf = "2.3.0"
 python-dotenv = "1.0.0"
 python-slugify = "8.0.1"
@@ -56,7 +56,8 @@ python-magic = "0.4.27"
 openai = "1.17.1"
 slack-sdk = "3.27.1"
 lxml = {version = "5.2.1", extras = ["html_clean"] }
-unstructured = {version = "0.12.3", extras = ["pdf"] }
+html5lib = "1.1"
+unstructured = { version = "0.12.3", extras = ["pdf"] }
 
 [build-system]
 requires = ["poetry-core"]
