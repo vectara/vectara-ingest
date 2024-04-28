@@ -416,12 +416,10 @@ class Indexer(object):
             self.logger.error(f"File {filename} does not exist")
             return False
 
-        # Parse locally and index text only in two cases:
-        # 1. File size is more than 50MB (so can't upload to Vectara due to file size limit)
-        # 2. the summarize_tables flag is enabled
-        # In either case, if openai_api_key is valid and summarize_tables is on, we include table summary in the text
+        # If we have a PDF fiel with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
+        # Otherwise - send to Vectara's default upload fiel mechanism
         size_limit = 50
-        large_file_extensions = ['.pdf'] # ['.doc', '.docx', '.ppt', '.pptx']
+        large_file_extensions = ['.pdf']
         if (any(filename.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
