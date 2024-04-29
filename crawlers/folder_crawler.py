@@ -8,7 +8,7 @@ class FolderCrawler(Crawler):
 
     def crawl(self) -> None:
         folder = "/home/vectara/data"
-        extensions = self.cfg.folder_crawler.extensions
+        extensions = self.cfg.folder_crawler.get("extensions", ["*"])
 
         # Walk the directory and upload files with the specified extension to Vectara
         logging.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")

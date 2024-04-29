@@ -23,7 +23,6 @@ def url_is_relative(url: str) -> bool:
     parsed_url = urlparse(url)
     return not parsed_url.scheme and not parsed_url.netloc
 
-            
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
                     indexer: Indexer, visited: Optional[Set[str]]=None, 
                     verbose: bool = False) -> Set[str]:
