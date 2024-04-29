@@ -45,11 +45,12 @@ fi
 
 sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('summarize_tables', 'false'))" | tr '[:upper:]' '[:lower:]'`
 mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
-tag="vectara-ingest"
 if [[ "$sum_tables" == "true" || "$mask_pii" == "true" ]]; then
     echo "Building with extra features"
+    tag="vectara-ingest-full"
     docker $BUILD_CMD --build-arg INSTALL_EXTRA="true" --platform linux/$ARCH . --tag="$tag:latest"
 else
+  tag="vectara-ingest"
   docker $BUILD_CMD --build-arg INSTALL_EXTRA="false" --platform linux/$ARCH . --tag="$tag:latest"
 fi
 

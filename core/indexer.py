@@ -72,6 +72,7 @@ class Indexer(object):
         self.verbose = cfg.vectara.get("verbose", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
+        self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
@@ -142,7 +143,7 @@ class Indexer(object):
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
             page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
-            page.wait_for_timeout(5000)  # Wait an additional time to handle AJAX or animations
+            page.wait_for_timeout(self.post_load_timeout*1000)  # Wait an additional time to handle AJAX or animations
             links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
             links = page.evaluate(links_script)
             content = page.content()
