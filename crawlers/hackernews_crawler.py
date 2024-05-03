@@ -39,7 +39,8 @@ class HackernewsCrawler(Crawler):
         doc_id = str(story['id'])
         doc_title = html_to_text(story.get('title', ''))
         doc_text = html_to_text(story.get('text', ''))
-        doc_metadata = {'source': 'hackernews', 'title': doc_title, 'url': url}
+        story_date = datetime.datetime.fromtimestamp(story['time']).strftime('%Y-%m-%d')
+        doc_metadata = {'source': 'hackernews', 'title': doc_title, 'url': url, 'date': story_date}
         texts = [] if len(doc_text) == 0 else [doc_text]
         titles = ['']
         times = [datetime.datetime.fromtimestamp(story.get('time', 0)).date()]
@@ -82,7 +83,7 @@ class HackernewsCrawler(Crawler):
                 continue
             item_date = datetime.datetime.fromtimestamp(item.get("time"))
             if inx % 100 == 0:
-                logging.info(f"Checked {inx} items so far, lates item with date {item_date}")
+                logging.info(f"Checked {inx} items so far, latest item with date {item_date}")
 
             # Check if item is a story and was published within the desired time frame
             if item and item.get("type") == "story":
