@@ -28,6 +28,7 @@ website_crawler:
     extraction: playwright
     keep_query_params: false
     crawl_report: false
+    remove_old_content: false
     ray_workers: 0
 ...
 ```
@@ -45,7 +46,9 @@ Other parameters:
 - `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion.
 - `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion.
 - `keep_query_params`: if true, maintains the full URL including query params in the URL. If false, then it removes query params from collected URLs.
-- `crawl_report`: if true, creates a file under ~/tmp/mount called "crawl_report.txt" that lists all URLs crawled
+- `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
+- `remove_old_content`: if true, removed any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removed data from your corpus. 
+If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
  
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
@@ -172,6 +175,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     docs_system: docusaurus
     remove_code: true
     crawl_report: false
+    remove_old_content: false
     ray_workers: 0
 ```
 
@@ -184,7 +188,9 @@ It has two parameters
 - `doc_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
-- `crawl_report`: if true, creates a file under ~/tmp/mount called "crawl_report.txt" that lists all URLs crawled
+- `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
+- `remove_old_content`: if true, removed any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removed data from your corpus. 
+If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
 
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 

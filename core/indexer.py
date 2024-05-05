@@ -192,6 +192,47 @@ class Indexer(object):
             return False
         return True
     
+    def _list_docs(self) -> List[Dict[str, str]]:
+        """
+        List documents in the corpus.
+        Returns:
+            list of [docId, URL] for each document in the corpus
+            URL taken from metadata if exists, otherwise it'd be None
+        """
+        page_key = None  # Initialize page_key as None
+        docs = []
+    
+        # Loop until there's no next page
+        while True:
+            body = {"corpusId": self.corpus_id, "numResults": 100}
+            if page_key:  # Add page_key to the request if it's not None
+                body["pageKey"] = page_key
+
+            post_headers = { 
+                'x-api-key': self.api_key, 
+                'customer-id': str(self.customer_id), 
+                'X-Source': self.x_source
+            }
+            response = self.session.post(
+                f"https://{self.endpoint}/v1/list-documents", data=json.dumps(body),
+                verify=True, headers=post_headers)
+            if response.status_code != 200:
+                self.logger.error(f"Error listing documents with status code {response.status_code}")
+                return []
+            res = response.json()
+
+            # Extract URLs from documents
+            for doc in res['document']:
+                url = next((md['value'] for md in doc['metadata'] if md['name'] == 'url'), None)
+                docs.append({'doc_id': doc['id'], 'url': url})
+
+            # Check if we need to go further
+            page_key = res.get('nextPageKey', None)    
+            if not page_key:  # Break the loop if there's no next page
+                break
+    
+        return docs
+
     def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
