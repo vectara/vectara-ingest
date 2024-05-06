@@ -1,5 +1,7 @@
 import time
 import re
+import ray
+import psutil
 import json
 import logging
 import datetime
@@ -8,6 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from http.client import IncompleteRead
 from core.crawler import Crawler
+from core.indexer import Indexer
 
 
 def get_timestamp(days_past):
@@ -378,17 +381,53 @@ class SlackCrawler(Crawler):
         """
         users_info = self.get_users_info()
         channels = self.get_channels()
-
+        channels_to_crawl = []
         for channel in channels:
-            channel_id = channel["id"]
-            if channel["name"] in self.channels_to_skip:
-                continue
+            if channel["name"] not in self.channels_to_skip:
+                channels_to_crawl.append(channel)
 
-            messages = self.get_messages_of_channel(channel, users_info)
-            for msg in messages:
-                document = get_document(channel, msg, users_info)
-                if document is not None:
-                    self.indexer.index_document(document)
-                else:
-                    link = construct_url_of_message(msg, channel_id)
-                    logging.info(f"Unable to find  text fot the message: {link}")
+        ray_workers = self.cfg.slack_crawler.get("ray_workers", 0)  # -1: use ray with ALL cores, 0: dont use ray
+        if ray_workers == -1:
+            ray_workers = psutil.cpu_count(logical=True)
+        if ray_workers > 0:
+            logging.info(f"Using {ray_workers} ray workers")
+            ray.init(num_cpus=ray_workers)
+            logging.info("Ray workers initialized")
+            actors = [ray.remote(IndexMessages).remote(self.indexer, SlackCrawler) for _ in range(ray_workers)]
+            for a in actors:
+                a.setup.remote()
+            pool = ray.util.ActorPool(actors)
+            _ = list(pool.map(lambda a, channel: a.process.remote(channel, users_info), channels_to_crawl))
+
+        else:
+            for channel in channels_to_crawl:
+                channel_id = channel["id"]
+                messages = self.get_messages_of_channel(channel, users_info)
+                for msg in messages:
+                    document = get_document(channel, msg, users_info)
+                    if document is not None:
+                        self.indexer.index_document(document)
+                    else:
+                        link = construct_url_of_message(msg, channel_id)
+                        logging.info(f"Unable to find  text fot the message: {link}")
+
+
+class IndexMessages(object):
+    def __init__(self, indexer: Indexer, slack_crawler: SlackCrawler):
+        self.indexer = indexer
+        self.slack_crawler = slack_crawler
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+
+    def setup(self):
+        self.indexer.setup()
+
+    def process(self, channel, users_info):
+        messages = self.slack_crawler.get_messages_of_channel(channel, users_info)
+        for message in messages:
+            document = get_document(channel, message, users_info)
+            if document is not None:
+                self.indexer.index_document(document)
+            else:
+                link = construct_url_of_message(message, channel["id"])
+                logging.info(f"Unable to find  text fot the message: {link}")
