@@ -391,9 +391,10 @@ class SlackCrawler(Crawler):
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
-            ray.init(num_cpus=ray_workers)
+            self.indexer.p = self.indexer.browser = None
+            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             logging.info("Ray workers initialized")
-            actors = [ray.remote(IndexMessages).remote(self.indexer, SlackCrawler) for _ in range(ray_workers)]
+            actors = [ray.remote(IndexMessages).remote(self.indexer, self) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
@@ -409,7 +410,7 @@ class SlackCrawler(Crawler):
                         self.indexer.index_document(document)
                     else:
                         link = construct_url_of_message(msg, channel_id)
-                        logging.info(f"Unable to find  text fot the message: {link}")
+                        logging.info(f"Unable to find text for the message: {link}")
 
 
 class IndexMessages(object):
@@ -430,4 +431,4 @@ class IndexMessages(object):
                 self.indexer.index_document(document)
             else:
                 link = construct_url_of_message(message, channel["id"])
-                logging.info(f"Unable to find  text fot the message: {link}")
+                logging.info(f"Unable to find text for the message: {link}")
