@@ -204,7 +204,7 @@ class Indexer(object):
     
         # Loop until there's no next page
         while True:
-            body = {"corpusId": self.corpus_id, "numResults": 100}
+            body = {"corpusId": self.corpus_id, "numResults": 1000}
             if page_key:  # Add page_key to the request if it's not None
                 body["pageKey"] = page_key
 
