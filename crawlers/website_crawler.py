@@ -99,17 +99,20 @@ class WebsiteCrawler(Crawler):
             urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_regex])]
         urls = list(set(urls))
 
-        # crawl all URLs
-        logging.info(f"Collected {len(urls)} URLs to crawl and index")
+
+        # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):
-            with open('/home/vectara/env/crawl_report.txt', 'w') as f:
+            logging.info(f"Collected {len(urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
+            with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
                 for url in sorted(urls):
                     f.write(url + '\n')
+        else:
+            logging.info(f"Collected {len(urls)} URLs to crawl and index.")
 
         # print some file types
         file_types = list(set([get_file_extension(u) for u in urls]))
         file_types = [t for t in file_types if t != ""]
-        logging.info(f"File types = {file_types}")
+        logging.info(f"Note: file types = {file_types}")
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
         extraction = self.cfg.website_crawler.get("extraction", "playwright")   # "playwright" or "pdf"
@@ -135,3 +138,19 @@ class WebsiteCrawler(Crawler):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(urls)}")
                 crawl_worker.process(url, extraction=extraction, source=source)
+
+        # If remove_old_content is set to true:
+        # remove from corpus any document previously indexed that is NOT in the crawl list
+        if self.cfg.website_crawler.get("remove_old_content", False):
+            existing_docs = self.indexer._list_docs()
+            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in urls]
+            for doc in docs_to_remove:
+                if doc['url']:
+                    self.indexer.delete_doc(doc['doc_id'])
+            logging.info(f"Removing {len(docs_to_remove)} that are not included in the crawl but are in the corpus.")
+            if self.cfg.website_crawler.get("crawl_report", False):
+                with open('/home/vectara/env/urls_removed.txt', 'w') as f:
+                    for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                        f.write(url + '\n')
+
+

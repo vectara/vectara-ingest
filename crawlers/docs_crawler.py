@@ -134,10 +134,12 @@ class DocsCrawler(Crawler):
 
         logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
-            with open('/home/vectara/env/crawl_report.txt', 'w') as f:
+            logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
+            with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
                 for url in sorted(self.crawled_urls):
                     f.write(url + '\n')
-
+        else:
+            logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index.")
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -157,4 +159,19 @@ class DocsCrawler(Crawler):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(self.crawled_urls)}")
                 crawl_worker.process(url, source=source)
+
+        # If remove_old_content is set to true:
+        # remove from corpus any document previously indexed that is NOT in the crawl list
+        if self.cfg.docs_crawler.get("remove_old_content", False):
+            existing_docs = self.indexer._list_docs()
+            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in self.crawled_urls]
+            for doc in docs_to_remove:
+                if doc['url']:
+                    self.indexer.delete_doc(doc['doc_id'])
+            logging.info(f"Removing {len(docs_to_remove)} that are not included in the crawl but are in the corpus.")
+            if self.cfg.docs_crawler.get("crawl_report", False):
+                with open('/home/vectara/env/urls_removed.txt', 'w') as f:
+                    for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                        f.write(url + '\n')
+
 
