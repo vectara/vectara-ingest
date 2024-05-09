@@ -2,6 +2,7 @@ import logging
 import json
 import os
 from typing import Tuple, Dict, Any, List, Optional
+import uuid
 
 import time
 from slugify import slugify
@@ -37,7 +38,7 @@ def _parse_pdf_file(filename: str, summarize_tables: bool = False, openai_api_ke
         elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
                                  strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
     else:
-        elements = partition_pdf(filename)
+        elements = partition_pdf(filename, strategy='fast')
 
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
@@ -96,6 +97,7 @@ class Indexer(object):
         # Create playwright browser so we can reuse it across all Indexer operations
         self.p = sync_playwright().start()
         self.browser = self.p.firefox.launch(headless=True)
+        self.tmp_file = 'tmp_' + str(uuid.uuid4())
 
     def url_triggers_download(self, url: str) -> bool:
         download_triggered = False
@@ -349,7 +351,7 @@ class Indexer(object):
         url = url.split("#")[0]     # remove fragment, if exists
 
         if self.url_triggers_download(url):
-            file_path = 'tmpfile'
+            file_path = self.tmp_file
             response = self.session.get(url, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
