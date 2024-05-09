@@ -38,7 +38,7 @@ def _parse_pdf_file(filename: str, summarize_tables: bool = False, openai_api_ke
         elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
                                  strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
     else:
-        elements = partition_pdf(filename)
+        elements = partition_pdf(filename, strategy='fast')
 
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
