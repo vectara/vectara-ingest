@@ -6,6 +6,7 @@ RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev wget git curl \
+    tesseract-ocr libtesseract-dev \
     vim wkhtmltopdf unixodbc poppler-utils \
     fontconfig fonts-noto-color-emoji fonts-unifont \
     python3-pip python3-dev \
@@ -30,7 +31,7 @@ RUN playwright install --with-deps firefox
 ARG INSTALL_EXTRA=false
 COPY requirements.txt $HOME/
 RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
-        apt-get install -y --no-install-recommends tesseract-ocr libtesseract-dev && \
+        apt-get install -y --no-install-recommends && \
         python3 -m pip install -r requirements.txt && \
         python3 -m spacy download en_core_web_lg; \
     fi
