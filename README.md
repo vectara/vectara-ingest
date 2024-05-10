@@ -182,7 +182,7 @@ vectara:
   timeout: 90
 
   # post_load_timeout: sets additional timeout past full page load to wait for animations and AJAX
-  timeout: 5
+  post_load_timeout: 5
 
   # flag: if true, will print extra debug messages when active
   verbose: false
