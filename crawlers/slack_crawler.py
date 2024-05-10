@@ -388,20 +388,18 @@ class SlackCrawler(Crawler):
         for channel in channels_to_crawl:
             messages = self.get_messages_of_channel(channel, users_info)
             logging.info(f"Will process {len(messages)} messages of the channel: {channel['name']}")
-            logging.info(f"first msg = {messages[0]}")
-            channel_and_msg = [{'channel': channel, 'msg': msg} for msg in messages]
             if ray_workers > 0:
                 actors = [ray.remote(SlackMsgIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
                 for a in actors:
                     a.setup.remote()
                 pool = ray.util.ActorPool(actors)
-                _ = list(pool.map(lambda a, msg_dict: a.process.remote(msg_dict['channel'], msg_dict['msg'], users_info_id), channel_and_msg))
+                _ = list(pool.map(lambda a, msg: a.process.remote(channel, msg, users_info_id), messages))
             else:
                 msg_indexer = SlackMsgIndexer(self.indexer, self)
-                for inx, msg_dict in enumerate(channel_and_msg):
+                for inx, msg in enumerate(messages):
                     if inx % 100 == 0:
-                        logging.info(f"Indexed {inx + 1} messages out of {len(channel_and_msg)}")
-                    msg_indexer.process(msg_dict['channel'], msg_dict['msg'], users_info)
+                        logging.info(f"Indexed {inx + 1} messages out of {len(messages)}")
+                    msg_indexer.process(channel, msg, users_info)
 
 
 class SlackMsgIndexer(object):
