@@ -24,20 +24,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     libtesseract-dev \
     xvfb \
-    libfontconfig \
-    libjpeg-turbo8 \
-    fonts-noto-color-emoji \
-    xfonts-75dpi \
-    fontconfig \
     python3-pip python3-dev \
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+    libfontconfig fontconfig \
+    libjpeg-turbo8 \
+    fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \
+    && apt-get purge -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # install python packages
 WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
-RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt \
     && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
     && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
