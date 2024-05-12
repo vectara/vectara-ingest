@@ -1,38 +1,53 @@
 
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND noninteractive \
+    HOME /home/vectara  \
+    XDG_RUNTIME_DIR=/tmp \
+    RAY_DEDUP_LOGS="0"
+
 RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
+RUN apt-get update
+
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libssl-dev wget git curl \
-    tesseract-ocr libtesseract-dev \
-    vim wkhtmltopdf unixodbc poppler-utils \
-    fontconfig fonts-noto-color-emoji fonts-unifont \
+    build-essential \
+    libssl-dev \
+    wget \
+    git \
+    curl \
+    vim \
+    wkhtmltopdf \
+    libssl-dev \
+    unixodbc \
+    poppler-utils \
+    tesseract-ocr \
+    libtesseract-dev \
+    xvfb \
+    libfontconfig \
+    libjpeg-turbo8 \
+    xfonts-75dpi \
+    fontconfig \
     python3-pip python3-dev \
+    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-ENV HOME /home/vectara
-ENV XDG_RUNTIME_DIR=/tmp
-ENV RAY_DEDUP_LOGS="0"
+# install python packages
 WORKDIR ${HOME}
-
-COPY poetry.lock pyproject.toml $HOME/
-
-RUN pip3 install poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --only main && \
-    rm -rf ~/.cache/pypoetry
-
+COPY requirements.txt $HOME/
+RUN pip install --no-cache-dir -r requirements.txt \
+    && find /usr/local \
+        \( -type d -a -name test -o -name tests \) \
+        -o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
+        -exec rm -rf '{}' + \
+    && rm -rf /root/.cache/* /tmp/*
 RUN playwright install --with-deps firefox
 
-# Install additional large libraries for unstructured inference and PII detection
+# Install additional large packages for all-docs unstructured inference and PII detection
 ARG INSTALL_EXTRA=false
-COPY requirements.txt $HOME/
 RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
-        apt-get install -y --no-install-recommends && \
-        python3 -m pip install -r requirements.txt && \
+        pip3 install --no-cache-dir -r requirements-extra.txt && \
         python3 -m spacy download en_core_web_lg; \
     fi
 
