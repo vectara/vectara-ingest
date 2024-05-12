@@ -147,7 +147,7 @@ class WebsiteCrawler(Crawler):
             for doc in docs_to_remove:
                 if doc['url']:
                     self.indexer.delete_doc(doc['doc_id'])
-            logging.info(f"Removing {len(docs_to_remove)} that are not included in the crawl but are in the corpus.")
+            logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.website_crawler.get("crawl_report", False):
                 with open('/home/vectara/env/urls_removed.txt', 'w') as f:
                     for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
