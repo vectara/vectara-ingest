@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND noninteractive \
     CUDA_VISIBLE_DEVICES=""
 
 RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
-RUN apt-get update
+RUN apt-get upgrade
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     libfontconfig \
     libjpeg-turbo8 \
+    fonts-noto-color-emoji \
     xfonts-75dpi \
     fontconfig \
     python3-pip python3-dev \
@@ -35,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # install python packages
 WORKDIR ${HOME}
-COPY requirements.txt $HOME/
+COPY requirements.txt requirements-extra.txt $HOME/
 RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt \
     && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
@@ -57,6 +58,6 @@ COPY *.py $HOME/
 COPY core/*.py $HOME/core/
 COPY crawlers/ $HOME/crawlers/
 
-SHELL ["/bin/bash", "-c"]
+#SHELL ["/bin/bash", "-c"]
 ENTRYPOINT ["/bin/bash", "-l", "-c"]
 CMD ["python3 ingest.py $CONFIG $PROFILE"]
