@@ -4,11 +4,11 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND noninteractive \
     HOME /home/vectara  \
     XDG_RUNTIME_DIR=/tmp \
-    RAY_DEDUP_LOGS="0"
+    RAY_DEDUP_LOGS="0" \
+    CUDA_VISIBLE_DEVICES=""
 
 RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
 RUN apt-get update
-
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -36,12 +36,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # install python packages
 WORKDIR ${HOME}
 COPY requirements.txt $HOME/
+RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt \
-    && find /usr/local \
-        \( -type d -a -name test -o -name tests \) \
-        -o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
-        -exec rm -rf '{}' + \
-    && rm -rf /root/.cache/* /tmp/*
+    && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
+    && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
+    && find /usr/local -type d \( -name '__pycache__' \) -exec rm -rf '{}' + \
+    && find /usr/local -type d \( -name 'build' \) -exec rm -rf '{}' + \
+    && rm -rf .cache/* /tmp/* \
+    && pip cache purge
 RUN playwright install --with-deps firefox
 
 # Install additional large packages for all-docs unstructured inference and PII detection
