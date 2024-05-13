@@ -23,5 +23,5 @@ docs_crawler:
       "https://blog.langchain.dev.*",
     ]
   neg_regex: []
-  extensions_to_ignore: ["md", "rst", "ipynb", "txt"]
+  extensions_to_ignore: [".md", ".rst", ".ipynb", ".txt"]
   docs_system: docusaurus

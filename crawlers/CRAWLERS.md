@@ -171,7 +171,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     pos_regex: [".*vectara.com/docs.*"]
     neg_regex: [".*vectara.com/docs/rest-api/.*"]
     num_per_second: 10
-    extensions_to_ignore: ["php", "java", "py", "js"]
+    extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
     remove_code: true
     crawl_report: false
