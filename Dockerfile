@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # install python packages
 WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
+RUN pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt \
     && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
     && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
