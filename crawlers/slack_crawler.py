@@ -9,8 +9,10 @@ from omegaconf import OmegaConf
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from http.client import IncompleteRead
+
 from core.crawler import Crawler
 from core.indexer import Indexer
+from core.utils import setup_logging
 
 
 def get_timestamp(days_past):
@@ -178,10 +180,14 @@ def get_document(channel, message, users_info):
     }
 
 
-def handle_ratelimit_error(api_name, error, retry_delay=60):
-    logging.error(f"rate limit error occurred: {error}")
-    logging.info(f"Will retry to fetch the {api_name} after 60 seconds")
-    time.sleep(retry_delay)  # wait for 60 seconds before sending another request
+def handle_slack_api_error(api_name, error):
+    if error.response.status_code == 429:
+        retry_after = int(error.response.headers['Retry-After']) + 1
+        logging.warning(f"Slack rate limit error occurred for {api_name}. Will retry after {retry_after} seconds")
+        time.sleep(retry_after)  # wait for retry_after seconds before sending another request
+    else:
+        logging.error(f"Error while fetching the messages: {error}")
+
 
 
 def handle_incomplete_request_error(api_name, error, retry_delay=30):
@@ -254,10 +260,7 @@ class SlackCrawler(Crawler):
                 handle_incomplete_request_error("users", e)
 
             except SlackApiError as e:
-                if e.response["error"] == "ratelimited":
-                    handle_ratelimit_error("users", e)
-                else:
-                    logging.error(f"Error while fetching the users: {e}")
+                handle_slack_api_error("users", e)
 
             except KeyError as e:
                 logging.error(f"Error while fetching the users info: {e}")
@@ -283,10 +286,7 @@ class SlackCrawler(Crawler):
                 handle_incomplete_request_error("channels", e)
 
             except SlackApiError as e:
-                if e.response["error"] == "ratelimited":
-                    handle_ratelimit_error("channels", e)
-                else:
-                    logging.error(f"Error while fetching the messages: {e}")
+                handle_slack_api_error("channels", e)
 
     def get_messages_of_channel(self, channel, users_info):
         """
@@ -317,10 +317,7 @@ class SlackCrawler(Crawler):
                     handle_incomplete_request_error("messages", e)
 
                 except SlackApiError as e:
-                    if e.response["error"] == "ratelimited":
-                        handle_ratelimit_error("messages", e)
-                    else:
-                        logging.error(f"Error while fetching the messages: {e}")
+                    handle_slack_api_error("messages", e)
 
             if response is not None:
                 messages += response["messages"]
@@ -330,19 +327,14 @@ class SlackCrawler(Crawler):
                 cursor = response["response_metadata"]["next_cursor"]
 
         logging.info(f"messages fetched successfully for channel `{channel['name']}`")
-
-        # fetch the threaded messages for each message
-        for msg in messages:
-            replace_ampersand(msg)
-            if contains_url(msg.get("text")):
-                remove_duplicate_urls(msg)
-            if 'reply_count' in msg:
-                replies = self.get_message_replies(channel["id"], msg["ts"], users_info)
-                msg["replies_content"] = replies
-
         replace_user_id_with_user_handler(messages, users_info)
-
         return messages
+
+    def add_message_replies(self, msg, channel_id, users_info):
+        if 'reply_count' in msg:
+            replies = self.get_message_replies(channel_id, msg["ts"], users_info)
+            msg["replies_content"] = replies
+        return msg
 
     def get_message_replies(self, channel_id, message_ts, users_info):
         """
@@ -365,10 +357,7 @@ class SlackCrawler(Crawler):
                 handle_incomplete_request_error("threaded messages", e)
 
             except SlackApiError as e:
-                if e.response["error"] == "ratelimited":
-                    handle_ratelimit_error("threaded messages", e)
-                else:
-                    logging.error(f"Error while fetching the threaded messages: {e}")
+                handle_slack_api_error("threaded messages", e)
 
     def crawl(self) -> None:
         """
@@ -386,34 +375,34 @@ class SlackCrawler(Crawler):
             if channel["name"] not in self.channels_to_skip:
                 channels_to_crawl.append(channel)
 
+
         ray_workers = self.cfg.slack_crawler.get("ray_workers", 0)  # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            logging.info("Ray workers initialized")
-            actors = [ray.remote(IndexMessages).remote(self.indexer, self) for _ in range(ray_workers)]
-            for a in actors:
-                a.setup.remote()
-            pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, channel: a.process.remote(channel, users_info), channels_to_crawl))
+            logging.info(f"Using {ray_workers} ray workers")
+            users_info_id = ray.put(users_info)
 
-        else:
-            for channel in channels_to_crawl:
-                channel_id = channel["id"]
-                messages = self.get_messages_of_channel(channel, users_info)
-                for msg in messages:
-                    document = get_document(channel, msg, users_info)
-                    if document is not None:
-                        self.indexer.index_document(document)
-                    else:
-                        link = construct_url_of_message(msg, channel_id)
-                        logging.info(f"Unable to find text for the message: {link}")
+        for channel in channels_to_crawl:
+            messages = self.get_messages_of_channel(channel, users_info)
+            logging.info(f"Will process {len(messages)} messages of the channel: {channel['name']}")
+            if ray_workers > 0:
+                actors = [ray.remote(SlackMsgIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
+                for a in actors:
+                    a.setup.remote()
+                pool = ray.util.ActorPool(actors)
+                _ = list(pool.map(lambda a, msg: a.process.remote(channel, msg, users_info_id), messages))
+            else:
+                msg_indexer = SlackMsgIndexer(self.indexer, self)
+                for inx, msg in enumerate(messages):
+                    if inx % 100 == 0:
+                        logging.info(f"Indexed {inx + 1} messages out of {len(messages)}")
+                    msg_indexer.process(channel, msg, users_info)
 
 
-class IndexMessages(object):
+class SlackMsgIndexer(object):
     def __init__(self, indexer: Indexer, slack_crawler: SlackCrawler):
         self.indexer = indexer
         self.slack_crawler = slack_crawler
@@ -422,13 +411,18 @@ class IndexMessages(object):
 
     def setup(self):
         self.indexer.setup()
+        setup_logging()
 
-    def process(self, channel, users_info):
-        messages = self.slack_crawler.get_messages_of_channel(channel, users_info)
-        for message in messages:
-            document = get_document(channel, message, users_info)
-            if document is not None:
-                self.indexer.index_document(document)
-            else:
-                link = construct_url_of_message(message, channel["id"])
-                logging.info(f"Unable to find text for the message: {link}")
+    def process(self, channel, msg, users_info):
+        replace_ampersand(msg)
+        if contains_url(msg.get("text")):
+            remove_duplicate_urls(msg)
+        msg = self.slack_crawler.add_message_replies(msg, channel['id'], users_info)
+        document = get_document(channel, msg, users_info)
+        if document is not None:
+            self.indexer.index_document(document)
+        else:
+            link = construct_url_of_message(msg, channel['id'])
+            logging.info(f"Unable to find text for the message: {link}")
+            
+
