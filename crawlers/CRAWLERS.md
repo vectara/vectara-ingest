@@ -90,11 +90,12 @@ In the above example, the crawler would
 ```yaml
 ...
 csv_crawler:
-    csv_path: "/path/to/Game_of_Thrones_Script.csv"
+    file_path: "/path/to/Game_of_Thrones_Script.csv"
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]
     separator: ','
+    sheet_name: "my-sheet"
 ```
 The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV or XLSX file.
 - `select_condition` optional condition to filter rows in the table by
@@ -102,7 +103,8 @@ The csv crawler is similar to the database crawler, but instead of pulling data 
 - `text_columns` a list of column names that include textual information we want to use 
 - `title_column` is an optional column name that will hold textual information to be used as title
 - `metadata_columns` a list of column names that we want to use as metadata
-- `separator` a string that will be used as a separator in the CSV file (default ',')
+- `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
+- `sheet_name` the name of the sheet in the XLSX file to use (relevant only for XLSX files)
 
 In the above example, the crawler would
 1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
