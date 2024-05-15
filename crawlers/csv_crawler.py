@@ -48,14 +48,20 @@ class CsvCrawler(Crawler):
 
         orig_file_path = self.cfg.csv_crawler.file_path
         file_path = '/home/vectara/data/file'
-        if file_path.endswith('.csv'):
-            sep = self.cfg.csv_crawler.get("separator", ",")
-            df = pd.read_csv(file_path, usecols=all_columns, sep=sep)
-        elif file_path.endswith('.xlsx'):
-            sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
-            df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
-        else:
-            logging.info(f"Unknown file extension for the file {orig_file_path}")
+        try:
+            if orig_file_path.endswith('.csv'):
+                sep = self.cfg.csv_crawler.get("separator", ",")
+                df = pd.read_csv(file_path, usecols=all_columns, sep=sep)
+            elif orig_file_path.endswith('.xlsx'):
+                sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
+                logging.info(f"Reading Sheet {sheet_name} from XLSX file")
+                df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
+            else:
+                logging.info(f"Unknown file extension for the file {orig_file_path}")
+                return
+        except Exception as e:
+            logging.warning(f"Exception ({e}) occurred while loading file")
+            return
 
         logging.info(f"indexing {len(df)} rows from the file {file_path}")
         doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
