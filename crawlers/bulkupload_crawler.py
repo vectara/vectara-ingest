@@ -8,7 +8,7 @@ def is_valid(json_object):
 class JACrawler(Crawler):
 
     def crawl(self) -> None:
-        json_file = '/home/vectara/data/file.json'
+        json_file = '/home/vectara/data/file'
         with open(json_file, 'r') as file:
             data = file.read()
         json_array = json.loads(data)

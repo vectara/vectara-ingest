@@ -67,22 +67,21 @@ docker container inspect vingest &>/dev/null && docker rm -f vingest
 # Run docker container
 crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
 config_file_name="${1##*/}"
+if [[ "$crawler_type" == "csv" ]]; then
+    file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['file_path'])"`
+elif [[ "$crawler_type" == "qna" ]]; then
+    file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['qna_crawler']['file_path'])"`
+elif [[ "$crawler_type" == "bulkupload" ]]; then
+    file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])"`
+fi
+
 if [[ "${crawler_type}" == "folder" ]]; then
     # special handling of "folder crawler" where we need to mount the folder under /home/vectara/data
     folder=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['folder_crawler']['path'])"`
     docker run -d -v ~/tmp/mount:/home/vectara/env -v "$folder:/home/vectara/data" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
-elif [[ "$crawler_type" == "csv" ]]; then
-    # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
-    csv_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['csv_path'])"`
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$csv_path:/home/vectara/data/file.csv" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
-elif [[ "$crawler_type" == "qna" ]]; then
-    # special handling of "qna crawler" where we need to mount the csv file under /home/vectara/data
-    file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['qna_crawler']['file_path'])"`
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$file_path:/home/vectara/data/file" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
-elif [[ "$crawler_type" == "bulkupload" ]]; then
-    # special handling of "bulkupload crawler" where we need to mount the JSON file under /home/vectara/data
-    json_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])"`
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$json_path:/home/vectara/data/file.json" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+elif [[ "$file_path" == @(csv|qna|bulkupload) ]]; then
+    # special handling of crawlers where we need to load a file into the Docker's /home/vectara/data path
+    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$csv_path:/home/vectara/data/file" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
 else
     docker run -d -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
 fi

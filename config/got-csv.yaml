@@ -7,7 +7,7 @@ crawling:
   crawler_type: csv
 
 csv_crawler:
-  csv_path: "/Users/ofer/temp/Game_of_Thrones_Script.csv"
+  file_path: "/Users/some_user/data/Game_of_Thrones_Script.csv"
   doc_id_columns: [Season, Episode]
   text_columns: [Name, Sentence]
   metadata_columns: ["Season", "Episode", "Episode Title"]
