@@ -46,12 +46,23 @@ class CsvCrawler(Crawler):
         if title_column:
             all_columns.append(title_column)
 
-        csv_file = '/home/vectara/data/file.csv'
-        sep = self.cfg.csv_crawler.get("separator", ",")
-        df = pd.read_csv(csv_file, usecols=all_columns, sep=sep)
+        orig_file_path = self.cfg.csv_crawler.file_path
+        file_path = '/home/vectara/data/file'
+        try:
+            if orig_file_path.endswith('.csv'):
+                sep = self.cfg.csv_crawler.get("separator", ",")
+                df = pd.read_csv(file_path, usecols=all_columns, sep=sep)
+            elif orig_file_path.endswith('.xlsx'):
+                sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
+                logging.info(f"Reading Sheet {sheet_name} from XLSX file")
+                df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
+            else:
+                logging.info(f"Unknown file extension for the file {orig_file_path}")
+                return
+        except Exception as e:
+            logging.warning(f"Exception ({e}) occurred while loading file")
+            return
 
-        csv_path = self.cfg.csv_crawler.csv_path
-        logging.info(f"indexing {len(df)} rows from the CSV file {csv_path}")
-
+        logging.info(f"indexing {len(df)} rows from the file {file_path}")
         doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns)

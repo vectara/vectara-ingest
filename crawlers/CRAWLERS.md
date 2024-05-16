@@ -90,24 +90,28 @@ In the above example, the crawler would
 ```yaml
 ...
 csv_crawler:
-    csv_path: "/path/to/Game_of_Thrones_Script.csv"
+    file_path: "/path/to/Game_of_Thrones_Script.csv"
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]
     separator: ','
+    sheet_name: "my-sheet"
 ```
-The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV file.
+The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV or XLSX file.
 - `select_condition` optional condition to filter rows in the table by
 - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
 - `text_columns` a list of column names that include textual information we want to use 
 - `title_column` is an optional column name that will hold textual information to be used as title
 - `metadata_columns` a list of column names that we want to use as metadata
-- `separator` a string that will be used as a separator in the CSV file (default ',')
+- `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
+- `sheet_name` the name of the sheet in the XLSX file to use (relevant only for XLSX files)
 
 In the above example, the crawler would
 1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
+
+Note that the type of file is determined by it's extension (e.g. CSV vs XLSX)
 
 ### Bulk Upload crawler
 
