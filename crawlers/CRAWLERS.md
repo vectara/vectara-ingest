@@ -109,6 +109,26 @@ In the above example, the crawler would
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
 
+### QNA crawler
+
+```yaml
+...
+qna_crawler:
+    file_path: "/path/to/qna_file.csv"
+    question_column: "question"
+    answer_column: "answer"
+    separator: ','
+```
+The qna crawler makes it easy to ingest a curated set of questions and answer into a corpus.
+- `file_path` path to the CSV file that includes questions and answers
+- `question_column` the name of the column storing the questions
+- `answer_column` the name of the column storing the answers
+- `separator` a string that will be used as a separator in the CSV file (default ',')
+
+In the above example, the crawler would
+1. Read all the data from the local CSV file under `/path/to/qna_file.csv`
+2. Create a Vectara document in the target corpus that map questions to answers
+
 ### Bulk Upload crawler
 
 ```yaml
