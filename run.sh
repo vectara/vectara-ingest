@@ -4,6 +4,8 @@
 # args[2] = secrets profile
 # example: sh run.sh <config>news-bbc.yaml dev
 
+shopt -s extglob
+
 if [ $# -lt 2 ]; then
   echo "Missing arguments."
   echo "Usage: $0 <config-file> <secrets-profile>"
@@ -79,9 +81,9 @@ if [[ "${crawler_type}" == "folder" ]]; then
     # special handling of "folder crawler" where we need to mount the folder under /home/vectara/data
     folder=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['folder_crawler']['path'])"`
     docker run -d -v ~/tmp/mount:/home/vectara/env -v "$folder:/home/vectara/data" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
-elif [[ "$file_path" == @(csv|qna|bulkupload) ]]; then
+elif [[ "$crawler_type" == @(csv|qna|bulkupload) ]]; then
     # special handling of crawlers where we need to load a file into the Docker's /home/vectara/data path
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$csv_path:/home/vectara/data/file" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$file_path:/home/vectara/data/file" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
 else
     docker run -d -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
 fi

@@ -1,19 +1,8 @@
 import pandas as pd
 from core.crawler import Crawler
-from typing import List
-import logging
+import os
 
 class QnaCrawler(Crawler):
-
-    def index_qna(self, doc_id: str, questions: List[str], answers: List[str]) -> None:
-        texts = []
-        titles = []
-        for question, answer in zip(questions, answers):
-            titles.append(f"Answer to '{question}'")
-            texts.append(answer)
-            
-        self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=None, 
-                                    doc_metadata = {'source': 'qna'})
 
     def crawl(self) -> None:
         file_path = '/home/vectara/data/file'
@@ -31,5 +20,9 @@ class QnaCrawler(Crawler):
         if answer_column not in df.columns:
             raise Exception("Answer column not found in file")
 
-        for inx, row in df.iterrows():
-            self.index_qna(doc_id = f"question-answer pair {inx+1}", questions = [row[question_column]], answers = [row[answer_column]])
+        for question, answer in zip(df[question_column], df[answer_column]):
+            self.indexer.index_segments(
+                doc_id = os.urandom(8).hex(),
+                texts = [f"Question: {question}\nAnswer: {answer}"],
+                doc_metadata = {'source': 'qna'}
+            )
