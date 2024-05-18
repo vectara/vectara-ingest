@@ -1,18 +1,13 @@
 import logging
 import os
-from usp.tree import sitemap_tree_for_homepage
 from core.crawler import Crawler, recursive_crawl
-from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging
+from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
 from core.indexer import Indexer
 import re
 from typing import List, Set
 
 import ray
 import psutil
-
-# disable USP annoying logging
-logging.getLogger("usp.fetch_parse").setLevel(logging.ERROR)
-logging.getLogger("usp.helpers").setLevel(logging.ERROR)
 
 
 class PageCrawlWorker(object):
@@ -76,8 +71,7 @@ class WebsiteCrawler(Crawler):
         all_urls = []
         for homepage in base_urls:
             if self.cfg.website_crawler.pages_source == "sitemap":
-                tree = sitemap_tree_for_homepage(homepage)
-                urls = list(set([page.url for page in tree.all_pages()]))
+                urls = get_urls_from_sitemap(homepage)
             elif self.cfg.website_crawler.pages_source == "crawl":
                 max_depth = self.cfg.website_crawler.get("max_depth", 3)
                 urls_set = recursive_crawl(homepage, max_depth, 

@@ -13,7 +13,6 @@ from omegaconf import OmegaConf
 from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
-import docutils.core
 
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii
 from core.extract import get_content_and_title
@@ -365,13 +364,11 @@ class Indexer(object):
 
         else:
             # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-            if url.lower().endswith(".md") or url.lower().endswith(".rst") or url.lower().endswith(".ipynb"):
+            if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 dl_content = response.content.decode('utf-8')
-                if url.lower().endswith('rst'):
-                    html_content = docutils.core.publish_string(dl_content, writer_name='html')
-                elif url.lower().endswith('md'):
+                if url.lower().endswith('md'):
                     html_content = markdown.markdown(dl_content)
                 elif url.lower().endswith('ipynb'):
                     nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore

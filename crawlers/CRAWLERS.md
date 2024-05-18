@@ -313,9 +313,9 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
     whisper_model: base
 ```
 
-The Youtube crawler loads all videos from a playlist, transcribes the audio, and indexes that text.
+The Youtube crawler loads all videos from a playlist, extracts the subtitles into text (or transcribes the audio if subtitles don't exist), and indexes that text.
 - `playlist_url`: a valid youtube playlist URL
-- `whisper_model`: the model name for whisper: tiny, base, small, medium or large. Defaults to base
+- `whisper_model`: the model name for whisper: tiny, base, small, medium or large. Defaults to base. Only used if subtitles don't exist.
 
 ### Slack crawler
 

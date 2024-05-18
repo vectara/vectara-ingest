@@ -1,75 +1,85 @@
 import logging
 from core.crawler import Crawler
 import os
-import pandas as pd
+import json
+
+from pytube import Playlist, YouTube
+from pydub import AudioSegment
+
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable, NoTranscriptFound
 
 import whisper
-from pytube import Playlist, YouTube
-from moviepy.editor import VideoFileClip
+
+def time_to_seconds(time_str):
+    hours, minutes, seconds = time_str.split(':')
+    seconds, milliseconds = seconds.split('.')
+    total_seconds = int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
+    return total_seconds
 
 class YtCrawler(Crawler):
-
-    def merge_segments(self, segments, max_gap_seconds=1.0):
-        """Merge segments based on a maximum gap in seconds."""
-        merged = []
-        current_text = []
-        current_start, current_end = segments[0][0], segments[0][1]
-
-        def to_seconds(time_str):
-            h, m, s = map(float, time_str.split(':'))
-            return h * 3600 + m * 60 + s
-
-        for segment in segments:
-            if to_seconds(segment['start']) - to_seconds(current_end) <= max_gap_seconds:
-                current_text.append(segment['text'])
-                current_end = segment['end']
-            else:
-                merged.append((current_start, current_end, " ".join(current_text)))
-                current_text = [segment['text']]
-                current_start, current_end = segment['start'], segment['end']
-
-        if current_text:
-            merged.append((current_start, current_end, " ".join(current_text)))
-
-        return [{'start': start, 'end': end, 'text': text} for start, end, text in merged]
 
     def crawl(self) -> None:
         playlist_url = self.cfg.yt_crawler.playlist_url
         whisper_model = self.cfg.yt_crawler.get("whisper_model", "base")
-        logging.info(f"indexing videos from playlist {playlist_url}")
+        logging.info(f"indexing content of videos from playlist {playlist_url}")
     
-
         playlist = Playlist(playlist_url)
 
         download_path = "./downloads"
-        model = whisper.load_model(whisper_model)
+        model = None
+
+        # Index the main playlist information
+        main_doc = {
+            'documentId': 'main',
+            'title': playlist.title,
+            'metadataJson': json.dumps({'url': playlist.playlist_url}),
+            'section': [
+                { 'text': playlist.description }
+            ]
+        }
+        self.indexer.index_document(main_doc)
 
         for video in playlist.videos:
-            # Download the video
             yt = YouTube(video.watch_url)
-            stream = yt.streams.get_highest_resolution()
-            stream.download(download_path)
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(video.video_id, languages=['en'])
+                subtitles = [
+                    {
+                        'start': segment['start'],
+                        'end': segment['start'] + segment['duration'],
+                        'text': segment['text']
+                    }
+                    for segment in transcript
+                ]
+                logging.info(f"Downloaded subtitles for video {video.title}, total duration is {sum([st['end'] - st['start'] for st in subtitles])} seconds")
 
-            video = VideoFileClip(os.path.join(download_path, stream.default_filename))
-            audio_filename = os.path.join(download_path, f"{stream.default_filename}.mp3")
-            video.audio.write_audiofile(audio_filename)
+            except TranscriptsDisabled:
+                logging.info(f"Transcribing captions for video {video.title} with Whisper model of size {whisper_model} (this may take a while)")
+                if model is None:
+                    model = whisper.load_model(whisper_model)
+                stream = yt.streams.get_highest_resolution()
+                stream.download(download_path)
 
-            # transcribe
-            result = model.transcribe(audio_filename, temperature=0)
-            logging.info(f"DEBUG segments before = {len(result['segments'])}")
-            segments = self.merge_segments(result['segments'], max_gap_seconds=0.5)
-            logging.info(f"DEBUG segments after = {len(segments)}")
+                audio_filename = os.path.join(download_path, f"audio_file.mp3")
+                audio = AudioSegment.from_file(os.path.join(download_path, f"{stream.default_filename}"))
+                audio.export(audio_filename, format="mp3")
+
+                # transcribe
+                result = model.transcribe(audio_filename, temperature=0)
+                subtitles = result['segments']
+            except Exception as e:
+                print(f"Can't process video {video.title} with id {video.video_id}, e={e}")
+                continue
 
             # Index into Vectara
-            self.indexer.index_segments(
-                doc_id = video.video_id,
-                texts = [segment['text'] for segment in segments],
-                metadatas = [{
-                    'start': segment['start'],
-                    'end': segment['end'],
-                    'url': f"{video.watch_url}&t={int(segment['start'])}s"
-                } for segment in segments],
-                doc_metadata = {'url': video.watch_url },
-                doc_title = video.title
-            )
-
+            all_text = " ".join([st['text'] for st in subtitles])
+            subtitles_doc = {
+                'documentId': video.video_id,
+                'title': video.title,
+                'metadataJson': json.dumps({'url': video.watch_url}),
+                'section': [
+                    { 'text': all_text }
+                ]
+            }
+            self.indexer.index_document(subtitles_doc)
