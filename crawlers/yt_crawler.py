@@ -7,7 +7,7 @@ from pytube import Playlist, YouTube
 from pydub import AudioSegment
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable, NoTranscriptFound
+from youtube_transcript_api._errors import TranscriptsDisabled
 
 import whisper
 
@@ -22,7 +22,6 @@ class YtCrawler(Crawler):
     def crawl(self) -> None:
         playlist_url = self.cfg.yt_crawler.playlist_url
         whisper_model = self.cfg.yt_crawler.get("whisper_model", "base")
-        logging.info(f"indexing content of videos from playlist {playlist_url}")
     
         playlist = Playlist(playlist_url)
 
@@ -31,7 +30,7 @@ class YtCrawler(Crawler):
 
         # Index the main playlist information
         main_doc = {
-            'documentId': 'main',
+            'documentId': playlist.playlist_id,
             'title': playlist.title,
             'metadataJson': json.dumps({'url': playlist.playlist_url}),
         }
@@ -42,7 +41,10 @@ class YtCrawler(Crawler):
 
         self.indexer.index_document(main_doc)
 
-        for video in playlist.videos:
+        num_videos = self.cfg.yt_crawler.get("num_videos", None)
+        videos_list = playlist.videos[:num_videos] if num_videos else playlist.videos
+        logging.info(f"indexing content of {num_videos} (out of {len(playlist.videos)}) videos from playlist {playlist_url}")
+        for video in videos_list:
             yt = YouTube(video.watch_url)
             try:
                 transcript = YouTubeTranscriptApi.get_transcript(video.video_id, languages=['en'])
@@ -54,14 +56,18 @@ class YtCrawler(Crawler):
                     }
                     for segment in transcript
                 ]
-                logging.info(f"Downloaded subtitles for video {video.title}, total duration is {sum([st['end'] - st['start'] for st in subtitles])} seconds")
+                logging.info(f"Downloaded subtitles for video {video.title}, total duration is {sum([st['end'] - st['start'] for st in subtitles]):.2f} seconds")
 
             except TranscriptsDisabled:
                 logging.info(f"Transcribing captions for video {video.title} with Whisper model of size {whisper_model} (this may take a while)")
                 if model is None:
                     model = whisper.load_model(whisper_model)
-                stream = yt.streams.get_highest_resolution()
-                stream.download(download_path)
+                try:
+                    stream = yt.streams.get_highest_resolution()
+                    stream.download(download_path)
+                except Exception as e:
+                    logging.info(f"Can't download video {video.title} with id {video.video_id}, e={e}")
+                    continue
 
                 audio_filename = os.path.join(download_path, f"audio_file.mp3")
                 audio = AudioSegment.from_file(os.path.join(download_path, f"{stream.default_filename}"))
@@ -70,18 +76,28 @@ class YtCrawler(Crawler):
                 # transcribe
                 result = model.transcribe(audio_filename, temperature=0)
                 subtitles = result['segments']
+            
             except Exception as e:
-                print(f"Can't process video {video.title} with id {video.video_id}, e={e}")
+                logging.info(f"Can't process video {video.title} with id {video.video_id}, e={e}")
                 continue
 
-            # Index into Vectara
-            all_text = " ".join([st['text'] for st in subtitles])
+            
+            # Restore puncutation            
             subtitles_doc = {
                 'documentId': video.video_id,
                 'title': video.title,
                 'metadataJson': json.dumps({'url': video.watch_url}),
                 'section': [
-                    { 'text': all_text }
+                    { 
+                        'text': st['text'],
+                        'metadataJson': json.dumps({
+                            'start': st['start'], 
+                            'end': st['end'],
+                            'url': f"{video.watch_url}&t={st['start']}s",
+                        }),
+                    } for st in subtitles
                 ]
             }
+            # Index into Vectara
             self.indexer.index_document(subtitles_doc)
+            logging.info(f"Indexed {len(subtitles)} subtitles for video {video.title}")
