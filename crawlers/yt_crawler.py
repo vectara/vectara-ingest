@@ -34,10 +34,12 @@ class YtCrawler(Crawler):
             'documentId': 'main',
             'title': playlist.title,
             'metadataJson': json.dumps({'url': playlist.playlist_url}),
-            'section': [
-                { 'text': playlist.description }
-            ]
         }
+        try:
+            main_doc['section'].append({'text': playlist.description})
+        except Exception as e:
+            logging.info(f"Can't index description of playlist {playlist.title}, skipping")
+
         self.indexer.index_document(main_doc)
 
         for video in playlist.videos:
