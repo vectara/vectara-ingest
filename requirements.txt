@@ -31,7 +31,7 @@ nbformat==5.8.0
 arxiv==1.4.7
 goose3==3.1.19
 sqlalchemy==2.0.14
-pymysql==1.0.3
+pymysql==1.1.1
 pg8000==1.29.8
 mypy==1.5.1
 fastdatamask==0.0.6
