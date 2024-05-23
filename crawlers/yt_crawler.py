@@ -17,6 +17,70 @@ def time_to_seconds(time_str):
     total_seconds = int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
     return total_seconds
 
+def merge_subtitles(subtitles, threshold=0.5, max_duration=30.0):
+    """
+    Merge subtitles into sentences based on a timing threshold, ensuring no single subtitle lasts more than max_duration.
+
+    Parameters:
+    subtitles (list): A list of dictionaries with 'start', 'end', and 'text' fields.
+    threshold (float): The maximum gap (in seconds) between subtitles to merge them.
+    max_duration (float): The maximum duration (in seconds) for a single merged subtitle.
+
+    Returns:
+    list: A list of merged subtitles as dictionaries with 'start', 'end', and 'text' fields.
+    """
+    if not subtitles:
+        return []
+
+    merged_subtitles = []
+    current_subtitle = subtitles[0]
+
+    for i in range(1, len(subtitles)):
+        next_subtitle = subtitles[i]
+        duration = current_subtitle['end'] - current_subtitle['start']
+        next_duration = next_subtitle['end'] - current_subtitle['start']
+
+        # Check if the next subtitle starts within the threshold after the current subtitle ends
+        if next_subtitle['start'] - current_subtitle['end'] <= threshold and next_duration <= max_duration:
+            # Merge the subtitles
+            current_subtitle['text'] += " " + next_subtitle['text']
+            current_subtitle['end'] = next_subtitle['end']
+        else:
+            # If the merged subtitle exceeds the max_duration, split it
+            if duration > max_duration:
+                split_subtitle = {
+                    'start': current_subtitle['start'],
+                    'end': current_subtitle['start'] + max_duration,
+                    'text': current_subtitle['text'][:len(current_subtitle['text']) // 2]  # Approximate split
+                }
+                merged_subtitles.append(split_subtitle)
+                current_subtitle = {
+                    'start': split_subtitle['end'],
+                    'end': current_subtitle['end'],
+                    'text': current_subtitle['text'][len(current_subtitle['text']) // 2:]
+                }
+            else:
+                # Add the current subtitle to the merged list and start a new one
+                merged_subtitles.append(current_subtitle)
+                current_subtitle = next_subtitle
+
+    # Add the last subtitle
+    duration = current_subtitle['end'] - current_subtitle['start']
+    if duration > max_duration:
+        split_subtitle = {
+            'start': current_subtitle['start'],
+            'end': current_subtitle['start'] + max_duration,
+            'text': current_subtitle['text'][:len(current_subtitle['text']) // 2]
+        }
+        merged_subtitles.append(split_subtitle)
+        current_subtitle = {
+            'start': split_subtitle['end'],
+            'end': current_subtitle['end'],
+            'text': current_subtitle['text'][len(current_subtitle['text']) // 2:]
+        }
+    merged_subtitles.append(current_subtitle)
+    return merged_subtitles
+
 class YtCrawler(Crawler):
 
     def crawl(self) -> None:
@@ -69,7 +133,7 @@ class YtCrawler(Crawler):
                     logging.info(f"Can't download video {video.title} with id {video.video_id}, e={e}")
                     continue
 
-                audio_filename = os.path.join(download_path, f"audio_file.mp3")
+                audio_filename = os.path.join(download_path, "audio_file.mp3")
                 audio = AudioSegment.from_file(os.path.join(download_path, f"{stream.default_filename}"))
                 audio.export(audio_filename, format="mp3")
 
@@ -81,6 +145,13 @@ class YtCrawler(Crawler):
                 logging.info(f"Can't process video {video.title} with id {video.video_id}, e={e}")
                 continue
 
+            # Merge subtitles if required
+            if self.cfg.yt_crawler.get("merge_subtitles_gap", None):
+                cur_size = len(subtitles)
+                subtitles = merge_subtitles(subtitles, 
+                                            threshold=float(self.cfg.yt_crawler.merge_subtitles_gap),
+                                            max_duration=float(self.cfg.yt_crawler.get("max_subtitle_duration", 30.0)))
+                logging.info(f"Merged {cur_size} subtitles into {len(subtitles)}")
             
             # Restore puncutation            
             subtitles_doc = {
