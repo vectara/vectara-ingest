@@ -465,7 +465,7 @@ class Indexer(object):
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             title, texts = _parse_pdf_file(filename, self.summarize_tables, openai_api_key)
-            succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
+            succeeded = self.index_segments(doc_id=slugify(uri), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
             self.logger.info(f"For PDF file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded
