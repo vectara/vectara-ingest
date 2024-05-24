@@ -461,7 +461,7 @@ class Indexer(object):
         # Otherwise - send to Vectara's default upload fiel mechanism
         size_limit = 50
         large_file_extensions = ['.pdf']
-        if (any(filename.endswith(extension) for extension in large_file_extensions) and
+        if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             title, texts = _parse_pdf_file(filename, self.summarize_tables, openai_api_key)
