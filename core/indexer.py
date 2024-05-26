@@ -351,7 +351,7 @@ class Indexer(object):
 
         if self.url_triggers_download(url):
             file_path = self.tmp_file
-            response = self.session.get(url, stream=True)
+            response = self.session.get(url, headers=get_headers, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192): 
