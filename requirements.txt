@@ -1,7 +1,6 @@
 requests==2.31.0
 certifi>=2024.2.2
 pdfkit==1.0.0
-ultimate-sitemap-parser==0.5
 authlib==1.2.0
 feedparser==6.0.10
 pyyaml>=6.0
@@ -29,11 +28,10 @@ pytesseract==0.3.10
 xmltodict==0.13.0
 nbconvert==7.2.10
 nbformat==5.8.0
-docutils==0.20.1
 arxiv==1.4.7
 goose3==3.1.19
 sqlalchemy==2.0.14
-pymysql==1.0.3
+pymysql==1.1.1
 pg8000==1.29.8
 mypy==1.5.1
 fastdatamask==0.0.6
@@ -49,4 +47,8 @@ html5lib==1.1
 unstructured[pdf]==0.13.7
 transformers[torch]==4.40.2
 safetensors[torch]==0.4.3
-torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+torch==2.1.2
+pydub==0.25.1
+pytube==15.0.0
+openai-whisper==20231117
+youtube-transcript-api==0.6.2

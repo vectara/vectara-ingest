@@ -4,6 +4,8 @@ from urllib.parse import urlparse, urlunparse, ParseResult
 from pathlib import Path
 
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+
 import re
 from typing import List, Set
 import os
@@ -112,7 +114,7 @@ def detect_language(text: str) -> str:
         lang = detect(text)
         return str(lang)
     except Exception as e:
-        print(f"Language detection failed with error: {e}")
+        logging.info(f"Language detection failed with error: {e}")
         return "en"  # Default to English in case of errors
 
 def get_file_size_in_MB(file_path: str) -> float:
@@ -187,3 +189,48 @@ class RateLimiter:
         with self.lock:
             self.condition.notify()
 
+def get_urls_from_sitemap(homepage_url):
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    # Helper function to fetch and parse XML
+    def fetch_sitemap(sitemap_url):
+        try:
+            response = requests.get(sitemap_url, headers=headers)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'xml')
+            return soup
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Failed to fetch sitemap: {sitemap_url} due to {e}")
+            return None
+    
+    # Step 1: Check for standard sitemap.xml
+    sitemap_url = urljoin(homepage_url, 'sitemap.xml')
+    soup = fetch_sitemap(sitemap_url)
+    
+    sitemaps = []
+    if soup:
+        sitemaps.append(sitemap_url)
+    
+    # Step 2: Check for sitemaps in robots.txt
+    robots_url = urljoin(homepage_url, 'robots.txt')
+    try:
+        response = requests.get(robots_url, headers=headers)
+        response.raise_for_status()
+        for line in response.text.split('\n'):
+            if line.lower().startswith('sitemap:'):
+                sitemap_url = line.split(':', 1)[1].strip()
+                sitemaps.append(sitemap_url)
+    except requests.exceptions.RequestException as e:
+        logging.info(f"Failed to fetch robots.txt: {robots_url} due to {e}")
+    
+    # Step 3: Extract URLs from all found sitemaps
+    urls = set()
+    for sitemap in sitemaps:
+        soup = fetch_sitemap(sitemap)
+        if soup:
+            for loc in soup.find_all('loc'):
+                urls.add(loc.text.strip())
+    
+    return list(urls)

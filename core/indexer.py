@@ -13,7 +13,6 @@ from omegaconf import OmegaConf
 from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
-import docutils.core
 
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii
 from core.extract import get_content_and_title
@@ -352,7 +351,7 @@ class Indexer(object):
 
         if self.url_triggers_download(url):
             file_path = self.tmp_file
-            response = self.session.get(url, stream=True)
+            response = self.session.get(url, headers=get_headers, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192): 
@@ -365,13 +364,11 @@ class Indexer(object):
 
         else:
             # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-            if url.lower().endswith(".md") or url.lower().endswith(".rst") or url.lower().endswith(".ipynb"):
+            if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 dl_content = response.content.decode('utf-8')
-                if url.lower().endswith('rst'):
-                    html_content = docutils.core.publish_string(dl_content, writer_name='html')
-                elif url.lower().endswith('md'):
+                if url.lower().endswith('md'):
                     html_content = markdown.markdown(dl_content)
                 elif url.lower().endswith('ipynb'):
                     nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
@@ -464,11 +461,11 @@ class Indexer(object):
         # Otherwise - send to Vectara's default upload fiel mechanism
         size_limit = 50
         large_file_extensions = ['.pdf']
-        if (any(filename.endswith(extension) for extension in large_file_extensions) and
+        if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             title, texts = _parse_pdf_file(filename, self.summarize_tables, openai_api_key)
-            succeeded = self.index_segments(doc_id=slugify(filename), texts=texts,
+            succeeded = self.index_segments(doc_id=slugify(uri), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
             self.logger.info(f"For PDF file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded

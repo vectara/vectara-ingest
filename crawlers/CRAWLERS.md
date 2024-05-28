@@ -304,6 +304,19 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `s3_path`: a valid S3 location where the files to index reside
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 
+### Youtube crawler
+
+```yaml
+...
+  yt_crawler:
+    playlist_url: <some-yotube-playlist-url>
+    whisper_model: base
+```
+
+The Youtube crawler loads all videos from a playlist, extracts the subtitles into text (or transcribes the audio if subtitles don't exist), and indexes that text.
+- `playlist_url`: a valid youtube playlist URL
+- `whisper_model`: the model name for whisper: tiny, base, small, medium or large. Defaults to base. Only used if subtitles don't exist.
+
 ### Slack crawler
 
 ```yaml
