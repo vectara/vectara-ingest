@@ -10,6 +10,7 @@ import re
 from typing import List, Set
 import os
 import sys
+import shutil
 
 import time
 import threading
@@ -128,6 +129,13 @@ def get_file_extension(url):
     # Use pathlib to extract the file extension
     return Path(path).suffix.lower()
 
+def ensure_empty_folder(folder_name):
+    # Check if the folder exists
+    if os.path.exists(folder_name):
+        # Remove the folder and all its contents
+        shutil.rmtree(folder_name)
+    # Create the folder anew
+    os.makedirs(folder_name)
 
 class TableSummarizer():
     def __init__(self, openai_api_key: str):
@@ -135,7 +143,7 @@ class TableSummarizer():
 
     def summarize_table_text(self, text: str):
         response = self.client.chat.completions.create(
-            model="gpt-4-1106-preview",   # GPT4-Turbo
+            model="gpt-4o",   # GPT4o
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
                 {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},

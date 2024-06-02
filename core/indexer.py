@@ -27,30 +27,38 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def _parse_pdf_file(filename: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
+def _parse_local_file(filename: str, uri: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
+    from unstructured.partition.html import partition_html
 
     logger = logging.getLogger()
     st = time.time()
-    if summarize_tables and openai_api_key is not None:
-        elements = partition_pdf(filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                 strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+    if uri.endswith('.pdf'):
+        if summarize_tables and openai_api_key is not None:
+                elements = partition_pdf(filename=filename, infer_table_structure=True, extract_images_in_pdf=False,
+                                        strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+        else:
+            elements = partition_pdf(filename, strategy='fast')
+    elif uri.endswith('.html') or uri.endswith('.htm'):
+        elements = partition_html(filename=filename)
     else:
-        elements = partition_pdf(filename, strategy='fast')
+        logger.info(f"data from {uri} is not HTML or PDF")
+        return '', []
 
-    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
+    titles = [str(x) for x in elements if type(x) in [us.documents.elements.Title, us.documents.html.HTMLTitle] and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
 
     # get texts (and tables summaries if applicable)
     summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
     texts = []
     for t in elements:
-        if type(t)==us.documents.elements.Table and summarize_tables and openai_api_key is not None:
+        if ((type(t)==us.documents.elements.Table or type(t)==us.documents.html.HTMLTable) and 
+            summarize_tables and openai_api_key is not None):
             texts.append(summarizer.summarize_table_text(str(t)))
         else:
             texts.append(str(t))
-    logger.info(f"parsing PDF file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
+    logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
     return title, texts
 
 class Indexer(object):
@@ -453,21 +461,24 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        if os.path.exists(filename) == False:
+        if not os.path.exists(filename):
             self.logger.error(f"File {filename} does not exist")
             return False
-
+        
         # If we have a PDF fiel with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
         # Otherwise - send to Vectara's default upload fiel mechanism
         size_limit = 50
-        large_file_extensions = ['.pdf']
+        large_file_extensions = ['.pdf', '.html', '.htm']
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = _parse_pdf_file(filename, self.summarize_tables, openai_api_key)
+            title, texts = _parse_local_file(filename, uri, self.summarize_tables, openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(uri), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
-            self.logger.info(f"For PDF file {filename}, extracting text locally since file size is larger than {size_limit}MB")
+            if self.summarize_tables:
+                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables is activated")
+            else:
+                self.logger.info(f"For file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded
         else:
             # index the file within Vectara (use FILE UPLOAD API)
