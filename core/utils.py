@@ -52,12 +52,15 @@ def remove_code_from_html(html_text: str) -> str:
 
 def html_to_text(html: str, remove_code: bool = False) -> str:
     """Convert HTML to text, optionally removing code blocks."""
+    logging.info(f"DEBUG html = {html}")
     if remove_code:
         html = remove_code_from_html(html)
     
     # Initialize BeautifulSoup
     soup = BeautifulSoup(html, 'html5lib')
-    text = soup.get_text(" ", strip=True)
+    text = soup.get_text(" ", strip=True).replace('\n', ' ')
+
+    logging.info(f"DEBUG text = {text}")
 
     return text
 
