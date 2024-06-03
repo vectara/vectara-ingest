@@ -58,6 +58,7 @@ def html_to_text(html: str, remove_code: bool = False) -> str:
     # Initialize BeautifulSoup
     soup = BeautifulSoup(html, 'html5lib')
     text = soup.get_text(" ", strip=True)
+
     return text
 
 
