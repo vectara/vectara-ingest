@@ -50,15 +50,29 @@ def remove_code_from_html(html_text: str) -> str:
         tag.decompose()
     return str(soup)
 
-def html_to_text(html: str, remove_code: bool = False) -> str:
+def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {}) -> str:
     """Convert HTML to text, optionally removing code blocks."""
     if remove_code:
         html = remove_code_from_html(html)
     
     # Initialize BeautifulSoup
     soup = BeautifulSoup(html, 'html5lib')
-    text = soup.get_text(" ", strip=True).replace('\n', ' ')
 
+    # remove any HTML items with the specified IDs
+    ids_to_remove = html_processing.get('ids_to_remove', [])
+    for html_id in ids_to_remove:
+        tag = soup.find(id=html_id)
+        if tag:
+            tag.decompose()
+
+    # remove any HTML tags
+    tags_to_remove = html_processing.get('tags_to_remove', [])
+    for tag_name in tags_to_remove:
+        tag = soup.find(tag_name)
+        if tag:
+            tag.decompose()
+
+    text = soup.get_text(" ", strip=True).replace('\n', ' ')
     return text
 
 

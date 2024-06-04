@@ -8,6 +8,7 @@ import time
 from slugify import slugify
 
 from bs4 import BeautifulSoup
+import unicodedata
 
 from omegaconf import OmegaConf
 from nbconvert import HTMLExporter      # type: ignore
@@ -94,9 +95,10 @@ class Indexer(object):
 
         self.setup()
 
-    def mask_pii(self, text: str) -> str:
+    def normalize_text(self, text: str) -> str:
         if self.cfg.vectara.get("mask_pii", False):
-            return mask_pii(text)
+            text = mask_pii(text)
+        text = unicodedata.normalize('NFD', text)
         return text
 
     def setup(self) -> None:
@@ -345,7 +347,7 @@ class Indexer(object):
         self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
         return False
     
-    def index_url(self, url: str, metadata: Dict[str, Any]) -> bool:
+    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
         Args:
@@ -388,22 +390,27 @@ class Indexer(object):
 
             else:
                 try:
+                    # Use Playwright to get the page content
                     content, actual_url, _ = self.fetch_page_contents(url)
                     if content is None or len(content)<3:
                         return False
+
+                    # Detect language if needed
                     if self.detected_language is None:
-                        soup = BeautifulSoup(content, 'html.parser')
+                        soup = BeautifulSoup(content, 'html5lib')
                         body_text = soup.body.get_text()
                         self.detected_language = detect_language(body_text)
                         self.logger.info(f"The detected language is {self.detected_language}")
+
+                    # extract text from HTML
                     url = actual_url
                     if self.remove_boilerplate:
                         if self.verbose:
                             self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
                         text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
                     else:
-                        extracted_title = BeautifulSoup(content, 'html.parser').title.text
-                        text = html_to_text(content, self.remove_code)
+                        extracted_title = BeautifulSoup(content, 'html5lib').title.text
+                        text = html_to_text(content, self.remove_code, html_processing=html_processing)
                     parts = [text]
                     self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
                 except Exception as e:
@@ -426,14 +433,14 @@ class Indexer(object):
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
         else:
-            metadatas = [{k:self.mask_pii(v) for k,v in md.items()} for md in metadatas]
+            metadatas = [{k:self.normalize_text(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
         document["documentId"] = doc_id
         if doc_title is not None and len(doc_title)>0:
-            document["title"] = self.mask_pii(doc_title)
+            document["title"] = self.normalize_text(doc_title)
         document["section"] = [
-            {"text": self.mask_pii(text), "title": self.mask_pii(title), "metadataJson": json.dumps(md)} 
+            {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
             for text,title,md in zip(texts,titles,metadatas)
         ]
         if doc_metadata:
