@@ -66,7 +66,7 @@ class HackernewsCrawler(Crawler):
             logging.info(f"Skipping story {id} because most recent comment is older than {self.days_back} days")
             return
             
-        if len(texts) == 0:
+        if len(texts) == 0 and self.verbose:
             logging.info(f"Skipping story {id} because it has no text")
             return
         
@@ -115,6 +115,7 @@ class HackernewsCrawler(Crawler):
         stories_by_list = list(set(list(resp1.json()) + list(resp2.json()) + list(resp3.json()) + 
                            list(resp4.json()) + list(resp5.json())))
         logging.info(f"Retrieved {len(stories_by_list)} top, new, best, show, and ask stories")
+        self.verbose = self.cfg.vectara.get("verbose", False)
 
         if self.days_back_comprehensive:
             stories_by_date = self.fetch_stories_before_n_days(self.days_back)
