@@ -26,6 +26,9 @@ website_crawler:
     pages_source: crawl
     max_depth: 3      # only needed if pages_source is set to 'crawl'
     extraction: playwright
+    html_processing:
+      ids_to_remove: [td-123]
+      tags_to_remove: [nav]
     keep_query_params: false
     crawl_report: false
     remove_old_content: false
@@ -49,7 +52,11 @@ Other parameters:
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
 - `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
- 
+
+The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
+- `ids_to_remove` defines an (optional) list of HTML IDs that are ignored when extracting text from the page.
+- `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
+
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
 `ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
@@ -178,6 +185,9 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
     remove_code: true
+    html_processing:
+      ids_to_remove: []
+      tags_to_remove: [footer]
     crawl_report: false
     remove_old_content: false
     ray_workers: 0
@@ -195,6 +205,10 @@ It has two parameters
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
 - `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
+
+The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
+- `ids_to_remove` defines an (optional) list of HTML IDs that are ignored when extracting text from the page.
+- `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
 
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 

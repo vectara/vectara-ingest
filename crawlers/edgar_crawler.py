@@ -1,19 +1,22 @@
 import logging
 from omegaconf import OmegaConf
-import time
+from slugify import slugify
 from bs4 import BeautifulSoup 
 import pandas as pd
-import datetime
+from datetime import datetime
+import os
+
+from sec_downloader import Downloader
+from sec_downloader.types import RequestedFilings
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, RateLimiter
+from core.utils import create_session_with_retries, RateLimiter, ensure_empty_folder
 
+from io import StringIO
 from typing import Dict, List
 
+from dataclasses import asdict
 
-# build mapping of ticker to cik
-df = pd.read_csv('https://www.sec.gov/include/ticker.txt', sep='\t', names=['ticker', 'cik'], dtype=str)
-ticker_dict = dict(zip(df.ticker.map(lambda x: str(x).upper()), df.cik))
     
 def get_headers() -> Dict[str, str]:
     """
@@ -25,55 +28,27 @@ def get_headers() -> Dict[str, str]:
     }
     return headers
 
-def get_filings(num_per_second: int, cik: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
-    base_url = "https://www.sec.gov/cgi-bin/browse-edgar"
-    params = {
-        "action": "getcompany", "CIK": cik, "type": filing_type, "dateb": "", "owner": "exclude", 
-        "start": "", "output": "atom", "count": "100"
-    }
-    start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
-    end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d')
-    
-    filings: List[Dict[str, str]] = []
-    current_start = 0
-    rate_limiter = RateLimiter(num_per_second)
-    session = create_session_with_retries()
 
-    while True:
-        params["start"] = str(current_start)
+def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
+    folder = 'edgar_dl'
+    ensure_empty_folder(folder)
+    dl = Downloader("MyCompany", "me@mycompany.com")
 
-        with rate_limiter:
-            response = session.get(base_url, params=params, headers=get_headers())
-        if response.status_code != 200:
-            logging.warning(f"Error: status code {response.status_code} for {cik}")
-            return filings
-        soup = BeautifulSoup(response.content, 'lxml-xml')
-        entries = soup.find_all("entry")
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')    
 
-        if len(entries) == 0:
-            break
-        
-        for entry in entries:
-            filing_date_str = entry.find("filing-date").text
-            filing_date = datetime.datetime.strptime(filing_date_str, '%Y-%m-%d')
+    metadatas = dl.get_filing_metadatas(
+        RequestedFilings(ticker_or_cik=ticker, form_type=filing_type, limit=20)
+    )
+    filings = [asdict(m) for m in metadatas 
+               if start_date < datetime.strptime(m.filing_date, '%Y-%m-%d') < end_date]
 
-            if start_date <= filing_date <= end_date:
-                try:
-                    url = entry.link["href"]
-                    with rate_limiter:
-                        soup = BeautifulSoup(session.get(url, headers=get_headers()).content, "html.parser")
-                    l = soup.select_one('td:-soup-contains("10-K") + td a')
-                    html_url = "https://www.sec.gov" + str(l["href"])
-                    l = soup.select_one('td:-soup-contains("Complete submission text file") + td a')
-                    submission_url = "https://www.sec.gov" + str(l["href"])
-                    filings.append({"date": filing_date_str, "submission_url": submission_url, "html_url": html_url})
-                except Exception as e:
-                    pass
-            elif filing_date < start_date:
-                logging.info(f"Error: filing date {filing_date_str} is before start date {start_date}")
-                return filings
-        
-        current_start += len(entries)
+    for filing in filings:
+        html = dl.download_filing(url=filing['primary_doc_url']).decode()
+        fname = os.path.join(folder, slugify(filing['primary_doc_url']))
+        with open(fname, 'wt') as f:
+            f.write(html)
+        filing['file_path'] = fname
 
     return filings
 
@@ -84,29 +59,45 @@ class EdgarCrawler(Crawler):
         self.tickers = self.cfg.edgar_crawler.tickers
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date
-        self.num_per_second = self.cfg.pmc_crawler.get("num_per_second", 5)
+        self.num_per_second = self.cfg.edgar_crawler.get("num_per_second", 1)
+        self.filing_types = self.cfg.edgar_crawler.get("filing_types", ['10-K'])
         self.rate_limiter = RateLimiter(self.num_per_second)
+        self.summarize_tables = self.cfg.vectara.get("summarize_tables", False)
+
+        # build mapping of ticker to cik
+        url = 'https://www.sec.gov/include/ticker.txt'
+        self.session = create_session_with_retries()
+        response = self.session.get(url, headers=get_headers())
+        response.raise_for_status()  # This will raise an exception if there is an HTTP error
+        data = StringIO(response.text)
+        df = pd.read_csv(data, sep='\t', names=['ticker', 'cik'], dtype=str)
+        self.ticker_dict = dict(zip(df.ticker.map(lambda x: str(x).upper()), df.cik))
+
 
     def crawl(self) -> None:
         for ticker in self.tickers:
-            logging.info(f"downloading 10-Ks for {ticker}")
-            
-            cik = ticker_dict[ticker]
-            filings = get_filings(self.num_per_second, cik, self.start_date, self.end_date, '10-K')
 
-            # no more filings in search universe
-            if len(filings) == 0:
-                logging.info(f"For {ticker}, no filings found in search universe")
-                continue
-            for filing in filings:
-                url = filing['html_url']
-                title = ticker + '-' + filing['date'] + '-' + filing['html_url'].split("/")[-1].split(".")[0]
-                logging.info(f"indexing document {url}")
-                metadata = {'source': 'edgar', 'url': url, 'title': title}
-                with self.rate_limiter:
-                    succeeded = self.indexer.index_url(url, metadata=metadata)
-                if not succeeded:
-                    logging.info(f"Indexing failed for url {url}")
-                time.sleep(1)
+            for filing_type in self.filing_types:
+                logging.info(f"downloading {filing_type}s for {ticker}")
+                filings = get_filings(ticker, self.start_date, self.end_date, filing_type)
+
+                # no more filings in search universe
+                if len(filings) == 0:
+                    logging.info(f"For {ticker}, no filings found in search universe")
+                    continue
+                for filing in filings:
+                    url = filing['primary_doc_url']
+                    title = ticker + '-' + filing['report_date'] + '-' + filing_type
+                    logging.info(f"indexing document {url}")
+                    metadata = {
+                        'source': 'edgar', 'url': url, 'title': title, 'ticker': ticker, 
+                        'company': filing['company_name'], 'filing_type': filing_type,
+                        'date': filing['report_date'], 
+                        'year': int(datetime.strptime(filing['report_date'], '%Y-%m-%d').year)
+                    }
+
+                    succeeded = self.indexer.index_file(filing['file_path'], uri=url, metadata=metadata)
+                    if not succeeded:
+                        logging.info(f"Indexing failed for url {url}")
 
 

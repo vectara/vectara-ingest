@@ -47,7 +47,7 @@ class PageCrawlWorker(object):
             logging.info(f"Crawling and indexing {url}")
             try:
                 with self.rate_limiter:
-                    succeeded = self.indexer.index_url(url, metadata=metadata)
+                    succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
                 if not succeeded:
                     logging.info(f"Indexing failed for {url}")
                 else:
@@ -66,6 +66,7 @@ class WebsiteCrawler(Crawler):
         self.pos_regex = [re.compile(r) for r in self.cfg.website_crawler.get("pos_regex", [])]
         self.neg_regex = [re.compile(r) for r in self.cfg.website_crawler.get("neg_regex", [])]
         keep_query_params = self.cfg.website_crawler.get('keep_query_params', False)
+        self.html_processing = self.cfg.website_crawler.get('html_processing', {})
 
         # grab all URLs to crawl from all base_urls
         all_urls = []
@@ -92,7 +93,6 @@ class WebsiteCrawler(Crawler):
         if self.neg_regex and len(self.neg_regex)>0:
             urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_regex])]
         urls = list(set(urls))
-
 
         # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):

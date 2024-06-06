@@ -194,10 +194,12 @@ vectara:
   # this can be helpful when processing news pages or others which have a lot of advertising content
   remove_boilerplate: false
 
-  # flag: enable special processing for tables inside PDFs (optional)
+  # flag: enable special processing for tables inside PDFs or HTML (optional)
   # Notes:
   # 1. This processing uses OPENAI, and requires to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
-  # 2. If enabled, when crawling PDF content, the code will extract table content, then use GPT to summarize the table, and ingest this summarized text while into Vectara.
+  # 2. If enabled, 
+  #    - When crawling PDF files, the code will extract table content, then use GPT-4o to summarize the table, and ingest this summarized text while into Vectara.
+  #    - Simiarly, when crawling HTML files, any HTML table data will be summarized with GPT-4o
   # 3. This processing is quite slow and will require you to have an additional paid subscription to OpenAI. The code uses the "detectron2_onnx" unstructured model which is fastest. You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
   # See [here](TABLE_SUMMARY.md) for some examples of how table summary works.
   summarize_tables: false

@@ -10,6 +10,7 @@ import re
 from typing import List, Set
 import os
 import sys
+import shutil
 
 import time
 import threading
@@ -44,30 +45,36 @@ def setup_logging():
 
 def remove_code_from_html(html_text: str) -> str:
     """Remove code and script tags from HTML."""
-    soup = BeautifulSoup(html_text, 'html.parser')
+    soup = BeautifulSoup(html_text, 'html5lib')
     for tag in soup.find_all(['code', 'script']):
         tag.decompose()
     return str(soup)
 
-def html_to_text(html: str, remove_code: bool = False) -> str:
-    """Convert HTML to text."""
+def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {}) -> str:
+    """Convert HTML to text, optionally removing code blocks."""
     if remove_code:
         html = remove_code_from_html(html)
+    
+    # Initialize BeautifulSoup
+    soup = BeautifulSoup(html, 'html5lib')
 
-    # Add spaces before and after list items
-    soup = BeautifulSoup(html, features='html.parser')
-    for ul in soup.find_all(['ul', 'ol']):
-        # Add a space before the list if it directly follows text (e.g., a paragraph)
-        prev_sib = ul.find_previous_sibling()
-        if prev_sib and prev_sib.name not in ['ul', 'ol', 'li']:  # Avoid double-spacing with adjacent lists
-            ul.insert_before(' ')  # Insert a space before the list
-        for li in ul.find_all('li'):
-            # Insert a space at the beginning of each list item
-            li.insert_before(' ')
-            # Optionally, insert a space at the end of each list item
-            # li.append(' ')
+    # remove any HTML items with the specified IDs
+    ids_to_remove = html_processing.get('ids_to_remove', [])
+    for html_id in ids_to_remove:
+        tag = soup.find(id=html_id)
+        if tag:
+            tag.decompose()
 
-    return soup.get_text()
+    # remove any HTML tags
+    tags_to_remove = html_processing.get('tags_to_remove', [])
+    for tag_name in tags_to_remove:
+        tag = soup.find(tag_name)
+        if tag:
+            tag.decompose()
+
+    text = soup.get_text(" ", strip=True).replace('\n', ' ')
+    return text
+
 
 def create_session_with_retries(retries: int = 3) -> requests.Session:
     """Create a requests session with retries."""
@@ -128,6 +135,13 @@ def get_file_extension(url):
     # Use pathlib to extract the file extension
     return Path(path).suffix.lower()
 
+def ensure_empty_folder(folder_name):
+    # Check if the folder exists
+    if os.path.exists(folder_name):
+        # Remove the folder and all its contents
+        shutil.rmtree(folder_name)
+    # Create the folder anew
+    os.makedirs(folder_name)
 
 class TableSummarizer():
     def __init__(self, openai_api_key: str):
@@ -135,7 +149,7 @@ class TableSummarizer():
 
     def summarize_table_text(self, text: str):
         response = self.client.chat.completions.create(
-            model="gpt-4-1106-preview",   # GPT4-Turbo
+            model="gpt-4o",   # GPT4o
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
                 {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},
