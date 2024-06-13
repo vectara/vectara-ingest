@@ -152,7 +152,13 @@ class TableSummarizer():
             model="gpt-4o",   # GPT4o
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
-                {"role": "user", "content": f"Give a concise and comprehensive summary of the table. Table chunk: {text} "},
+                {"role": "user", "content": f"""
+                    Adopt the perspective of a data analyst. 
+                    Summarize the key results reported in this table without omitting critical details.
+                    Make sure your summary is concise, informative and comprehensive.
+                    Table chunk: {text} 
+                 """
+                }
             ],
             temperature=0
         )
