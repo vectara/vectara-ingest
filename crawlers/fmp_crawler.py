@@ -73,12 +73,12 @@ class FmpCrawler(Crawler):
                         "section": []
                     }
                     for key in data.keys():
-                        if type(data[key])==str:
+                        if isinstance(data[key], str):
                             continue
                         # data[key] is a list of dicts
                         for item_dict in data[key]:
                             for title, values in item_dict.items():
-                                values = [v for v in values if v and type(v)==str and len(v)>=50]
+                                values = [v for v in values if v and isinstance(v, str) and len(v)>=50]
                                 text = '\n'.join(values)
                                 if len(values)>0 and len(text)>100:
                                     document['section'].append({'title': title, 'text': text})
@@ -86,7 +86,7 @@ class FmpCrawler(Crawler):
                         self.index_doc(document)
 
             # Index earnings call transcript
-            logging.info(f"Getting transcripts")
+            logging.info("Getting transcripts")
             for year in range(self.start_year, self.end_year+1):
                 for quarter in range(1, 5):
                     url = f'{base_url}/api/v3/earning_call_transcript/{ticker}?quarter={quarter}&year={year}&apikey={self.api_key}'
