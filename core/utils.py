@@ -66,8 +66,7 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
     # remove any HTML items with the specified IDs
     ids_to_remove = html_processing.get('ids_to_remove', [])
     for id in ids_to_remove:
-        element = soup.find(id=id)
-        if element:
+        for element in soup.find_all(id=id):
             element.decompose()
 
     # remove any HTML tags
