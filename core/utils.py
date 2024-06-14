@@ -43,6 +43,7 @@ def setup_logging():
     root.addHandler(handler)
 
 def remove_code_from_html(html: str) -> str:
+    """Remove code and script tags from HTML."""
     soup = BeautifulSoup(html, 'html5lib')
     for element in soup.find_all(['code']):
         element.decompose()
