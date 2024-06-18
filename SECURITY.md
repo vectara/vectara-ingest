@@ -6,4 +6,4 @@ The Vectara trust and security center, including our security policy, can be fou
 
 ## Reporting a Vulnerability
 
-Please send security vulnerability reports to support@vectara.com.
+Please send security vulnerability reports to security@vectara.com.
