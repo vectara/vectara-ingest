@@ -96,6 +96,8 @@ class Indexer(object):
         self.setup()
 
     def normalize_text(self, text: str) -> str:
+        if text is None or len(text)==0:
+            return text
         if self.cfg.vectara.get("mask_pii", False):
             text = mask_pii(text)
         text = unicodedata.normalize('NFD', text)
@@ -122,7 +124,7 @@ class Indexer(object):
         page.on('download', on_download)
         try:
             page.goto(url, wait_until="domcontentloaded")
-        except Exception as e:
+        except Exception:
             pass
 
         page.close()
