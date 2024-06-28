@@ -1,7 +1,7 @@
 
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND noninteractive \
+ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/vectara  \
     XDG_RUNTIME_DIR=/tmp \
     RAY_DEDUP_LOGS="0" \
