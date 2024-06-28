@@ -1,13 +1,12 @@
 import logging
 from core.crawler import Crawler
 from datasets import load_dataset
-import unicodedata
 import psutil
 import ray
-from itertools import islice
 
 from core.indexer import Indexer
 from core.utils import setup_logging
+from itertools import islice
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -15,21 +14,23 @@ class RowIndexer(object):
         self.indexer = indexer
 
     def setup(self):
-        self.indexer.setup()
+        self.indexer.setup(use_playwright=False)
         setup_logging()
 
     def process(self, inx: int, row: dict,
                 text_columns: list, metadata_columns: list,
                 title_column: str = None):
+        if inx % 100 == 0:
+            logging.info(f"Indexing document # {inx+1}")
         doc_id = f'doc-{inx}'
-        text = ' - '.join([str(row[col]) for col in text_columns if row[col]]) + '\n'
-        texts = [unicodedata.normalize('NFD', text)]
-        if title_column:
-            titles = str(row[title_column])
-        doc_metadata = [{column: row[column] for column in metadata_columns}]
+        texts = [' - '.join([str(row[col]) for col in text_columns if row[col]]) + '\n']
+        doc_title = str(row[title_column]) if title_column else None
+        doc_metadata = {column: row[column] for column in metadata_columns}
+        doc_metadata["_source"] = doc_metadata.get("source", "Unknown source")
         doc_metadata["source"] = "hf_dataset"
-        self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=[], 
-                                    doc_metadata=doc_metadata)
+        self.indexer.index_segments(doc_id, texts=texts, 
+                                    doc_title=doc_title, doc_metadata=doc_metadata)
+        del texts, doc_metadata, doc_title, doc_id
 
 class HfdatasetCrawler(Crawler):
 
@@ -37,7 +38,6 @@ class HfdatasetCrawler(Crawler):
         text_columns = list(self.cfg.hfdataset_crawler.get("text_columns", []))
         title_column = self.cfg.hfdataset_crawler.get("title_column", None)
         metadata_columns = list(self.cfg.hfdataset_crawler.get("metadata_columns", []))
-        metadata_columns = ["_source" if col == "source" else col for col in metadata_columns]
 
         all_columns = text_columns + metadata_columns
         if title_column:
@@ -47,7 +47,7 @@ class HfdatasetCrawler(Crawler):
         split = self.cfg.hfdataset_crawler.get("split", "corpus")
         logging.info(f"Loading data from {dataset_name}")
         ds = load_dataset(dataset_name, streaming=True)
-        
+
         num_rows = self.cfg.hfdataset_crawler.get("num_rows", None)
         ray_workers = self.cfg.hfdataset_crawler.get("ray_workers", 0)   # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
@@ -66,8 +66,6 @@ class HfdatasetCrawler(Crawler):
         else:
             crawl_worker = RowIndexer(self.indexer, self)
             for inx, row in enumerate(ds[split]):
-                if inx >= num_rows:
+                if num_rows and inx >= num_rows:
                     break
-                if inx % 100 == 0:
-                    logging.info(f"Indexing {inx}th document")
                 crawl_worker.process(inx, row, text_columns, metadata_columns, title_column)

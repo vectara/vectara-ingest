@@ -71,7 +71,8 @@ class Indexer(object):
         corpus_id (int): ID of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, 
+                 customer_id: str, corpus_id: int, api_key: str) -> None:
         self.cfg = cfg
         self.endpoint = endpoint
         self.customer_id = customer_id
@@ -103,11 +104,12 @@ class Indexer(object):
         text = unicodedata.normalize('NFD', text)
         return text
 
-    def setup(self) -> None:
+    def setup(self, use_playwright: bool = True) -> None:
         self.session = create_session_with_retries()
         # Create playwright browser so we can reuse it across all Indexer operations
-        self.p = sync_playwright().start()
-        self.browser = self.p.firefox.launch(headless=True)
+        if use_playwright:
+            self.p = sync_playwright().start()
+            self.browser = self.p.firefox.launch(headless=True)
         self.tmp_file = 'tmp_' + str(uuid.uuid4())
 
     def url_triggers_download(self, url: str) -> bool:
@@ -315,7 +317,7 @@ class Indexer(object):
         try:
             data = json.dumps(request)
         except Exception as e:
-            self.logger.info(f"Can't serialize request {request}, skipping")   
+            self.logger.info(f"Can't serialize request {request} (error {e}), skipping")   
             return False
 
         try:
