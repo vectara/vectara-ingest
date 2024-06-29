@@ -2,7 +2,6 @@ import logging
 from crawlers.csv_crawler import CsvCrawler
 import sqlalchemy
 import pandas as pd
-import unicodedata
 
 class DatabaseCrawler(CsvCrawler):
 

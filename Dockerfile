@@ -1,8 +1,8 @@
 
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND noninteractive \
-    HOME /home/vectara  \
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/home/vectara  \
     XDG_RUNTIME_DIR=/tmp \
     RAY_DEDUP_LOGS="0" \
     CUDA_VISIBLE_DEVICES=""
@@ -12,7 +12,6 @@ RUN apt-get upgrade
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libssl-dev \
     wget \
     git \
     curl \
