@@ -28,7 +28,7 @@ class HackernewsCrawler(Crawler):
             except Exception as e:
                 logging.info(f"Error retrieving comment {kid}, e={e}")
                 comment = None
-            if comment is not None and comment.get('type', '') == 'comment':
+            if comment is not None and comment.get('type', '') == 'comment' and not comment.get('dead', False):
                 comments.append(comment)
                 comments += self.get_comments(comment)
         return comments
@@ -40,7 +40,8 @@ class HackernewsCrawler(Crawler):
         doc_title = html_to_text(story.get('title', ''))
         doc_text = html_to_text(story.get('text', ''))
         story_date = datetime.datetime.fromtimestamp(story['time']).strftime('%Y-%m-%d')
-        doc_metadata = {'source': 'hackernews', 'title': doc_title, 'url': url, 'story_url': story.get('url', ''), 'date': story_date, 'by': story.get('by', '')}
+        doc_metadata = {'source': 'hackernews', 'title': doc_title, 'url': url, 
+                        'story_url': story.get('url', ''), 'date': story_date, 'by': story.get('by', '')}
 
         texts = []
         titles = []
@@ -59,7 +60,8 @@ class HackernewsCrawler(Crawler):
             comment_date = datetime.datetime.fromtimestamp(comment.get('time', 0)).date()
             comment_author = comment.get('by', '')
             times.append(comment_date)
-            metadatas.append({'by': comment_author, 'date': comment_date.strftime('%Y-%m-%d')})
+            metadatas.append({'by': comment_author, 'date': comment_date.strftime('%Y-%m-%d'), 
+                              'url': url + f'#{comment["id"]}'})
 
         # if most recent comment is older than days_back, don't index
         if len(times)>0 and max(times) < datetime.datetime.now().date() - datetime.timedelta(days=self.days_back):
