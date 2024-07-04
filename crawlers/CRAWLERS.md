@@ -110,6 +110,7 @@ The database crawler can be used to read data from a relational database and ind
 - `split` the "split" of the dataset in the HF datasets hub (e.g. "train", or "test", or "corpus"; look at DS card to determine)
 - `select_condition` optional condition to filter rows in the table by
 - `num_rows` if specified limits the dataset size by number of specified rows
+- `id_column` optional column for the ID of the dataset. Must be unique if used
 - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
 - `title_column` is an optional column name that will hold textual information to be used as title at the document level.
 - `metadata_columns` a list of column names that we want to use as metadata.
