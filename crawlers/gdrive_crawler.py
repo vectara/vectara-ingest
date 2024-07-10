@@ -4,7 +4,7 @@ from core.crawler import Crawler
 from omegaconf import OmegaConf
 import logging
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -13,10 +13,11 @@ from docx import Document
 import pandas as pd
 import pptx
 from typing import List
+import requests
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = 'credentials.json'
-PROCESSED_FILES_RECORD = 'processed_files.json'
+FILE_UPLOAD_API_URL_TEMPLATE = 'https://api.vectara.io/v2/corpora/{corpus_key}/upload_file'
 
 def get_credentials(delegated_user):
     credentials = service_account.Credentials.from_service_account_file(
@@ -97,6 +98,33 @@ def extract_text_from_pptx(pptx_file):
                 full_text.append(shape.text)
     return '\n'.join(full_text)
 
+def save_local_file(service, file_id, name):
+    file_path = os.path.join("/tmp", name)
+    try:
+        file = download_file(service, file_id)
+        if file:
+            with open(file_path, 'wb') as f:
+                f.write(file.read())
+            return file_path
+    except Exception as e:
+        print(f"Error saving local file: {e}")
+    return None
+
+def upload_file_to_vectara(file_path, api_key, corpus_id):
+    files = {'file': open(file_path, 'rb')}
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Accept': 'application/json'
+    }
+    try:
+        response = requests.post(FILE_UPLOAD_API_URL_TEMPLATE.format(corpus_key=corpus_id), files=files, headers=headers)
+        if response.status_code == 201:
+            print("File uploaded successfully")
+        else:
+            print(f"Failed to upload file: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+
 class GdriveCrawler(Crawler):
 
     def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, delegated_users: List[str]) -> None:
@@ -106,28 +134,19 @@ class GdriveCrawler(Crawler):
         self.delegated_users = delegated_users
         self.creds = None
         self.service = None
-        self.processed_files = self.load_processed_files()
+        self.api_key = api_key
+        self.customer_id = customer_id
+        self.corpus_id = corpus_id  
 
-    def load_processed_files(self):
-        if os.path.exists(PROCESSED_FILES_RECORD):
-            with open(PROCESSED_FILES_RECORD, 'r') as file:
-                return set(json.load(file))
-        return set()
-
-    def save_processed_file(self, file_id):
-        self.processed_files.add(file_id)
-        with open(PROCESSED_FILES_RECORD, 'w') as file:
-            json.dump(list(self.processed_files), file)
-
-    def list_files(self, service, parent_id=None):
+    def list_files(self, service, parent_id=None, date_threshold=None):
         results = []
         page_token = None
-        query = f"'{parent_id}' in parents" if parent_id else "'root' in parents or sharedWithMe"
+        query = f"'{parent_id}' in parents and trashed=false and modifiedTime > '{date_threshold}'" if parent_id else f"'root' in parents and trashed=false and modifiedTime > '{date_threshold}'"
 
         while True:
             try:
                 params = {
-                    'fields': 'nextPageToken, files(id, name, mimeType, permissions)',
+                    'fields': 'nextPageToken, files(id, name, mimeType, permissions, modifiedTime)',
                     'q': query,
                     'corpora': 'allDrives',
                     'includeItemsFromAllDrives': True,
@@ -161,66 +180,51 @@ class GdriveCrawler(Crawler):
             print(f"Skipping restricted file: {name}")
             return None
 
-        if file_id in self.processed_files:
-            print(f"Skipping already processed file: {name} (ID: {file_id})")
-            return None
-
-        self.processed_files.add(file_id)
-
         if mime_type == 'application/vnd.google-apps.document':
             file = export_file(self.service, file_id, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
             if file:
                 text = extract_text_from_docx(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             file = export_file(self.service, file_id, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             if file:
                 text = extract_text_from_xlsx(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'application/vnd.google-apps.presentation':
             file = export_file(self.service, file_id, 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
             if file:
                 text = extract_text_from_pptx(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
             file = download_file(self.service, file_id)
             if file:
                 text = extract_text_from_docx(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
             file = download_file(self.service, file_id)
             if file:
                 text = extract_text_from_xlsx(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'text/csv':
             file = download_file(self.service, file_id)
             if file:
                 text = extract_text_from_csv(file)
-                self.save_processed_file(file_id)
                 return text
         elif mime_type == 'application/zip':
             return "ZIP files cannot be processed directly."
         elif mime_type == 'application/pdf':
-            file = download_file(self.service, file_id)
-            if file:
-                self.save_processed_file(file_id)
-                return "PDF files are not currently supported."
+            local_file_path = save_local_file(self.service, file_id, name)
+            if local_file_path:
+                upload_file_to_vectara(local_file_path, self.api_key, self.corpus_id)
+                return f"PDF file '{name}' uploaded."
         elif mime_type == 'application/vnd.google-apps.shortcut':
-            self.save_processed_file(file_id)
             return "Shortcuts are not supported."
         elif mime_type == 'application/vnd.google-apps.folder':
             files = self.list_files(self.service, file_id)
             for f in files:
                 self.handle_file(f)
-            self.save_processed_file(file_id)
             return f"Folder '{name}' with ID '{file_id}'"
         elif mime_type == 'application/vnd.google-apps.form':
-            self.save_processed_file(file_id)
             return f"Google Form '{name}' with ID '{file_id}' (Forms content requires Google Forms API)"
         else:
             print(f"Unsupported file type: {mime_type}")
@@ -266,11 +270,16 @@ class GdriveCrawler(Crawler):
                 logging.info(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
     def crawl(self) -> None:
+        N = 3  # Number of days to look back
+        date_threshold = (datetime.utcnow() - timedelta(days=N)).isoformat() + 'Z'
+        
         for user in self.delegated_users:
             print(f"Processing files for user: {user}")
             self.creds = get_credentials(user)
             self.service = build("drive", "v3", credentials=self.creds)
             
-            list_files = self.list_files(self.service)
+            list_files = self.list_files(self.service, date_threshold=date_threshold)
             for file in list_files:
-                self.crawl_file(file)
+                modified_time = file.get('modifiedTime', 'N/A')
+                if modified_time > date_threshold:
+                    self.crawl_file(file)
