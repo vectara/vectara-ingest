@@ -20,6 +20,7 @@ boto3==1.26.116
 mwviews==0.2.1
 toml==0.10.2
 pandas==2.2.2
+numpy==1.26.4
 python-dateutil==2.8.2
 playwright==1.41.2
 pdf2image>=1.16
