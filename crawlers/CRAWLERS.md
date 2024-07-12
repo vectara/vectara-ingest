@@ -92,6 +92,34 @@ In the above example, the crawler would
 2. Group all rows that have the same values for `postal_code` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several sections (one per row), each representing the textual fields `business_name` and `review_text` and including the meta-data fields `city`, `state` and `postal_code`.
 
+### Huggingface dataset crawler
+
+```yaml
+...
+hfdataset_crawler:
+    dataset_name: "coeuslearning/hotel_reviews"
+    split: "train"
+    select_condition: "city='New York City, USA'"
+    num_rows: 55
+    title_column: hotel
+    text_columns: [review]
+    metadata_columns: [city, hotel]
+```
+The database crawler can be used to read data from a relational database and index relevant columns into Vectara.
+- `dataset_name` the huggingface dataset name
+- `split` the "split" of the dataset in the HF datasets hub (e.g. "train", or "test", or "corpus"; look at DS card to determine)
+- `select_condition` optional condition to filter rows in the table by
+- `num_rows` if specified limits the dataset size by number of specified rows
+- `id_column` optional column for the ID of the dataset. Must be unique if used
+- `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
+- `title_column` is an optional column name that will hold textual information to be used as title at the document level.
+- `metadata_columns` a list of column names that we want to use as metadata.
+
+In the above example, the crawler would
+1. Include all rows in the dataset that are from NYC
+2. Each Vectara document that is indexed, will include a title as the value of `hotel` and text from `review`. The metadata will include the fields `city` and `hotel`.
+3. include only the first 55 rows matching the condition
+
 ### CSV crawler
 
 ```yaml

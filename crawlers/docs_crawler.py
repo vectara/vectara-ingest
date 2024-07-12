@@ -91,6 +91,8 @@ class DocsCrawler(Crawler):
             try:
                 with rate_limiter:
                     url, page_content = self.get_url_content(url)
+                if url is None:
+                    continue
                 self.crawled_urls.add(url)
 
                 # Find all the new URLs in the page's content and add them into the queue
@@ -105,7 +107,7 @@ class DocsCrawler(Crawler):
                             (abs_url.startswith("http")) and                                                # starts with http/https
                             (abs_url not in self.ignored_urls) and                                          # not previously ignored    
                             (len(urlparse(abs_url).fragment)==0) and                                        # does not have fragment
-                            (any([abs_url.endswith(ext) for ext in self.extensions_to_ignore])==False)):    # not any of the specified extensions to ignore
+                            (not any([abs_url.endswith(ext) for ext in self.extensions_to_ignore]))):    # not any of the specified extensions to ignore
                                 # add URL if needed
                                 if abs_url not in self.crawled_urls and abs_url not in new_urls:
                                     new_urls.append(abs_url)
@@ -138,7 +140,7 @@ class DocsCrawler(Crawler):
         if self.cfg.docs_crawler.get("crawl_report", False):
             logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
             with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
-                for url in sorted(self.crawled_urls):
+                for url in sorted(list(self.crawled_urls)):
                     f.write(url + '\n')
         else:
             logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index.")
