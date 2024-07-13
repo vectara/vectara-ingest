@@ -49,9 +49,11 @@ class NotionCrawler(Crawler):
         logging.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
-            title_obj = page.get('properties', {}).get('title', {}).get('title', [])
-            if len(title_obj)>0:
-                title = title_obj[0]["plain_text"]
+            page_props = page.get('properties', {})
+            if 'Name' in page_props:
+                title = page_props.get('Name', {}).get('title')[0]['text']['content']
+            elif 'title' in page_props:
+                title = page_props.get('title', {}).get('title')[0]['text']['content']
             else:
                 title = None
 
