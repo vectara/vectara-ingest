@@ -133,17 +133,22 @@ class Indexer(object):
         context.close()
         return download_triggered
 
-    def fetch_page_contents(self, url: str, debug: bool = False) -> Tuple[str, str, List[str]]:
+    def fetch_page_contents(self, url: str, debug: bool = False) -> dict:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
             debug (bool): Whether to enable playwright debug logging.
         Returns:
-            content, actual url, list of links
+            dict with
+            - 'text': text extracted from the page
+            - 'html': html of the page
+            - 'url': final URL of the page (if redirect)
+            - 'links': list of links in the page
         '''
         page = context = None
-        content = ''
+        text = ''
+        html = ''
         links = []
         out_url = url
         try:
@@ -161,8 +166,38 @@ class Indexer(object):
             page.wait_for_timeout(self.post_load_timeout*1000)  # Wait an additional time to handle AJAX or animations
             links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
             links = page.evaluate(links_script)
-            content = page.content()
+            title = page.title()
+            html = page.content()
             out_url = page.url
+#            text = page.evaluate("document.body.innerText")
+            text = page.evaluate("""() => {
+                // Extract main text content
+                let content = document.body.innerText;
+                
+                // Remove common boilerplate elements
+                const elementsToRemove = [
+                    'header',
+                    'footer',
+                    'nav',
+                    'aside',
+                    '.sidebar',
+                    '#comments',
+                    '.advertisement'
+                ];
+                
+                elementsToRemove.forEach(selector => {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(el => {
+                        content = content.replace(el.innerText, '');
+                    });
+                });
+                
+                // Remove extra whitespace
+                content = content.replace(/\s+/g, ' ').trim();
+                
+                return content;
+            }""")
+
 
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
@@ -178,7 +213,10 @@ class Indexer(object):
             if context:
                 context.close()
             
-        return content, out_url, links
+        return {
+            'text': text, 'html': html, 'title': title,
+            'url': out_url, 'links': links
+        }
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -363,6 +401,7 @@ class Indexer(object):
         st = time.time()
         url = url.split("#")[0]     # remove fragment, if exists
 
+        # if file is going to download, then handle it as local file
         if self.url_triggers_download(url):
             file_path = self.tmp_file
             response = self.session.get(url, headers=get_headers, stream=True)
@@ -376,51 +415,56 @@ class Indexer(object):
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
+        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+        if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            dl_content = response.content.decode('utf-8')
+            if url.lower().endswith('md'):
+                html_content = markdown.markdown(dl_content)
+            elif url.lower().endswith('ipynb'):
+                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
+                exporter = HTMLExporter()
+                html_content, _ = exporter.from_notebook_node(nb)
+            extracted_title = url.split('/')[-1]      # no title in these files, so using file name
+            text = html_to_text(html_content, self.remove_code)
+            parts = [text]            
+
         else:
-            # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
-            if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
-                response = self.session.get(url, timeout=self.timeout)
-                response.raise_for_status()
-                dl_content = response.content.decode('utf-8')
-                if url.lower().endswith('md'):
-                    html_content = markdown.markdown(dl_content)
-                elif url.lower().endswith('ipynb'):
-                    nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
-                    exporter = HTMLExporter()
-                    html_content, _ = exporter.from_notebook_node(nb)
-                extracted_title = url.split('/')[-1]      # no title in these files, so using file name
-                text = html_to_text(html_content, self.remove_code)
-                parts = [text]            
+            try:
+                # Use Playwright to get the page content
+                res = self.fetch_page_contents(url)
+                text = res['text']
+                html = res['html']
+                extracted_title = res['title']
 
-            else:
-                try:
-                    # Use Playwright to get the page content
-                    content, actual_url, _ = self.fetch_page_contents(url)
-                    if content is None or len(content)<3:
-                        return False
-
-                    # Detect language if needed
-                    if self.detected_language is None:
-                        soup = BeautifulSoup(content, 'html5lib')
-                        body_text = soup.body.get_text()
-                        self.detected_language = detect_language(body_text)
-                        self.logger.info(f"The detected language is {self.detected_language}")
-
-                    # extract text from HTML
-                    url = actual_url
-                    if self.remove_boilerplate:
-                        if self.verbose:
-                            self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
-                        text, extracted_title = get_content_and_title(content, url, self.detected_language, self.remove_code)
-                    else:
-                        extracted_title = BeautifulSoup(content, 'html5lib').title.text
-                        text = html_to_text(content, self.remove_code, html_processing=html_processing)
-                    parts = [text]
-                    self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
-                except Exception as e:
-                    import traceback
-                    self.logger.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
+                if text is None or len(text)<3:
                     return False
+
+                # Detect language if needed
+                if self.detected_language is None:
+                    self.detected_language = detect_language(text)
+                    self.logger.info(f"The detected language is {self.detected_language}")
+
+                #
+                # By default, 'text' is extracted above.
+                # If remove_boilerplate is True, then use it directly
+                # If no boilerplate remove but need to remove code, then we need to use html_to_text
+                #
+                if self.remove_boilerplate:
+                    url = res['url']
+                    if self.verbose:
+                        self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
+                    text, extracted_title = get_content_and_title(html, url, self.detected_language, self.remove_code)
+                elif self.remove_code:
+                    text = html_to_text(html, remove_code=True) 
+
+                parts = [text]
+                self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
+            except Exception as e:
+                import traceback
+                self.logger.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
+                return False
         
         doc_id = slugify(url)
         succeeded = self.index_segments(doc_id=doc_id, texts=parts,

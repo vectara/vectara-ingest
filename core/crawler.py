@@ -46,8 +46,8 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
         return visited
 
     try:
-        _, _, new_urls = indexer.fetch_page_contents(url)
-        new_urls = [urljoin(url, u) if url_is_relative(u) else u for u in new_urls]  # convert all new URLs to absolute URLs
+        res = indexer.fetch_page_contents(url)
+        new_urls = [urljoin(url, u) if url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
                     if      u not in visited and u.startswith('http') 
                     and     (len(pos_regex)==0 or any([r.match(u) for r in pos_regex]))
