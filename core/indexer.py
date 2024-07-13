@@ -16,7 +16,7 @@ import nbformat
 import markdown
 
 from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii
-from core.extract import get_content_and_title
+from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -133,11 +133,12 @@ class Indexer(object):
         context.close()
         return download_triggered
 
-    def fetch_page_contents(self, url: str, debug: bool = False) -> dict:
+    def fetch_page_contents(self, url: str, remove_code: bool = False, debug: bool = False) -> dict:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
+            remove_code (bool): Whether to remove code from the HTML content.
             debug (bool): Whether to enable playwright debug logging.
         Returns:
             dict with
@@ -169,8 +170,7 @@ class Indexer(object):
             title = page.title()
             html = page.content()
             out_url = page.url
-#            text = page.evaluate("document.body.innerText")
-            text = page.evaluate("""() => {
+            text = page.evaluate(f"""() => {{
                 // Extract main text content
                 let content = document.body.innerText;
                 
@@ -185,19 +185,26 @@ class Indexer(object):
                     '.advertisement'
                 ];
                 
-                elementsToRemove.forEach(selector => {
+                elementsToRemove.forEach(selector => {{
                     const elements = document.querySelectorAll(selector);
-                    elements.forEach(el => {
+                    elements.forEach(el => {{
                         content = content.replace(el.innerText, '');
-                    });
-                });
+                    }});
+                }});
+                
+                {'// Remove code elements' if remove_code else ''}
+                {'''
+                const codeElements = document.querySelectorAll('code, pre');
+                codeElements.forEach(el => {{
+                    content = content.replace(el.innerText, '');
+                }});
+                ''' if remove_code else ''}
                 
                 // Remove extra whitespace
-                content = content.replace(/\s+/g, ' ').trim();
+                content = content.replace(/\\s+/g, ' ').trim();
                 
                 return content;
-            }""")
-
+            }}""")
 
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
@@ -433,7 +440,7 @@ class Indexer(object):
         else:
             try:
                 # Use Playwright to get the page content
-                res = self.fetch_page_contents(url)
+                res = self.fetch_page_contents(url, self.remove_code)
                 text = res['text']
                 html = res['html']
                 extracted_title = res['title']
@@ -455,9 +462,7 @@ class Indexer(object):
                     url = res['url']
                     if self.verbose:
                         self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
-                    text, extracted_title = get_content_and_title(html, url, self.detected_language, self.remove_code)
-                elif self.remove_code:
-                    text = html_to_text(html, remove_code=True) 
+                    text, extracted_title = get_article_content(html, url, self.detected_language, self.remove_code)
 
                 parts = [text]
                 self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
