@@ -34,6 +34,24 @@ def list_all_pages(notion: Any) -> List[Dict[str, Any]]:
     
     return pages
 
+def extract_title(page):
+    properties = page['properties']
+    
+    # Case 1: Title property exists
+    if 'title' in properties and properties['title']['type'] == 'title':
+        return properties['title']['title'][0]['plain_text'] if properties['title']['title'] else ''
+    
+    # Case 2: Name property exists (common for databases)
+    if 'Name' in properties and properties['Name']['type'] == 'title':
+        return properties['Name']['title'][0]['plain_text'] if properties['Name']['title'] else ''
+    
+    # Case 3: Search for any property of type 'title'
+    for prop in properties.values():
+        if prop['type'] == 'title':
+            return prop['title'][0]['plain_text'] if prop['title'] else ''
+    
+    # No title found
+    return ''
 
 class NotionCrawler(Crawler):
 
@@ -49,13 +67,7 @@ class NotionCrawler(Crawler):
         logging.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
-            page_props = page.get('properties', {})
-            if 'Name' in page_props:
-                title = page_props.get('Name', {}).get('title')[0]['text']['content']
-            elif 'title' in page_props:
-                title = page_props.get('title', {}).get('title')[0]['text']['content']
-            else:
-                title = None
+            title = extract_title(page)
 
             # Extract all text blocks from the page
             try:
