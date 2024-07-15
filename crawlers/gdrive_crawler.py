@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 import pandas as pd
 from typing import List
+from slugify import slugify
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = 'credentials.json'
@@ -21,54 +22,51 @@ def get_credentials(delegated_user):
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
 
-def sanitize_filename(name):
-    # Remove or replace characters that are not allowed in filenames
-    return "".join(c if c.isalnum() or c in (' ', '.', '_', '-') else '_' for c in name)
-
 def download_file(service, file_id):
     try:
         request = service.files().get_media(fileId=file_id)
-        file = io.BytesIO()
-        downloader = MediaIoBaseDownload(file, request)
+        byte_stream = io.BytesIO()  # an in-memory bytestream
+        downloader = MediaIoBaseDownload(byte_stream, request)
         done = False
         while not done:
             status, done = downloader.next_chunk()
-            print(f"Download {int(status.progress() * 100)}.")
-        file.seek(0)  # Reset the file pointer to the beginning
-        return file
+            logging.info(f"Download {int(status.progress() * 100)}.")
+        byte_stream.seek(0)  # Reset the file pointer to the beginning
+        return byte_stream
     except HttpError as error:
-        print(f"An error occurred: {error}")
+        logging.info(f"An error occurred: {error}")
         return None
+    # Note: Handling of large files that may exceed memory limits should be implemented if necessary.
 
 def export_file(service, file_id, mime_type):
     try:
         request = service.files().export_media(fileId=file_id, mimeType=mime_type)
-        file = io.BytesIO()
-        downloader = MediaIoBaseDownload(file, request)
+        byte_stream = io.BytesIO()  # an in-memory bytestream
+        downloader = MediaIoBaseDownload(byte_stream, request)
         done = False
         while not done:
             status, done = downloader.next_chunk()
-            print(f"Download {int(status.progress() * 100)}.")
-        file.seek(0)  # Reset the file pointer to the beginning
-        return file
+            logging.info(f"Download {int(status.progress() * 100)}.")
+        byte_stream.seek(0)  # Reset the file pointer to the beginning
+        return byte_stream
     except HttpError as error:
-        print(f"An error occurred: {error}")
+        logging.info(f"An error occurred: {error}")
         return None
 
 def save_local_file(service, file_id, name, mime_type=None):
-    sanitized_name = sanitize_filename(name)
+    sanitized_name = slugify(name)
     file_path = os.path.join("/tmp", sanitized_name)
     try:
         if mime_type:
-            file = export_file(service, file_id, mime_type)
+            byte_stream = export_file(service, file_id, mime_type)
         else:
-            file = download_file(service, file_id)
-        if file:
+            byte_stream = download_file(service, file_id)
+        if byte_stream:
             with open(file_path, 'wb') as f:
-                f.write(file.read())
+                f.write(byte_stream.read())
             return file_path
     except Exception as e:
-        print(f"Error saving local file: {e}")
+        logging.info(f"Error saving local file: {e}")
     return None
 
 class GdriveCrawler(Crawler):
@@ -110,7 +108,7 @@ class GdriveCrawler(Crawler):
                 if not page_token:
                     break
             except HttpError as error:
-                print(f"An error occurred: {error}")
+                logging.info(f"An error occurred: {error}")
                 break
         return results
 
@@ -120,10 +118,10 @@ class GdriveCrawler(Crawler):
         name = file['name']
         permissions = file.get('permissions', [])
         
-        print(f"\nHandling file: {name} with MIME type: {mime_type}")
+        logging.info(f"\nHandling file: {name} with MIME type: {mime_type}")
 
         if not any(p.get('displayName') == 'Vectara' or p.get('displayName') == 'all' for p in permissions):
-            print(f"Skipping restricted file: {name}")
+            logging.info(f"Skipping restricted file: {name}")
             return None
 
         if mime_type == 'application/vnd.google-apps.document':
@@ -144,14 +142,14 @@ class GdriveCrawler(Crawler):
                 local_file_path = csv_file_path
             url = f'https://drive.google.com/file/d/{file_id}/view'
         else:
-            print(f"Unsupported file type: {mime_type}")
+            logging.info(f"Unsupported file type: {mime_type}")
             return None, None
 
         if local_file_path:
-            print(f"local_file_path :: {local_file_path}")
+            logging.info(f"local_file_path :: {local_file_path}")
             return local_file_path, url
         else:
-            print(f"local_file_path :: None")
+            logging.info(f"local_file_path :: None")
             return None, None
 
     def crawl_file(self, file):
@@ -164,7 +162,7 @@ class GdriveCrawler(Crawler):
             owners = ', '.join([owner['displayName'] for owner in file.get('owners', [])])
             size = file.get('size', 'N/A')
 
-            print(f'\nCrawling file {name}')
+            logging.info(f'\nCrawling file {name}')
 
             file_metadata = {
                 'id': file_id,
@@ -176,8 +174,6 @@ class GdriveCrawler(Crawler):
                 'source': 'gdrive'
             }
 
-            print(f'file_metadata : {file_metadata}')
-
             try:
                 self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
             except Exception as e:
@@ -187,13 +183,22 @@ class GdriveCrawler(Crawler):
         N = 7  # Number of days to look back
         date_threshold = (datetime.utcnow() - timedelta(days=N)).isoformat() + 'Z'
         
+        # Standardize date_threshold to milliseconds
+        if '.' in date_threshold:
+            date_threshold = date_threshold[:23] + 'Z'
+        
         for user in self.delegated_users:
-            print(f"Processing files for user: {user}")
+            logging.info(f"Processing files for user: {user}")
             self.creds = get_credentials(user)
             self.service = build("drive", "v3", credentials=self.creds)
             
             list_files = self.list_files(self.service, date_threshold=date_threshold)
             for file in list_files:
                 modified_time = file.get('modifiedTime', 'N/A')
-                if modified_time > date_threshold:
-                    self.crawl_file(file)
+                if modified_time != 'N/A':
+                    # Standardize modified_time to milliseconds
+                    if '.' in modified_time:
+                        modified_time = modified_time[:23] + 'Z'
+                    
+                    if modified_time > date_threshold:
+                        self.crawl_file(file)
