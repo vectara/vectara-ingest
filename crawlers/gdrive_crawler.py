@@ -181,24 +181,24 @@ class GdriveCrawler(Crawler):
 
     def crawl(self) -> None:
         N = 7  # Number of days to look back
-        date_threshold = (datetime.utcnow() - timedelta(days=N)).isoformat() + 'Z'
-        
-        # Standardize date_threshold to milliseconds
-        if '.' in date_threshold:
-            date_threshold = date_threshold[:23] + 'Z'
+        date_threshold = datetime.utcnow() - timedelta(days=N)
         
         for user in self.delegated_users:
             logging.info(f"Processing files for user: {user}")
             self.creds = get_credentials(user)
             self.service = build("drive", "v3", credentials=self.creds)
             
-            list_files = self.list_files(self.service, date_threshold=date_threshold)
+            list_files = self.list_files(self.service, date_threshold=date_threshold.isoformat() + 'Z')
             for file in list_files:
-                modified_time = file.get('modifiedTime', 'N/A')
-                if modified_time != 'N/A':
-                    # Standardize modified_time to milliseconds
-                    if '.' in modified_time:
-                        modified_time = modified_time[:23] + 'Z'
-                    
-                    if modified_time > date_threshold:
-                        self.crawl_file(file)
+                modified_time = file.get('modifiedTime', None)
+                
+                if modified_time:
+                    try:
+                        mod_time_dt = datetime.fromisoformat(modified_time.rstrip('Z'))
+                        if mod_time_dt > date_threshold:
+                            self.crawl_file(file)
+                    except ValueError as e:
+                        logging.info(f"Error parsing date: {e}")
+                        continue
+                else:
+                    self.crawl_file(file)  # Handle file without modified time
