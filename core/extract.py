@@ -8,7 +8,7 @@ from core.utils import remove_code_from_html
 import justext
 from bs4 import BeautifulSoup
 
-# This module implements the get_content_and_title() utility function
+# This module implements the get_article_content() utility function
 # This extracts the most important text from an HTML text segment, trying to reduce the amount of boilerplate text and ad links
 # uses both Goose3 and Justext to get the best of both worlds.
 
@@ -110,7 +110,7 @@ def get_content_with_goose3(html_content: str, url: str, detected_language: str)
         logging.info(f"Error in Goose3 ({e}); that's okay Justext will fill in")
         return text, title
 
-def get_content_and_title(html_content: str, url: str, detected_language: str, remove_code: bool = False) -> Tuple[str, str]:
+def get_article_content(html_content: str, url: str, detected_language: str, remove_code: bool = False) -> Tuple[str, str]:
     if remove_code:
         html_content = remove_code_from_html(html_content)
 
