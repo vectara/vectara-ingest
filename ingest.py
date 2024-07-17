@@ -156,7 +156,7 @@ def main() -> None:
             cfg, endpoint, customer_id, corpus_id, api_key
         )
 
-    logging.info(f"Crawing instantiated...")
+    logging.info(f"Crawling instantiated...")
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
