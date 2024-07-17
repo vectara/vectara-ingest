@@ -1,4 +1,3 @@
-import json
 import os
 from core.crawler import Crawler
 from omegaconf import OmegaConf
@@ -22,9 +21,13 @@ def get_credentials(delegated_user):
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
 
-def download_file(service, file_id):
+def download_or_export_file(service, file_id, mime_type=None):
     try:
-        request = service.files().get_media(fileId=file_id)
+        if mime_type:
+            request = service.files().export_media(fileId=file_id, mimeType=mime_type)
+        else:
+            request = service.files().get_media(fileId=file_id)
+        
         byte_stream = io.BytesIO()  # an in-memory bytestream
         downloader = MediaIoBaseDownload(byte_stream, request)
         done = False
@@ -38,29 +41,11 @@ def download_file(service, file_id):
         return None
     # Note: Handling of large files that may exceed memory limits should be implemented if necessary.
 
-def export_file(service, file_id, mime_type):
-    try:
-        request = service.files().export_media(fileId=file_id, mimeType=mime_type)
-        byte_stream = io.BytesIO()  # an in-memory bytestream
-        downloader = MediaIoBaseDownload(byte_stream, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-            logging.info(f"Download {int(status.progress() * 100)}.")
-        byte_stream.seek(0)  # Reset the file pointer to the beginning
-        return byte_stream
-    except HttpError as error:
-        logging.info(f"An error occurred: {error}")
-        return None
-
 def save_local_file(service, file_id, name, mime_type=None):
     sanitized_name = slugify(name)
     file_path = os.path.join("/tmp", sanitized_name)
     try:
-        if mime_type:
-            byte_stream = export_file(service, file_id, mime_type)
-        else:
-            byte_stream = download_file(service, file_id)
+        byte_stream = download_or_export_file(service, file_id, mime_type)
         if byte_stream:
             with open(file_path, 'wb') as f:
                 f.write(byte_stream.read())
@@ -190,15 +175,4 @@ class GdriveCrawler(Crawler):
             
             list_files = self.list_files(self.service, date_threshold=date_threshold.isoformat() + 'Z')
             for file in list_files:
-                modified_time = file.get('modifiedTime', None)
-                
-                if modified_time:
-                    try:
-                        mod_time_dt = datetime.fromisoformat(modified_time.rstrip('Z'))
-                        if mod_time_dt > date_threshold:
-                            self.crawl_file(file)
-                    except ValueError as e:
-                        logging.info(f"Error parsing date: {e}")
-                        continue
-                else:
-                    self.crawl_file(file)  # Handle file without modified time
+                self.crawl_file(file)
