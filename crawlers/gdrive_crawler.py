@@ -14,7 +14,7 @@ from slugify import slugify
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = 'credentials.json'
 
-def get_credentials(delegated_user):
+def get_credentials(delegated_user: list[str]) -> service_account.Credentials:
     credentials = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     delegated_credentials = credentials.with_subject(delegated_user)
