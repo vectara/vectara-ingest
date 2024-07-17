@@ -75,7 +75,7 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
         for element in soup.find_all(tag):
             element.decompose()
 
-    text = soup.get_text(" ", strip=True).replace('\n', ' ')
+    text = soup.get_text(' ', strip=True).replace('\n', ' ')
     return text
 
 
