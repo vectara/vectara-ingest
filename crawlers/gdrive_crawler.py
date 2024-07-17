@@ -9,7 +9,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 import pandas as pd
-from typing import List
 from slugify import slugify
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
@@ -56,11 +55,11 @@ def save_local_file(service, file_id, name, mime_type=None):
 
 class GdriveCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str, delegated_users: List[str]) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
         super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
         logging.info("Google Drive Crawler initialized")
 
-        self.delegated_users = delegated_users
+        self.delegated_users = cfg.gdrive_crawler.delegated_users
         self.creds = None
         self.service = None
         self.api_key = api_key
@@ -134,7 +133,7 @@ class GdriveCrawler(Crawler):
             logging.info(f"local_file_path :: {local_file_path}")
             return local_file_path, url
         else:
-            logging.info(f"local_file_path :: None")
+            logging.info("local_file_path :: None")
             return None, None
 
     def crawl_file(self, file):

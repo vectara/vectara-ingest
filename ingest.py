@@ -133,7 +133,7 @@ def main() -> None:
         # default (otherwise) - add to vectara config
         OmegaConf.update(cfg['vectara'], k, v)
 
-    logging.info(f"Configuration loaded...")
+    logging.info("Configuration loaded...")
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     customer_id = cfg.vectara.customer_id
     corpus_id = cfg.vectara.corpus_id
@@ -141,22 +141,12 @@ def main() -> None:
     crawler_type = cfg.crawling.crawler_type
 
     # instantiate the crawler
-    # crawler = instantiate_crawler(Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', cfg, endpoint, customer_id, corpus_id, api_key)
+    crawler = instantiate_crawler(
+        Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', 
+        cfg, endpoint, customer_id, corpus_id, api_key
+    )
 
-    # Conditionally extract delegated_users if the crawler type is gdrive
-    if crawler_type == "gdrive":
-        delegated_users = cfg.gdrive_crawler.delegated_users
-        crawler = instantiate_crawler(
-            Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler',
-            cfg, endpoint, customer_id, corpus_id, api_key, delegated_users
-        )
-    else:
-        crawler = instantiate_crawler(
-            Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler',
-            cfg, endpoint, customer_id, corpus_id, api_key
-        )
-
-    logging.info(f"Crawling instantiated...")
+    logging.info("Crawling instantiated...")
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
