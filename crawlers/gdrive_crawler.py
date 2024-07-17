@@ -12,7 +12,7 @@ import pandas as pd
 from slugify import slugify
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-SERVICE_ACCOUNT_FILE = 'credentials.json'
+SERVICE_ACCOUNT_FILE = '/home/vectara/env/credentials.json'
 
 def get_credentials(delegated_user: list[str]) -> service_account.Credentials:
     credentials = service_account.Credentials.from_service_account_file(
