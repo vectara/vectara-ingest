@@ -1,4 +1,4 @@
-requests==2.31.0
+requests==2.32.2
 certifi>=2024.2.2
 pdfkit==1.0.0
 authlib==1.2.0
@@ -19,7 +19,7 @@ biopython==1.81
 boto3==1.26.116
 mwviews==0.2.1
 toml==0.10.2
-pandas==1.3.5
+pandas==2.2.2
 numpy==1.26.4
 python-dateutil==2.8.2
 playwright==1.41.2
@@ -48,6 +48,7 @@ html5lib==1.1
 unstructured[pdf]==0.13.7
 transformers[torch]==4.40.2
 safetensors[torch]==0.4.3
+datasets==2.20.0
 torch==2.1.2
 pydub==0.25.1
 pytube==15.0.0
