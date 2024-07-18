@@ -5,22 +5,23 @@ import logging
 import io
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 import pandas as pd
 from slugify import slugify
+from typing import List, Tuple, Optional
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = '/home/vectara/env/credentials.json'
 
-def get_credentials(delegated_user: list[str]) -> service_account.Credentials:
+def get_credentials(delegated_user: str) -> service_account.Credentials:
     credentials = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
 
-def download_or_export_file(service, file_id, mime_type=None):
+def download_or_export_file(service: Resource, file_id: str, mime_type: Optional[str] = None) -> Optional[io.BytesIO]:
     try:
         if mime_type:
             request = service.files().export_media(fileId=file_id, mimeType=mime_type)
@@ -40,7 +41,7 @@ def download_or_export_file(service, file_id, mime_type=None):
         return None
     # Note: Handling of large files that may exceed memory limits should be implemented if necessary.
 
-def save_local_file(service, file_id, name, mime_type=None):
+def save_local_file(service: Resource, file_id: str, name: str, mime_type: Optional[str] = None) -> Optional[str]:
     sanitized_name = slugify(name)
     file_path = os.path.join("/tmp", sanitized_name)
     try:
@@ -62,11 +63,8 @@ class GdriveCrawler(Crawler):
         self.delegated_users = cfg.gdrive_crawler.delegated_users
         self.creds = None
         self.service = None
-        self.api_key = api_key
-        self.customer_id = customer_id
-        self.corpus_id = corpus_id  
 
-    def list_files(self, service, parent_id=None, date_threshold=None):
+    def list_files(self, service: Resource, parent_id: Optional[str] = None, date_threshold: Optional[str] = None) -> List[dict]:
         results = []
         page_token = None
         query = f"('{parent_id}' in parents or sharedWithMe) and trashed=false and modifiedTime > '{date_threshold}'" if parent_id else f"('root' in parents or sharedWithMe) and trashed=false and modifiedTime > '{date_threshold}'"
@@ -96,7 +94,7 @@ class GdriveCrawler(Crawler):
                 break
         return results
 
-    def handle_file(self, file):
+    def handle_file(self, file: dict) -> Tuple[Optional[str], Optional[str]]:
         file_id = file['id']
         mime_type = file['mimeType']
         name = file['name']
@@ -136,7 +134,7 @@ class GdriveCrawler(Crawler):
             logging.info("local_file_path :: None")
             return None, None
 
-    def crawl_file(self, file):
+    def crawl_file(self, file: dict) -> None:
         local_file_path, url = self.handle_file(file)
         if local_file_path:
             file_id = file['id']
