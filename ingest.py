@@ -14,6 +14,7 @@ from core.utils import setup_logging
 from authlib.integrations.requests_client import OAuth2Session
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
+    logging.info(f'inside instantiate crawler')
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
@@ -27,6 +28,7 @@ def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **
         raise TypeError(f"{class_name} is not a subclass of {base_class.__name__}")
 
     # Instantiate the class and return the instance
+    logging.info(f'end of instantiate crawler')
     return class_(*args, **kwargs)
 
 def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str, customer_id: str) -> Any:
@@ -76,6 +78,8 @@ def main() -> None:
     if len(sys.argv) != 3:
         logging.info("Usage: python ingest.py <config_file> <secrets-profile>")
         return
+    
+    logging.info("Starting the Crawler...")
     config_name = sys.argv[1]
     profile_name = sys.argv[2]
 
@@ -89,7 +93,7 @@ def main() -> None:
     if profile_name not in env_dict:
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
         return
-    
+    logging.info(f'Using profile "{profile_name}" from secrets.toml')
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
     for k,v in general_dict.items():
@@ -129,6 +133,7 @@ def main() -> None:
         # default (otherwise) - add to vectara config
         OmegaConf.update(cfg['vectara'], k, v)
 
+    logging.info("Configuration loaded...")
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     customer_id = cfg.vectara.customer_id
     corpus_id = cfg.vectara.corpus_id
@@ -136,8 +141,12 @@ def main() -> None:
     crawler_type = cfg.crawling.crawler_type
 
     # instantiate the crawler
-    crawler = instantiate_crawler(Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', cfg, endpoint, customer_id, corpus_id, api_key)
+    crawler = instantiate_crawler(
+        Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', 
+        cfg, endpoint, customer_id, corpus_id, api_key
+    )
 
+    logging.info("Crawling instantiated...")
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
     # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible

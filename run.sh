@@ -23,6 +23,7 @@ fi
 # Mount secrets file into docker container
 mkdir -p ~/tmp/mount
 cp secrets.toml ~/tmp/mount
+cp credentials.json ~/tmp/mount
 cp $1 ~/tmp/mount/
 
 # Build docker container
