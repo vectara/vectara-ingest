@@ -22,9 +22,9 @@ fi
 
 # Mount secrets file into docker container
 mkdir -p ~/tmp/mount
-cp secrets.toml ~/tmp/mount
-cp credentials.json ~/tmp/mount
-cp $1 ~/tmp/mount/
+[ -f secrets.toml ] && cp secrets.toml ~/tmp/mount
+[ -f credentials.json ] && cp credentials.json ~/tmp/mount
+cp "$1" ~/tmp/mount/
 
 # Build docker container
 ARCH=$(uname -m)
