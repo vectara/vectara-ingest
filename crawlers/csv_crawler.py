@@ -19,8 +19,8 @@ class CsvCrawler(Crawler):
                     titles.append(str(row[title_column]))
                 text = ' - '.join(str(x) for x in row[text_columns].tolist() if x) + '\n'
                 texts.append(unicodedata.normalize('NFD', text))
-                metadatas.append({column: row[column] for column in metadata_columns})
-            logging.info(f"Indexing df for '{doc_id}' with ({len(df)}) rows")
+                metadatas.append({column: row[column] for column in metadata_columns if row[column]})
+            logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
             if len(titles)==0:
                 titles = None
             self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
@@ -29,8 +29,11 @@ class CsvCrawler(Crawler):
         if doc_id_columns:
             grouped = df.groupby(doc_id_columns)
             for name, group in grouped:
-                gr_str = name if isinstance(name, str) else ' - '.join(str(x) for x in name)
-                index_df(doc_id=gr_str, title=gr_str, df=group)
+                if isinstance(name, str):
+                    doc_id = name
+                else:
+                    doc_id = ' - '.join([str(x) for x in name if x])
+                index_df(doc_id=doc_id, title=f'group {doc_id}', df=group)
         else:
             rows_per_chunk = self.cfg.csv_crawler.get("rows_per_chunk", 500) if 'csv_crawler' in self.cfg else 500
             if rows_per_chunk < len(df):
@@ -44,7 +47,8 @@ class CsvCrawler(Crawler):
         text_columns = list(self.cfg.csv_crawler.get("text_columns", []))
         title_column = self.cfg.csv_crawler.get("title_column", None)
         metadata_columns = list(self.cfg.csv_crawler.get("metadata_columns", []))
-        all_columns = text_columns + metadata_columns
+        doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
+        all_columns = text_columns + metadata_columns + doc_id_columns
         if title_column:
             all_columns.append(title_column)
 
@@ -65,6 +69,9 @@ class CsvCrawler(Crawler):
             logging.warning(f"Exception ({e}) occurred while loading file")
             return
 
+        # make sure all ID columns are a string type
+        df[doc_id_columns] = df[doc_id_columns].astype(str)
+
+        # index the dataframe
         logging.info(f"indexing {len(df)} rows from the file {file_path}")
-        doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns)

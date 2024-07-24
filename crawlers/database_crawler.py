@@ -9,7 +9,8 @@ class DatabaseCrawler(CsvCrawler):
         text_columns = list(self.cfg.database_crawler.get("text_columns", []))
         title_column = self.cfg.database_crawler.get("title_column", None)
         metadata_columns = list(self.cfg.database_crawler.get("metadata_columns", []))
-        all_columns = text_columns + metadata_columns
+        doc_id_columns = list(self.cfg.database_crawler.get("doc_id_columns", None))
+        all_columns = text_columns + metadata_columns + doc_id_columns
         if title_column:
             all_columns.append(title_column)
 
@@ -24,7 +25,9 @@ class DatabaseCrawler(CsvCrawler):
 
         conn = sqlalchemy.create_engine(db_url).connect()
         df = pd.read_sql_query(sqlalchemy.text(query), conn)
-        logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
 
-        doc_id_columns = list(self.cfg.database_crawler.get("doc_id_columns", None))
+        # make sure all ID columns are a string type
+        df[doc_id_columns] = df[doc_id_columns].astype(str)
+
+        logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns)
