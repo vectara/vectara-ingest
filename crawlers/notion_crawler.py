@@ -32,6 +32,8 @@ def get_block_text(notion, block):
     if block.get("has_children", False):
         children = notion.blocks.children.list(block["id"])
         for child in children["results"]:
+            if block["type"] in ['child_page']:
+                continue
             text += get_block_text(notion, child) + " "
     
     return text
@@ -98,6 +100,8 @@ class NotionCrawler(Crawler):
                 blocks = notion.blocks.children.list(page_id)
                 all_text = ""
                 for block in blocks["results"]:
+                    if block["type"] in ['child_page']:
+                        continue
                     all_text += get_block_text(notion, block) + " "
                 all_text = all_text.strip()
 
@@ -126,3 +130,26 @@ class NotionCrawler(Crawler):
             else:
                 logging.info(f"Indexing failed for notion page {page_id}")
             
+
+        # report pages crawled if specified
+        if self.cfg.notion_crawler.get("crawl_report", False):
+            logging.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
+            with open('/home/vectara/env/pages_indexed.txt', 'w') as f:
+                for page in pages:
+                    f.write(f"Page with ID {page['id']}: {page['url']}\n")
+
+
+        # If remove_old_content is set to true:
+        # remove from corpus any document previously indexed that is NOT in pages added
+        if self.cfg.notion_crawler.get("remove_old_content", False):
+            indexed_ids = set([page['id'] for page in pages])
+            existing_docs = self.indexer._list_docs()
+            docs_to_remove = [doc for doc in existing_docs if doc['doc_id'] not in indexed_ids]
+            logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+            for doc in docs_to_remove:
+                self.indexer.delete_doc(doc['doc_id'])
+            if self.cfg.notion_crawler.get("crawl_report", False):
+                with open('/home/vectara/env/pages_removed.txt', 'w') as f:
+                    for doc in docs_to_remove:
+                        f.write(f"Page with ID {doc['doc_id']}: {doc['url']}\n")
+

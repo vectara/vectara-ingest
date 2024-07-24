@@ -308,8 +308,17 @@ The JIRA crawler indexes issues and comments into Vectara.
 To setup Notion you will have to setup a [Notion integration](https://www.notion.so/help/create-integrations-with-the-notion-api),
 and [share the pages](https://www.notion.so/help/add-and-manage-connections-with-the-api) you want indexed with this connection.
 
-The Notion crawler has no specific parameters, except the `NOTION_API_KEY` (which is associated with your custom integration)
-that needs to be specified in the `secrets.toml` file. The crawler will index any content on your notion instance.
+```yaml
+...
+  notion_crawler:
+    remove_old_content: false
+```
+
+The notion crawler indexes notion pages into Vectara:
+- `remove_old_content`: if true, removes any document that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
+
+For this crawler, you need to specify `NOTION_API_KEY` (which is associated with your custom integration) in the `secrets.toml` file. 
+
 
 ### Hubspot crawler
 
