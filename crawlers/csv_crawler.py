@@ -13,7 +13,7 @@ class CsvCrawler(Crawler):
         if title_column:
             all_columns.append(title_column)
         
-        def index_df(doc_id: str, title: str, df: pd.DataFrame) -> None:
+        def index_df(doc_id: str, df: pd.DataFrame) -> None:
             texts = []
             titles = []
             metadatas = []
@@ -31,6 +31,8 @@ class CsvCrawler(Crawler):
             for column in metadata_columns:
                 if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
                     doc_metadata[column] = df[column].iloc[0]
+            title = titles[0] if titles else doc_id
+            print(f"DEBUG title_col={title_column}, titles={titles}, title={title}")
             self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
                                         doc_title=title, doc_metadata = doc_metadata)
 
@@ -41,14 +43,14 @@ class CsvCrawler(Crawler):
                     doc_id = name
                 else:
                     doc_id = ' - '.join([str(x) for x in name if x])
-                index_df(doc_id=doc_id, title=f'group {doc_id}', df=group)
+                index_df(doc_id=doc_id, df=group)
         else:
             if rows_per_chunk < len(df):
                 rows_per_chunk = len(df)
             for inx in range(0, df.shape[0], rows_per_chunk):
                 sub_df = df[inx: inx+rows_per_chunk]
                 name = f'rows {inx}-{inx+rows_per_chunk-1}'
-                index_df(doc_id=name, title=name, df=sub_df)
+                index_df(doc_id=name, df=sub_df)
         
     def crawl(self) -> None:
         text_columns = list(self.cfg.csv_crawler.get("text_columns", []))
