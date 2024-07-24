@@ -3,11 +3,10 @@ import json
 import os
 from typing import Tuple, Dict, Any, List, Optional
 import uuid
+import pandas as pd
 
 import time
 from slugify import slugify
-
-from bs4 import BeautifulSoup
 import unicodedata
 
 from omegaconf import OmegaConf
@@ -97,7 +96,7 @@ class Indexer(object):
         self.setup()
 
     def normalize_text(self, text: str) -> str:
-        if text is None or len(text)==0:
+        if pd.isnull(text) or len(text)==0:
             return text
         if self.cfg.vectara.get("mask_pii", False):
             text = mask_pii(text)
