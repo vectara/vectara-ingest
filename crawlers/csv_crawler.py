@@ -5,7 +5,10 @@ import unicodedata
 
 class CsvCrawler(Crawler):
 
-    def index_dataframe(self, df: pd.DataFrame, text_columns, title_column, metadata_columns, doc_id_columns) -> None:
+    def index_dataframe(self, df: pd.DataFrame, 
+                        text_columns, title_column, metadata_columns, doc_id_columns,
+                        rows_per_chunk: int = 500
+        ) -> None:
         all_columns = text_columns + metadata_columns
         if title_column:
             all_columns.append(title_column)
@@ -19,12 +22,17 @@ class CsvCrawler(Crawler):
                     titles.append(str(row[title_column]))
                 text = ' - '.join(str(x) for x in row[text_columns].tolist() if x) + '\n'
                 texts.append(unicodedata.normalize('NFD', text))
-                metadatas.append({column: row[column] for column in metadata_columns if row[column]})
+                md = {column: row[column] for column in metadata_columns if not pd.isnull(row[column])}
+                metadatas.append(md)
             logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
             if len(titles)==0:
                 titles = None
+            doc_metadata = {'source': 'csv'}
+            for column in metadata_columns:
+                if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
+                    doc_metadata[column] = df[column].iloc[0]
             self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
-                                        doc_title=title, doc_metadata = {'source': 'csv'})
+                                        doc_title=title, doc_metadata = doc_metadata)
 
         if doc_id_columns:
             grouped = df.groupby(doc_id_columns)
@@ -35,7 +43,6 @@ class CsvCrawler(Crawler):
                     doc_id = ' - '.join([str(x) for x in name if x])
                 index_df(doc_id=doc_id, title=f'group {doc_id}', df=group)
         else:
-            rows_per_chunk = self.cfg.csv_crawler.get("rows_per_chunk", 500) if 'csv_crawler' in self.cfg else 500
             if rows_per_chunk < len(df):
                 rows_per_chunk = len(df)
             for inx in range(0, df.shape[0], rows_per_chunk):
@@ -73,5 +80,6 @@ class CsvCrawler(Crawler):
         df[doc_id_columns] = df[doc_id_columns].astype(str)
 
         # index the dataframe
+        rows_per_chunk = int(self.cfg.csv_crawler.get("rows_per_chunk", 500) if 'csv_crawler' in self.cfg else 500)
         logging.info(f"indexing {len(df)} rows from the file {file_path}")
-        self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns)
+        self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk)
