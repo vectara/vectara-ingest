@@ -58,8 +58,6 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
 
         if len(new_urls) > 0:
             logging.info(f"collected {len(visited)} URLs so far")
-            if verbose:
-                print(f"URLs so far: {visited}")
 
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, pos_regex, neg_regex, indexer, visited, verbose)
