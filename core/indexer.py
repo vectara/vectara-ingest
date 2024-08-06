@@ -73,6 +73,7 @@ class Indexer(object):
     def __init__(self, cfg: OmegaConf, endpoint: str, 
                  customer_id: str, corpus_id: int, api_key: str) -> None:
         self.cfg = cfg
+        self.browser_use_limit = 100
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
@@ -109,6 +110,7 @@ class Indexer(object):
         if use_playwright:
             self.p = sync_playwright().start()
             self.browser = self.p.firefox.launch(headless=True)
+            self.browser_use_count = 0
         self.tmp_file = 'tmp_' + str(uuid.uuid4())
 
     def url_triggers_download(self, url: str) -> bool:
@@ -218,6 +220,12 @@ class Indexer(object):
                 page.close()
             if context:
                 context.close()
+            self.browser_use_count += 1
+            if self.browser_use_count >= self.browser_use_limit:
+                self.browser.close()
+                self.browser = self.p.firefox.launch(headless=True)
+                self.browser_use_count = 0
+                self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
             
         return {
             'text': text, 'html': html, 'title': title,
