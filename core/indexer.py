@@ -151,6 +151,7 @@ class Indexer(object):
         page = context = None
         text = ''
         html = ''
+        title = ''
         links = []
         out_url = url
         try:
