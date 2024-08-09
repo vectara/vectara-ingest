@@ -69,12 +69,18 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
         for element in soup.find_all(id=id):
             element.decompose()
 
-    # remove any HTML tags
+    # remove any HTML tags in the list
     tags_to_remove = html_processing.get('tags_to_remove', [])
     for tag in tags_to_remove:
         for element in soup.find_all(tag):
             element.decompose()
 
+    # remove any elements with these classes
+    classes_to_remove = html_processing.get('classes_to_remove', [])
+    for class_name in classes_to_remove:
+        for element in soup.find_all(class_=class_name):
+            element.decompose()
+        
     text = soup.get_text(' ', strip=True).replace('\n', ' ')
     return text
 

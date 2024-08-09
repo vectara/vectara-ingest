@@ -73,6 +73,7 @@ class Indexer(object):
     def __init__(self, cfg: OmegaConf, endpoint: str, 
                  customer_id: str, corpus_id: int, api_key: str) -> None:
         self.cfg = cfg
+        self.browser_use_limit = 100
         self.endpoint = endpoint
         self.customer_id = customer_id
         self.corpus_id = corpus_id
@@ -109,6 +110,7 @@ class Indexer(object):
         if use_playwright:
             self.p = sync_playwright().start()
             self.browser = self.p.firefox.launch(headless=True)
+            self.browser_use_count = 0
         self.tmp_file = 'tmp_' + str(uuid.uuid4())
 
     def url_triggers_download(self, url: str) -> bool:
@@ -149,6 +151,7 @@ class Indexer(object):
         page = context = None
         text = ''
         html = ''
+        title = ''
         links = []
         out_url = url
         try:
@@ -218,6 +221,12 @@ class Indexer(object):
                 page.close()
             if context:
                 context.close()
+            self.browser_use_count += 1
+            if self.browser_use_count >= self.browser_use_limit:
+                self.browser.close()
+                self.browser = self.p.firefox.launch(headless=True)
+                self.browser_use_count = 0
+                self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
             
         return {
             'text': text, 'html': html, 'title': title,
@@ -434,14 +443,14 @@ class Indexer(object):
                 html_content, _ = exporter.from_notebook_node(nb)
             extracted_title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
-            parts = [text]            
+            parts = [text]
 
         else:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(url, self.remove_code)
-                text = res['text']
                 html = res['html']
+                text = res['text']
                 extracted_title = res['title']
 
                 if text is None or len(text)<3:
@@ -462,6 +471,8 @@ class Indexer(object):
                     if self.verbose:
                         self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, extracted_title = get_article_content(html, url, self.detected_language, self.remove_code)
+                else:
+                    text = html_to_text(html, self.remove_code, html_processing)
 
                 parts = [text]
                 self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
