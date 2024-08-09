@@ -443,14 +443,14 @@ class Indexer(object):
                 html_content, _ = exporter.from_notebook_node(nb)
             extracted_title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
-            parts = [text]            
+            parts = [text]
 
         else:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(url, self.remove_code)
-                text = res['text']
                 html = res['html']
+                text = res['text']
                 extracted_title = res['title']
 
                 if text is None or len(text)<3:
@@ -471,6 +471,8 @@ class Indexer(object):
                     if self.verbose:
                         self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, extracted_title = get_article_content(html, url, self.detected_language, self.remove_code)
+                else:
+                    text = html_to_text(html, self.remove_code, html_processing)
 
                 parts = [text]
                 self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
