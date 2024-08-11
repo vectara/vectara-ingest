@@ -25,6 +25,17 @@ from core.utils import setup_logging
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = '/home/vectara/env/credentials.json'
 
+# Shared cache to keep track of files that have already been crawled
+class SharedCache:
+    def __init__(self):
+        self.cache = set()
+
+    def add(self, id: str):
+        self.cache.add(id)
+
+    def contains(self, id: str) -> bool:
+        return id in self.cache
+
 def get_credentials(delegated_user: str) -> service_account.Credentials:
     credentials = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -80,7 +91,8 @@ class UserWorker(object):
     def list_files(self, service: Resource, date_threshold: Optional[str] = None) -> List[dict]:
         results = []
         page_token = None
-        query = f"('root' in parents or sharedWithMe) and trashed=false and modifiedTime > '{date_threshold}'"
+        #query = f"('root' in parents or sharedWithMe) and trashed=false and modifiedTime > '{date_threshold}'"
+        query = f"((('root' in parents) or sharedWithMe or ('me' in owners) or ('me' in writers) or ('me' in readers)) and trashed=false and modifiedTime > '{date_threshold}')"
 
         while True:
             try:
@@ -179,10 +191,14 @@ class UserWorker(object):
             local_file_path = self.save_local_file(file_id, name + '.csv', 'text/csv')
         elif mime_type == 'application/vnd.google-apps.presentation':
             local_file_path = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
-        elif mime_type.startswith('application/'):
+        elif mime_type.startswith('application/') or mime_type.startswith('text/plain'):
             local_file_path = self.save_local_file(file_id, name)
             if local_file_path and name.endswith('.xlsx'):
-                df = pd.read_excel(local_file_path)
+                try:
+                    df = pd.read_excel(local_file_path)
+                except Exception as e:
+                    logging.info(f"Error reading Excel file: {e}")
+                    return None, None
                 csv_file_path = local_file_path.replace('.xlsx', '.csv')
                 df.to_csv(csv_file_path, index=False)
                 local_file_path = csv_file_path
@@ -225,11 +241,24 @@ class UserWorker(object):
 
             os.remove(local_file_path)  # remove the local file after indexing
 
-    def process(self, user: str, date_threshold: datetime) -> None:
+    def process(self, user: str, date_threshold: datetime, shared_cache: SharedCache) -> None:
         logging.info(f"Processing files for user: {user}")
         self.creds = get_credentials(user)
         self.service = build("drive", "v3", credentials=self.creds)
+        
         files = self.list_files(self.service, date_threshold=date_threshold.isoformat() + 'Z')
+        files = [file for file in files if not shared_cache.contains(file['id'])]
+
+        # remove mime types we don't want to crawl
+        mime_prefix_to_remove = [
+            'image', 'audio', 'video', 
+            'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
+            'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
+            'application/x-executable', 'application/font-woff', 'font/otf', 'font/ttf',
+            'text/php', 'text/javascript', 'text/css', 'text/xml', '.DS_Store'
+        ]
+        files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
+
         if self.crawler.verbose:
             logging.info(f"identified {len(files)} files for user {user}")
 
@@ -242,6 +271,8 @@ class UserWorker(object):
             return
         
         for file in files:
+            if not shared_cache.contains(file['id']):
+                shared_cache.add(file['id'])
             self.crawl_file(file)
 
 class GdriveCrawler(Crawler):
@@ -267,10 +298,12 @@ class GdriveCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, user=user, date_threshold=date_threshold), self.delegated_users))
+            shared_cache = ray.remote(SharedCache).remote()
+            _ = list(pool.map(lambda a, user: a.process.remote(user, date_threshold, shared_cache), self.delegated_users))
                 
         else:
             crawl_worker = UserWorker(self.indexer, self)
+            shared_cache = SharedCache()
             for user in self.delegated_users:
                 logging.info(f"Crawling for user {user}")
-                crawl_worker.process(user, date_threshold)
+                crawl_worker.process(user, date_threshold, shared_cache)
