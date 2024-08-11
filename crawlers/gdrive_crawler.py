@@ -77,12 +77,13 @@ def download_or_export_file_old(service: Resource, file_id: str, mime_type: Opti
 ALLOWED_PERMISSION_DISPLAY_NAMES = ['Vectara', 'all']
 
 class UserWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler) -> None:
+    def __init__(self, indexer: Indexer, crawler: Crawler, use_ray) -> None:
         self.crawler = crawler
         self.indexer = indexer
         self.creds = None
         self.service = None
         self.access_token = None
+        self.use_ray = use_ray
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
@@ -91,7 +92,6 @@ class UserWorker(object):
     def list_files(self, service: Resource, date_threshold: Optional[str] = None) -> List[dict]:
         results = []
         page_token = None
-        #query = f"('root' in parents or sharedWithMe) and trashed=false and modifiedTime > '{date_threshold}'"
         query = f"((('root' in parents) or sharedWithMe or ('me' in owners) or ('me' in writers) or ('me' in readers)) and trashed=false and modifiedTime > '{date_threshold}')"
 
         while True:
@@ -191,23 +191,18 @@ class UserWorker(object):
             local_file_path = self.save_local_file(file_id, name + '.csv', 'text/csv')
         elif mime_type == 'application/vnd.google-apps.presentation':
             local_file_path = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
-        elif mime_type.startswith('application/') or mime_type.startswith('text/plain'):
+        elif mime_type.startswith('application/') or mime_type.startswith('text/plain') or mime_type.startswith('text/html') or mime_type.startswith('text/markdown'):
             local_file_path = self.save_local_file(file_id, name)
-            if local_file_path and name.endswith('.xlsx'):
-                try:
-                    df = pd.read_excel(local_file_path)
-                except Exception as e:
-                    logging.info(f"Error reading Excel file: {e}")
-                    return None, None
-                csv_file_path = local_file_path.replace('.xlsx', '.csv')
-                df.to_csv(csv_file_path, index=False)
-                local_file_path = csv_file_path
         else:
             logging.info(f"Unsupported file type: {mime_type}")
             return None, None
 
         if local_file_path:
-            return local_file_path, url
+            if name.endswith('.xlsx') or name.endswith('.xls') or name.endswith('.csv'):
+                logging.info("CSV/XLS/XLSX not supported")
+                return None, None
+            else:
+                return local_file_path, url
         else:
             return None, None
 
@@ -239,15 +234,20 @@ class UserWorker(object):
             except Exception as e:
                 logging.info(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
-            os.remove(local_file_path)  # remove the local file after indexing
+            # remove file from local storage
+            if os.path.exists(local_file_path):
+                os.remove(local_file_path)
 
     def process(self, user: str, date_threshold: datetime, shared_cache: SharedCache) -> None:
         logging.info(f"Processing files for user: {user}")
         self.creds = get_credentials(user)
-        self.service = build("drive", "v3", credentials=self.creds)
+        self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
         
         files = self.list_files(self.service, date_threshold=date_threshold.isoformat() + 'Z')
-        files = [file for file in files if not shared_cache.contains(file['id'])]
+        if self.use_ray:
+            files = [file for file in files if not ray.get(shared_cache.contains.remote(file['id']))]
+        else:
+            files = [file for file in files if not shared_cache.contains(file['id'])]
 
         # remove mime types we don't want to crawl
         mime_prefix_to_remove = [
@@ -255,7 +255,8 @@ class UserWorker(object):
             'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
             'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
             'application/x-executable', 'application/font-woff', 'font/otf', 'font/ttf',
-            'text/php', 'text/javascript', 'text/css', 'text/xml', '.DS_Store'
+            'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script', 
+            '.DS_Store'
         ]
         files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
 
@@ -271,8 +272,12 @@ class UserWorker(object):
             return
         
         for file in files:
-            if not shared_cache.contains(file['id']):
-                shared_cache.add(file['id'])
+            if self.use_ray:
+                if not ray.get(shared_cache.contains.remote(file['id'])):
+                    shared_cache.add.remote(file['id'])
+            else:
+                if not shared_cache.contains(file['id']):
+                    shared_cache.add(file['id'])
             self.crawl_file(file)
 
 class GdriveCrawler(Crawler):
@@ -294,7 +299,7 @@ class GdriveCrawler(Crawler):
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(UserWorker).remote(self.indexer, self) for _ in range(ray_workers)]
+            actors = [ray.remote(UserWorker).remote(self.indexer, self, use_ray=True) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
@@ -302,7 +307,7 @@ class GdriveCrawler(Crawler):
             _ = list(pool.map(lambda a, user: a.process.remote(user, date_threshold, shared_cache), self.delegated_users))
                 
         else:
-            crawl_worker = UserWorker(self.indexer, self)
+            crawl_worker = UserWorker(self.indexer, self, use_ray=False)
             shared_cache = SharedCache()
             for user in self.delegated_users:
                 logging.info(f"Crawling for user {user}")
