@@ -20,6 +20,7 @@ import ray
 from core.indexer import Indexer
 from core.utils import setup_logging
 
+logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SERVICE_ACCOUNT_FILE = '/home/vectara/env/credentials.json'
@@ -135,7 +136,8 @@ class UserWorker(object):
             return byte_stream
 
         except HttpError as error:
-            if error.resp.status == 403 and "exportSizeLimitExceeded" in str(error):
+            if error.resp.status == 403 and \
+               any(e.get('reason') == 'exportSizeLimitExceeded' or e.get('reason') == 'fileNotDownloadable' for e in error.error_details):
                 get_url = f'https://www.googleapis.com/drive/v3/files/{file_id}?fields=exportLinks'
                 headers = {
                     'Authorization': f'Bearer {self.access_token}',
@@ -171,7 +173,7 @@ class UserWorker(object):
             logging.info(f"Error saving local file: {e}")
         return None
 
-    def handle_file(self, file: dict) -> Tuple[Optional[str], Optional[str]]:
+    def crawl_file(self, file: dict) -> None:
         file_id = file['id']
         mime_type = file['mimeType']
         name = file['name']
@@ -181,37 +183,22 @@ class UserWorker(object):
             logging.info(f"Skipping restricted file: {name}")
             return None
 
-        if self.crawler.verbose:
-            logging.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
-
         url = get_gdrive_url(file_id, mime_type)
         if mime_type == 'application/vnd.google-apps.document':
             local_file_path = self.save_local_file(file_id, name + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-        elif mime_type == 'application/vnd.google-apps.spreadsheet':
-            local_file_path = self.save_local_file(file_id, name + '.csv', 'text/csv')
         elif mime_type == 'application/vnd.google-apps.presentation':
             local_file_path = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
-        elif mime_type.startswith('application/') or mime_type.startswith('text/plain') or mime_type.startswith('text/html') or mime_type.startswith('text/markdown'):
+        else:
             local_file_path = self.save_local_file(file_id, name)
-        else:
-            logging.info(f"Unsupported file type: {mime_type}")
-            return None, None
+
+        supported_extensions = ['.doc', '.docx', '.ppt', '.pptx', '.pdf', '.odt', '.txt', '.html', '.md', '.rtf', '.epub', '.lxml']
+        if (not local_file_path) or (not any(local_file_path.endswith(extension) for extension in supported_extensions)):
+            return
+
+        if self.crawler.verbose:
+            logging.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
 
         if local_file_path:
-            if name.endswith('.xlsx') or name.endswith('.xls') or name.endswith('.csv'):
-                logging.info("CSV/XLS/XLSX not supported")
-                return None, None
-            else:
-                return local_file_path, url
-        else:
-            return None, None
-
-    def crawl_file(self, file: dict) -> None:
-        local_file_path, url = self.handle_file(file)
-        if local_file_path:
-            file_id = file['id']
-            name = file['name']
-            mime_type = file['mimeType']
             created_time = file.get('createdTime', 'N/A')
             modified_time = file.get('modifiedTime', 'N/A')
             owners = ', '.join([owner['displayName'] for owner in file.get('owners', [])])
@@ -256,14 +243,10 @@ class UserWorker(object):
             'image', 'audio', 'video', 
             'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
             'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
-            'application/x-executable', 'application/font-woff', 'font/otf', 'font/ttf',
+            'application/x-executable', 
             'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script', 
         ]
         files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
-
-        # remove file extensions we don't want to crawl
-        extensions_to_remove = ['.less', '.ai', '.DS_Store', '.mo', '.scss', '.ts']
-        files = [file for file in files if not any(file['name'].endswith(extension) for extension in extensions_to_remove)]
 
         if self.crawler.verbose:
             logging.info(f"identified {len(files)} files for user {user}")
