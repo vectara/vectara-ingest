@@ -12,7 +12,6 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
 
-import pandas as pd
 from slugify import slugify
 from typing import List, Tuple, Optional
 
@@ -159,7 +158,8 @@ class UserWorker(object):
             return None
 
     def save_local_file(self, file_id: str, name: str, mime_type: Optional[str] = None) -> Optional[str]:
-        sanitized_name = slugify(name)
+        path, extension = os.path.splitext(name)
+        sanitized_name = f"{slugify(path)}{extension}"
         file_path = os.path.join("/tmp", sanitized_name)
         try:
             byte_stream = self.download_or_export_file(file_id, mime_type)
@@ -177,12 +177,12 @@ class UserWorker(object):
         name = file['name']
         permissions = file.get('permissions', [])
 
-        if self.crawler.verbose:
-            logging.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
-
         if not any(p.get('displayName') == 'Vectara' or p.get('displayName') == 'all' for p in permissions):
             logging.info(f"Skipping restricted file: {name}")
             return None
+
+        if self.crawler.verbose:
+            logging.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
 
         url = get_gdrive_url(file_id, mime_type)
         if mime_type == 'application/vnd.google-apps.document':
@@ -235,8 +235,10 @@ class UserWorker(object):
                 logging.info(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
             # remove file from local storage
-            if os.path.exists(local_file_path):
+            try:
                 os.remove(local_file_path)
+            except FileNotFoundError:
+                pass
 
     def process(self, user: str, date_threshold: datetime, shared_cache: SharedCache) -> None:
         logging.info(f"Processing files for user: {user}")
@@ -256,9 +258,12 @@ class UserWorker(object):
             'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
             'application/x-executable', 'application/font-woff', 'font/otf', 'font/ttf',
             'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script', 
-            '.DS_Store'
         ]
         files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
+
+        # remove file extensions we don't want to crawl
+        extensions_to_remove = ['.less', '.ai', '.DS_Store', '.mo', '.scss', '.ts']
+        files = [file for file in files if not any(file['name'].endswith(extension) for extension in extensions_to_remove)]
 
         if self.crawler.verbose:
             logging.info(f"identified {len(files)} files for user {user}")

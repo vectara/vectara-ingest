@@ -340,7 +340,7 @@ class Indexer(object):
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     return True
                 else:
-                    self.logger.info(f"REST upload for {uri} (reindex) failed with code = {response.status_code}, text = {response.text}")
+                    self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
         elif response.status_code != 200:
