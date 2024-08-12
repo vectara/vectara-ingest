@@ -53,36 +53,26 @@ def get_gdrive_url(file_id: str, mime_type: str = '') -> str:
         url = f'https://drive.google.com/file/d/{file_id}/view'
     return url
 
-def download_or_export_file_old(service: Resource, file_id: str, mime_type: Optional[str] = None) -> Optional[io.BytesIO]:
-    try:
-        if mime_type:
-            request = service.files().export_media(fileId=file_id, mimeType=mime_type)
-        else:
-            request = service.files().get_media(fileId=file_id)
-
-        byte_stream = io.BytesIO()  # an in-memory bytestream
-        downloader = MediaIoBaseDownload(byte_stream, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-        byte_stream.seek(0)  # Reset the file pointer to the beginning
-        return byte_stream
-    except HttpError as error:
-        logging.info(f"An error occurred: {error}")
-        return None
-
 # List of permission display names that are allowed to be crawled
 # In this example only files shared with 'Vectara' or 'all' are allowed
 # this means that only files shared with anyone in Vectara or files shared with anyone (public) are included
-ALLOWED_PERMISSION_DISPLAY_NAMES = ['Vectara', 'all']
+DEFAULT_PERMISSIONS = ['Vectara', 'all']
 
 class UserWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, use_ray) -> None:
+    def __init__(
+            self, indexer: Indexer, crawler: Crawler, 
+            shared_cache: SharedCache,
+            date_threshold: datetime,
+            permissions: List = DEFAULT_PERMISSIONS, 
+            use_ray: bool = False) -> None:
         self.crawler = crawler
         self.indexer = indexer
         self.creds = None
         self.service = None
         self.access_token = None
+        self.shared_cache = shared_cache
+        self.date_threshold = date_threshold
+        self.permissions = permissions
         self.use_ray = use_ray
 
     def setup(self):
@@ -110,7 +100,7 @@ class UserWorker(object):
 
                 for file in files:
                     permissions = file.get('permissions', [])
-                    if any(p.get('displayName') in ALLOWED_PERMISSION_DISPLAY_NAMES for p in permissions):
+                    if any(p.get('displayName') in self.permissions for p in permissions):
                         results.append(file)
                 page_token = response.get('nextPageToken', None)
                 if not page_token:
@@ -227,16 +217,16 @@ class UserWorker(object):
             except FileNotFoundError:
                 pass
 
-    def process(self, user: str, date_threshold: datetime, shared_cache: SharedCache) -> None:
+    def process(self, user: str) -> None:
         logging.info(f"Processing files for user: {user}")
         self.creds = get_credentials(user)
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
         
-        files = self.list_files(self.service, date_threshold=date_threshold.isoformat() + 'Z')
+        files = self.list_files(self.service, date_threshold=self.date_threshold.isoformat() + 'Z')
         if self.use_ray:
-            files = [file for file in files if not ray.get(shared_cache.contains.remote(file['id']))]
+            files = [file for file in files if not ray.get(self.shared_cache.contains.remote(file['id']))]
         else:
-            files = [file for file in files if not shared_cache.contains(file['id'])]
+            files = [file for file in files if not self.shared_cache.contains(file['id'])]
 
         # remove mime types we don't want to crawl
         mime_prefix_to_remove = [
@@ -261,11 +251,11 @@ class UserWorker(object):
         
         for file in files:
             if self.use_ray:
-                if not ray.get(shared_cache.contains.remote(file['id'])):
-                    shared_cache.add.remote(file['id'])
+                if not ray.get(self.shared_cache.contains.remote(file['id'])):
+                    self.shared_cache.add.remote(file['id'])
             else:
-                if not shared_cache.contains(file['id']):
-                    shared_cache.add(file['id'])
+                if not self.shared_cache.contains(file['id']):
+                    self.shared_cache.add(file['id'])
             self.crawl_file(file)
 
 class GdriveCrawler(Crawler):
@@ -282,21 +272,22 @@ class GdriveCrawler(Crawler):
         if self.verbose:
             logging.info(f"Crawling documents from {date_threshold.date()}")
         ray_workers = self.cfg.gdrive_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
-
+        permissions = self.cfg.gdrive_crawler.get("permissions", ['Vectara', 'all'])
+        
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(UserWorker).remote(self.indexer, self, use_ray=True) for _ in range(ray_workers)]
+            shared_cache = ray.remote(SharedCache).remote()
+            actors = [ray.remote(UserWorker).remote(self.indexer, self, shared_cache, date_threshold, permissions, use_ray=True) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            shared_cache = ray.remote(SharedCache).remote()
-            _ = list(pool.map(lambda a, user: a.process.remote(user, date_threshold, shared_cache), self.delegated_users))
+            _ = list(pool.map(lambda a, user: a.process.remote(user), self.delegated_users))
                 
         else:
-            crawl_worker = UserWorker(self.indexer, self, use_ray=False)
             shared_cache = SharedCache()
+            crawl_worker = UserWorker(self.indexer, self, shared_cache, date_threshold, permissions, use_ray=False)
             for user in self.delegated_users:
                 logging.info(f"Crawling for user {user}")
-                crawl_worker.process(user, date_threshold, shared_cache)
+                crawl_worker.process(user)
