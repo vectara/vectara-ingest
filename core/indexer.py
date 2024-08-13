@@ -14,7 +14,7 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii, safe_remove_file
 from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -425,7 +425,9 @@ class Indexer(object):
                     for chunk in response.iter_content(chunk_size=8192): 
                         f.write(chunk)
                 self.logger.info(f"File downloaded successfully and saved as {file_path}")
-                return self.index_file(file_path, url, metadata)
+                res =  self.index_file(file_path, url, metadata)
+                safe_remove_file(file_path)
+                return res            
             else:
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False

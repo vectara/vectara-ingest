@@ -18,7 +18,7 @@ from typing import List, Tuple, Optional
 import ray
 
 from core.indexer import Indexer
-from core.utils import setup_logging
+from core.utils import setup_logging, safe_remove_file
 
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
@@ -213,10 +213,7 @@ class UserWorker(object):
                 logging.info(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
             # remove file from local storage
-            try:
-                os.remove(local_file_path)
-            except FileNotFoundError:
-                pass
+            safe_remove_file(local_file_path)
 
     def process(self, user: str) -> None:
         logging.info(f"Processing files for user: {user}")
