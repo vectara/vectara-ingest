@@ -311,7 +311,7 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        if os.path.exists(filename) == False:
+        if not os.path.exists(filename):
             self.logger.error(f"File {filename} does not exist")
             return False
 
@@ -320,22 +320,22 @@ class Indexer(object):
             'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
-
         files: Any = {
             "file": (uri, open(filename, 'rb')),
             "doc_metadata": (None, json.dumps(metadata)),
         }  
         response = self.session.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
-            files=files, verify=True, headers=post_headers)
-
+            files=files, verify=True, headers=post_headers
+        )
         if response.status_code == 409:
             if self.reindex:
                 doc_id = response.json()['details'].split('document id')[1].split("'")[1]
                 self.delete_doc(doc_id)
                 response = self.session.post(
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
-                    files=files, verify=True, headers=post_headers)
+                    files=files, verify=True, headers=post_headers
+                )
                 if response.status_code == 200:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     return True

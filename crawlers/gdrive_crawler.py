@@ -198,6 +198,7 @@ class UserWorker(object):
             file_metadata = {
                 'id': file_id,
                 'name': name,
+                'title': name,
                 'created_at': created_time,
                 'modified_at': modified_time,
                 'owners': owners,
