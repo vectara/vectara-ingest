@@ -347,10 +347,11 @@ The gdrive crawler indexes content of your Google Drive folder
 - `delegated_users`: list of user emails in your organization. 
 - `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
 
-This crawler identified Google Drive files based on the list of delegated users. For each user it looks at those files that the user either created or has access to, but
-limiting only to files that have a "accessible by all" permissions (so that "restricted" files are not included)
+This crawler identifies Google Drive files based on the list of delegated users. For each user it looks at those files that the user either created or has access to, but
+limiting only to files that have "accessible by all" permissions (so that "restricted" files are not included)
 
-Note that this crawler uses a Google Drive service account mode to access files, and you need to include a `credentials.json` file in the main vectara-ingest folder.
+Note that this crawler uses a Google Drive service account mode to access files, 
+and you need to include a `credentials.json` file in the main vectara-ingest folder.
 
 
 ### Folder crawler
