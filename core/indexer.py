@@ -315,18 +315,20 @@ class Indexer(object):
             self.logger.error(f"File {filename} does not exist")
             return False
 
+        def get_files(filename: str, metadata: dict):
+            return  {
+                "file": (uri, open(filename, 'rb')),
+                "doc_metadata": (None, json.dumps(metadata)),
+            }  
+
         post_headers = { 
             'x-api-key': self.api_key,
             'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
-        files: Any = {
-            "file": (uri, open(filename, 'rb')),
-            "doc_metadata": (None, json.dumps(metadata)),
-        }  
         response = self.session.post(
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
-            files=files, verify=True, headers=post_headers
+            files=get_files(filename, metadata), verify=True, headers=post_headers
         )
         if response.status_code == 409:
             if self.reindex:
@@ -334,7 +336,7 @@ class Indexer(object):
                 self.delete_doc(doc_id)
                 response = self.session.post(
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
-                    files=files, verify=True, headers=post_headers
+                    files=get_files(filename, metadata), verify=True, headers=post_headers
                 )
                 if response.status_code == 200:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
