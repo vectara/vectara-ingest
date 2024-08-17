@@ -118,6 +118,9 @@ venv.bak/
 # secrets file in TOML format
 secrets.toml
 
+# Any GDrive credentials file
+credentials.json
+
 # Spyder project settings
 .spyderproject
 .spyproject

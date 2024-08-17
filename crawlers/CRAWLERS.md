@@ -328,6 +328,34 @@ The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` tha
 
 The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
 
+### Google Drive crawler
+
+```yaml
+...
+  gdrive_crawler:
+    permissions: ['Vectara', 'all']
+    days_back: 365
+    ray_workers: 0
+    delegated_users:
+      - ofer@vectara.com
+      - jana@vectara.com
+```
+
+The gdrive crawler indexes content of your Google Drive folder
+- `days_back`: include only files created within the last N days
+- `permissions`: list of `displayName` values to include. We recommend including your company name (e.g. `Vectara`) and `all` to include all non-restricted files.
+- `delegated_users`: list of user emails in your organization. 
+- `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
+
+This crawler identifies Google Drive files based on the list of delegated users. For each user it looks at those files that the user either created or has access to, but
+limiting only to files that have "accessible by all" permissions (so that "restricted" files are not included)
+
+Note that this crawler uses a Google Drive service account mode to access files, 
+and you need to include a `credentials.json` file in the main vectara-ingest folder.
+For more information see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under 
+"Service account credentials".
+
+
 ### Folder crawler
 
 ```yaml

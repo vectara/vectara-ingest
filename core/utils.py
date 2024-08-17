@@ -84,6 +84,11 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
     text = soup.get_text(' ', strip=True).replace('\n', ' ')
     return text
 
+def safe_remove_file(file_path: str):
+    try:
+        os.remove(file_path)
+    except Exception as e:
+        logging.info(f"Failed to remove file: {file_path} due to {e}")
 
 def create_session_with_retries(retries: int = 3) -> requests.Session:
     """Create a requests session with retries."""
