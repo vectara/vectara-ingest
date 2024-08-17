@@ -352,6 +352,8 @@ limiting only to files that have "accessible by all" permissions (so that "restr
 
 Note that this crawler uses a Google Drive service account mode to access files, 
 and you need to include a `credentials.json` file in the main vectara-ingest folder.
+For more information see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under 
+"Service account credentials".
 
 
 ### Folder crawler
