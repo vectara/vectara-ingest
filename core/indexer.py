@@ -455,6 +455,7 @@ class Indexer(object):
                 res = self.fetch_page_contents(url, self.remove_code)
                 html = res['html']
                 text = res['text']
+
                 extracted_title = res['title']
 
                 if text is None or len(text)<3:

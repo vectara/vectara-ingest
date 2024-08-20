@@ -62,6 +62,7 @@ class PmcCrawler(Crawler):
                 logging.info(f"Failed to download paper {pmc_id}, skipping")
                 continue
 
+            print(f"DEBUG 0: response text = {response.text}")
             soup = BeautifulSoup(response.text, "xml")
 
             # Extract the title
@@ -100,26 +101,52 @@ class PmcCrawler(Crawler):
             self.crawled_pmc_ids.add(pmc_id)
             logging.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
 
-            # Index the page into Vectara
-            document = {
-                "documentId": pmc_id,
-                "title": title,
-                "description": "",
-                "metadataJson": json.dumps({
-                    "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
-                    "publicationDate": pub_date,
-                    "source": "pmc",
-                }),
-                "section": []
-            }
-            for paragraph in soup.find_all('body p'):
-                document['section'].append({
-                    "text": paragraph.text,
-                })
+            response = self.session.get(f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            pdf_link = None
+            for link in soup.find_all('a'):
+                if 'PDF' in link.text:
+                    pdf_link = "https://www.ncbi.nlm.nih.gov" + link.get('href')
+                    break
 
-            succeeded = self.indexer.index_document(document)
-            if not succeeded:
-                logging.info(f"Failed to index document {pmc_id}")
+            if pdf_link:
+                self.indexer.index_url(pdf_link, metadata={'url': pdf_link, 'source': 'pmc', 'title': title})
+
+                ### TEMP
+                pdf_response = self.session.get(pdf_link)
+                pdf_filename = pdf_link.split('/')[-1] + ".pdf"
+                with open(pdf_filename, 'wb') as pdf_file:
+                    pdf_file.write(pdf_response.content)
+                title, texts = self.indexer._parse_local_file(pdf_filename)
+                os.makedirs('/home/vectara/env/text-files/', exist_ok=True)
+                fname = os.path.join('/home/vectara/env/text-files/', f"pmc-{pmc_id}.txt")
+                with open(fname, 'w') as f:
+                    f.write('\n'.join(texts))
+                continue
+                ### TEMP
+            else:
+                logging.info(f"Could not find PDF link for paper {pmc_id}, skipping")
+
+            # # Index the page into Vectara
+            # document = {
+            #     "documentId": pmc_id,
+            #     "title": title,
+            #     "description": "",
+            #     "metadataJson": json.dumps({
+            #         "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
+            #         "publicationDate": pub_date,
+            #         "source": "pmc",
+            #     }),
+            #     "section": []
+            # }
+            # for paragraph in soup.find_all('body p'):
+            #     document['section'].append({
+            #         "text": paragraph.text,
+            #     })
+
+            # succeeded = self.indexer.index_document(document)
+            # if not succeeded:
+            #     logging.info(f"Failed to index document {pmc_id}")
 
     def _get_xml_dict(self) -> Any:
         days_back = 1
@@ -204,6 +231,6 @@ class PmcCrawler(Crawler):
         topics = self.cfg.pmc_crawler.topics
         n_papers = self.cfg.pmc_crawler.n_papers
 
-        self.index_medline_plus(topics)
+#        self.index_medline_plus(topics)  ### TEMP
         for topic in topics:
             self.index_papers_by_topic(topic, n_papers)
