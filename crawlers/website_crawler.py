@@ -79,7 +79,6 @@ class WebsiteCrawler(Crawler):
                                            pos_regex=self.pos_regex, neg_regex=self.neg_regex, 
                                            indexer=self.indexer, visited=set(), verbose=self.indexer.verbose)
                 urls = clean_urls(urls_set, keep_query_params)
-                urls = list(set(urls_set))
             else:
                 logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
                 return
