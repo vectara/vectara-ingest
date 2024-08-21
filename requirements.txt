@@ -15,7 +15,7 @@ python-dotenv==1.0.0
 python-slugify==8.0.1
 markdown==3.5.2
 notion-client==2.0.0
-biopython==1.81
+biopython==1.84
 boto3==1.26.116
 mwviews==0.2.1
 toml==0.10.2

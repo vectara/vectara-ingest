@@ -20,11 +20,17 @@ if [ ! -f secrets.toml ]; then
   exit 3
 fi
 
-# Mount secrets file into docker container
+# retrieve the crawler type from the config file
+crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
+
+# Mount secrets file and other files as needed into docker container
 mkdir -p ~/tmp/mount
 [ -f secrets.toml ] && cp secrets.toml ~/tmp/mount
-[ -f credentials.json ] && cp credentials.json ~/tmp/mount
 cp "$1" ~/tmp/mount/
+
+if [[ "$crawler_type" == "gdrive" ]]; then
+  [ -f credentials.json ] && cp credentials.json ~/tmp/mount
+fi
 
 # Build docker container
 ARCH=$(uname -m)
@@ -46,6 +52,7 @@ fi
 
 sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('summarize_tables', 'false'))" | tr '[:upper:]' '[:lower:]'`
 mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
+
 if [[ "$sum_tables" == "true" || "$mask_pii" == "true" ]]; then
     echo "Building with extra features"
     tag="vectara-ingest-full"
@@ -66,7 +73,6 @@ fi
 docker container inspect vingest &>/dev/null && docker rm -f vingest
 
 # Run docker container
-crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
 config_file_name="${1##*/}"
 if [[ "${crawler_type}" == "folder" ]]; then
     # special handling of "folder crawler" where we need to mount the folder under /home/vectara/data

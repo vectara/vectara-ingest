@@ -16,6 +16,8 @@ import time
 import threading
 import logging
 
+import magic
+
 from langdetect import detect
 from openai import OpenAI
 
@@ -42,6 +44,16 @@ def setup_logging():
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
+
+def detect_file_type(file_path):
+    """
+    Detect the type of a file using the `magic` library.
+    PDF files are detected as 'application/pdf' and HTML files as 'text/html'.
+    """
+    mime = magic.Magic(mime=True)
+    mime_type = mime.from_file(file_path)
+    return mime_type
+    
 def remove_code_from_html(html: str) -> str:
     """Remove code and script tags from HTML."""
     soup = BeautifulSoup(html, 'html5lib')

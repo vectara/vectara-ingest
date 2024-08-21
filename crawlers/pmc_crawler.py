@@ -1,14 +1,16 @@
 import logging
 import os
-from Bio import Entrez
 import json
 from bs4 import BeautifulSoup
 import xmltodict
 from datetime import datetime, timedelta
-from typing import Set, List, Dict, Any
+from typing import Set, List, Any
 from core.utils import html_to_text, create_session_with_retries, RateLimiter
 from core.crawler import Crawler
+from core.indexer import parse_local_file
+
 from omegaconf import OmegaConf
+from Bio import Entrez
 
 def get_top_n_papers(topic: str, n: int, email: str) -> Any:
     """
@@ -19,12 +21,23 @@ def get_top_n_papers(topic: str, n: int, email: str) -> Any:
         Entrez.esearch(
             db="pmc",
             term=topic,
+            sort="relevance",
             retmax=n,
             usehistory="y",
         )
     )
-    id_list = search_results["IdList"]    
+    id_list = search_results["IdList"]
     return id_list
+
+
+get_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
 
 class PmcCrawler(Crawler):
 
@@ -41,7 +54,11 @@ class PmcCrawler(Crawler):
         """
         email = "crawler@vectara.com"
         papers = list(set(get_top_n_papers(topic, n_papers, email)))
-        logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
+        if len(papers) > 0:
+            logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
+        else:
+            logging.info(f"Found no papers for topic {topic}")
+            return
 
         # index the papers
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -62,7 +79,6 @@ class PmcCrawler(Crawler):
                 logging.info(f"Failed to download paper {pmc_id}, skipping")
                 continue
 
-            print(f"DEBUG 0: response text = {response.text}")
             soup = BeautifulSoup(response.text, "xml")
 
             # Extract the title
@@ -100,53 +116,9 @@ class PmcCrawler(Crawler):
             
             self.crawled_pmc_ids.add(pmc_id)
             logging.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
-
-            response = self.session.get(f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}")
-            soup = BeautifulSoup(response.text, 'html.parser')
-            pdf_link = None
-            for link in soup.find_all('a'):
-                if 'PDF' in link.text:
-                    pdf_link = "https://www.ncbi.nlm.nih.gov" + link.get('href')
-                    break
-
-            if pdf_link:
-                self.indexer.index_url(pdf_link, metadata={'url': pdf_link, 'source': 'pmc', 'title': title})
-
-                ### TEMP
-                pdf_response = self.session.get(pdf_link)
-                pdf_filename = pdf_link.split('/')[-1] + ".pdf"
-                with open(pdf_filename, 'wb') as pdf_file:
-                    pdf_file.write(pdf_response.content)
-                title, texts = self.indexer._parse_local_file(pdf_filename)
-                os.makedirs('/home/vectara/env/text-files/', exist_ok=True)
-                fname = os.path.join('/home/vectara/env/text-files/', f"pmc-{pmc_id}.txt")
-                with open(fname, 'w') as f:
-                    f.write('\n'.join(texts))
-                continue
-                ### TEMP
-            else:
-                logging.info(f"Could not find PDF link for paper {pmc_id}, skipping")
-
-            # # Index the page into Vectara
-            # document = {
-            #     "documentId": pmc_id,
-            #     "title": title,
-            #     "description": "",
-            #     "metadataJson": json.dumps({
-            #         "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
-            #         "publicationDate": pub_date,
-            #         "source": "pmc",
-            #     }),
-            #     "section": []
-            # }
-            # for paragraph in soup.find_all('body p'):
-            #     document['section'].append({
-            #         "text": paragraph.text,
-            #     })
-
-            # succeeded = self.indexer.index_document(document)
-            # if not succeeded:
-            #     logging.info(f"Failed to index document {pmc_id}")
+            pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
+            
+            self.indexer.index_url(pdf_url, metadata={'url': pdf_url, 'source': 'pmc', 'title': title, "publicationDate": pub_date})
 
     def _get_xml_dict(self) -> Any:
         days_back = 1
@@ -231,6 +203,6 @@ class PmcCrawler(Crawler):
         topics = self.cfg.pmc_crawler.topics
         n_papers = self.cfg.pmc_crawler.n_papers
 
-#        self.index_medline_plus(topics)  ### TEMP
+        self.index_medline_plus(topics)
         for topic in topics:
             self.index_papers_by_topic(topic, n_papers)
