@@ -1,14 +1,16 @@
 import logging
 import os
-from Bio import Entrez
 import json
 from bs4 import BeautifulSoup
 import xmltodict
 from datetime import datetime, timedelta
-from typing import Set, List, Dict, Any
+from typing import Set, List, Any
 from core.utils import html_to_text, create_session_with_retries, RateLimiter
 from core.crawler import Crawler
+from core.indexer import parse_local_file
+
 from omegaconf import OmegaConf
+from Bio import Entrez
 
 def get_top_n_papers(topic: str, n: int, email: str) -> Any:
     """
@@ -19,12 +21,14 @@ def get_top_n_papers(topic: str, n: int, email: str) -> Any:
         Entrez.esearch(
             db="pmc",
             term=topic,
+            sort="relevance",
             retmax=n,
             usehistory="y",
         )
     )
-    id_list = search_results["IdList"]    
+    id_list = search_results["IdList"]
     return id_list
+
 
 class PmcCrawler(Crawler):
 
@@ -41,7 +45,11 @@ class PmcCrawler(Crawler):
         """
         email = "crawler@vectara.com"
         papers = list(set(get_top_n_papers(topic, n_papers, email)))
-        logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
+        if len(papers) > 0:
+            logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
+        else:
+            logging.info(f"Found no papers for topic {topic}")
+            return
 
         # index the papers
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -99,27 +107,9 @@ class PmcCrawler(Crawler):
             
             self.crawled_pmc_ids.add(pmc_id)
             logging.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
-
-            # Index the page into Vectara
-            document = {
-                "documentId": pmc_id,
-                "title": title,
-                "description": "",
-                "metadataJson": json.dumps({
-                    "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
-                    "publicationDate": pub_date,
-                    "source": "pmc",
-                }),
-                "section": []
-            }
-            for paragraph in soup.find_all('body p'):
-                document['section'].append({
-                    "text": paragraph.text,
-                })
-
-            succeeded = self.indexer.index_document(document)
-            if not succeeded:
-                logging.info(f"Failed to index document {pmc_id}")
+            pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
+            
+            self.indexer.index_url(pdf_url, metadata={'url': pdf_url, 'source': 'pmc', 'title': title, "publicationDate": pub_date})
 
     def _get_xml_dict(self) -> Any:
         days_back = 1

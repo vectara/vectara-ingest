@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtesseract-dev \
     xvfb \
     python3-pip python3-dev \
+    libmagic1  \
     libfontconfig fontconfig \
     libjpeg-turbo8 \
     fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \

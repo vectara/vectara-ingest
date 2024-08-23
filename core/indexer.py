@@ -14,10 +14,14 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii, safe_remove_file
+from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii, safe_remove_file, detect_file_type
 from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+import nltk
+nltk.download('punkt_tab')
+nltk.download('averaged_perceptron_tagger_eng')
 
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
@@ -27,23 +31,24 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def _parse_local_file(filename: str, uri: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
+def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.html import partition_html
 
     logger = logging.getLogger()
     st = time.time()
-    if uri.endswith('.pdf'):
+    mime_type = detect_file_type(filename)
+    if mime_type == 'application/pdf':
         if summarize_tables and openai_api_key is not None:
                 elements = partition_pdf(filename=filename, infer_table_structure=True, extract_images_in_pdf=False,
                                         strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
         else:
             elements = partition_pdf(filename, strategy='fast')
-    elif uri.endswith('.html') or uri.endswith('.htm'):
+    elif mime_type == 'text/html':
         elements = partition_html(filename=filename)
     else:
-        logger.info(f"data from {uri} is not HTML or PDF")
+        logger.info(f"data from {uri} is not HTML or PDF (mime type = {mime_type}), skipping")
         return '', []
 
     titles = [str(x) for x in elements if type(x) in [us.documents.elements.Title, us.documents.html.HTMLTitle] and len(str(x))>10]
@@ -455,6 +460,7 @@ class Indexer(object):
                 res = self.fetch_page_contents(url, self.remove_code)
                 html = res['html']
                 text = res['text']
+
                 extracted_title = res['title']
 
                 if text is None or len(text)<3:
@@ -546,7 +552,7 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = _parse_local_file(filename, uri, self.summarize_tables, openai_api_key)
+            title, texts = parse_local_file(filename, uri, self.summarize_tables, openai_api_key)
             succeeded = self.index_segments(doc_id=slugify(uri), texts=texts,
                                             doc_metadata=metadata, doc_title=title)
             if self.summarize_tables:
