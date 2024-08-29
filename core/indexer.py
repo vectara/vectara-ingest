@@ -109,6 +109,12 @@ class Indexer(object):
         text = unicodedata.normalize('NFD', text)
         return text
 
+    def normalize_value(self, v):
+        if isinstance(v, str):
+            return self.normalize_text(v)
+        else:
+            return v
+    
     def setup(self, use_playwright: bool = True) -> None:
         self.session = create_session_with_retries()
         # Create playwright browser so we can reuse it across all Indexer operations
@@ -506,7 +512,7 @@ class Indexer(object):
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
         else:
-            metadatas = [{k:self.normalize_text(v) for k,v in md.items()} for md in metadatas]
+            metadatas = [{k:self.normalize_value(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
         document["documentId"] = doc_id
