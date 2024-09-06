@@ -19,10 +19,6 @@ from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-import nltk
-nltk.download('punkt_tab')
-nltk.download('averaged_perceptron_tagger_eng')
-
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -35,6 +31,10 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.html import partition_html
+
+    import nltk
+    nltk.download('punkt_tab')
+    nltk.download('averaged_perceptron_tagger_eng')
 
     logger = logging.getLogger()
     st = time.time()

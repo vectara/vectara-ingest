@@ -32,7 +32,6 @@ class CsvCrawler(Crawler):
                 if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
                     doc_metadata[column] = df[column].iloc[0]
             title = titles[0] if titles else doc_id
-            print(f"DEBUG title_col={title_column}, titles={titles}, title={title}")
             self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
                                         doc_title=title, doc_metadata = doc_metadata)
 

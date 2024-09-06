@@ -3,10 +3,10 @@ from core.crawler import Crawler
 from datasets import load_dataset
 import psutil
 import ray
+import gc
 
 from core.indexer import Indexer
 from core.utils import setup_logging
-from itertools import islice
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -21,6 +21,7 @@ class RowIndexer(object):
                 id_column: str,
                 text_columns: list, metadata_columns: list,
                 title_column: str = None):
+
         if inx % 100 == 0:
             logging.info(f"Indexing document # {inx+1}")
         doc_id = str(row[id_column]) if id_column else f'doc-{inx}'
@@ -32,6 +33,7 @@ class RowIndexer(object):
         self.indexer.index_segments(doc_id, texts=texts, 
                                     doc_title=doc_title, doc_metadata=doc_metadata)
         del texts, doc_metadata, doc_title, doc_id
+        gc.collect()
 
 class HfdatasetCrawler(Crawler):
 
@@ -48,7 +50,7 @@ class HfdatasetCrawler(Crawler):
         dataset_name = self.cfg.hfdataset_crawler.dataset_name
         split = self.cfg.hfdataset_crawler.get("split", "corpus")
         logging.info(f"Loading data from {dataset_name}")
-        ds = load_dataset(dataset_name, streaming=True)[split]
+        ds = load_dataset(dataset_name, split=split, streaming=True)
 
         if "select_condition" in self.cfg.hfdataset_crawler:
             select_condition = self.cfg.hfdataset_crawler.select_condition
@@ -57,15 +59,17 @@ class HfdatasetCrawler(Crawler):
             key = key.strip()
             value = value.strip().strip("'")
             ds = ds.filter(lambda s: s[key] == value)
-
+        
         num_rows = self.cfg.hfdataset_crawler.get("num_rows", None)
-        if num_rows is not None:
+        if num_rows:
+            ds = ds.take(num_rows)
             logging.info(f"Limiting to first {num_rows} rows")
 
         ray_workers = self.cfg.hfdataset_crawler.get("ray_workers", 0)   # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
+        batch_size = 256
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
@@ -74,8 +78,18 @@ class HfdatasetCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a,args: a.process.remote(args[0], args[1], id_column, text_columns, metadata_columns, title_column), 
-                              enumerate(islice(ds, num_rows))))
+            batch = []
+            for inx, row in enumerate(ds):
+                if num_rows and inx >= num_rows:
+                    break  # Ensure we stop when num_rows is reached                
+                batch.append((inx,row))
+                if len(batch) >= batch_size:
+                    _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column),
+                                      batch))
+                    batch = []
+            if batch:
+                _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column), 
+                                  batch))
         else:
             crawl_worker = RowIndexer(self.indexer, self)
             for inx, row in enumerate(ds):
