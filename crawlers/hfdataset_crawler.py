@@ -3,10 +3,10 @@ from core.crawler import Crawler
 from datasets import load_dataset
 import psutil
 import ray
+import gc
 
 from core.indexer import Indexer
 from core.utils import setup_logging
-from itertools import islice
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -21,6 +21,7 @@ class RowIndexer(object):
                 id_column: str,
                 text_columns: list, metadata_columns: list,
                 title_column: str = None):
+
         if inx % 100 == 0:
             logging.info(f"Indexing document # {inx+1}")
         doc_id = str(row[id_column]) if id_column else f'doc-{inx}'
@@ -32,6 +33,7 @@ class RowIndexer(object):
         self.indexer.index_segments(doc_id, texts=texts, 
                                     doc_title=doc_title, doc_metadata=doc_metadata)
         del texts, doc_metadata, doc_title, doc_id
+        gc.collect()
 
 class HfdatasetCrawler(Crawler):
 
@@ -67,7 +69,7 @@ class HfdatasetCrawler(Crawler):
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
-        batch_size = 512
+        batch_size = 256
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
@@ -78,13 +80,16 @@ class HfdatasetCrawler(Crawler):
             pool = ray.util.ActorPool(actors)
             batch = []
             for inx, row in enumerate(ds):
+                if num_rows and inx >= num_rows:
+                    break  # Ensure we stop when num_rows is reached                
                 batch.append((inx,row))
                 if len(batch) >= batch_size:
-                    pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column),
-                              batch)
+                    _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column),
+                                      batch))
                     batch = []
             if batch:
-                pool.map(lambda a, args: a.process.remote(args, id_column, text_columns, metadata_columns, title_column), batch)
+                _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column), 
+                                  batch))
         else:
             crawl_worker = RowIndexer(self.indexer, self)
             for inx, row in enumerate(ds):
