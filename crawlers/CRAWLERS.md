@@ -70,7 +70,7 @@ Note that ray with docker does not work on Mac M1/M2 machines.
 ...
 database_crawler:
     db_url: "postgresql://<username>:<password>@my_db_host:5432/yelp"
-    db_table: yelp_reviews                                 
+    db_table: yelp_reviews
     select_condition: "city='New Orleans'"
     doc_id_columns: [postal_code]
     text_columns: [business_name, review_text]
@@ -128,6 +128,7 @@ In the above example, the crawler would
 ...
 csv_crawler:
     file_path: "/path/to/Game_of_Thrones_Script.csv"
+    select_condition: "Season='Season 1'"
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]

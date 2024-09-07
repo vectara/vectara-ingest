@@ -24,6 +24,7 @@ class DFIndexer(object):
         self.text_columns = text_columns
         self.metadata_columns = metadata_columns
         self.source = source
+        self.count = 0
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
@@ -40,7 +41,8 @@ class DFIndexer(object):
             texts.append(unicodedata.normalize('NFD', text))
             md = {column: row[column] for column in self.metadata_columns if not pd.isnull(row[column])}
             metadatas.append(md)
-        logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
+        if len(df)>1:
+            logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
         if len(titles)==0:
             titles = None
         doc_metadata = {'source': self.source}
@@ -51,6 +53,9 @@ class DFIndexer(object):
         self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
                                     doc_title=title, doc_metadata = doc_metadata)
         gc.collect()
+        self.count += 1
+        if self.count % 100==0:
+            logging.info(f"Indexed {self.count} documents in actor {ray.get_runtime_context().get_actor_id()}")
 
 
 class CsvCrawler(Crawler):
