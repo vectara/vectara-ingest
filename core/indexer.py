@@ -51,14 +51,14 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
         logger.info(f"data from {uri} is not HTML or PDF (mime type = {mime_type}), skipping")
         return '', []
 
-    titles = [str(x) for x in elements if type(x) in [us.documents.elements.Title, us.documents.html.HTMLTitle] and len(str(x))>10]
+    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
 
     # get texts (and tables summaries if applicable)
     summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
     texts = []
     for t in elements:
-        if ((type(t)==us.documents.elements.Table or type(t)==us.documents.html.HTMLTable) and 
+        if (type(t)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
             texts.append(summarizer.summarize_table_text(str(t)))
         else:

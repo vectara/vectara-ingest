@@ -31,4 +31,5 @@ class DatabaseCrawler(CsvCrawler):
 
         logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
         rows_per_chunk = int(self.cfg.database_crawler.get("rows_per_chunk", 500) if 'database_crawler' in self.cfg else 500)
-        self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk)
+        ray_workers = self.cfg.database_crawler.get("ray_workers", 0)
+        self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk, source='database', ray_workers=ray_workers)
