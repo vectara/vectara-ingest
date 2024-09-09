@@ -102,6 +102,7 @@ hfdataset_crawler:
     dataset_name: "coeuslearning/hotel_reviews"
     split: "train"
     select_condition: "city='New York City, USA'"
+    start_row: 0
     num_rows: 55
     title_column: hotel
     text_columns: [review]
@@ -111,6 +112,7 @@ The database crawler can be used to read data from a relational database and ind
 - `dataset_name` the huggingface dataset name
 - `split` the "split" of the dataset in the HF datasets hub (e.g. "train", or "test", or "corpus"; look at DS card to determine)
 - `select_condition` optional condition to filter rows in the table by
+- `start_row` if specified skips the specified number of rows from the start of the dataset
 - `num_rows` if specified limits the dataset size by number of specified rows
 - `id_column` optional column for the ID of the dataset. Must be unique if used
 - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
