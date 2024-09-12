@@ -61,6 +61,11 @@ class HfdatasetCrawler(Crawler):
             ds = ds.filter(lambda s: s[key] == value)
         
         num_rows = self.cfg.hfdataset_crawler.get("num_rows", None)
+        start_row = self.cfg.hfdataset_crawler.get("start_row", 0)
+
+        if start_row:
+            ds = ds.skip(start_row)
+            logging.info(f"Skipping first {start_row} rows")
         if num_rows:
             ds = ds.take(num_rows)
             logging.info(f"Limiting to first {num_rows} rows")
