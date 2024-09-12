@@ -52,6 +52,10 @@ def detect_file_type(file_path):
     """
     mime = magic.Magic(mime=True)
     mime_type = mime.from_file(file_path)
+    with open(file_path, 'r', encoding='utf-8') as file:
+        first_1024_bytes = file.read(1024)
+    if '<html' in first_1024_bytes.lower() and '</html>' in first_1024_bytes.lower():
+        return 'text/html'
     return mime_type
     
 def remove_code_from_html(html: str) -> str:
