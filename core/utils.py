@@ -5,6 +5,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+from slugify import slugify
 
 import re
 from typing import List, Set
@@ -44,6 +45,13 @@ def setup_logging():
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
+def url_to_filename(url):
+    parsed_url = urlparse(url)
+    path_parts = parsed_url.path.split('/')
+    last_part = path_parts[-1]
+    name, ext = os.path.splitext(last_part)
+    slugified_name = slugify(name)
+    return f"{slugified_name}{ext}"
 
 def detect_file_type(file_path):
     """
@@ -52,10 +60,11 @@ def detect_file_type(file_path):
     """
     mime = magic.Magic(mime=True)
     mime_type = mime.from_file(file_path)
-    with open(file_path, 'r', encoding='utf-8') as file:
-        first_1024_bytes = file.read(1024)
-    if '<html' in first_1024_bytes.lower() and '</html>' in first_1024_bytes.lower():
-        return 'text/html'
+    if mime_type in ['text/html', 'application/xml', 'text/xml']:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            first_1024_bytes = file.read(1024)
+        if '<html' in first_1024_bytes.lower() and '</html>' in first_1024_bytes.lower():
+            return 'text/html'
     return mime_type
     
 def remove_code_from_html(html: str) -> str:

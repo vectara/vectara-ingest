@@ -4,17 +4,22 @@ import os
 from typing import Tuple, Dict, Any, List, Optional
 import uuid
 import pandas as pd
+import shutil
 
 import time
-from slugify import slugify
 import unicodedata
+from slugify import slugify
 
 from omegaconf import OmegaConf
 from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 
-from core.utils import html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, TableSummarizer, mask_pii, safe_remove_file, detect_file_type
+from core.utils import (
+    html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
+    TableSummarizer, mask_pii, safe_remove_file, detect_file_type,
+    url_to_filename
+)
 from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -85,6 +90,7 @@ class Indexer(object):
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
         self.verbose = cfg.vectara.get("verbose", False)
+        self.store_docs = cfg.vectara.get("store_docs", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
         self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
@@ -123,6 +129,17 @@ class Indexer(object):
             self.browser = self.p.firefox.launch(headless=True)
             self.browser_use_count = 0
         self.tmp_file = 'tmp_' + str(uuid.uuid4())
+        if self.store_docs:
+            self.store_docs_folder = '/home/vectara/env/indexed_docs_' + str(uuid.uuid4())
+            if os.path.exists(self.store_docs_folder):
+                shutil.rmtree(self.store_docs_folder)
+            os.makedirs(self.store_docs_folder)
+
+    def store_file(self, filename: str, orig_filename) -> None:
+        if self.store_docs:
+            dest_path = f"{self.store_docs_folder}/{orig_filename}"
+            shutil.copyfile(filename, dest_path)
+
 
     def url_triggers_download(self, url: str) -> bool:
         download_triggered = False
@@ -316,7 +333,7 @@ class Indexer(object):
         """
         Index a file on local file system by uploading it to the Vectara corpus.
         Args:
-            filename (str): Name of the PDF file to create.
+            filename (str): Name of the file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
         Returns:
@@ -351,6 +368,7 @@ class Indexer(object):
                 )
                 if response.status_code == 200:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
+                    self.store_file(filename, url_to_filename(uri))
                     return True
                 else:
                     self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
@@ -361,6 +379,7 @@ class Indexer(object):
             return False
 
         self.logger.info(f"REST upload for {uri} succeesful")
+        self.store_file(filename, url_to_filename(uri))
         return True
 
     def _index_document(self, document: Dict[str, Any]) -> bool:
@@ -412,6 +431,9 @@ class Indexer(object):
                 self.logger.info(f"Document {document['documentId']} already exists, skipping")
                 return False
         if "status" in result and result["status"] and "OK" in result["status"]["code"]:
+            if self.store_docs:
+                with open(f"{self.store_docs_folder}/{document['documentId']}.json", "w") as f:
+                    json.dump(document, f)
             return True
         
         self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
