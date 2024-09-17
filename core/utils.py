@@ -4,6 +4,7 @@ from urllib.parse import urlparse, urlunparse, ParseResult
 from pathlib import Path
 
 from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 from slugify import slugify
 
@@ -30,7 +31,6 @@ try:
 except ImportError:
     logging.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
 
-
 img_extensions = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
 doc_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
 archive_extensions = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
@@ -53,18 +53,50 @@ def url_to_filename(url):
     slugified_name = slugify(name)
     return f"{slugified_name}{ext}"
 
+
+
+import magic
+from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
+
 def detect_file_type(file_path):
     """
-    Detect the type of a file using the `magic` library.
-    PDF files are detected as 'application/pdf' and HTML files as 'text/html'.
+    Detect the type of a file using the `magic` library and further analysis.
+    
+    Returns:
+        str: The detected MIME type, e.g., 'text/html', 'application/xml', etc.
     """
+    # Initialize magic for MIME type detection
     mime = magic.Magic(mime=True)
     mime_type = mime.from_file(file_path)
-    if mime_type in ['text/html', 'application/xml', 'text/xml']:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            first_1024_bytes = file.read(1024)
-        if '<html' in first_1024_bytes.lower() and '</html>' in first_1024_bytes.lower():
+    
+    # Define MIME types that require further inspection
+    ambiguous_mime_types = ['text/html', 'application/xml', 'text/xml', 'application/xhtml+xml']    
+    if mime_type in ambiguous_mime_types:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+        except UnicodeDecodeError:
+            # If the file isn't UTF-8 encoded, it might not be HTML or XML
+            return mime_type
+        
+        stripped_content = content.lstrip()
+        if stripped_content.startswith('<?xml'):
+            return 'application/xml'
+        
+        # Use BeautifulSoup to parse as HTML
+        soup = BeautifulSoup(content, 'html.parser')
+        if soup.find('html'):
             return 'text/html'
+        
+        # Attempt to parse as XML
+        try:
+            ET.fromstring(content)
+            return 'application/xml'
+        except ET.ParseError:
+            pass  # Not well-formed XML
+        
+        # Fallback to magic-detected MIME type if unsure
     return mime_type
     
 def remove_code_from_html(html: str) -> str:
