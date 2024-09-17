@@ -178,6 +178,9 @@ vectara:
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
   
+  # flag: store a copy of all crawled data that is indexed into a local folder
+  store_docs: false
+  
   # timeout: sets the URL crawling timeout in seconds (optional)
   timeout: 90
 
