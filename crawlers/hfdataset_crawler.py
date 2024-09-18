@@ -68,7 +68,7 @@ class HfdatasetCrawler(Crawler):
             logging.info(f"Skipping first {start_row} rows")
         if num_rows:
             ds = ds.take(num_rows)
-            logging.info(f"Limiting to first {num_rows} rows")
+            logging.info(f"Limiting to {num_rows} rows")
 
         ray_workers = self.cfg.hfdataset_crawler.get("ray_workers", 0)   # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
