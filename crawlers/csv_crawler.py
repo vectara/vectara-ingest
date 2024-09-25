@@ -109,6 +109,7 @@ class CsvCrawler(Crawler):
         title_column = self.cfg.csv_crawler.get("title_column", None)
         metadata_columns = list(self.cfg.csv_crawler.get("metadata_columns", []))
         doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
+        column_types = self.cfg.csv_crawler.get("column_types", {})
         all_columns = text_columns + metadata_columns + doc_id_columns
         if title_column:
             all_columns.append(title_column)
@@ -117,8 +118,11 @@ class CsvCrawler(Crawler):
         file_path = '/home/vectara/data/file'
         try:
             if orig_file_path.endswith('.csv'):
+                dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
+                          for column in all_columns}  # str if unspecified
                 sep = self.cfg.csv_crawler.get("separator", ",")
-                df = pd.read_csv(file_path, usecols=all_columns, sep=sep)
+                df = pd.read_csv(file_path, usecols=all_columns, sep=sep, dtype=dtypes)
+                df = df.astype(object)   # convert to native types
             elif orig_file_path.endswith('.xlsx'):
                 sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
                 logging.info(f"Reading Sheet {sheet_name} from XLSX file")
