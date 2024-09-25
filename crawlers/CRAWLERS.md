@@ -134,6 +134,7 @@ csv_crawler:
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]
+    column_types: []
     separator: ','
     sheet_name: "my-sheet"
 ```
@@ -143,6 +144,7 @@ The csv crawler is similar to the database crawler, but instead of pulling data 
 - `text_columns` a list of column names that include textual information we want to use 
 - `title_column` is an optional column name that will hold textual information to be used as title
 - `metadata_columns` a list of column names that we want to use as metadata
+- `column_types` an optional dictionary of column name and type (int, float, str). If unspecified, or for columns not included, the default type is str.
 - `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
 - `sheet_name` the name of the sheet in the XLSX file to use (relevant only for XLSX files)
 
