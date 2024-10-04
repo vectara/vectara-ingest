@@ -18,6 +18,33 @@ def clean_tweet(tweet: str) -> str:
     
     return cleaned_tweet
 
+def fetch_tweets(client, query, num_tweets, fields):
+    # Initialize variables
+    all_tweets = []
+    next_token = None
+    max_results = 50
+
+    # Loop until you collect enough tweets or there are no more tweets to fetch
+    while len(all_tweets) < num_tweets:
+        # Adjust max_results to ensure the total number of tweets does not exceed num_tweets
+        tweets_to_fetch = max(min(max_results, num_tweets - len(all_tweets)), 10)
+        # Search tweets with pagination
+        if next_token:
+            tweets = client.search_recent_tweets(query=query,
+                                                 tweet_fields=fields,
+                                                 max_results=tweets_to_fetch,
+                                                 next_token=next_token) 
+        else:
+            tweets = client.search_recent_tweets(query=query,
+                                                 tweet_fields=fields,
+                                                 max_results=tweets_to_fetch)        
+        all_tweets.extend(tweets.data)
+        next_token = tweets.meta.get('next_token')
+        if not next_token:
+            break
+
+    return all_tweets
+
 class TwitterCrawler(Crawler):
     def crawl(self) -> None:
 
@@ -29,10 +56,8 @@ class TwitterCrawler(Crawler):
         for username in userhandles:
             user = client.get_user(username=username)        
             query = f'@{username} -is:retweet'  # Exclude retweets
-            tweets = client.search_recent_tweets(query=query, 
-                                                 tweet_fields=['public_metrics', 'author_id', 'lang', 'geo', 'entities'], 
-                                                 max_results=num_tweets)
-            
+            tweets = fetch_tweets(client, query, num_tweets=num_tweets,
+                                  fields = ['public_metrics', 'author_id', 'lang', 'geo', 'entities'])
             doc = {
                 "documentId": 'tweets-' + username,
                 "title": f'top {num_tweets} tweets of {username}',
