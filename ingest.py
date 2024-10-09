@@ -126,6 +126,9 @@ def main() -> None:
         if k=='SYNAPSE_TOKEN':
             OmegaConf.update(cfg, f'synapse_crawler.{k.lower()}', v)
             continue
+        if k=='TWITTER_BEARER_TOKEN':
+            OmegaConf.update(cfg, f'twitter_crawler.{k.lower()}', v)
+            continue
         if k.startswith('aws_'):
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
             continue

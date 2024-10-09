@@ -310,6 +310,24 @@ The JIRA crawler indexes issues and comments into Vectara.
 - `jira_username`: the user name that the crawler should use (`JIRA_PASSWORD` should be separately defined in the `secrets.toml` file)
 - `jira_jql`: a Jira JQL condition on the issues identified; in this example it is configured to only include items from the last year.
 
+### Twitter crawler
+
+```yaml
+...
+  twitter_crawler:
+    bearer_token: the Twitter API bearer token. see https://developer.twitter.com/en/docs/twitter-api/getting-started/getting-access-to-the-twitter-api'
+    userhandles: a list of user handles to pull tweets from
+    num_tweets: number of most recent tweets to pull from each user handle
+    clean_tweets: whether to remove username / handles from tweet text (default: True)
+```
+
+The twitter crawler indexes top `num_tweeets` mentions from twitter
+- `bearer_token`: the Twitter developer authentication token
+- `userhandles`: a list of user handles to look for in mentions
+- `num_tweets`: number of recent tweets mentioning each handle to pull
+- `clean_tweets` if True removes all username/handle
+
+
 ### Notion crawler
 
 To setup Notion you will have to setup a [Notion integration](https://www.notion.so/help/create-integrations-with-the-notion-api),
