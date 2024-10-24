@@ -37,9 +37,9 @@ class DFIndexer(object):
         for _, row in df.iterrows():
             if self.title_column:
                 titles.append(str(row[self.title_column]))
-            text = ' - '.join(str(x) for x in row[self.text_columns].tolist() if x) + '\n'
+            text = ' - '.join(str(row[col]) for col in self.text_columns if pd.notnull(row[col])) + '\n'
             texts.append(unicodedata.normalize('NFD', text))
-            md = {column: row[column] for column in self.metadata_columns if not pd.isnull(row[column])}
+            md = {column: row[column] for column in self.metadata_columns if pd.notnull(row[column])}
             metadatas.append(md)
         if len(df)>1:
             logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
@@ -52,13 +52,29 @@ class DFIndexer(object):
         title = titles[0] if titles else doc_id
         self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
                                     doc_title=title, doc_metadata = doc_metadata)
-        gc.collect()
         self.count += 1
         if self.count % 100==0:
             logging.info(f"Indexed {self.count} documents in actor {ray.get_runtime_context().get_actor_id()}")
-
+        gc.collect()
 
 class CsvCrawler(Crawler):
+
+    def generate_dfs_to_index(self, df: pd.DataFrame, doc_id_columns, rows_per_chunk: int):
+        if doc_id_columns:
+            grouped = df.groupby(doc_id_columns)
+            for name, group in grouped:
+                if isinstance(name, str):
+                    doc_id = name
+                else:
+                    doc_id = ' - '.join([str(x) for x in name if x])
+                yield (doc_id, group)
+        else:
+            if rows_per_chunk < len(df):
+                rows_per_chunk = len(df)
+            for inx in range(0, df.shape[0], rows_per_chunk):
+                sub_df = df[inx: inx+rows_per_chunk]
+                name = f'rows {inx}-{inx+rows_per_chunk-1}'
+                yield (name, sub_df)
 
     def index_dataframe(self, df: pd.DataFrame, 
                         text_columns, title_column, metadata_columns, doc_id_columns,
@@ -69,23 +85,6 @@ class CsvCrawler(Crawler):
         all_columns = text_columns + metadata_columns
         if title_column:
             all_columns.append(title_column)
-
-        dfs_to_index = []
-        if doc_id_columns:
-            grouped = df.groupby(doc_id_columns)
-            for name, group in grouped:
-                if isinstance(name, str):
-                    doc_id = name
-                else:
-                    doc_id = ' - '.join([str(x) for x in name if x])
-                dfs_to_index.append((doc_id, group))
-        else:
-            if rows_per_chunk < len(df):
-                rows_per_chunk = len(df)
-            for inx in range(0, df.shape[0], rows_per_chunk):
-                sub_df = df[inx: inx+rows_per_chunk]
-                name = f'rows {inx}-{inx+rows_per_chunk-1}'
-                dfs_to_index.append((doc_id, sub_df))
         
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -98,10 +97,11 @@ class CsvCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1]), dfs_to_index))
+            _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1]), 
+                              self.generate_dfs_to_index(df, doc_id_columns, rows_per_chunk)))
         else:
             crawl_worker = DFIndexer(self.indexer, self, title_column, text_columns, metadata_columns, source)
-            for df_tuple in dfs_to_index:
+            for df_tuple in self.generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
                 crawl_worker.process(df_tuple[0], df_tuple[1])
 
     def crawl(self) -> None:
@@ -119,7 +119,7 @@ class CsvCrawler(Crawler):
         try:
             if orig_file_path.endswith('.csv'):
                 dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
-                          for column in all_columns}  # str if unspecified
+                          for column in all_columns}
                 sep = self.cfg.csv_crawler.get("separator", ",")
                 df = pd.read_csv(file_path, usecols=all_columns, sep=sep, dtype=dtypes)
                 df = df.astype(object)   # convert to native types
@@ -136,15 +136,16 @@ class CsvCrawler(Crawler):
 
         # make sure all ID columns are a string type
         df[doc_id_columns] = df[doc_id_columns].astype(str)
+        orig_size = len(df)
 
         select_condition = self.cfg.csv_crawler.get("select_condition", None)
         if select_condition:
             df = df.query(select_condition)
+            logging.info(f"Selected {len(df)} rows out of {orig_size} rows using the select condition")
 
         # index the dataframe
         rows_per_chunk = int(self.cfg.csv_crawler.get("rows_per_chunk", 500) if 'csv_crawler' in self.cfg else 500)
         ray_workers = self.cfg.csv_crawler.get("ray_workers", 0)
 
         logging.info(f"indexing {len(df)} rows from the file {file_path}")
-
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk, source='csv', ray_workers=ray_workers)
