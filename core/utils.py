@@ -172,11 +172,16 @@ def normalize_url(url: str, keep_query_params: bool = False) -> str:
     if '://' not in url:
         url = 'http://' + url
     p = urlparse(url)
+    path = p.path if p.path and p.path != '/' else '/'
     query = p.query if keep_query_params else ''
-    return ParseResult(p.scheme, p.netloc, p.path, '', query, '').geturl()
+    return ParseResult(p.scheme, p.netloc, path, '', query, '').geturl()
 
 def clean_urls(urls: Set[str], keep_query_params: bool = False) -> List[str]:
-    return list(set(normalize_url(url, keep_query_params) for url in urls))
+    normalized_set = set()
+    for url in urls:
+        normalized_url = normalize_url(url, keep_query_params)
+        normalized_set.add(normalized_url)
+    return list(normalized_set)
 
 def clean_email_text(text: str) -> str:
     """
