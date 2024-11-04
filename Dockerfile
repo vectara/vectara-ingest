@@ -8,14 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_VISIBLE_DEVICES=""
 
 RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
-RUN apt-get upgrade
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libopenblas-dev \
+    unzip \
     wget \
     git \
     curl \
-    vim \
     wkhtmltopdf \
     libssl-dev \
     unixodbc \
@@ -32,18 +32,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+ENV OMP_NUM_THREADS=4
+
 # Install python packages
 WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
-RUN pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements.txt \
+
+RUN pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt \
     && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
     && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
     && find /usr/local -type d \( -name '__pycache__' \) -exec rm -rf '{}' + \
     && find /usr/local -type d \( -name 'build' \) -exec rm -rf '{}' + \
-    && rm -rf .cache/* /tmp/* \
-    && pip cache purge
-RUN playwright install --with-deps firefox
+    && rm -rf /root/.cache/* /tmp/* \
+    && pip cache purge \
+    && playwright install --with-deps firefox
 
 # Install additional large packages for all-docs unstructured inference and PII detection
 ARG INSTALL_EXTRA=false

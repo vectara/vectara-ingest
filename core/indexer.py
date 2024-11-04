@@ -5,6 +5,7 @@ from typing import Tuple, Dict, Any, List, Optional
 import uuid
 import pandas as pd
 import shutil
+import warnings
 
 import time
 import unicodedata
@@ -14,6 +15,7 @@ from omegaconf import OmegaConf
 from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
+import whisper
 
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
@@ -23,6 +25,10 @@ from core.utils import (
 from core.extract import get_article_content
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+# Suppress FutureWarning related to torch.load
+warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
+warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
 
 get_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
@@ -36,6 +42,8 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.html import partition_html
+    from unstructured.partition.pptx import partition_pptx
+    from unstructured.partition.docx import partition_docx
 
     import nltk
     nltk.download('punkt_tab')
@@ -52,8 +60,12 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
             elements = partition_pdf(filename, strategy='fast')
     elif mime_type == 'text/html':
         elements = partition_html(filename=filename)
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        elements = partition_docx(filename=filename)
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        elements = partition_pptx(filename=filename)
     else:
-        logger.info(f"data from {uri} is not HTML or PDF (mime type = {mime_type}), skipping")
+        logger.info(f"data from {uri} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
         return '', []
 
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
@@ -98,6 +110,8 @@ class Indexer(object):
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.logger = logging.getLogger()
+        self.model = None
+        self.whisper_model = cfg.vectara.get("whisper_model", "base")
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
         if cfg.vectara.get("openai_api_key", None) is None:
@@ -573,10 +587,10 @@ class Indexer(object):
             self.logger.error(f"File {filename} does not exist")
             return False
         
-        # If we have a PDF fiel with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
-        # Otherwise - send to Vectara's default upload fiel mechanism
+        # If we have a PDF file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
+        # Otherwise - send to Vectara's default upload file mechanism
         size_limit = 50
-        large_file_extensions = ['.pdf', '.html', '.htm']
+        large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
@@ -591,4 +605,25 @@ class Indexer(object):
         else:
             # index the file within Vectara (use FILE UPLOAD API)
             return self._index_file(filename, uri, metadata)
-    
+
+    def index_media_file(self, file_path, metadata=None):
+        logging.info(f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
+        if self.model is None:
+            self.model = whisper.load_model(self.whisper_model, device="cpu")
+        result = self.model.transcribe(file_path, temperature=0, verbose=False)
+        text = result['segments']
+        doc = {
+            'documentId': slugify(file_path),
+            'title': file_path,
+            'section': [
+                { 
+                    'text': t['text'],
+                } for t in text
+            ]
+        }
+        if metadata:
+            doc['metadataJson'] = json.dumps(metadata)
+        self.index_document(doc)
+
+
+

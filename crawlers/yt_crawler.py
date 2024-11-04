@@ -85,7 +85,7 @@ class YtCrawler(Crawler):
 
     def crawl(self) -> None:
         playlist_url = self.cfg.yt_crawler.playlist_url
-        whisper_model = self.cfg.yt_crawler.get("whisper_model", "base")
+        whisper_model = self.cfg.vectara.get("whisper_model", "base")
     
         playlist = Playlist(playlist_url)
 
@@ -124,8 +124,6 @@ class YtCrawler(Crawler):
 
             except TranscriptsDisabled:
                 logging.info(f"Transcribing captions for video {video.title} with Whisper model of size {whisper_model} (this may take a while)")
-                if model is None:
-                    model = whisper.load_model(whisper_model)
                 try:
                     stream = yt.streams.get_highest_resolution()
                     stream.download(download_path)
@@ -138,6 +136,8 @@ class YtCrawler(Crawler):
                 audio.export(audio_filename, format="mp3")
 
                 # transcribe
+                if model is None:
+                    model = whisper.load_model(whisper_model)
                 result = model.transcribe(audio_filename, temperature=0)
                 subtitles = result['segments']
             
