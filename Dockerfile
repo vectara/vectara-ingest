@@ -1,4 +1,3 @@
-
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -40,13 +39,13 @@ COPY requirements.txt requirements-extra.txt $HOME/
 
 RUN pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt \
+    && playwright install --with-deps firefox \
     && find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
     && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
     && find /usr/local -type d \( -name '__pycache__' \) -exec rm -rf '{}' + \
     && find /usr/local -type d \( -name 'build' \) -exec rm -rf '{}' + \
     && rm -rf /root/.cache/* /tmp/* \
-    && pip cache purge \
-    && playwright install --with-deps firefox
+    && pip cache purge
 
 # Install additional large packages for all-docs unstructured inference and PII detection
 ARG INSTALL_EXTRA=false
