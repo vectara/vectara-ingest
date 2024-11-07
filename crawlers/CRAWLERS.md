@@ -392,6 +392,7 @@ The folder crawler indexes all files specified from a local folder.
 - `path`: the local folder location
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 - `source`: a string that is added to each file's metadata under the "source" field
+- `metadata_file`: an optional CSV file for metadata. Each row should have a `filename` column as key to match the file in the folder, and 1 or more additional columns used as metadata. This file should be in the `path` folder, but will be ignored for indexing purposes.
 
 Note that the local path you specify is mapped into a fixed location in the docker container `/home/vectara/data`, but that is a detail of the implementation that you don't need to worry about in most cases, just specify the path to your local folder and this mapping happens automatically.
 
@@ -407,6 +408,7 @@ Note that the local path you specify is mapped into a fixed location in the dock
 The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `s3_path`: a valid S3 location where the files to index reside
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
+- `metadata_file`: an optional CSV file for metadata. Each row should have a `filename` column as key to match the file in the folder, and 1 or more additional columns used as metadata. This file should be in the same `s3_path` folder, but will be ignored for indexing purposes.
 
 ### Youtube crawler
 
@@ -414,12 +416,10 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 ...
   yt_crawler:
     playlist_url: <some-yotube-playlist-url>
-    whisper_model: base
 ```
 
 The Youtube crawler loads all videos from a playlist, extracts the subtitles into text (or transcribes the audio if subtitles don't exist), and indexes that text.
 - `playlist_url`: a valid youtube playlist URL
-- `whisper_model`: the model name for whisper: tiny, base, small, medium or large. Defaults to base. Only used if subtitles don't exist.
 
 ### Slack crawler
 

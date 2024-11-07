@@ -213,6 +213,11 @@ vectara:
   # 2. Masking is done using Microsoft Presidio PII analyzer and anonymizer, and is limited to English only
   mask_pii: false
 
+  # Which whisper model to use for audio files (relevant for YT, S3 and folder crawlers)
+  # Valid values: tiny, base, small, medium or large. Defaults to base.
+  whisper_model: the model name for whisper
+
+
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
   crawler_type: XXX

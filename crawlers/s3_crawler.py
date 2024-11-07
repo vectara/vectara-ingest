@@ -2,9 +2,11 @@ import pathlib
 import boto3
 import os
 from typing import List, Tuple
+import logging
 
 from core.crawler import Crawler
 from slugify import slugify
+import pandas as pd
 
 def list_files_in_s3_bucket(bucket_name: str, prefix: str) -> List[str]:
     """
@@ -46,16 +48,28 @@ class S3Crawler(Crawler):
     def crawl(self) -> None:
         folder = self.cfg.s3_crawler.s3_path
         extensions = self.cfg.s3_crawler.extensions
+        metadata_file = self.cfg.s3_crawler.get("metadata_file", None)
+
+        s3 = boto3.client('s3')
+        bucket, key = split_s3_uri(folder)
+
+        if metadata_file:
+            local_metadata_fname = slugify(metadata_file)
+            s3.download_file(bucket, metadata_file, local_metadata_fname)
+            df = pd.read_csv(local_metadata_fname)
+            metadata = {row['filename'].strip(): row.drop('filename').to_dict() for _, row in df.iterrows()}
+        else:
+            metadata = {}
+        self.model = None
 
         os.environ['AWS_ACCESS_KEY_ID'] = self.cfg.s3_crawler.aws_access_key_id
         os.environ['AWS_SECRET_ACCESS_KEY'] = self.cfg.s3_crawler.aws_secret_access_key
 
-        bucket, key = split_s3_uri(folder)
-        s3_files = list_files_in_s3_bucket(bucket, key)
-
         # process all files
-        s3 = boto3.client('s3')
+        s3_files = list_files_in_s3_bucket(bucket, key)
         for s3_file in s3_files:
+            if s3_file.endswith(metadata_file):
+                continue
             file_extension = pathlib.Path(s3_file).suffix
             if file_extension in extensions or "*" in extensions:
                 extension = s3_file.split('.')[-1]
@@ -67,4 +81,9 @@ class S3Crawler(Crawler):
                     'title': s3_file,
                     'url': url
                 }
-                self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
+                if s3_file in metadata:
+                    metadata.update(metadata.get(s3_file, {}))    
+                if file_extension in ['.mp3', '.mp4']:
+                    self.indexer.index_media_file(local_fname, metadata)
+                else:
+                   self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
