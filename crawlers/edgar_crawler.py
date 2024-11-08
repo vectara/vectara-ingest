@@ -17,13 +17,15 @@ from typing import Dict, List
 
 from dataclasses import asdict
 
+company = "MyCompany"
+email = "me@mycompany.com"
     
 def get_headers() -> Dict[str, str]:
     """
     Get a set of headers to use for HTTP requests.
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+        "User-Agent": f"{company} {email}",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" 
     }
     return headers
@@ -32,7 +34,7 @@ def get_headers() -> Dict[str, str]:
 def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type: str = "10-K") -> List[Dict[str, str]]:
     folder = 'edgar_dl'
     ensure_empty_folder(folder)
-    dl = Downloader("MyCompany", "me@mycompany.com")
+    dl = Downloader(f"{company} {email}")
 
     start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
     end_date = datetime.strptime(end_date_str, '%Y-%m-%d')    
