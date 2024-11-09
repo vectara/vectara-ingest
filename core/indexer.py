@@ -58,7 +58,7 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
                                         strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
         else:
             elements = partition_pdf(filename, strategy='fast')
-    elif mime_type == 'text/html':
+    elif mime_type == 'text/html' or mime_type == 'application/xml':
         elements = partition_html(filename=filename)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         elements = partition_docx(filename=filename)
