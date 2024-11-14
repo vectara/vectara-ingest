@@ -5,7 +5,6 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
-from urllib.parse import urljoin, urlparse
 from slugify import slugify
 
 import re
@@ -172,9 +171,10 @@ def normalize_url(url: str, keep_query_params: bool = False) -> str:
     if '://' not in url:
         url = 'http://' + url
     p = urlparse(url)
+    netloc = p.netloc[4:] if p.netloc.startswith('www.') else p.netloc
     path = p.path if p.path and p.path != '/' else '/'
     query = p.query if keep_query_params else ''
-    return ParseResult(p.scheme, p.netloc, path, '', query, '').geturl()
+    return ParseResult(p.scheme, netloc, path, '', query, '').geturl()
 
 def clean_urls(urls: Set[str], keep_query_params: bool = False) -> List[str]:
     normalized_set = set()
