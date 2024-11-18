@@ -45,7 +45,7 @@ openai==1.28.1
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.15.9
+unstructured[pdf]==0.16.5
 transformers[torch]==4.40.2
 safetensors[torch]==0.4.3
 datasets==2.20.0

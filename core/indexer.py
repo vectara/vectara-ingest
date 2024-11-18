@@ -19,7 +19,7 @@ import whisper
 
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
-    TableSummarizer, mask_pii, safe_remove_file, detect_file_type,
+    TableSummarizer, ImageSummarizer, mask_pii, safe_remove_file, detect_file_type,
     url_to_filename
 )
 from core.extract import get_article_content
@@ -54,8 +54,8 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     mime_type = detect_file_type(filename)
     if mime_type == 'application/pdf':
         if summarize_tables and openai_api_key is not None:
-                elements = partition_pdf(filename=filename, infer_table_structure=True, extract_images_in_pdf=False,
-                                        strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
+            elements = partition_pdf(filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
+                                     strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
         else:
             elements = partition_pdf(filename, strategy='fast')
     elif mime_type == 'text/html' or mime_type == 'application/xml':
@@ -71,15 +71,22 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
     title = titles[0] if len(titles)>0 else 'no title'
 
-    # get texts (and tables summaries if applicable)
-    summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    # Summarize tables and images, if applicable.
+    table_summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
     texts = []
-    for t in elements:
-        if (type(t)==us.documents.elements.Table and 
+    for inx,e in enumerate(elements):
+        if (type(e)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
-            texts.append(summarizer.summarize_table_text(str(t)))
+            texts.append(table_summarizer.summarize_table_text(str(e)))
+        elif (type(e)==us.documents.elements.Image and 
+              summarize_tables and openai_api_key is not None):
+              if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
+                  texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
+              texts.append(image_summarizer.summarize_image(e.metadata.image_path, None))
         else:
-            texts.append(str(t))
+            texts.append(str(e))
+
     logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
     return title, texts
 
