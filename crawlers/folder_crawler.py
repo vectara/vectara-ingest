@@ -24,7 +24,7 @@ class FolderCrawler(Crawler):
         source = self.cfg.folder_crawler.source
         for root, _, files in os.walk(folder):
             for file in files:
-                if file.endswith(metadata_file):
+                if metadata_file and file.endswith(metadata_file):
                     continue
                 file_extension = pathlib.Path(file).suffix
                 if file_extension in extensions or "*" in extensions:

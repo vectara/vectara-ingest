@@ -2,6 +2,8 @@ import requests
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult
 from pathlib import Path
+import os
+import base64
 
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
@@ -219,22 +221,67 @@ def ensure_empty_folder(folder_name):
     # Create the folder anew
     os.makedirs(folder_name)
 
-class TableSummarizer():
+
+class ImageSummarizer(): 
+    def __init__(self, openai_api_key: str):
+        self.client = OpenAI(api_key=openai_api_key)
+
+    def summarize_image(self, image_path: str, previous_text: str = None):
+        content = None
+        with open(image_path, "rb") as f:
+            content = base64.b64encode(f.read()).decode("utf-8")
+        prompt = """
+            Analyze and summarize all the details in this image, including any diagrams, graphs, or visual data representations. 
+            Your summary should include:
+            - A detailed description of the main focus or subject of the image.
+            - for any diagrams or graphs: what information they convey, a comprehensive summary of the data, and any observed trends or conclusions that can be drawn.
+            - Any other detail or information that a human observer would find useful or relevant.
+            - Notable objects, their characteristics, and their relative positions.
+            - Respond in complete sentences, and aim to provide a comprehensive and informative summary.
+        """
+        if previous_text:
+            prompt += f"The image came immediately following this text: '{previous_text}'"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url":  f"data:image/jpeg;base64,{content}"
+                        },
+                    },
+                ]
+            }
+        ]
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=2048
+        )
+        return response.choices[0].message.content
+
+class TableSummarizer(): 
     def __init__(self, openai_api_key: str):
         self.client = OpenAI(api_key=openai_api_key)
 
     def summarize_table_text(self, text: str):
+        prompt = f"""
+            Adopt the perspective of a professional data analyst. 
+            Summarize the key results reported in this table without omitting critical details.
+            Your summary should be informative and comprehensive, providing a clear and concise overview of the data.
+            Your summary should higlight the main trends, patterns, and insights that can be derived from the data.
+            Table chunk: {text} 
+        """
         response = self.client.chat.completions.create(
-            model="gpt-4o",   # GPT4o
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
-                {"role": "user", "content": f"""
-                    Adopt the perspective of a data analyst. 
-                    Summarize the key results reported in this table without omitting critical details.
-                    Make sure your summary is concise, informative and comprehensive.
-                    Table chunk: {text} 
-                 """
-                }
+                {"role": "user", "content": prompt }
             ],
             temperature=0
         )
