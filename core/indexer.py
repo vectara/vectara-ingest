@@ -223,7 +223,10 @@ class Indexer(object):
             out_url = page.url
             text = page.evaluate(f"""() => {{
                 // Extract main text content
-                let content = document.body.innerText;
+                let content = Array.from(document.body.childNodes)
+                    .map(node => node.textContent || "")
+                    .join(" ")
+                    .trim();
                 
                 // Remove common boilerplate elements
                 const elementsToRemove = [
@@ -252,7 +255,7 @@ class Indexer(object):
                 ''' if remove_code else ''}
                 
                 // Remove extra whitespace
-                content = content.replace(/\\s+/g, ' ').trim();
+                content = content.replace(/\s{2,}/g, ' ').trim();
                 
                 return content;
             }}""")
