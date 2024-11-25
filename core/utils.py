@@ -222,7 +222,7 @@ def ensure_empty_folder(folder_name):
     os.makedirs(folder_name)
 
 
-class ImageSummarizer(): 
+class ImageSummarizer():
     def __init__(self, openai_api_key: str):
         self.client = OpenAI(api_key=openai_api_key)
 
@@ -258,14 +258,18 @@ class ImageSummarizer():
                 ]
             }
         ]
-        response = self.client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            max_tokens=2048
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=2048
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logging.info(f"Failed to summarize image: {e}")
+            return None
 
-class TableSummarizer(): 
+class TableSummarizer():
     def __init__(self, openai_api_key: str):
         self.client = OpenAI(api_key=openai_api_key)
 
@@ -277,15 +281,19 @@ class TableSummarizer():
             Your summary should higlight the main trends, patterns, and insights that can be derived from the data.
             Table chunk: {text} 
         """
-        response = self.client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
-                {"role": "user", "content": prompt }
-            ],
-            temperature=0
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
+                    {"role": "user", "content": prompt }
+                ],
+                temperature=0
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logging.info(f"Failed to summarize table text: {e}")
+            return None
 
 def mask_pii(text: str) -> str:
     # Analyze and anonymize PII data in the text
