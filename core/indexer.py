@@ -78,12 +78,16 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
-            texts.append(table_summarizer.summarize_table_text(str(e)))
+            table_summary = table_summarizer.summarize_table_text(str(e))
+            if table_summary:
+                texts.append(table_summary)
         elif (type(e)==us.documents.elements.Image and 
               summarize_tables and openai_api_key is not None):
               if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
                   texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
-              texts.append(image_summarizer.summarize_image(e.metadata.image_path, None))
+              image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
+              if image_summary:
+                  texts.append(image_summary)
         else:
             texts.append(str(e))
 

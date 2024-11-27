@@ -41,7 +41,7 @@ langdetect==1.0.9
 ray==2.9.3
 synapseclient==4.1.1
 python-magic==0.4.27
-openai==1.28.1
+openai==1.55.1
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
@@ -57,3 +57,4 @@ youtube-transcript-api==0.6.2
 sec-downloader==0.11.1
 openpyxl==3.1.4
 tweepy==4.14.0
+sec_downloader==0.11.1
