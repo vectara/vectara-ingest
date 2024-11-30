@@ -210,12 +210,10 @@ vectara:
   summarize_tables: false
   summarize_images: false
 
-  # If using Unstructured to process files locally, which chunking strategy to use
-  # options: basic, by_title or none
-  unst_chunking_strategy: by_title
-  
-  # if using Unstructured to process files locally, use core indexing or let Vectara further chunk in the platform
-  unst_use_core_indexing: true
+  # If using Unstructured to process files locally, we define a few arguments
+  unst_chunking_strategy: by_title        # chunking strategy to use: basic, by_title or none
+  unst_chunk_size: 1024                   # default chunk size
+  unst_use_core_indexing: true            # whether to use core_indexing, or let Vectara chunk further
 
   # Whether masking of PII is attempted on all text fields (title, text, metadata values)
   # Notes: 

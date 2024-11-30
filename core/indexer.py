@@ -38,48 +38,114 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def parse_local_file(
-        filename: str, uri: str, 
-        summarize_tables: bool = False, 
-        summarize_images: bool = False, 
-        unst_chunking_strategy: str = "by_title",
+def get_elements(
+        filename: str, 
+        chunking_strategy: str,
+        chunk_size: int,
+        mode: str,
         openai_api_key: str = None
-    ) -> Tuple[str, List[str]]:
+    ) -> List[Any]:
+    '''
+    Get elements from document using Unstructured partition_XXX functions
+    Args:
+        filename (str): Name of the file to parse.
+        chunking_strategy (str): Chunking strategy to use.
+        chunk_size (int): Maximum number of characters in each chunk.
+        mode (str): Mode to use for parsing.
+        openai_api_key (str): OpenAI API key for table and image summarization.
+
+    Returns:
+        List of elements from the document
+    '''
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.html import partition_html
     from unstructured.partition.pptx import partition_pptx
     from unstructured.partition.docx import partition_docx
 
+    logger = logging.getLogger()
+    mime_type = detect_file_type(filename)
+    partition_kwargs = {}
+    if mime_type == 'application/pdf':
+        partition_func = partition_pdf
+        partition_kwargs = {
+            "infer_table_structure": True, 
+            "extract_images_in_pdf": True,
+            "strategy": "hi_res", 
+            "hi_res_model_name": "yolox",    # use 'detectron2_onnx' for a faster model
+        }
+    elif mime_type == 'text/html' or mime_type == 'application/xml':
+        partition_func = partition_html
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        partition_func = partition_docx
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        partition_func = partition_pptx
+    else:
+        logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
+        return []
+
+    if openai_api_key is None:
+        elements = partition_func(
+            filename=filename,
+            chunking_strategy=chunking_strategy, max_characters=chunk_size
+        )
+        return elements
+    
+    if mode == 'tables' or mode == 'images':
+        elements = partition_func(
+            filename=filename, 
+            chunking_strategy=chunking_strategy, max_characters=chunk_size
+            **partition_kwargs
+        )
+    else:
+        elements = partition_func(
+            filename=filename, 
+            chunking_strategy=chunking_strategy, max_characters=chunk_size
+        )
+    
+    return elements
+
+def parse_local_file(
+        filename: str, uri: str, 
+        summarize_tables: bool = False, 
+        summarize_images: bool = False, 
+        unst_chunking_strategy: str = "by_title",
+        chunk_size: int = 1024,
+        openai_api_key: str = None
+    ) -> Tuple[str, List[str]]:
+    """
+    Parse a local file and return the title and text content.
+    
+    Args:
+        filename (str): Name of the file to parse.
+        uri (str): URI for where the document originated.
+        summarize_tables (bool): Whether to summarize tables.
+        summarize_images (bool): Whether to summarize images.
+        unst_chunking_strategy (str): Chunking strategy to use.
+        chunk_size (int): Maximum number of characters in each chunk.
+        openai_api_key (str): OpenAI API key for table and image summarization.
+
+    Returns:
+        Tuple with title and list of text content.
+    """
     import nltk
     nltk.download('punkt_tab')
     nltk.download('averaged_perceptron_tagger_eng')
+    import unstructured as us
+
+    logger = logging.getLogger()
 
     # Process files using unstructured partitioning
     table_summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
-    logger = logging.getLogger()
     st = time.time()
-    chunk_size = 1024
-    mime_type = detect_file_type(filename)
-    if mime_type == 'application/pdf':
-        if summarize_tables and openai_api_key is not None:
-            elements = partition_pdf(
-                filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
-                strategy='hi_res', hi_res_model_name='yolox',    # use 'detectron2_onnx' for a faster model
-                chunking_strategy=unst_chunking_strategy, max_characters=chunk_size,
-            )  
-        else:
-            elements = partition_pdf(filename, strategy='fast', chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
-    elif mime_type == 'text/html' or mime_type == 'application/xml':
-        elements = partition_html(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        elements = partition_docx(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        elements = partition_pptx(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
-    else:
-        logger.info(f"data from {uri} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
-        return '', []
-
+    
+    elements = get_elements(
+        filename, 
+        unst_chunking_strategy,
+        chunk_size,
+        mode='tables' if summarize_tables else 'default',
+        openai_api_key=open
+    )
     texts = []
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Table and 
@@ -92,34 +158,26 @@ def parse_local_file(
 
     # Process any images
     image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_images else None
-    if mime_type == 'application/pdf':
-        if summarize_images and openai_api_key is not None:
-            elements = partition_pdf(
-                filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
-                strategy='hi_res', hi_res_model_name='yolox',    # use 'detectron2_onnx' for a faster model
-            )  
-        else:
-            elements = partition_pdf(filename, strategy='fast')
-    elif mime_type == 'text/html' or mime_type == 'application/xml':
-        elements = partition_html(filename=filename)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        elements = partition_docx(filename=filename)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        elements = partition_pptx(filename=filename)
-    else:
-        logger.info(f"data from {uri} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
-        return '', []
-    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-    title = titles[0] if len(titles)>0 else 'no title'
+    elements = get_elements(
+        filename, 
+        unst_chunking_strategy,
+        chunk_size,
+        mode='images' if summarize_images else 'default',
+        openai_api_key=openai_api_key
+    )
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Image and 
             summarize_images and openai_api_key is not None):
             if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
                 texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
-            image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
+            else:
+                image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
             if image_summary:
                 texts.append(image_summary)
 
+    # If any element is a title, use it as the doc title
+    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
+    title = titles[0] if len(titles)>0 else 'no title'
 
     logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
     return title, texts
@@ -158,6 +216,7 @@ class Indexer(object):
         self.summarize_images = cfg.vectara.get("summarize_images", False)
         self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "by_title")
         self.unst_use_core_indexing = cfg.vectara.get("unst_use_core_indexing", True)
+        self.unst_chunk_size = cfg.vectara.get("unst_chunk_size", 1024)
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables or self.summarize_images:
                 self.logger.info("OpenAI API key not found, disabling table/image summarization")
@@ -447,6 +506,13 @@ class Indexer(object):
     def _index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
+
+        Args:
+            document (dict): Document to index.
+            use_core_indexing (bool): Whether to use the core indexing API.
+        
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
         if use_core_indexing:
             api_endpoint = f"https://{self.endpoint}/v1/core/index"
@@ -507,9 +573,11 @@ class Indexer(object):
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
+        
         Args:
             url (str): URL for where the document originated. 
             metadata (dict): Metadata for the document.
+        
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -593,6 +661,18 @@ class Indexer(object):
                        doc_metadata: Dict[str, Any] = {}, doc_title: str = "", use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
+
+        Args:
+            doc_id (str): ID of the document.
+            texts (List[str]): List of segments (parts) of the document.
+            titles (List[str]): List of titles for each segment.
+            metadatas (List[dict]): List of metadata for each segment.
+            doc_metadata (dict): Metadata for the document.
+            doc_title (str): Title of the document.
+            use_core_indexing (bool): Whether to use the core indexing API.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
         if titles is None:
             titles = ["" for _ in range(len(texts))]
@@ -628,16 +708,25 @@ class Indexer(object):
         """
         Index a document (by uploading it to the Vectara corpus).
         Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
+
+        Args:
+            document (dict): Document to index.
+            use_core_indexing (bool): Whether to use the core indexing API.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
         return self._index_document(document, use_core_indexing)
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
+        
         Args:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
+        
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -657,6 +746,7 @@ class Indexer(object):
                 self.summarize_tables, 
                 self.summarize_images, 
                 self.unst_chunking_strategy,
+                self.unst_chunk_size,
                 openai_api_key
             )
             succeeded = self.index_segments(
@@ -674,6 +764,16 @@ class Indexer(object):
             return self._index_file(filename, uri, metadata)
 
     def index_media_file(self, file_path, metadata=None):
+        """
+        Index a media file (audio or video) by transcribing it with Whisper and uploading it to the Vectara corpus.
+        
+        Args:
+            file_path (str): Path to the media file.
+            metadata (dict): Metadata for the document.
+
+        Returns:
+            bool: True if the upload was successful, False
+        """
         logging.info(f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
         if self.model is None:
             self.model = whisper.load_model(self.whisper_model, device="cpu")
