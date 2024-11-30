@@ -38,7 +38,13 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
+def parse_local_file(
+        filename: str, uri: str, 
+        summarize_tables: bool = False, 
+        summarize_images: bool = False, 
+        unst_chunking_strategy: str = "by_title",
+        openai_api_key: str = None
+    ) -> Tuple[str, List[str]]:
     import unstructured as us
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.html import partition_html
@@ -60,16 +66,16 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
             elements = partition_pdf(
                 filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
                 strategy='hi_res', hi_res_model_name='yolox',    # use 'detectron2_onnx' for a faster model
-                chunking_strategy='by_title', max_characters=chunk_size,
+                chunking_strategy=unst_chunking_strategy, max_characters=chunk_size,
             )  
         else:
-            elements = partition_pdf(filename, strategy='fast', chunking_strategy='by_title', max_characters=chunk_size)
+            elements = partition_pdf(filename, strategy='fast', chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
     elif mime_type == 'text/html' or mime_type == 'application/xml':
-        elements = partition_html(filename=filename, chunking_strategy='by_title', max_characters=chunk_size)
+        elements = partition_html(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        elements = partition_docx(filename=filename, chunking_strategy='by_title', max_characters=chunk_size)
+        elements = partition_docx(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        elements = partition_pptx(filename=filename, chunking_strategy='by_title', max_characters=chunk_size)
+        elements = partition_pptx(filename=filename, chunking_strategy=unst_chunking_strategy, max_characters=chunk_size)
     else:
         logger.info(f"data from {uri} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
         return '', []
@@ -85,15 +91,15 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
             texts.append(str(e))
 
     # Process any images
-    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_images else None
     if mime_type == 'application/pdf':
-        if summarize_tables and openai_api_key is not None:
+        if summarize_images and openai_api_key is not None:
             elements = partition_pdf(
                 filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
                 strategy='hi_res', hi_res_model_name='yolox',    # use 'detectron2_onnx' for a faster model
             )  
         else:
-            elements = partition_pdf(filename, strategy='fast', chunking_strategy='by_title', max_characters=chunk_size)
+            elements = partition_pdf(filename, strategy='fast')
     elif mime_type == 'text/html' or mime_type == 'application/xml':
         elements = partition_html(filename=filename)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -107,7 +113,7 @@ def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, op
     title = titles[0] if len(titles)>0 else 'no title'
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Image and 
-            summarize_tables and openai_api_key is not None):
+            summarize_images and openai_api_key is not None):
             if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
                 texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
             image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
@@ -149,10 +155,14 @@ class Indexer(object):
         self.whisper_model = cfg.vectara.get("whisper_model", "base")
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
+        self.summarize_images = cfg.vectara.get("summarize_images", False)
+        self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "by_title")
+        self.unst_use_core_indexing = cfg.vectara.get("unst_use_core_indexing", True)
         if cfg.vectara.get("openai_api_key", None) is None:
-            if self.summarize_tables:
-                self.logger.info("OpenAI API key not found, disabling table summarization")
+            if self.summarize_tables or self.summarize_images:
+                self.logger.info("OpenAI API key not found, disabling table/image summarization")
             self.summarize_tables = False
+            self.summarize_images = False
 
         self.setup()
 
@@ -642,11 +652,17 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = parse_local_file(filename, uri, self.summarize_tables, openai_api_key)
+            title, texts = parse_local_file(
+                filename, uri, 
+                self.summarize_tables, 
+                self.summarize_images, 
+                self.unst_chunking_strategy,
+                openai_api_key
+            )
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts,
                 doc_metadata=metadata, doc_title=title,
-                use_core_indexing=True
+                use_core_indexing=self.unst_use_core_indexing
             )            
             if self.summarize_tables:
                 self.logger.info(f"For file {filename}, extracting text locally since summarize_tables is activated")

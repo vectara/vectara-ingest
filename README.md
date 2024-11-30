@@ -197,17 +197,26 @@ vectara:
   # this can be helpful when processing news pages or others which have a lot of advertising content
   remove_boilerplate: false
 
-  # flag: enable special processing for tables inside PDFs or HTML (optional)
+  # flag: enable special processing for tables, or images (inside PDF, HTML, PPT, DOCX; optional)
   # Notes:
   # 1. This processing uses OPENAI, and requires to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
-  # 2. If enabled, 
-  #    - When crawling PDF, PPT or DOC files, the code will extract table content, then use GPT-4o to summarize the table, and ingest this summarized text while into Vectara.
-  #    - This flag also enables processing of images (e.g. diagrams) and uses GPT-4o to summarize the content of the images using the vision capabilities of GPT-4o.
-  #    - Simiarly, when crawling HTML files, any HTML table data will be summarized with GPT-4o
-  # 3. This processing is quite slow and will require you to have an additional paid subscription to OpenAI. The code uses the "detectron2_onnx" unstructured model which is fastest. You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
+  # 2. When crawling PDF, PPTX or DOCX files
+  #    - if summarize_tables is enabled, the code will extract table content, then use GPT-4o to summarize the table, and ingest this summarized text while into Vectara.
+  #    - if summarize_images is enabled, the code will use GPT-4o vision to summarize the content of the images.
+  # 3. This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
+  #    For PDF files, the code uses the "detectron2_onnx" unstructured model to detect tables
+  #    You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
   # See [here](TABLE_SUMMARY.md) for some examples of how table summary works.
   summarize_tables: false
+  summarize_images: false
+
+  # If using Unstructured to process files locally, which chunking strategy to use
+  # options: basic, by_title or none
+  unst_chunking_strategy: by_title
   
+  # if using Unstructured to process files locally, use core indexing or let Vectara further chunk in the platform
+  unst_use_core_indexing: true
+
   # Whether masking of PII is attempted on all text fields (title, text, metadata values)
   # Notes: 
   # 1. This masking is never done on files uploaded to Vectara directly (via e.g. indexer.index_file())

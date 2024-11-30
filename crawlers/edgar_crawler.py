@@ -64,7 +64,6 @@ class EdgarCrawler(Crawler):
         self.num_per_second = self.cfg.edgar_crawler.get("num_per_second", 1)
         self.filing_types = self.cfg.edgar_crawler.get("filing_types", ['10-K'])
         self.rate_limiter = RateLimiter(self.num_per_second)
-        self.summarize_tables = self.cfg.vectara.get("summarize_tables", False)
 
         # build mapping of ticker to cik
         url = 'https://www.sec.gov/include/ticker.txt'
