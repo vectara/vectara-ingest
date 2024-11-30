@@ -43,7 +43,7 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
         RequestedFilings(ticker_or_cik=ticker, form_type=filing_type, limit=20)
     )
     filings = [asdict(m) for m in metadatas 
-               if start_date < datetime.strptime(m.filing_date, '%Y-%m-%d') < end_date]
+               if start_date <= datetime.strptime(m.report_date, '%Y-%m-%d') <= end_date]
 
     for filing in filings:
         html = dl.download_filing(url=filing['primary_doc_url']).decode()
@@ -70,7 +70,7 @@ class EdgarCrawler(Crawler):
         url = 'https://www.sec.gov/include/ticker.txt'
         self.session = create_session_with_retries()
         response = self.session.get(url, headers=get_headers())
-        response.raise_for_status()  # This will raise an exception if there is an HTTP error
+        response.raise_for_status()
         data = StringIO(response.text)
         df = pd.read_csv(data, sep='\t', names=['ticker', 'cik'], dtype=str)
         self.ticker_dict = dict(zip(df.ticker.map(lambda x: str(x).upper()), df.cik))
