@@ -40,20 +40,17 @@ get_headers = {
 
 def get_elements(
         filename: str, 
-        chunking_strategy: str,
-        chunk_size: int,
         mode: str,
-        openai_api_key: str = None
+        chunking_strategy: str = "none",
+        chunk_size: int = 1024,
     ) -> List[Any]:
     '''
     Get elements from document using Unstructured partition_XXX functions
     Args:
         filename (str): Name of the file to parse.
+        mode (str): Mode to use for parsing. Valid values are "tables", "images" or "default".
         chunking_strategy (str): Chunking strategy to use.
         chunk_size (int): Maximum number of characters in each chunk.
-        mode (str): Mode to use for parsing.
-        openai_api_key (str): OpenAI API key for table and image summarization.
-
     Returns:
         List of elements from the document
     '''
@@ -65,15 +62,18 @@ def get_elements(
 
     logger = logging.getLogger()
     mime_type = detect_file_type(filename)
-    partition_kwargs = {}
+    partition_kwargs = {} if chunking_strategy == 'none' or mode in ["default", "images"] else {
+        "chunking_strategy": chunking_strategy,
+        "max_characters": chunk_size
+    }
     if mime_type == 'application/pdf':
         partition_func = partition_pdf
-        partition_kwargs = {
+        partition_kwargs.update({
             "infer_table_structure": True, 
             "extract_images_in_pdf": True,
             "strategy": "hi_res", 
             "hi_res_model_name": "yolox",    # use 'detectron2_onnx' for a faster model
-        }
+        })
     elif mime_type == 'text/html' or mime_type == 'application/xml':
         partition_func = partition_html
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -84,32 +84,19 @@ def get_elements(
         logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
         return []
 
-    if openai_api_key is None:
-        elements = partition_func(
-            filename=filename,
-            chunking_strategy=chunking_strategy, max_characters=chunk_size
-        )
-        return elements
-    
-    if mode == 'tables' or mode == 'images':
-        elements = partition_func(
-            filename=filename, 
-            chunking_strategy=chunking_strategy, max_characters=chunk_size
-            **partition_kwargs
-        )
-    else:
-        elements = partition_func(
-            filename=filename, 
-            chunking_strategy=chunking_strategy, max_characters=chunk_size
-        )
-    
+    print(f"DEBUG: mode={mode}, partition_kwargs = {partition_kwargs}")
+
+    elements = partition_func(
+        filename=filename,
+        **partition_kwargs
+    )    
     return elements
 
 def parse_local_file(
         filename: str, uri: str, 
         summarize_tables: bool = False, 
         summarize_images: bool = False, 
-        unst_chunking_strategy: str = "by_title",
+        unst_chunking_strategy: str = "none",
         chunk_size: int = 1024,
         openai_api_key: str = None
     ) -> Tuple[str, List[str]]:
@@ -129,24 +116,24 @@ def parse_local_file(
         Tuple with title and list of text content.
     """
     import nltk
-    nltk.download('punkt_tab')
-    nltk.download('averaged_perceptron_tagger_eng')
+    nltk.download('punkt_tab', quiet=True)
+    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
     import unstructured as us
 
     logger = logging.getLogger()
 
-    # Process files using unstructured partitioning
-    table_summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
+    # Process using unstructured partitioning functionality
     st = time.time()
     
+    # Pass 1: process text and tables (if summarize_tables is True)
     elements = get_elements(
         filename, 
-        unst_chunking_strategy,
-        chunk_size,
-        mode='tables' if summarize_tables else 'default',
-        openai_api_key=open
+        mode='tables' if summarize_tables and openai_api_key else 'default',
+        chunking_strategy=unst_chunking_strategy,
+        chunk_size=chunk_size,
     )
     texts = []
+    table_summarizer = TableSummarizer(openai_api_key) if openai_api_key and summarize_tables else None
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
@@ -156,14 +143,11 @@ def parse_local_file(
         else:
             texts.append(str(e))
 
-    # Process any images
-    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_images else None
+    # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
+    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key and summarize_images else None
     elements = get_elements(
         filename, 
-        unst_chunking_strategy,
-        chunk_size,
-        mode='images' if summarize_images else 'default',
-        openai_api_key=openai_api_key
+        mode='images' if summarize_images and openai_api_key else 'default',
     )
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Image and 
@@ -175,12 +159,12 @@ def parse_local_file(
             if image_summary:
                 texts.append(image_summary)
 
-    # If any element is a title, use it as the doc title
+    # No chunking strategy may result in title elements; if so - use the first one as doc_title
     titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-    title = titles[0] if len(titles)>0 else 'no title'
+    doc_title = titles[0] if len(titles)>0 else 'no title'
 
     logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-    return title, texts
+    return doc_title, texts
 
 class Indexer(object):
     """
@@ -214,7 +198,7 @@ class Indexer(object):
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
         self.summarize_images = cfg.vectara.get("summarize_images", False)
-        self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "by_title")
+        self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "none")
         self.unst_use_core_indexing = cfg.vectara.get("unst_use_core_indexing", True)
         self.unst_chunk_size = cfg.vectara.get("unst_chunk_size", 1024)
         if cfg.vectara.get("openai_api_key", None) is None:
