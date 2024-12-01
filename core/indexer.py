@@ -40,7 +40,7 @@ get_headers = {
 
 def get_elements(
         filename: str, 
-        mode: str,
+        mode: str = "default",
         chunking_strategy: str = "none",
         chunk_size: int = 1024,
     ) -> List[Any]:
@@ -48,7 +48,7 @@ def get_elements(
     Get elements from document using Unstructured partition_XXX functions
     Args:
         filename (str): Name of the file to parse.
-        mode (str): Mode to use for parsing. Valid values are "tables", "images" or "default".
+        mode (str): Mode to use for parsing: none, tables or images
         chunking_strategy (str): Chunking strategy to use.
         chunk_size (int): Maximum number of characters in each chunk.
     Returns:
@@ -61,19 +61,27 @@ def get_elements(
     from unstructured.partition.docx import partition_docx
 
     logger = logging.getLogger()
-    mime_type = detect_file_type(filename)
-    partition_kwargs = {} if chunking_strategy == 'none' or mode in ["default", "images"] else {
+    partition_kwargs = {} if chunking_strategy == 'none' else{
         "chunking_strategy": chunking_strategy,
         "max_characters": chunk_size
     }
-    if mime_type == 'application/pdf':
-        partition_func = partition_pdf
+    if mode == 'tables':
+        partition_kwargs['infer_table_structure'] = True
+
+    mime_type = detect_file_type(filename)
+    if mime_type in [
+        'application/pdf', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ]:
         partition_kwargs.update({
-            "infer_table_structure": True, 
             "extract_images_in_pdf": True,
             "strategy": "hi_res", 
-            "hi_res_model_name": "yolox",    # use 'detectron2_onnx' for a faster model
+            "hi_res_model_name": "yolox",
         })
+
+    if mime_type == 'application/pdf':
+        partition_func = partition_pdf
     elif mime_type == 'text/html' or mime_type == 'application/xml':
         partition_func = partition_html
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -84,7 +92,7 @@ def get_elements(
         logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
         return []
 
-    print(f"DEBUG: mode={mode}, partition_kwargs = {partition_kwargs}")
+    print(f"DEBUG mode={mode}, chunking_strategy={chunking_strategy}, chunk_size={chunk_size}, kwargs={partition_kwargs}")
 
     elements = partition_func(
         filename=filename,
@@ -128,12 +136,13 @@ def parse_local_file(
     # Pass 1: process text and tables (if summarize_tables is True)
     elements = get_elements(
         filename, 
-        mode='tables' if summarize_tables and openai_api_key else 'default',
+        mode='tables' if summarize_tables else 'default',
         chunking_strategy=unst_chunking_strategy,
         chunk_size=chunk_size,
     )
     texts = []
     table_summarizer = TableSummarizer(openai_api_key) if openai_api_key and summarize_tables else None
+    print(f"DEBUG: we have {len(elements)} elements in pass 1 (text and tables)")
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
@@ -146,9 +155,10 @@ def parse_local_file(
     # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
     image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key and summarize_images else None
     elements = get_elements(
-        filename, 
-        mode='images' if summarize_images and openai_api_key else 'default',
+        filename,
+        mode = 'images' if summarize_images else 'default',
     )
+    print(f"DEBUG: we have {len(elements)} elements in pass 2 (images)")
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Image and 
             summarize_images and openai_api_key is not None):
