@@ -19,10 +19,10 @@ import whisper
 
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
-    TableSummarizer, ImageSummarizer, mask_pii, safe_remove_file, detect_file_type,
-    url_to_filename
+    mask_pii, safe_remove_file, url_to_filename
 )
 from core.extract import get_article_content
+from core.doc_parser import DocumentParser
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -37,145 +37,6 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
-
-def get_elements(
-        filename: str, 
-        mode: str = "default",
-        chunking_strategy: str = "none",
-        chunk_size: int = 1024,
-    ) -> List[Any]:
-    '''
-    Get elements from document using Unstructured partition_XXX functions
-    Args:
-        filename (str): Name of the file to parse.
-        mode (str): Mode to use for parsing: none, tables or images
-        chunking_strategy (str): Chunking strategy to use.
-        chunk_size (int): Maximum number of characters in each chunk.
-    Returns:
-        List of elements from the document
-    '''
-    import unstructured as us
-    from unstructured.partition.pdf import partition_pdf
-    from unstructured.partition.html import partition_html
-    from unstructured.partition.pptx import partition_pptx
-    from unstructured.partition.docx import partition_docx
-
-    logger = logging.getLogger()
-    partition_kwargs = {} if chunking_strategy == 'none' else{
-        "chunking_strategy": chunking_strategy,
-        "max_characters": chunk_size
-    }
-    if mode == 'tables':
-        partition_kwargs['infer_table_structure'] = True
-
-    mime_type = detect_file_type(filename)
-    if mime_type in [
-        'application/pdf', 
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    ]:
-        partition_kwargs.update({
-            "extract_images_in_pdf": True,
-            "strategy": "hi_res", 
-            "hi_res_model_name": "yolox",
-        })
-
-    if mime_type == 'application/pdf':
-        partition_func = partition_pdf
-    elif mime_type == 'text/html' or mime_type == 'application/xml':
-        partition_func = partition_html
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        partition_func = partition_docx
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        partition_func = partition_pptx
-    else:
-        logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
-        return []
-
-    elements = partition_func(
-        filename=filename,
-        **partition_kwargs
-    )    
-    return elements
-
-def parse_local_file(
-        filename: str, uri: str, 
-        summarize_tables: bool = False, 
-        summarize_images: bool = False, 
-        unst_chunking_strategy: str = "none",
-        chunk_size: int = 1024,
-        openai_api_key: str = None
-    ) -> Tuple[str, List[str]]:
-    """
-    Parse a local file and return the title and text content.
-    
-    Args:
-        filename (str): Name of the file to parse.
-        uri (str): URI for where the document originated.
-        summarize_tables (bool): Whether to summarize tables.
-        summarize_images (bool): Whether to summarize images.
-        unst_chunking_strategy (str): Chunking strategy to use.
-        chunk_size (int): Maximum number of characters in each chunk.
-        openai_api_key (str): OpenAI API key for table and image summarization.
-
-    Returns:
-        Tuple with title and list of text content.
-    """
-    import nltk
-    nltk.download('punkt_tab', quiet=True)
-    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
-    import unstructured as us
-
-    logger = logging.getLogger()
-
-    # Process using unstructured partitioning functionality
-    st = time.time()
-    
-    # Pass 1: process text and tables (if summarize_tables is True)
-    elements = get_elements(
-        filename, 
-        mode='tables' if summarize_tables else 'default',
-        chunking_strategy=unst_chunking_strategy,
-        chunk_size=chunk_size,
-    )
-    texts = []
-    table_summarizer = TableSummarizer(openai_api_key) if openai_api_key and summarize_tables else None
-    num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
-    print(f"parse_local_file: {len(elements)} elements in pass 1, {num_tables} are tables")
-    for inx,e in enumerate(elements):
-        if (type(e)==us.documents.elements.Table and 
-            summarize_tables and openai_api_key is not None):
-            table_summary = table_summarizer.summarize_table_text(str(e))
-            if table_summary:
-                texts.append(table_summary)
-        else:
-            texts.append(str(e))
-
-    # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
-    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key and summarize_images else None
-    elements = get_elements(
-        filename,
-        mode = 'images' if summarize_images else 'default',
-    )
-    num_images = len([x for x in elements if type(x)==us.documents.elements.Image])
-    print(f"parse_local_file: {len(elements)} elements in pass 2, {num_images} are images")
-    for inx,e in enumerate(elements):
-        if (type(e)==us.documents.elements.Image and 
-            summarize_images and openai_api_key is not None):
-            if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                image_summary = image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text)
-            else:
-                image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
-            if image_summary:
-                texts.append(image_summary)
-
-    # No chunking strategy may result in title elements; if so - use the first one as doc_title
-    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-    doc_title = titles[0] if len(titles)>0 else 'no title'
-
-    logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-    return doc_title, texts
-
 class Indexer(object):
     """
     Vectara API class.
@@ -735,14 +596,14 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = parse_local_file(
-                filename, uri, 
-                self.summarize_tables, 
-                self.summarize_images, 
+            dp = DocumentParser(
+                openai_api_key,
                 self.unst_chunking_strategy,
                 self.unst_chunk_size,
-                openai_api_key
+                self.summarize_tables, 
+                self.summarize_images, 
             )
+            title, texts = dp.parse(filename)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts,
                 doc_metadata=metadata, doc_title=title,
