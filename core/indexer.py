@@ -92,8 +92,6 @@ def get_elements(
         logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
         return []
 
-    print(f"DEBUG mode={mode}, chunking_strategy={chunking_strategy}, chunk_size={chunk_size}, kwargs={partition_kwargs}")
-
     elements = partition_func(
         filename=filename,
         **partition_kwargs
@@ -142,7 +140,8 @@ def parse_local_file(
     )
     texts = []
     table_summarizer = TableSummarizer(openai_api_key) if openai_api_key and summarize_tables else None
-    print(f"DEBUG: we have {len(elements)} elements in pass 1 (text and tables)")
+    num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
+    print(f"parse_local_file: {len(elements)} elements in pass 1, {num_tables} are tables")
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Table and 
             summarize_tables and openai_api_key is not None):
@@ -158,12 +157,13 @@ def parse_local_file(
         filename,
         mode = 'images' if summarize_images else 'default',
     )
-    print(f"DEBUG: we have {len(elements)} elements in pass 2 (images)")
+    num_images = len([x for x in elements if type(x)==us.documents.elements.Image])
+    print(f"parse_local_file: {len(elements)} elements in pass 2, {num_images} are images")
     for inx,e in enumerate(elements):
         if (type(e)==us.documents.elements.Image and 
             summarize_images and openai_api_key is not None):
             if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
+                image_summary = image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text)
             else:
                 image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
             if image_summary:
@@ -749,7 +749,7 @@ class Indexer(object):
                 use_core_indexing=self.unst_use_core_indexing
             )            
             if self.summarize_tables:
-                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables is activated")
+                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables/images is activated")
             else:
                 self.logger.info(f"For file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded
