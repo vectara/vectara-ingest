@@ -135,7 +135,7 @@ class DocumentParser():
 
         # No chunking strategy may result in title elements; if so - use the first one as doc_title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-        doc_title = titles[0] if len(titles)>0 else 'no title'
+        doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
         return doc_title, texts

@@ -82,7 +82,7 @@ def get_content_with_justext(html_content: str, detected_language: str) -> Tuple
     if stitle:
         title = stitle.text
     else:
-        title = 'No title'
+        title = ''
     return text, title
 
 def get_content_with_goose3(html_content: str, url: str, detected_language: str) -> Tuple[str, str]:
