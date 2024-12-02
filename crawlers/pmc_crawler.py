@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import Set, List, Any
 from core.utils import html_to_text, create_session_with_retries, RateLimiter
 from core.crawler import Crawler
-from core.indexer import parse_local_file
 
 from omegaconf import OmegaConf
 from Bio import Entrez

@@ -19,10 +19,10 @@ import whisper
 
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
-    TableSummarizer, ImageSummarizer, mask_pii, safe_remove_file, detect_file_type,
-    url_to_filename
+    mask_pii, safe_remove_file, url_to_filename
 )
 from core.extract import get_article_content
+from core.doc_parser import DocumentParser
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -37,63 +37,6 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
-
-def parse_local_file(filename: str, uri: str, summarize_tables: bool = False, openai_api_key: str = None) -> Tuple[str, List[str]]:
-    import unstructured as us
-    from unstructured.partition.pdf import partition_pdf
-    from unstructured.partition.html import partition_html
-    from unstructured.partition.pptx import partition_pptx
-    from unstructured.partition.docx import partition_docx
-
-    import nltk
-    nltk.download('punkt_tab')
-    nltk.download('averaged_perceptron_tagger_eng')
-
-    logger = logging.getLogger()
-    st = time.time()
-    mime_type = detect_file_type(filename)
-    if mime_type == 'application/pdf':
-        if summarize_tables and openai_api_key is not None:
-            elements = partition_pdf(filename=filename, infer_table_structure=True, extract_images_in_pdf=True,
-                                     strategy='hi_res', hi_res_model_name='yolox')  # use 'detectron2_onnx' for a faster model
-        else:
-            elements = partition_pdf(filename, strategy='fast')
-    elif mime_type == 'text/html' or mime_type == 'application/xml':
-        elements = partition_html(filename=filename)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        elements = partition_docx(filename=filename)
-    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        elements = partition_pptx(filename=filename)
-    else:
-        logger.info(f"data from {uri} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
-        return '', []
-
-    titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
-    title = titles[0] if len(titles)>0 else 'no title'
-
-    # Summarize tables and images, if applicable.
-    table_summarizer = TableSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
-    image_summarizer = ImageSummarizer(openai_api_key) if openai_api_key is not None and summarize_tables else None
-    texts = []
-    for inx,e in enumerate(elements):
-        if (type(e)==us.documents.elements.Table and 
-            summarize_tables and openai_api_key is not None):
-            table_summary = table_summarizer.summarize_table_text(str(e))
-            if table_summary:
-                texts.append(table_summary)
-        elif (type(e)==us.documents.elements.Image and 
-              summarize_tables and openai_api_key is not None):
-              if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                  texts.append(image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text))
-              image_summary = image_summarizer.summarize_image(e.metadata.image_path, None)
-              if image_summary:
-                  texts.append(image_summary)
-        else:
-            texts.append(str(e))
-
-    logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-    return title, texts
-
 class Indexer(object):
     """
     Vectara API class.
@@ -125,10 +68,15 @@ class Indexer(object):
         self.whisper_model = cfg.vectara.get("whisper_model", "base")
 
         self.summarize_tables = cfg.vectara.get("summarize_tables", False)
+        self.summarize_images = cfg.vectara.get("summarize_images", False)
+        self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "none")
+        self.unst_use_core_indexing = cfg.vectara.get("unst_use_core_indexing", True)
+        self.unst_chunk_size = cfg.vectara.get("unst_chunk_size", 1024)
         if cfg.vectara.get("openai_api_key", None) is None:
-            if self.summarize_tables:
-                self.logger.info("OpenAI API key not found, disabling table summarization")
+            if self.summarize_tables or self.summarize_images:
+                self.logger.info("OpenAI API key not found, disabling table/image summarization")
             self.summarize_tables = False
+            self.summarize_images = False
 
         self.setup()
 
@@ -410,11 +358,21 @@ class Indexer(object):
         self.store_file(filename, url_to_filename(uri))
         return True
 
-    def _index_document(self, document: Dict[str, Any]) -> bool:
+    def _index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
+
+        Args:
+            document (dict): Document to index.
+            use_core_indexing (bool): Whether to use the core indexing API.
+        
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
-        api_endpoint = f"https://{self.endpoint}/v1/index"
+        if use_core_indexing:
+            api_endpoint = f"https://{self.endpoint}/v1/core/index"
+        else:
+            api_endpoint = f"https://{self.endpoint}/v1/index"
 
         request = {
             'customer_id': self.customer_id,
@@ -470,9 +428,11 @@ class Indexer(object):
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
+        
         Args:
             url (str): URL for where the document originated. 
             metadata (dict): Metadata for the document.
+        
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -553,9 +513,21 @@ class Indexer(object):
         return succeeded
 
     def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
-                       doc_metadata: Dict[str, Any] = {}, doc_title: str = "") -> bool:
+                       doc_metadata: Dict[str, Any] = {}, doc_title: str = "", use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
+
+        Args:
+            doc_id (str): ID of the document.
+            texts (List[str]): List of segments (parts) of the document.
+            titles (List[str]): List of titles for each segment.
+            metadatas (List[dict]): List of metadata for each segment.
+            doc_metadata (dict): Metadata for the document.
+            doc_title (str): Title of the document.
+            use_core_indexing (bool): Whether to use the core indexing API.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
         if titles is None:
             titles = ["" for _ in range(len(texts))]
@@ -566,34 +538,50 @@ class Indexer(object):
 
         document = {}
         document["documentId"] = doc_id
-        if doc_title is not None and len(doc_title)>0:
-            document["title"] = self.normalize_text(doc_title)
-        document["section"] = [
-            {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
-            for text,title,md in zip(texts,titles,metadatas)
-        ]
+        if not use_core_indexing:
+            if doc_title is not None and len(doc_title)>0:
+                document["title"] = self.normalize_text(doc_title)
+            document["section"] = [
+                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
+                for text,title,md in zip(texts,titles,metadatas)
+            ]
+        else:
+            document["parts"] = [
+                {"text": self.normalize_text(text), "metadataJson": json.dumps(md)} 
+                for text,md in zip(texts,metadatas)
+            ]
+
         if doc_metadata:
             document["metadataJson"] = json.dumps(doc_metadata)
 
         if self.verbose:
             self.logger.info(f"Indexing document {doc_id} with {document}")
 
-        return self.index_document(document)
+        return self.index_document(document, use_core_indexing)
 
-    def index_document(self, document: Dict[str, Any]) -> bool:
+    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus).
         Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
+
+        Args:
+            document (dict): Document to index.
+            use_core_indexing (bool): Whether to use the core indexing API.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
         """
-        return self._index_document(document)
+        return self._index_document(document, use_core_indexing)
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
+        
         Args:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
+        
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -608,11 +596,21 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            title, texts = parse_local_file(filename, uri, self.summarize_tables, openai_api_key)
-            succeeded = self.index_segments(doc_id=slugify(uri), texts=texts,
-                                            doc_metadata=metadata, doc_title=title)
+            dp = DocumentParser(
+                openai_api_key,
+                self.unst_chunking_strategy,
+                self.unst_chunk_size,
+                self.summarize_tables, 
+                self.summarize_images, 
+            )
+            title, texts = dp.parse(filename)
+            succeeded = self.index_segments(
+                doc_id=slugify(uri), texts=texts,
+                doc_metadata=metadata, doc_title=title,
+                use_core_indexing=self.unst_use_core_indexing
+            )            
             if self.summarize_tables:
-                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables is activated")
+                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables/images is activated")
             else:
                 self.logger.info(f"For file {filename}, extracting text locally since file size is larger than {size_limit}MB")
             return succeeded
@@ -621,6 +619,16 @@ class Indexer(object):
             return self._index_file(filename, uri, metadata)
 
     def index_media_file(self, file_path, metadata=None):
+        """
+        Index a media file (audio or video) by transcribing it with Whisper and uploading it to the Vectara corpus.
+        
+        Args:
+            file_path (str): Path to the media file.
+            metadata (dict): Metadata for the document.
+
+        Returns:
+            bool: True if the upload was successful, False
+        """
         logging.info(f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
         if self.model is None:
             self.model = whisper.load_model(self.whisper_model, device="cpu")

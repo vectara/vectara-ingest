@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+RUN rm -f /usr/share/fonts/truetype/unifont/unifont_sample.ttf /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf
 ENV OMP_NUM_THREADS=4
 
 # Install python packages

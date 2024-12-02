@@ -41,11 +41,11 @@ langdetect==1.0.9
 ray==2.9.3
 synapseclient==4.1.1
 python-magic==0.4.27
-openai==1.55.1
+openai==1.55.3
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.16.5
+unstructured[pdf]==0.16.8
 transformers[torch]==4.40.2
 safetensors[torch]==0.4.3
 datasets==2.20.0
@@ -58,3 +58,6 @@ sec-downloader==0.11.1
 openpyxl==3.1.4
 tweepy==4.14.0
 sec_downloader==0.11.1
+matplotlib==3.8.4
+python-pptx==1.0.2
+python-docx==1.1.2
