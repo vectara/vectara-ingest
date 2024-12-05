@@ -11,4 +11,3 @@ website_crawler:
   pos_regex: [".*hbs.edu.*"]
   num_per_second: 1
   pages_source: sitemap
-  extraction: playwright

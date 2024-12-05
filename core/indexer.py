@@ -22,7 +22,7 @@ from core.utils import (
     mask_pii, safe_remove_file, url_to_filename
 )
 from core.extract import get_article_content
-from core.doc_parser import DocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -67,11 +67,15 @@ class Indexer(object):
         self.model = None
         self.whisper_model = cfg.vectara.get("whisper_model", "base")
 
-        self.summarize_tables = cfg.vectara.get("summarize_tables", False)
-        self.summarize_images = cfg.vectara.get("summarize_images", False)
-        self.unst_chunking_strategy = cfg.vectara.get("unst_chunking_strategy", "none")
-        self.unst_use_core_indexing = cfg.vectara.get("unst_use_core_indexing", True)
-        self.unst_chunk_size = cfg.vectara.get("unst_chunk_size", 1024)
+        if 'doc_processing' not in cfg:
+            cfg.doc_processing = {}
+        self.summarize_tables = cfg.doc_processing.get("summarize_tables", False)
+        self.summarize_images = cfg.doc_processing.get("summarize_images", False)
+        self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
+        self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", True)
+        self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
+                                                          {'chunking_strategy': 'none', 'chunk_size': 1024})
+        self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables or self.summarize_images:
                 self.logger.info("OpenAI API key not found, disabling table/image summarization")
@@ -596,13 +600,16 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
-            dp = DocumentParser(
-                openai_api_key,
-                self.unst_chunking_strategy,
-                self.unst_chunk_size,
-                self.summarize_tables, 
-                self.summarize_images, 
-            )
+            if self.doc_parser == "docling":
+                dp = DoclingDocumentParser(chunk=self.docling_config['chunk'],)
+            else:
+                dp = UnstructuredDocumentParser(
+                    openai_api_key,
+                    self.unstructured_config['chunking_strategy'],
+                    self.unstructured_config['chunk_size'],
+                    self.summarize_tables, 
+                    self.summarize_images, 
+                )
             title, texts = dp.parse(filename)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts,

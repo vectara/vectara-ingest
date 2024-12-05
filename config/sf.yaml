@@ -14,5 +14,4 @@ website_crawler:
   neg_regex: [".*sf.gov/es/.*", ".*sf.gov/fil/.*", ".*sf.gov/zh-hant/.*"]
   pages_source: crawl # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
   max_depth: 3
-  extraction: playwright # pdf or playwright
   ray_workers: 0

@@ -17,4 +17,3 @@ rss_crawler:
   ]
   days_past: 30
   delay: 1
-  extraction: playwright           # pdf or playwright
