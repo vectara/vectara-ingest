@@ -50,8 +50,8 @@ else
   echo "Building for $ARCH"
 fi
 
-sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['doc_processing'].get('summarize_tables', 'false'))" | tr '[:upper:]' '[:lower:]'`
-sum_images=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['doc_processing'].get('summarize_images', 'false'))" | tr '[:upper:]' '[:lower:]'`
+sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_tables', ''))" | tr '[:upper:]' '[:lower:]'`
+sum_images=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_images', ''))" | tr '[:upper:]' '[:lower:]'`
 mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
 
 if [[ "$sum_tables" == "true" || $"sum_images" == "true" || "$mask_pii" == "true" ]]; then

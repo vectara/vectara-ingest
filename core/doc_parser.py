@@ -43,7 +43,8 @@ class DoclingDocumentParser(DocumentParser):
 
     @staticmethod
     def _lazy_load_docling():
-        from docling import DocumentConverter, HierarchicalChunker
+        from docling.document_converter import DocumentConverter
+        from docling_core.transforms.chunker import HierarchicalChunker
         return DocumentConverter, HierarchicalChunker
 
     def parse(
