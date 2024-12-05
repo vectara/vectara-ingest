@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     curl \
-    python3-dev
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Install Python packages
 WORKDIR ${HOME}
@@ -37,6 +38,15 @@ RUN find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + 
     && find /usr/local -type d -name '__pycache__' -exec rm -rf '{}' + \
     && rm -rf /root/.cache/* /tmp/*
 
+# Clean up unnecessary filesin site-packages
+RUN find /usr/local/lib/python3.11/site-packages \
+    -type d \( -name 'tests' -o -name 'test' -o -name 'examples' \) -exec rm -rf '{}' + \
+    && find /usr/local/lib/python3.11/site-packages -type d -name '__pycache__' -exec rm -rf '{}' + \
+    && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyc' -exec rm -f '{}' + \
+    && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyo' -exec rm -f '{}' +
+
+#RUN find /usr/local/lib/python3.11/site-packages -type f -name '*.so' -exec strip '{}' +
+
 
 # Stage 2: Final image
 FROM python:3.11-slim
@@ -49,27 +59,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libopenblas-dev \
-    unixodbc \
-    poppler-utils \
+#    libopenblas-dev \
     tesseract-ocr \
-    xvfb \
-    libmagic1 \
-    libfontconfig \
-    libjpeg62-turbo \
-    fonts-noto-color-emoji \
-    unifont \
-    fonts-indic \
-    xfonts-75dpi \
+#    xvfb \
+    unixodbc poppler-utils libmagic1 libjpeg62-turbo \
+    libfontconfig fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \
     && rm -rf /var/lib/apt/lists/*
     
 # Copy Python packages and application code from the builder stage
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-#COPY --from=builder ${HOME} ${HOME}
 
 # Install Playwright browsers
-RUN playwright install --with-deps firefox
+RUN playwright install --with-deps firefox \
+    && rm -f /usr/local/bin/pwdebug \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache/*
 
 # Set working directory
 WORKDIR ${HOME}

@@ -614,7 +614,7 @@ class Indexer(object):
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts,
                 doc_metadata=metadata, doc_title=title,
-                use_core_indexing=self.unst_use_core_indexing
+                use_core_indexing=self.use_core_indexing
             )            
             if self.summarize_tables:
                 self.logger.info(f"For file {filename}, extracting text locally since summarize_tables/images is activated")
