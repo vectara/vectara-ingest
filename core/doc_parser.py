@@ -10,9 +10,6 @@ from unstructured.partition.html import partition_html
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.docx import partition_docx
 
-from docling.document_converter import DocumentConverter
-from docling_core.transforms.chunker import HierarchicalChunker
-
 import nltk
 nltk.download('punkt_tab', quiet=True)
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
@@ -44,6 +41,11 @@ class DoclingDocumentParser(DocumentParser):
         self.chunk = chunk
         self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
 
+    @staticmethod
+    def _lazy_load_docling():
+        from docling import DocumentConverter, HierarchicalChunker
+        return DocumentConverter, HierarchicalChunker
+
     def parse(
             self,
             filename: str, 
@@ -59,8 +61,9 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with title and list of text content.
         """
         # Process using Docling
-        st = time.time()
-        
+        DocumentConverter, HierarchicalChunker = self._lazy_load_docling()
+
+        st = time.time()        
         res = DocumentConverter().convert(filename)
         doc = res.document
         doc_title = doc.name
