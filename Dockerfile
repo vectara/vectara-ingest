@@ -5,7 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/vectara \
     XDG_RUNTIME_DIR=/tmp \
     RAY_DEDUP_LOGS="0" \
-    CUDA_VISIBLE_DEVICES=""
+    CUDA_VISIBLE_DEVICES="" \
+    UV_SYSTEM_PYTHON=1
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,8 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python packages
 WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
+
 RUN pip install --no-cache-dir uv==0.5.6
-ENV UV_SYSTEM_PYTHON=1
 RUN uv pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
     && uv pip install --no-cache-dir -r requirements.txt
 
@@ -30,6 +31,12 @@ RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
         python3 -m spacy download en_core_web_lg; \
     fi
     
+# Clean up unnecessary files
+RUN find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
+    && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
+    && find /usr/local -type d -name '__pycache__' -exec rm -rf '{}' + \
+    && rm -rf /root/.cache/* /tmp/*
+
 
 # Stage 2: Final image
 FROM python:3.11-slim
@@ -59,16 +66,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python packages and application code from the builder stage
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder ${HOME} ${HOME}
+#COPY --from=builder ${HOME} ${HOME}
 
 # Install Playwright browsers
 RUN playwright install --with-deps firefox
-
-# Clean up unnecessary files
-RUN find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
-    && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
-    && find /usr/local -type d -name '__pycache__' -exec rm -rf '{}' + \
-    && rm -rf /root/.cache/* /tmp/*
 
 # Set working directory
 WORKDIR ${HOME}
