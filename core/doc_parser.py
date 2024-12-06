@@ -46,9 +46,12 @@ class DoclingDocumentParser(DocumentParser):
 
     @staticmethod
     def _lazy_load_docling():
-        from docling.document_converter import DocumentConverter
+        from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling_core.transforms.chunker import HierarchicalChunker
-        return DocumentConverter, HierarchicalChunker
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.base_models import InputFormat
+
+        return DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
 
     def parse(
             self,
@@ -65,10 +68,18 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with title and list of text content.
         """
         # Process using Docling
-        DocumentConverter, HierarchicalChunker = self._lazy_load_docling()
+        DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+
 
         st = time.time()        
-        res = DocumentConverter().convert(filename)
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.images_scale = 2.0
+        pipeline_options.generate_picture_images = True
+        res = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        ).convert(filename)
         doc = res.document
         doc_title = doc.name
 
@@ -93,13 +104,18 @@ class DoclingDocumentParser(DocumentParser):
             image_path = 'image.png'
             self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
             for pic in doc.pictures:
-                with open(image_path, 'wb') as fp:
-                    pic.get_image(res.document).save(fp, 'PNG')
-                image_summary = self.image_summarizer.summarize_image(image_path, None)
-                if image_summary:
-                    texts.append(image_summary)
-                    if self.verbose:
-                        self.logger.info(f"Image summary: {image_summary}")
+                image = pic.get_image(res.document)
+                if image:
+                    with open(image_path, 'wb') as fp:
+                        image.save(fp, 'PNG')
+                    image_summary = self.image_summarizer.summarize_image(image_path, None)
+                    if image_summary:
+                        texts.append(image_summary)
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary}")
+                else:
+                    self.logger.info(f"Failed to retrieve image {pic}")
+                    continue
 
         self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
         return doc_title, texts

@@ -606,6 +606,7 @@ class Indexer(object):
             if self.doc_parser == "docling":
                 dp = DoclingDocumentParser(
                     verbose=self.verbose,
+                    openai_api_key=openai_api_key,
                     chunk=self.docling_config['chunk'], 
                     summarize_tables=self.summarize_tables, 
                     summarize_images=self.summarize_images

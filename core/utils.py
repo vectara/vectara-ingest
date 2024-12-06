@@ -1,6 +1,6 @@
 import requests
 from urllib3.util.retry import Retry
-from urllib.parse import urlparse, urlunparse, ParseResult
+from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
 from pathlib import Path
 import os
 import base64
