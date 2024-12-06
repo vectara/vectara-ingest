@@ -72,7 +72,7 @@ class Indexer(object):
         self.summarize_tables = cfg.doc_processing.get("summarize_tables", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
-        self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", True)
+        self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
         self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
                                                           {'chunking_strategy': 'none', 'chunk_size': 1024})
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
@@ -550,6 +550,9 @@ class Indexer(object):
                 for text,title,md in zip(texts,titles,metadatas)
             ]
         else:
+            if any([len(text)>16384 for text in texts]):
+                self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
+                return False
             document["parts"] = [
                 {"text": self.normalize_text(text), "metadataJson": json.dumps(md)} 
                 for text,md in zip(texts,metadatas)

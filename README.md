@@ -224,7 +224,7 @@ doc_processing:
   doc_parser: unstructured
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
-  use_core_indexing: true            
+  use_core_indexing: false            
 
   # Unstructured document parsing configuration
   unstructured_config:

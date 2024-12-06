@@ -81,6 +81,8 @@ class DoclingDocumentParser(DocumentParser):
             for table in doc.tables:
                 table_md = table.export_to_markdown()
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
+                if self.verbose:
+                    print(f"Table summary: {table_summary}")
                 if table_summary:
                     texts.append(table_summary)
 
@@ -91,6 +93,8 @@ class DoclingDocumentParser(DocumentParser):
                 with open(image_path, 'wb') as fp:
                     pic.get_image(res.document).save(fp, 'PNG')
                 image_summary = self.image_summarizer.summarize_image(image_path, None)
+                if self.verbose:
+                    print(f"Image summary: {image_summary}")
                 if image_summary:
                     texts.append(image_summary)
 

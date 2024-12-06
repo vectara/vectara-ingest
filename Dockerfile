@@ -23,7 +23,7 @@ WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
 
 RUN pip install --no-cache-dir uv==0.5.6
-RUN uv pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
+RUN uv pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu \
     && uv pip install --no-cache-dir -r requirements.txt
 
 ARG INSTALL_EXTRA=false
@@ -44,9 +44,6 @@ RUN find /usr/local/lib/python3.11/site-packages \
     && find /usr/local/lib/python3.11/site-packages -type d -name '__pycache__' -exec rm -rf '{}' + \
     && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyc' -exec rm -f '{}' + \
     && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyo' -exec rm -f '{}' +
-
-#RUN find /usr/local/lib/python3.11/site-packages -type f -name '*.so' -exec strip '{}' +
-
 
 # Stage 2: Final image
 FROM python:3.11-slim
