@@ -605,17 +605,19 @@ class Indexer(object):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             if self.doc_parser == "docling":
                 dp = DoclingDocumentParser(
+                    verbose=self.verbose,
                     chunk=self.docling_config['chunk'], 
                     summarize_tables=self.summarize_tables, 
                     summarize_images=self.summarize_images
                 )
             else:
                 dp = UnstructuredDocumentParser(
-                    openai_api_key,
-                    self.unstructured_config['chunking_strategy'],
-                    self.unstructured_config['chunk_size'],
-                    self.summarize_tables, 
-                    self.summarize_images, 
+                    verbose=self.verbose,
+                    openai_api_key=openai_api_key,
+                    chunking_strategy=self.unstructured_config['chunking_strategy'],
+                    chunk_size=self.unstructured_config['chunk_size'],
+                    summarize_tables=self.summarize_tables, 
+                    summarize_images=self.summarize_images, 
                 )
             title, texts = dp.parse(filename)
             succeeded = self.index_segments(
