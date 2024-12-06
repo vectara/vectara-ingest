@@ -604,7 +604,11 @@ class Indexer(object):
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
             if self.doc_parser == "docling":
-                dp = DoclingDocumentParser(chunk=self.docling_config['chunk'],)
+                dp = DoclingDocumentParser(
+                    chunk=self.docling_config['chunk'], 
+                    summarize_tables=self.summarize_tables, 
+                    summarize_images=self.summarize_images
+                )
             else:
                 dp = UnstructuredDocumentParser(
                     openai_api_key,
@@ -619,10 +623,10 @@ class Indexer(object):
                 doc_metadata=metadata, doc_title=title,
                 use_core_indexing=self.use_core_indexing
             )            
-            if self.summarize_tables:
-                self.logger.info(f"For file {filename}, extracting text locally since summarize_tables/images is activated")
+            if self.summarize_tables or self.summarize_images:
+                self.logger.info(f"For file {filename}, extracted text locally since summarize_tables/images is activated")
             else:
-                self.logger.info(f"For file {filename}, extracting text locally since file size is larger than {size_limit}MB")
+                self.logger.info(f"For file {filename}, extracted text locally since file size is larger than {size_limit}MB")
             return succeeded
         else:
             # index the file within Vectara (use FILE UPLOAD API)
