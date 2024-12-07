@@ -620,9 +620,9 @@ class Indexer(object):
                     summarize_tables=self.summarize_tables, 
                     summarize_images=self.summarize_images, 
                 )
-            title, texts = dp.parse(filename)
+            title, texts, metadatas = dp.parse(filename)
             succeeded = self.index_segments(
-                doc_id=slugify(uri), texts=texts,
+                doc_id=slugify(uri), texts=texts, metadatas=metadatas,
                 doc_metadata=metadata, doc_title=title,
                 use_core_indexing=self.use_core_indexing
             )            
