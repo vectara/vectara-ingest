@@ -56,7 +56,7 @@ class DoclingDocumentParser(DocumentParser):
     def parse(
             self,
             filename: str, 
-        ) -> Tuple[str, List[str]]:
+        ) -> Tuple[str, List[str], List[dict]]:
         """
         Parse a local file and return the title and text content.
         Using Docling
@@ -65,11 +65,10 @@ class DoclingDocumentParser(DocumentParser):
             filename (str): Name of the file to parse.
 
         Returns:
-            Tuple with title and list of text content.
+            Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using Docling
         DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
-
 
         st = time.time()        
         pipeline_options = PdfPipelineOptions()
@@ -88,6 +87,7 @@ class DoclingDocumentParser(DocumentParser):
             texts = [chunk.text for chunk in chunks]
         else:
             texts = [e.text for e in doc.texts]
+        metadatas = [{'parser_element_type': 'text'} for _ in texts]
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
         if self.summarize_tables:
@@ -97,6 +97,7 @@ class DoclingDocumentParser(DocumentParser):
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 if table_summary:
                     texts.append(table_summary)
+                    metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
 
@@ -111,6 +112,7 @@ class DoclingDocumentParser(DocumentParser):
                     image_summary = self.image_summarizer.summarize_image(image_path, None)
                     if image_summary:
                         texts.append(image_summary)
+                        metadatas.append({'parser_element_type': 'image'})
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary}")
                 else:
@@ -190,7 +192,7 @@ class UnstructuredDocumentParser(DocumentParser):
     def parse(
             self,
             filename: str, 
-        ) -> Tuple[str, List[str]]:
+        ) -> Tuple[str, List[str], List[dict]]:
         """
         Parse a local file and return the title and text content.
         
@@ -198,7 +200,7 @@ class UnstructuredDocumentParser(DocumentParser):
             filename (str): Name of the file to parse.
 
         Returns:
-            Tuple with title and list of text content.
+            Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using unstructured partitioning functionality
         st = time.time()
@@ -209,6 +211,7 @@ class UnstructuredDocumentParser(DocumentParser):
             mode='tables' if self.summarize_tables else 'default',
         )
         texts = []
+        metadatas = []
         num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
         self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
         for inx,e in enumerate(elements):
@@ -216,10 +219,12 @@ class UnstructuredDocumentParser(DocumentParser):
                 table_summary = self.table_summarizer.summarize_table_text(str(e))
                 if table_summary:
                     texts.append(table_summary)
+                    metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
             else:
                 texts.append(str(e))
+                metadatas.append({'parser_element_type': 'text'})
 
         # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
         elements = self._get_elements(
@@ -236,6 +241,7 @@ class UnstructuredDocumentParser(DocumentParser):
                     image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, None)
                 if image_summary:
                     texts.append(image_summary)
+                    metadatas.append({'parser_element_type': 'image'})
                     if self.verbose:
                         self.logger.info(f"Image summary: {image_summary}")
 
@@ -244,4 +250,4 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-        return doc_title, texts
+        return doc_title, texts, metadatas
