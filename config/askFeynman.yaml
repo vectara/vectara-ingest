@@ -11,4 +11,3 @@ website_crawler:
   num_per_second: 1
   pos_regex: ["https://www.feynmanlectures.caltech.edu/.*"]
   pages_source: sitemap # options are: (1) 'sitemap' automatically retreived from website (2) 'crawl' for recursive crawling
-  extraction: playwright # pdf or playwright

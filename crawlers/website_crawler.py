@@ -4,7 +4,6 @@ from core.crawler import Crawler, recursive_crawl
 from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
 from core.indexer import Indexer
 import re
-from typing import List, Set
 
 import ray
 import psutil
@@ -20,44 +19,22 @@ class PageCrawlWorker(object):
         self.indexer.setup()
         setup_logging()
 
-    def process(self, url: str, extraction: str, source: str):
+    def process(self, url: str, source: str):
         metadata = {"source": source, "url": url}
-        if extraction == "pdf":
-            try:
-                with self.rate_limiter:
-                    filename = self.crawler.url_to_file(url, title="")
-            except Exception as e:
-                logging.error(f"Error while processing {url}: {e}")
-                return -1
-            try:
-                succeeded = self.indexer.index_file(filename, uri=url, metadata=metadata)
-                if not succeeded:
-                    logging.info(f"Indexing failed for {url}")
-                else:
-                    if os.path.exists(filename):
-                        os.remove(filename)
-                    logging.info(f"Indexing {url} was successful")
-            except Exception as e:
-                import traceback
-                logging.error(
-                    f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
-                )
-                return -1
-        else:  # use index_url which uses PlayWright
-            logging.info(f"Crawling and indexing {url}")
-            try:
-                with self.rate_limiter:
-                    succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
-                if not succeeded:
-                    logging.info(f"Indexing failed for {url}")
-                else:
-                    logging.info(f"Indexing {url} was successful")
-            except Exception as e:
-                import traceback
-                logging.error(
-                    f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
-                )
-                return -1
+        logging.info(f"Crawling and indexing {url}")
+        try:
+            with self.rate_limiter:
+                succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
+            if not succeeded:
+                logging.info(f"Indexing failed for {url}")
+            else:
+                logging.info(f"Indexing {url} was successful")
+        except Exception as e:
+            import traceback
+            logging.error(
+                f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
+            )
+            return -1
         return 0
 
 class WebsiteCrawler(Crawler):
@@ -108,7 +85,6 @@ class WebsiteCrawler(Crawler):
         logging.info(f"Note: file types = {file_types}")
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
-        extraction = self.cfg.website_crawler.get("extraction", "playwright")   # "playwright" or "pdf"
         ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         source = self.cfg.website_crawler.get("source", "website")
 
@@ -123,14 +99,14 @@ class WebsiteCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, extraction=extraction, source=source), urls))
+            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), urls))
                 
         else:
             crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
             for inx, url in enumerate(urls):
                 if inx % 100 == 0:
                     logging.info(f"Crawling URL number {inx+1} out of {len(urls)}")
-                crawl_worker.process(url, extraction=extraction, source=source)
+                crawl_worker.process(url, source=source)
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list

@@ -1,6 +1,6 @@
 import requests
 from urllib3.util.retry import Retry
-from urllib.parse import urlparse, urlunparse, ParseResult
+from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
 from pathlib import Path
 import os
 import base64
@@ -231,13 +231,13 @@ class ImageSummarizer():
         with open(image_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
         prompt = """
-            Analyze and summarize all the details in this image, including any diagrams, graphs, or visual data representations. 
-            Your summary should include:
+            Analyze all the details in this image, including any diagrams, graphs, or visual data representations. 
+            Your task is to provide a comprehensive description of the image with as much detail as possible.
+            Your response should include:
             - A detailed description of the main focus or subject of the image.
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
-            - Notable objects, their characteristics, and their relative positions.
-            - Respond in complete sentences, and aim to provide a comprehensive and informative summary.
+            - Respond in complete sentences, and aim to provide a comprehensive and informative response.
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"

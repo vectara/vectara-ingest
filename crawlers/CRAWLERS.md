@@ -25,7 +25,6 @@ website_crawler:
     num_per_second: 10
     pages_source: crawl
     max_depth: 3      # only needed if pages_source is set to 'crawl'
-    extraction: playwright
     html_processing:
       ids_to_remove: [td-123]
       tags_to_remove: [nav]
@@ -40,10 +39,6 @@ website_crawler:
 The website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
 1. `sitemap`: in this mode the crawler retrieves the sitemap for each of the target websites (specificed in the `urls` parameter) and indexes all the URLs listed in each sitemap. Note that some sitemaps are partial only and do not list all content of the website - in those cases, `crawl` may be a better option.
 2. `crawl`: in this mode for each url specified in `urls`, the crawler starts there and crawls the website recursively, following links no more than `max_depth`. If you'd like to crawl only the URLs specified in the `urls` list (without any further hops) use `max_depth=0`.
-
-The `extraction` parameter defines how page content is extracted from URLs. 
-1. The default (and better) option is `playwright` which results in using [playwright](https://playwright.dev/) to render the page content including JS and then extracting the HTML.
-2. The other option is `pdf` which means the target URL is rendered into a PDF document, which is then uploaded to Vectara. 
 
 Other parameters:
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
@@ -183,7 +178,6 @@ rss_crawler:
   ]
   days_past: 90
   delay: 1
-  extraction: playwright           # pdf or playwright
 ```
 
 The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news sites. In the example above, the rss_crawler is configured to crawl various newsfeeds from the BBC. 
@@ -191,7 +185,6 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `rss_pages` defines one or more RSS feed locations. 
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds to wait between news articles, so as to make the crawl more friendly to the hosting site.
-- `extraction` defines how text is extracted from the URLs referred to by the RSS feed, in a similar fashion to the website crawler above.
 
 ### Hackernews crawler
 

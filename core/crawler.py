@@ -5,7 +5,6 @@ from urllib.parse import urljoin
 import logging
 from typing import Set, Optional, List, Any
 from core.indexer import Indexer
-from core.pdf_convert import PDFConverter
 from core.utils import img_extensions, doc_extensions, archive_extensions
 from slugify import slugify
 from urllib.parse import urlparse
@@ -92,44 +91,3 @@ class Crawler(object):
         self.cfg: DictConfig = DictConfig(cfg)
         self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key)
         self.verbose = cfg.vectara.get("verbose", False)
-
-    def url_to_file(self, url: str, title: str) -> str:
-        """
-        Crawl a single webpage and create a PDF file to reflect its rendered content.
-
-        Args:
-            url (str): URL of the page to crawl.
-            title (str): Title to use in case HTML does not have its own title.
-
-        Returns:
-            str: Name of the PDF file created.
-        """
-        # first verify the URL is valid
-        response = requests.get(url, headers=get_headers)
-        if response.status_code != 200:
-            if response.status_code == 404:
-                raise Exception(f"Error 404 - URL not found: {url}")
-            elif response.status_code == 401:
-                raise Exception(f"Error 403 - Unauthorized: {url}")
-            elif response.status_code == 403:
-                raise Exception(f"Error 403 - Access forbidden: {url}")
-            elif response.status_code == 405:
-                raise Exception(f"Error 405 - Method not allowed: {url}")
-            else:
-                raise Exception(
-                    f"Invalid URL: {url} (status code={response.status_code}, reason={response.reason})"
-                )
-
-        if title is None or len(title)==0:
-            soup = BeautifulSoup(response.text, "html.parser")
-            title = str(soup.title)
-
-        # convert to local file (PDF)
-        filename = slugify(url) + ".pdf"
-        if not PDFConverter(use_pdfkit=False).from_url(url, filename, title=title):
-            raise Exception(f"Failed to convert {url} to PDF")
-
-        return filename
-
-    def crawl(self) -> None:
-        raise Exception("Not implemented")

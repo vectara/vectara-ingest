@@ -11,5 +11,4 @@ website_crawler:
   num_per_second: 1
   pages_source: sitemap
   pos_regex: [".*"]
-  extraction: playwright
   ray_workers: 0

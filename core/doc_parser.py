@@ -16,12 +16,10 @@ nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 
 
 class DocumentParser():
-    
     def __init__(
         self,
+        verbose: bool = False,
         openai_api_key: str = None,
-        unst_chunking_strategy: str = "none",
-        unst_chunk_size: int = 1024,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
@@ -30,11 +28,117 @@ class DocumentParser():
         self.summarize_images = summarize_images and openai_api_key
         self.table_summarizer = TableSummarizer(openai_api_key) if self.summarize_tables else None
         self.image_summarizer = ImageSummarizer(openai_api_key) if self.summarize_images else None
-        self.unst_chunking_strategy = unst_chunking_strategy     # none, by_title or basic
-        self.unst_chunk_size = unst_chunk_size
         self.logger = logging.getLogger()
+        self.verbose = verbose
 
-    def get_elements(
+class DoclingDocumentParser(DocumentParser):
+    def __init__(
+        self,
+        verbose: bool = False,
+        openai_api_key: str = None,
+        chunk: bool = False,
+        summarize_tables: bool = False,
+        summarize_images: bool = False
+    ):
+        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        self.chunk = chunk
+        self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
+
+    @staticmethod
+    def _lazy_load_docling():
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling_core.transforms.chunker import HierarchicalChunker
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.base_models import InputFormat
+
+        return DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
+
+    def parse(
+            self,
+            filename: str, 
+        ) -> Tuple[str, List[str], List[dict]]:
+        """
+        Parse a local file and return the title and text content.
+        Using Docling
+        
+        Args:
+            filename (str): Name of the file to parse.
+
+        Returns:
+            Tuple with doc_title, list of texts, list of metdatas
+        """
+        # Process using Docling
+        DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+
+        st = time.time()        
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.images_scale = 2.0
+        pipeline_options.generate_picture_images = True
+        res = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        ).convert(filename)
+        doc = res.document
+        doc_title = doc.name
+
+        if self.chunk:
+            chunks = list(HierarchicalChunker().chunk(doc))
+            texts = [chunk.text for chunk in chunks]
+        else:
+            texts = [e.text for e in doc.texts]
+        metadatas = [{'parser_element_type': 'text'} for _ in texts]
+        self.logger.info(f"DoclingParser: {len(texts)} text elements")
+
+        if self.summarize_tables:
+            self.logger.info(f"DoclingParser: {len(doc.tables)} tables")
+            for table in doc.tables:
+                table_md = table.export_to_markdown()
+                table_summary = self.table_summarizer.summarize_table_text(table_md)
+                if table_summary:
+                    texts.append(table_summary)
+                    metadatas.append({'parser_element_type': 'table'})
+                    if self.verbose:
+                        self.logger.info(f"Table summary: {table_summary}")
+
+        if self.summarize_images:
+            image_path = 'image.png'
+            self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
+            for pic in doc.pictures:
+                image = pic.get_image(res.document)
+                if image:
+                    with open(image_path, 'wb') as fp:
+                        image.save(fp, 'PNG')
+                    image_summary = self.image_summarizer.summarize_image(image_path, None)
+                    if image_summary:
+                        texts.append(image_summary)
+                        metadatas.append({'parser_element_type': 'image'})
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary}")
+                else:
+                    self.logger.info(f"Failed to retrieve image {pic}")
+                    continue
+
+        self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
+        return doc_title, texts
+
+
+class UnstructuredDocumentParser(DocumentParser):
+    def __init__(
+        self,
+        verbose: bool = False,
+        openai_api_key: str = None,
+        chunking_strategy: str = "none",
+        chunk_size: int = 1024,
+        summarize_tables: bool = False,
+        summarize_images: bool = False
+    ):
+        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        self.chunking_strategy = chunking_strategy     # none, by_title or basic
+        self.chunk_size = chunk_size
+        self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
+
+    def _get_elements(
         self,
         filename: str, 
         mode: str = "default",
@@ -48,9 +152,9 @@ class DocumentParser():
             List of elements from the document
         '''
 
-        partition_kwargs = {} if self.unst_chunking_strategy == 'none' or mode == "images" else {
-            "chunking_strategy": self.unst_chunking_strategy,
-            "max_characters": self.unst_chunk_size
+        partition_kwargs = {} if self.chunking_strategy == 'none' or mode == "images" else {
+            "chunking_strategy": self.chunking_strategy,
+            "max_characters": self.chunk_size
         }
         if mode == 'tables':
             partition_kwargs['infer_table_structure'] = True
@@ -88,7 +192,7 @@ class DocumentParser():
     def parse(
             self,
             filename: str, 
-        ) -> Tuple[str, List[str]]:
+        ) -> Tuple[str, List[str], List[dict]]:
         """
         Parse a local file and return the title and text content.
         
@@ -96,34 +200,39 @@ class DocumentParser():
             filename (str): Name of the file to parse.
 
         Returns:
-            Tuple with title and list of text content.
+            Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using unstructured partitioning functionality
         st = time.time()
         
         # Pass 1: process text and tables (if summarize_tables is True)
-        elements = self.get_elements(
+        elements = self._get_elements(
             filename,
             mode='tables' if self.summarize_tables else 'default',
         )
         texts = []
+        metadatas = []
         num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
-        print(f"parse_local_file: {len(elements)} elements in pass 1, {num_tables} are tables")
+        self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
         for inx,e in enumerate(elements):
             if (type(e)==us.documents.elements.Table and self.summarize_tables):
                 table_summary = self.table_summarizer.summarize_table_text(str(e))
                 if table_summary:
                     texts.append(table_summary)
+                    metadatas.append({'parser_element_type': 'table'})
+                    if self.verbose:
+                        self.logger.info(f"Table summary: {table_summary}")
             else:
                 texts.append(str(e))
+                metadatas.append({'parser_element_type': 'text'})
 
         # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
-        elements = self.get_elements(
+        elements = self._get_elements(
             filename,
             mode = 'images' if self.summarize_images else 'default',
         )
         num_images = len([x for x in elements if type(x)==us.documents.elements.Image])
-        print(f"parse_local_file: {len(elements)} elements in pass 2, {num_images} are images")
+        self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 2, {num_images} are images")
         for inx,e in enumerate(elements):
             if (type(e)==us.documents.elements.Image and  self.summarize_images):
                 if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
@@ -132,10 +241,13 @@ class DocumentParser():
                     image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, None)
                 if image_summary:
                     texts.append(image_summary)
+                    metadatas.append({'parser_element_type': 'image'})
+                    if self.verbose:
+                        self.logger.info(f"Image summary: {image_summary}")
 
         # No chunking strategy may result in title elements; if so - use the first one as doc_title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
         doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-        return doc_title, texts
+        return doc_title, texts, metadatas

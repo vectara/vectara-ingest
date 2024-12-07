@@ -197,24 +197,6 @@ vectara:
   # this can be helpful when processing news pages or others which have a lot of advertising content
   remove_boilerplate: false
 
-  # flag: enable special processing for tables, or images (inside PDF, HTML, PPT, DOCX; optional)
-  # Notes:
-  # 1. This processing uses OPENAI, and requires to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
-  # 2. When crawling PDF, PPTX or DOCX files
-  #    - if summarize_tables is enabled, the code will extract table content, then use GPT-4o to summarize the table, and ingest this summarized text while into Vectara.
-  #    - if summarize_images is enabled, the code will use GPT-4o vision to summarize the content of the images.
-  # 3. This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
-  #    For PDF files, the code uses the "detectron2_onnx" unstructured model to detect tables
-  #    You can modify this to use one of the alternatives: https://unstructured-io.github.io/unstructured/best_practices/models.html) if you want a slower but more performance model.
-  # See [here](TABLE_SUMMARY.md) for some examples of how table summary works.
-  summarize_tables: false
-  summarize_images: false
-
-  # If using Unstructured to process files locally, we define a few arguments
-  unst_chunking_strategy: none            # chunking strategy to use: basic, by_title or none; default none
-  unst_chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
-  unst_use_core_indexing: true            # whether to use core_indexing which maintains the chunks from unstructured, or let vectara chunk further
-
   # Whether masking of PII is attempted on all text fields (title, text, metadata values)
   # Notes: 
   # 1. This masking is never done on files uploaded to Vectara directly (via e.g. indexer.index_file())
@@ -224,6 +206,34 @@ vectara:
   # Which whisper model to use for audio files (relevant for YT, S3 and folder crawlers)
   # Valid values: tiny, base, small, medium or large. Defaults to base.
   whisper_model: the model name for whisper
+
+
+doc_processing:
+  # Whether or not to summarize table content with GPT-4o (inside PDF, HTML, PPT, DOCX; optional)
+  # When using this feature, you need to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
+  # This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
+  # See [here](TABLE_SUMMARY.md) for some examples of how table summary works.
+  summarize_tables: false
+  
+  # Whether or not to summarize image content using GPT-4o vision 
+  # When using this feature, you need to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
+  # This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
+  summarize_images: false
+
+  # which document parser to use for local file parsing: unstructured or docling
+  doc_parser: unstructured
+
+  # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
+  use_core_indexing: false            
+
+  # Unstructured document parsing configuration
+  unstructured_config:
+    chunking_strategy: none            # chunking strategy to use: basic, by_title or none; default none
+    chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
+
+  # Docling document parsing configuation
+  docling_config:
+    chunk: false                            # Whether to use Docling Chunking
 
 
 crawling:
