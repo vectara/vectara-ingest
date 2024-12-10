@@ -2,7 +2,8 @@ import logging
 from typing import List, Tuple
 import time
 
-from core.utils import TableSummarizer, ImageSummarizer, detect_file_type
+from core.summary import TableSummarizer, ImageSummarizer
+from core.utils import detect_file_type
 
 import unstructured as us
 from unstructured.partition.pdf import partition_pdf
@@ -56,6 +57,7 @@ class DoclingDocumentParser(DocumentParser):
     def parse(
             self,
             filename: str, 
+            source_url: str = "No URL"
         ) -> Tuple[str, List[str], List[dict]]:
         """
         Parse a local file and return the title and text content.
@@ -109,7 +111,7 @@ class DoclingDocumentParser(DocumentParser):
                 if image:
                     with open(image_path, 'wb') as fp:
                         image.save(fp, 'PNG')
-                    image_summary = self.image_summarizer.summarize_image(image_path, None)
+                    image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
                         texts.append(image_summary)
                         metadatas.append({'parser_element_type': 'image'})
@@ -192,6 +194,7 @@ class UnstructuredDocumentParser(DocumentParser):
     def parse(
             self,
             filename: str, 
+            source_url: str = "No URL",
         ) -> Tuple[str, List[str], List[dict]]:
         """
         Parse a local file and return the title and text content.
@@ -236,9 +239,9 @@ class UnstructuredDocumentParser(DocumentParser):
         for inx,e in enumerate(elements):
             if (type(e)==us.documents.elements.Image and  self.summarize_images):
                 if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, elements[inx-1].text)
+                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
                 else:
-                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, None)
+                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
                 if image_summary:
                     texts.append(image_summary)
                     metadatas.append({'parser_element_type': 'image'})

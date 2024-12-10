@@ -1,11 +1,12 @@
 import logging
 import json
 import os
-from typing import Tuple, Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional
 import uuid
 import pandas as pd
 import shutil
 import warnings
+import requests
 
 import time
 import unicodedata
@@ -16,6 +17,10 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import whisper
+
+from html2markdown import convert
+
+from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
@@ -76,11 +81,13 @@ class Indexer(object):
         self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
                                                           {'chunking_strategy': 'none', 'chunk_size': 1024})
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
+        self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables or self.summarize_images:
                 self.logger.info("OpenAI API key not found, disabling table/image summarization")
             self.summarize_tables = False
             self.summarize_images = False
+            self.extract_metadata = []
 
         self.setup()
 
@@ -139,19 +146,31 @@ class Indexer(object):
         context.close()
         return download_triggered
 
-    def fetch_page_contents(self, url: str, remove_code: bool = False, debug: bool = False) -> dict:
+    def fetch_page_contents(
+            self, 
+            url: str,
+            extract_tables: bool = False,
+            extract_images: bool = False,
+            remove_code: bool = False,
+            debug: bool = False
+        ) -> dict:
         '''
         Fetch content from a URL with a timeout.
         Args:
             url (str): URL to fetch.
+            extract_tables (bool): Whether to extract tables from the page.
+            extract_images (bool): Whether to extract images from the page.
             remove_code (bool): Whether to remove code from the HTML content.
             debug (bool): Whether to enable playwright debug logging.
         Returns:
             dict with
             - 'text': text extracted from the page
             - 'html': html of the page
-            - 'url': final URL of the page (if redirect)
+            - 'title': title of the page
+            - 'url': final URL of the page (if redirected)
             - 'links': list of links in the page
+            - 'images': list of dictionaries with image info: [{'src': ..., 'alt': ...}, ...]
+            - 'tables': list of strings representing the outerHTML of each table
         '''
         page = context = None
         text = ''
@@ -159,11 +178,13 @@ class Indexer(object):
         title = ''
         links = []
         out_url = url
+        images = []
+        tables = []
         try:
             context = self.browser.new_context()
             page = context.new_page()
             page.set_extra_http_headers(get_headers)
-            page.route("**/*", lambda route: route.abort()  # do not load images as they are unnecessary for our purpose
+            page.route("**/*", lambda route: route.abort()  
                 if route.request.resource_type == "image" 
                 else route.continue_() 
             ) 
@@ -171,20 +192,19 @@ class Indexer(object):
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
             page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
-            page.wait_for_timeout(self.post_load_timeout*1000)  # Wait an additional time to handle AJAX or animations
-            links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
-            links = page.evaluate(links_script)
+            page.wait_for_timeout(self.post_load_timeout*1000)  # Wait additional time to handle AJAX
+            self._scroll_to_bottom(page)
+
             title = page.title()
             html = page.content()
+
             out_url = page.url
             text = page.evaluate(f"""() => {{
-                // Extract main text content
                 let content = Array.from(document.body.childNodes)
                     .map(node => node.textContent || "")
                     .join(" ")
                     .trim();
                 
-                // Remove common boilerplate elements
                 const elementsToRemove = [
                     'header',
                     'footer',
@@ -201,29 +221,44 @@ class Indexer(object):
                         content = content.replace(el.innerText, '');
                     }});
                 }});
-                
+
                 {'// Remove code elements' if remove_code else ''}
                 {'''
                 const codeElements = document.querySelectorAll('code, pre');
-                codeElements.forEach(el => {{
+                codeElements.forEach(el => {
                     content = content.replace(el.innerText, '');
-                }});
+                });
                 ''' if remove_code else ''}
-                
-                // Remove extra whitespace
+
                 content = content.replace(/\s{2,}/g, ' ').trim();
-                
                 return content;
             }}""")
 
+            # Extract links
+            links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
+            links = page.evaluate(links_script)
+
+            # Extract tables
+            if extract_tables:
+                tables_script = """Array.from(document.querySelectorAll('table')).map(t => t.outerHTML)"""
+                tables = page.evaluate(tables_script)
+
+            # Extract images
+            if extract_images:
+                images_script = """
+                Array.from(document.querySelectorAll('img')).map(img => ({
+                    src: img.src,
+                    alt: img.alt || ''
+                }))
+                """
+                images = page.evaluate(images_script)
+
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
-
         except Exception as e:
             self.logger.info(f"Page loading failed for {url} with exception '{e}'")
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
-        
         finally:
             if page:
                 page.close()
@@ -235,11 +270,32 @@ class Indexer(object):
                 self.browser = self.p.firefox.launch(headless=True)
                 self.browser_use_count = 0
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
-            
+
         return {
-            'text': text, 'html': html, 'title': title,
-            'url': out_url, 'links': links
+            'text': text, 
+            'html': html, 
+            'title': title,
+            'url': out_url, 
+            'links': links,
+            'images': images,
+            'tables': tables
         }
+
+    def _scroll_to_bottom(self, page, pause=2000):
+        """
+        Scroll down the page until no new content is loaded. Useful for pages that load content on scroll.
+        :param page: Playwright page object.
+        :param pause: Time in milliseconds to wait after each scroll.
+        """
+        prev_height = None
+        while True:
+            current_height = page.evaluate("document.body.scrollHeight")
+            if prev_height == current_height:
+                break
+            prev_height = current_height
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(pause)
+
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -477,12 +533,16 @@ class Indexer(object):
         else:
             try:
                 # Use Playwright to get the page content
-                res = self.fetch_page_contents(url, self.remove_code)
+                openai_api_key = self.cfg.vectara.get("openai_api_key", None)
+                res = self.fetch_page_contents(
+                    url, 
+                    self.remove_code,
+                    self.summarize_tables,
+                    self.summarize_images,
+                )
                 html = res['html']
                 text = res['text']
-
-                extracted_title = res['title']
-
+                doc_title = res['title']
                 if text is None or len(text)<3:
                     return False
 
@@ -490,6 +550,14 @@ class Indexer(object):
                 if self.detected_language is None:
                     self.detected_language = detect_language(text)
                     self.logger.info(f"The detected language is {self.detected_language}")
+
+                if len(self.extract_metadata)>0:
+                    ex_metadata = get_attributes_from_text(
+                        text,
+                        metadata_questions=self.extract_metadata,
+                        openai_api_key=openai_api_key
+                    )
+                    metadata.update(ex_metadata)
 
                 #
                 # By default, 'text' is extracted above.
@@ -500,11 +568,49 @@ class Indexer(object):
                     url = res['url']
                     if self.verbose:
                         self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
-                    text, extracted_title = get_article_content(html, url, self.detected_language, self.remove_code)
+                    text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
                 else:
                     text = html_to_text(html, self.remove_code, html_processing)
 
                 parts = [text]
+                metadatas = [{'element_type': 'text'}]
+
+                if self.summarize_tables:
+                    table_summarizer = TableSummarizer(openai_api_key=openai_api_key)
+                    for table in res['tables']:
+                        table_md = convert(table)
+                        table_summary = table_summarizer.summarize_table_text(table_md)
+                        if table_summary:
+                            parts.append(table_summary)
+                            metadatas.append({'element_type': 'table'}) 
+                            if self.verbose:
+                                self.logger.info(f"Table summary: {table_summary}")
+
+                if self.summarize_images:
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                    image_summarizer = ImageSummarizer(openai_api_key=openai_api_key)
+                    image_filename = 'image.png'
+                    for image in res['images']:
+                        image_url = image['src']
+                        response = requests.get(image_url, headers=headers, stream=True)
+                        if response.status_code != 200:
+                            logging.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                            continue
+                        with open(image_filename, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
+                        if image_summary:
+                            parts.append(image_summary)
+                            metadatas.append({'element_type': 'image'}) 
+                            if self.verbose:
+                                self.logger.info(f"Image summary: {image_summary}")
+                        else:
+                            self.logger.info(f"Failed to retrieve image {image['src']}")
+                            continue
+
                 self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
                 import traceback
@@ -512,8 +618,8 @@ class Indexer(object):
                 return False
         
         doc_id = slugify(url)
-        succeeded = self.index_segments(doc_id=doc_id, texts=parts,
-                                        doc_metadata=metadata, doc_title=extracted_title)
+        succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas,
+                                        doc_metadata=metadata, doc_title=doc_title)
         return succeeded
 
     def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
@@ -620,7 +726,16 @@ class Indexer(object):
                     summarize_tables=self.summarize_tables, 
                     summarize_images=self.summarize_images, 
                 )
-            title, texts, metadatas = dp.parse(filename)
+            title, texts, metadatas = dp.parse(filename, uri)
+            if len(self.extract_metadata)>0:
+                all_text = "\n".join(texts)[:16384]
+                ex_metadata = get_attributes_from_text(
+                    all_text,
+                    metadata_questions=self.extract_metadata,
+                    openai_api_key=openai_api_key
+                )
+                metadata.update(ex_metadata)
+
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas,
                 doc_metadata=metadata, doc_title=title,

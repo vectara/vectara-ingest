@@ -1,18 +1,18 @@
+import os
+import re
+import sys
 import requests
+from typing import List, Set
+
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
 from pathlib import Path
-import os
-import base64
 
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 from slugify import slugify
+import magic
 
-import re
-from typing import List, Set
-import os
-import sys
 import shutil
 
 import time
@@ -22,7 +22,6 @@ import logging
 import magic
 
 from langdetect import detect
-from openai import OpenAI
 
 try:
     from presidio_analyzer import AnalyzerEngine
@@ -53,12 +52,6 @@ def url_to_filename(url):
     name, ext = os.path.splitext(last_part)
     slugified_name = slugify(name)
     return f"{slugified_name}{ext}"
-
-
-
-import magic
-from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
 
 def detect_file_type(file_path):
     """
@@ -220,98 +213,6 @@ def ensure_empty_folder(folder_name):
         shutil.rmtree(folder_name)
     # Create the folder anew
     os.makedirs(folder_name)
-
-
-class ImageSummarizer():
-    def __init__(self, openai_api_key: str):
-        self.client = OpenAI(api_key=openai_api_key)
-
-    def summarize_image(self, image_path: str, previous_text: str = None):
-        content = None
-        with open(image_path, "rb") as f:
-            content = base64.b64encode(f.read()).decode("utf-8")
-        prompt = """
-            Analyze all the details in this image, including any diagrams, graphs, or visual data representations. 
-            Your task is to provide a comprehensive description of the image with as much detail as possible.
-            Your response should include:
-            - A detailed description of the main focus or subject of the image.
-            - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
-            - Any other detail or information that a human observer would find useful or relevant.
-            - Respond in complete sentences, and aim to provide a comprehensive and informative response.
-        """
-        if previous_text:
-            prompt += f"The image came immediately following this text: '{previous_text}'"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url":  f"data:image/jpeg;base64,{content}"
-                        },
-                    },
-                ]
-            }
-        ]
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                max_tokens=2048
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logging.info(f"Failed to summarize image: {e}")
-            return None
-
-class TableSummarizer():
-    def __init__(self, openai_api_key: str):
-        self.client = OpenAI(api_key=openai_api_key)
-
-    def summarize_table_text(self, text: str):
-        prompt = f"""
-            Adopt the perspective of a professional data analyst, with expertise in generating insight from structured data. 
-            Provide a detailed description of the results reported in this table, ensuring clarity, depth and relevance. Don't omit any data points.
-            Contextual Details:
-            - Examine the table headings, footnotes, or accompanying text to identify key contextual details such as the time period, location, subject area, and units of measurement.
-            - Always include the table title, time frame, and geographical or thematic scope in your description.
-            - If context is missing, acknowledge this explicitly and provide plausible assumptions where appropriate.
-            Data Analysis:
-            - Describe each data point or category individually if values are listed for different categories or time periods.
-            - Highlight key metrics, trends, and patterns evident in the data.
-            - Provide numerical evidence for any insights (e.g., "Revenue grew from $X in 2019 to $Y in 2022, representing a Z% increase over three years").
-            Trends and Insights:
-            - Analyze relationships between variables or categories (e.g., correlations, contrasts).
-            - Include comparisons across time periods, groups, or locations, as supported by the data.
-            - Identify and discuss patterns, outliers, and significant changes or consistencies, specifying the relevant data points.
-            Interpretation and Implications:
-            - Discuss the broader implications of observed trends and patterns.
-            - If the table represents a time series, emphasize changes over time and provide context for those changes (e.g., market trends, economic conditions).
-            - If the table shows categorical comparisons, focus on key differences or similarities between groups.
-            Clarity and Accuracy:
-            - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
-            - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
-            Table chunk: {text} 
-        """
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
-                    {"role": "user", "content": prompt }
-                ],
-                temperature=0,
-                max_tokens=3072,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logging.info(f"Failed to summarize table text: {e}")
-            return None
 
 def mask_pii(text: str) -> str:
     # Analyze and anonymize PII data in the text
