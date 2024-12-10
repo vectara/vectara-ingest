@@ -46,7 +46,7 @@ class ImageSummarizer():
     def __init__(self, openai_api_key: str):
         self.client = OpenAI(api_key=openai_api_key)
 
-    def summarize_image(self, image_path: str, image_url, previous_text: str = None):
+    def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
         content = None
         with open(image_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
@@ -64,6 +64,7 @@ class ImageSummarizer():
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
+            - Any specific text that is shown in the image (with context).
             If the image is too small or you are unable to analyze it or summarize it, respond with an empty string.
         """
         if previous_text:
