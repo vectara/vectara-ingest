@@ -7,26 +7,27 @@ from PIL import Image
 from io import BytesIO
 from openai import OpenAI
 
-def get_attributes_from_text(text: str, attributes: list[str], openai_api_key) -> Set[str]:
+def get_attributes_from_text(text: str, metadata_questions: list[str], openai_api_key) -> Set[str]:
     """
-    Given a text string, ask GPT-4o to identify and extract the value of various attributes from the text.
+    Given a text string, ask GPT-4o to answer a set of questions from the text
+    Returns a dictionary of question/answer pairs.
     """
     prompt = f"""
         Here is text: {text}.
-        Your task is to provide the value of each of the following attributes, based on the text:
+        Your task is to answer each of the following questions, based on the text:
     """
-    for attr in attributes:
-        prompt += f"- {attr}\n"
-    prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format."
+    for question in metadata_questions:
+        prompt += f"- {question}\n"
+    prompt += "Your response should be as a dictionary of question/value pairs in JSON format."
     client = OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant tasked with extracting attribute values from text."},
+            {"role": "system", "content": "You are a helpful assistant tasked with answering questions from text."},
             {"role": "user", "content": prompt }
         ],
         temperature=0,
-        max_tokens=2048,
+        max_tokens=4096,
     )
     res = str(response.choices[0].message.content)
     cleaned_res = res.strip().removeprefix("```json").removesuffix("```")
@@ -63,6 +64,7 @@ class ImageSummarizer():
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
+            If the image is too small or you are unable to analyze it or summarize it, respond with an empty string.
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"

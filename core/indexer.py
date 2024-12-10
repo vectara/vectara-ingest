@@ -81,13 +81,13 @@ class Indexer(object):
         self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
                                                           {'chunking_strategy': 'none', 'chunk_size': 1024})
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
-        self.extract_metadata_attr = cfg.doc_processing.get("extract_metadata_attr", [])
+        self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables or self.summarize_images:
                 self.logger.info("OpenAI API key not found, disabling table/image summarization")
             self.summarize_tables = False
             self.summarize_images = False
-            self.extract_metadata_attr = []
+            self.extract_metadata = []
 
         self.setup()
 
@@ -542,16 +542,7 @@ class Indexer(object):
                 )
                 html = res['html']
                 text = res['text']
-                extracted_title = res['title']
-
-                if len(self.extract_metadata_attr)>0:
-                    ex_metadata = get_attributes_from_text(
-                        text,
-                        attributes=self.extract_metadata_attr,
-                        openai_api_key=openai_api_key
-                    )
-                    metadata.update(ex_metadata)
-
+                doc_title = res['title']
                 if text is None or len(text)<3:
                     return False
 
@@ -559,6 +550,14 @@ class Indexer(object):
                 if self.detected_language is None:
                     self.detected_language = detect_language(text)
                     self.logger.info(f"The detected language is {self.detected_language}")
+
+                if len(self.extract_metadata)>0:
+                    ex_metadata = get_attributes_from_text(
+                        text,
+                        metadata_questions=self.extract_metadata,
+                        openai_api_key=openai_api_key
+                    )
+                    metadata.update(ex_metadata)
 
                 #
                 # By default, 'text' is extracted above.
@@ -569,11 +568,12 @@ class Indexer(object):
                     url = res['url']
                     if self.verbose:
                         self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
-                    text, extracted_title = get_article_content(html, url, self.detected_language, self.remove_code)
+                    text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
                 else:
                     text = html_to_text(html, self.remove_code, html_processing)
 
                 parts = [text]
+                metadatas = [{'element_type': 'text'}]
 
                 if self.summarize_tables:
                     table_summarizer = TableSummarizer(openai_api_key=openai_api_key)
@@ -582,15 +582,19 @@ class Indexer(object):
                         table_summary = table_summarizer.summarize_table_text(table_md)
                         if table_summary:
                             parts.append(table_summary)
+                            metadatas.append({'element_type': 'table'}) 
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
 
                 if self.summarize_images:
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
                     image_summarizer = ImageSummarizer(openai_api_key=openai_api_key)
                     image_filename = 'image.png'
                     for image in res['images']:
                         image_url = image['src']
-                        response = requests.get(image_url, stream=True)
+                        response = requests.get(image_url, headers=headers, stream=True)
                         if response.status_code != 200:
                             logging.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                             continue
@@ -600,6 +604,7 @@ class Indexer(object):
                         image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
                         if image_summary:
                             parts.append(image_summary)
+                            metadatas.append({'element_type': 'image'}) 
                             if self.verbose:
                                 self.logger.info(f"Image summary: {image_summary}")
                         else:
@@ -613,8 +618,8 @@ class Indexer(object):
                 return False
         
         doc_id = slugify(url)
-        succeeded = self.index_segments(doc_id=doc_id, texts=parts,
-                                        doc_metadata=metadata, doc_title=extracted_title)
+        succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas,
+                                        doc_metadata=metadata, doc_title=doc_title)
         return succeeded
 
     def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
@@ -722,6 +727,15 @@ class Indexer(object):
                     summarize_images=self.summarize_images, 
                 )
             title, texts, metadatas = dp.parse(filename, uri)
+            if len(self.extract_metadata)>0:
+                all_text = "\n".join(texts)[:16384]
+                ex_metadata = get_attributes_from_text(
+                    all_text,
+                    metadata_questions=self.extract_metadata,
+                    openai_api_key=openai_api_key
+                )
+                metadata.update(ex_metadata)
+
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas,
                 doc_metadata=metadata, doc_title=title,
