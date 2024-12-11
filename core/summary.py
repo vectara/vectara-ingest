@@ -67,7 +67,7 @@ class ImageSummarizer():
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
             - Any specific text that is shown in the image (with context).
-            If the image is too small or you are unable to analyze it or summarize it, respond with an empty string.
+            If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"
