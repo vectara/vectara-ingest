@@ -92,7 +92,7 @@ class ImageSummarizer():
             response = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=messages,
-                max_tokens=2048
+                max_tokens=4096
             )
             summary = response.choices[0].message.content
             if len(summary) < 100:      # If the summary is too short, it is likely not useful
