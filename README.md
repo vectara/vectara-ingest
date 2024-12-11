@@ -235,8 +235,10 @@ doc_processing:
   docling_config:
     chunk: false                            # Whether to use Docling Chunking
 
-  # defines a list of optional questions to answer about each text; required OPENAI_API_KEY to be defined.
-  extract_metadata: ['number of pages in this document', 'date of this document']
+  # defines a set of optional metadata attributes, each with a "query" to extract that value; required OPENAI_API_KEY to be defined.
+  extract_metadata:
+    'num_pages': 'number of pages in this document'
+    'date': 'date of this document'
 
 
 crawling:
