@@ -7,18 +7,19 @@ from PIL import Image
 from io import BytesIO
 from openai import OpenAI
 
-def get_attributes_from_text(text: str, metadata_questions: list[str], openai_api_key) -> Set[str]:
+def get_attributes_from_text(text: str, metadata_questions: list[dict], openai_api_key) -> Set[str]:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
     """
     prompt = f"""
         Here is text: {text}.
-        Your task is to answer each of the following questions, based on the text:
+        Here is a list of attribute/question pairs:
     """
-    for question in metadata_questions:
-        prompt += f"- {question}\n"
-    prompt += "Your response should be as a dictionary of question/value pairs in JSON format."
+    for attr,question in metadata_questions.items():
+        prompt += f"- {attr}: {question}\n"
+    prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
+    prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format."
     client = OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -30,6 +31,7 @@ def get_attributes_from_text(text: str, metadata_questions: list[str], openai_ap
         max_tokens=4096,
     )
     res = str(response.choices[0].message.content)
+    print(f"DEBUG res = {res}")
     cleaned_res = res.strip().removeprefix("```json").removesuffix("```")
     return json.loads(cleaned_res)
 
