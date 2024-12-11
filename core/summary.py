@@ -31,7 +31,6 @@ def get_attributes_from_text(text: str, metadata_questions: list[dict], openai_a
         max_tokens=4096,
     )
     res = str(response.choices[0].message.content)
-    print(f"DEBUG res = {res}")
     cleaned_res = res.strip().removeprefix("```json").removesuffix("```")
     return json.loads(cleaned_res)
 
