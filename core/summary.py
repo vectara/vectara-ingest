@@ -94,10 +94,13 @@ class ImageSummarizer():
                 messages=messages,
                 max_tokens=2048
             )
-            return response.choices[0].message.content
+            summary = response.choices[0].message.content
+            if len(summary) < 100:      # If the summary is too short, it is likely not useful
+                return ""
+            return summary
         except Exception as e:
             logging.info(f"Failed to summarize image ({image_url}): {e}")
-            return None
+            return ""
 
 class TableSummarizer():
     def __init__(self, openai_api_key: str):
