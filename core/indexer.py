@@ -709,6 +709,7 @@ class Indexer(object):
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
            (get_file_size_in_MB(filename) >= size_limit or self.summarize_tables)):
             openai_api_key = self.cfg.vectara.get("openai_api_key", None)
+            self.logger.info(f"Parsing file {filename}")
             if self.doc_parser == "docling":
                 dp = DoclingDocumentParser(
                     verbose=self.verbose,

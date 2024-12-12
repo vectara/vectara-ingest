@@ -7,18 +7,19 @@ from PIL import Image
 from io import BytesIO
 from openai import OpenAI
 
-def get_attributes_from_text(text: str, metadata_questions: list[str], openai_api_key) -> Set[str]:
+def get_attributes_from_text(text: str, metadata_questions: list[dict], openai_api_key) -> Set[str]:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
     """
     prompt = f"""
         Here is text: {text}.
-        Your task is to answer each of the following questions, based on the text:
+        Here is a list of attribute/question pairs:
     """
-    for question in metadata_questions:
-        prompt += f"- {question}\n"
-    prompt += "Your response should be as a dictionary of question/value pairs in JSON format."
+    for attr,question in metadata_questions.items():
+        prompt += f"- {attr}: {question}\n"
+    prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
+    prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format."
     client = OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -65,7 +66,7 @@ class ImageSummarizer():
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
             - Any specific text that is shown in the image (with context).
-            If the image is too small or you are unable to analyze it or summarize it, respond with an empty string.
+            If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"
@@ -90,12 +91,15 @@ class ImageSummarizer():
             response = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=messages,
-                max_tokens=2048
+                max_tokens=4096
             )
-            return response.choices[0].message.content
+            summary = response.choices[0].message.content
+            if len(summary) < 100:      # If the summary is too short, it is likely not useful
+                return ""
+            return summary
         except Exception as e:
             logging.info(f"Failed to summarize image ({image_url}): {e}")
-            return None
+            return ""
 
 class TableSummarizer():
     def __init__(self, openai_api_key: str):
