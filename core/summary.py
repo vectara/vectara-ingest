@@ -138,7 +138,7 @@ class TableSummarizer():
                     {"role": "user", "content": prompt }
                 ],
                 temperature=0,
-                max_tokens=3072,
+                max_tokens=4096,
             )
             return response.choices[0].message.content
         except Exception as e:

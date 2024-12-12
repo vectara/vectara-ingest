@@ -526,7 +526,7 @@ class Indexer(object):
                 nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            extracted_title = url.split('/')[-1]      # no title in these files, so using file name
+            doc_title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
             parts = [text]
 
