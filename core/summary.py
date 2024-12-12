@@ -129,6 +129,7 @@ class TableSummarizer():
             Clarity and Accuracy:
             - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
             - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
+            Your response should be without headings.
             Table chunk: {text} 
         """
         try:
