@@ -272,10 +272,10 @@ class Indexer(object):
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
 
         return {
-            'text': text, 
-            'html': html, 
+            'text': text,
+            'html': html,
             'title': title,
-            'url': out_url, 
+            'url': out_url,
             'links': links,
             'images': images,
             'tables': tables

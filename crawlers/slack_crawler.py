@@ -379,20 +379,21 @@ class SlackCrawler(Crawler):
         ray_workers = self.cfg.slack_crawler.get("ray_workers", 0)  # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
+
         if ray_workers > 0:
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             logging.info(f"Using {ray_workers} ray workers")
             users_info_id = ray.put(users_info)
+            actors = [ray.remote(SlackMsgIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
+            for a in actors:
+                a.setup.remote()
+            pool = ray.util.ActorPool(actors)
 
         for channel in channels_to_crawl:
             messages = self.get_messages_of_channel(channel, users_info)
             logging.info(f"Will process {len(messages)} messages of the channel: {channel['name']}")
             if ray_workers > 0:
-                actors = [ray.remote(SlackMsgIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
-                for a in actors:
-                    a.setup.remote()
-                pool = ray.util.ActorPool(actors)
                 _ = list(pool.map(lambda a, msg: a.process.remote(channel, msg, users_info_id), messages))
             else:
                 msg_indexer = SlackMsgIndexer(self.indexer, self)
