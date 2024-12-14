@@ -558,6 +558,8 @@ class Indexer(object):
                         openai_api_key=openai_api_key
                     )
                     metadata.update(ex_metadata)
+                else:
+                    ex_metadata = {}
 
                 #
                 # By default, 'text' is extracted above.
@@ -611,6 +613,8 @@ class Indexer(object):
                         if image_summary:
                             text = image_summary
                             metadata = {'element_type': 'image'}
+                            if ex_metadata:
+                                metadata.update(ex_metadata)
                             if self.verbose:
                                 self.logger.info(f"Image summary: {image_summary}")
                             doc_id = slugify(url) + "_image_" + str(inx)
@@ -735,13 +739,15 @@ class Indexer(object):
                 )
             title, texts, metadatas, image_summaries = dp.parse(filename, uri)
             if len(self.extract_metadata)>0:
-                all_text = "\n".join(texts)[:16384]
+                all_text = "\n".join(texts)[:32768]
                 ex_metadata = get_attributes_from_text(
                     all_text,
                     metadata_questions=self.extract_metadata,
                     openai_api_key=openai_api_key
                 )
                 metadata.update(ex_metadata)
+            else:
+                ex_metadata = {}
 
             # index the main document (text and tables)
             succeeded = self.index_segments(
@@ -754,6 +760,8 @@ class Indexer(object):
             for inx,image_summary in enumerate(image_summaries):
                 if image_summary:
                     metadata = {'element_type': 'image'}
+                    if ex_metadata:
+                        metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
                     succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
                                                      doc_metadata=metadata, doc_title=title)
