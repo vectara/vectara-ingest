@@ -60,12 +60,13 @@ class ImageSummarizer():
         prompt = """
             Analyze all the details in this image, including any diagrams, graphs, or visual data representations. 
             Your task is to provide a comprehensive description of the image with as much detail as possible.
-            Your response should include:
+            Your response should be a paragraph without headings and include:
             - A detailed description of the main focus or subject of the image.
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
             - Any specific text that is shown in the image (with context).
+            - For any schemas, or flowcharts describe them in a way that a human reading your description could recreate the diagram.
             If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
         if previous_text:
@@ -128,6 +129,7 @@ class TableSummarizer():
             Clarity and Accuracy:
             - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
             - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
+            Your response should be without headings.
             Table chunk: {text} 
         """
         try:
@@ -138,7 +140,7 @@ class TableSummarizer():
                     {"role": "user", "content": prompt }
                 ],
                 temperature=0,
-                max_tokens=3072,
+                max_tokens=4096,
             )
             return response.choices[0].message.content
         except Exception as e:

@@ -13,7 +13,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
 
 from slugify import slugify
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 import ray
 

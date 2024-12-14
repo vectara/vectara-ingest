@@ -58,7 +58,7 @@ class DoclingDocumentParser(DocumentParser):
             self,
             filename: str, 
             source_url: str = "No URL"
-        ) -> Tuple[str, List[str], List[dict]]:
+        ) -> Tuple[str, List[str], List[dict], list[str]]:
         """
         Parse a local file and return the title and text content.
         Using Docling
@@ -106,6 +106,7 @@ class DoclingDocumentParser(DocumentParser):
         if self.summarize_images:
             image_path = 'image.png'
             self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
+            image_summaries = []
             for pic in doc.pictures:
                 image = pic.get_image(res.document)
                 if image:
@@ -113,8 +114,7 @@ class DoclingDocumentParser(DocumentParser):
                         image.save(fp, 'PNG')
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
-                        texts.append(image_summary)
-                        metadatas.append({'parser_element_type': 'image'})
+                        image_summaries.append(image_summary)
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary}")
                 else:
@@ -122,7 +122,7 @@ class DoclingDocumentParser(DocumentParser):
                     continue
 
         self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
-        return doc_title, texts
+        return doc_title, texts, metadatas, image_summaries
 
 
 class UnstructuredDocumentParser(DocumentParser):
@@ -195,7 +195,7 @@ class UnstructuredDocumentParser(DocumentParser):
             self,
             filename: str, 
             source_url: str = "No URL",
-        ) -> Tuple[str, List[str], List[dict]]:
+        ) -> Tuple[str, List[str], List[dict], list[str]]:
         """
         Parse a local file and return the title and text content.
         
@@ -236,6 +236,7 @@ class UnstructuredDocumentParser(DocumentParser):
         )
         num_images = len([x for x in elements if type(x)==us.documents.elements.Image])
         self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 2, {num_images} are images")
+        image_summaries = []
         for inx,e in enumerate(elements):
             if (type(e)==us.documents.elements.Image and  self.summarize_images):
                 if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
@@ -243,8 +244,7 @@ class UnstructuredDocumentParser(DocumentParser):
                 else:
                     image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
                 if image_summary:
-                    texts.append(image_summary)
-                    metadatas.append({'parser_element_type': 'image'})
+                    image_summaries.append(image_summary)
                     if self.verbose:
                         self.logger.info(f"Image summary: {image_summary}")
 
@@ -253,4 +253,4 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-        return doc_title, texts, metadatas
+        return doc_title, texts, metadatas, image_summaries

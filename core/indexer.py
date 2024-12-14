@@ -272,10 +272,10 @@ class Indexer(object):
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
 
         return {
-            'text': text, 
-            'html': html, 
+            'text': text,
+            'html': html,
             'title': title,
-            'url': out_url, 
+            'url': out_url,
             'links': links,
             'images': images,
             'tables': tables
@@ -526,7 +526,7 @@ class Indexer(object):
                 nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            extracted_title = url.split('/')[-1]      # no title in these files, so using file name
+            doc_title = url.split('/')[-1]      # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
             parts = [text]
 
@@ -558,6 +558,8 @@ class Indexer(object):
                         openai_api_key=openai_api_key
                     )
                     metadata.update(ex_metadata)
+                else:
+                    ex_metadata = {}
 
                 #
                 # By default, 'text' is extracted above.
@@ -586,13 +588,19 @@ class Indexer(object):
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
 
+                # index text and tables
+                doc_id = slugify(url)
+                succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas,
+                                                doc_metadata=metadata, doc_title=doc_title)
+
+                # index images - each image as a separate "document" in Vectara
                 if self.summarize_images:
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                     }
                     image_summarizer = ImageSummarizer(openai_api_key=openai_api_key)
                     image_filename = 'image.png'
-                    for image in res['images']:
+                    for inx,image in enumerate(res['images']):
                         image_url = image['src']
                         response = requests.get(image_url, headers=headers, stream=True)
                         if response.status_code != 200:
@@ -603,10 +611,15 @@ class Indexer(object):
                                 f.write(chunk)
                         image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
                         if image_summary:
-                            parts.append(image_summary)
-                            metadatas.append({'element_type': 'image'}) 
+                            text = image_summary
+                            metadata = {'element_type': 'image'}
+                            if ex_metadata:
+                                metadata.update(ex_metadata)
                             if self.verbose:
                                 self.logger.info(f"Image summary: {image_summary}")
+                            doc_id = slugify(url) + "_image_" + str(inx)
+                            succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                            doc_metadata=metadata, doc_title=doc_title)
                         else:
                             self.logger.info(f"Failed to retrieve image {image['src']}")
                             continue
@@ -617,9 +630,6 @@ class Indexer(object):
                 self.logger.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
         
-        doc_id = slugify(url)
-        succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas,
-                                        doc_metadata=metadata, doc_title=doc_title)
         return succeeded
 
     def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
@@ -727,21 +737,35 @@ class Indexer(object):
                     summarize_tables=self.summarize_tables, 
                     summarize_images=self.summarize_images, 
                 )
-            title, texts, metadatas = dp.parse(filename, uri)
+            title, texts, metadatas, image_summaries = dp.parse(filename, uri)
             if len(self.extract_metadata)>0:
-                all_text = "\n".join(texts)[:16384]
+                all_text = "\n".join(texts)[:32768]
                 ex_metadata = get_attributes_from_text(
                     all_text,
                     metadata_questions=self.extract_metadata,
                     openai_api_key=openai_api_key
                 )
                 metadata.update(ex_metadata)
+            else:
+                ex_metadata = {}
 
+            # index the main document (text and tables)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas,
                 doc_metadata=metadata, doc_title=title,
                 use_core_indexing=self.use_core_indexing
             )            
+
+            # index the images - one per document
+            for inx,image_summary in enumerate(image_summaries):
+                if image_summary:
+                    metadata = {'element_type': 'image'}
+                    if ex_metadata:
+                        metadata.update(ex_metadata)
+                    doc_id = slugify(uri) + "_image_" + str(inx)
+                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                     doc_metadata=metadata, doc_title=title)
+
             if self.summarize_tables or self.summarize_images:
                 self.logger.info(f"For file {filename}, extracted text locally since summarize_tables/images is activated")
             else:
