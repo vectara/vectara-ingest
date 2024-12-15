@@ -9,8 +9,8 @@ from typing import List
 
 class HackernewsCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
         self.N_ARTICLES = self.cfg.hackernews_crawler.max_articles
         self.days_back = self.cfg.hackernews_crawler.get("days_back", 3)
         self.days_back_comprehensive = self.cfg.hackernews_crawler.get("days_back_comprehensive", False)

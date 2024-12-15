@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 148
+  corpus_key: wikipedia
   customer_id: 1526022105
   reindex: True
 

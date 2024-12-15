@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 152
+  corpus_key: news-bbc
   customer_id: 1526022105
   reindex: false
 

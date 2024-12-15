@@ -76,7 +76,7 @@ class Crawler(object):
     Args:
         endpoint (str): Endpoint for the Vectara API.
         customer_id (str): ID of the Vectara customer.
-        corpus_id (int): ID of the Vectara corpus to index to.
+        corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key to use for indexing into Vectara
     """
 
@@ -85,9 +85,9 @@ class Crawler(object):
         cfg: OmegaConf,
         endpoint: str,
         customer_id: str,
-        corpus_id: int,
+        corpus_key: str,
         api_key: str,
     ) -> None:
         self.cfg: DictConfig = DictConfig(cfg)
-        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key)
+        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_key, api_key)
         self.verbose = cfg.vectara.get("verbose", False)

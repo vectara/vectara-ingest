@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 170
+  corpus_key: arxiv-transformers
   customer_id: 1526022105
   reindex: True
 

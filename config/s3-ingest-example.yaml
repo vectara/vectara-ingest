@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 24
+  corpus_key: s3
   customer_id: 1169579801
   reindex: false
 

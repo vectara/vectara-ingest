@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 1
+  corpus_key: slack
   customer_id: 246431873
   reindex: true
   

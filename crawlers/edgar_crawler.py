@@ -56,8 +56,8 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
 
 class EdgarCrawler(Crawler):
     
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
         self.tickers = self.cfg.edgar_crawler.tickers
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date

@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Tuple
 
 class HubspotCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
         self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
 
     def crawl(self) -> None:

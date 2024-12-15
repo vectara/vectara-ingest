@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 40
+  corpus_key: csv
   customer_id: 1169579801
   reindex: true
 

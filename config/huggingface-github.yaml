@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 156
+  corpus_key: huggingface-github
   customer_id: 1526022105
   reindex: true
 

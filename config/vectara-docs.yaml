@@ -1,5 +1,5 @@
 vectara:
-  corpus_id: 210
+  corpus_key: vectara-docs
   customer_id: 1526022105
   reindex: true
 

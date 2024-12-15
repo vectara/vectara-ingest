@@ -48,16 +48,16 @@ class Indexer(object):
     Args:
         endpoint (str): Endpoint for the Vectara API.
         customer_id (str): ID of the Vectara customer.
-        corpus_id (int): ID of the Vectara corpus to index to.
+        corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
     def __init__(self, cfg: OmegaConf, endpoint: str, 
-                 customer_id: str, corpus_id: int, api_key: str) -> None:
+                 customer_id: str, corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
         self.browser_use_limit = 100
         self.endpoint = endpoint
         self.customer_id = customer_id
-        self.corpus_id = corpus_id
+        self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
         self.verbose = cfg.vectara.get("verbose", False)
@@ -309,14 +309,12 @@ class Indexer(object):
         Returns:
             bool: True if the delete was successful, False otherwise.
         """
-        body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
         post_headers = { 
-            'x-api-key': self.api_key, 
-            'customer-id': str(self.customer_id), 
+            'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
-        response = self.session.post(
-            f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
+        response = self.session.delete(
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
             verify=True, headers=post_headers)
         
         if response.status_code != 200:
@@ -336,17 +334,17 @@ class Indexer(object):
     
         # Loop until there's no next page
         while True:
+            # TODO: fix numResults and page_key
             body = {"corpusId": self.corpus_id, "numResults": 1000}
             if page_key:  # Add page_key to the request if it's not None
                 body["pageKey"] = page_key
 
             post_headers = { 
-                'x-api-key': self.api_key, 
-                'customer-id': str(self.customer_id), 
+                'x-api-key': self.api_key,
                 'X-Source': self.x_source
             }
-            response = self.session.post(
-                f"https://{self.endpoint}/v1/list-documents", data=json.dumps(body),
+            response = self.session.get(
+                f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents",
                 verify=True, headers=post_headers)
             if response.status_code != 200:
                 self.logger.error(f"Error listing documents with status code {response.status_code}")
@@ -387,10 +385,10 @@ class Indexer(object):
 
         post_headers = { 
             'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
         response = self.session.post(
+            # TODO: fix this
             f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
             files=get_files(filename, metadata), verify=True, headers=post_headers
         )
@@ -399,6 +397,7 @@ class Indexer(object):
                 doc_id = response.json()['details'].split('document id')[1].split("'")[1]
                 self.delete_doc(doc_id)
                 response = self.session.post(
+                    # TODO: fix this
                     f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
                     files=get_files(filename, metadata), verify=True, headers=post_headers
                 )
@@ -430,19 +429,20 @@ class Indexer(object):
             bool: True if the upload was successful, False otherwise.
         """
         if use_core_indexing:
-            api_endpoint = f"https://{self.endpoint}/v1/core/index"
+            # TODO: fix this
+            api_endpoint = f"https://{self.endpoint}/v2/core/index"
         else:
+            # TODO: fix this
             api_endpoint = f"https://{self.endpoint}/v1/index"
 
         request = {
             'customer_id': self.customer_id,
-            'corpus_id': self.corpus_id,
+            'corpus_key': self.corpus_key,
             'document': document,
         }
 
         post_headers = { 
             'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
         try:
