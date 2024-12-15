@@ -3,7 +3,7 @@ from core.crawler import Crawler
 import json
 
 def is_valid(json_object):
-    return 'documentId' in json_object and 'section' in json_object
+    return 'id' in json_object and 'section' in json_object
 
 class JACrawler(Crawler):
 

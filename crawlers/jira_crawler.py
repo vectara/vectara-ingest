@@ -42,9 +42,9 @@ class JiraCrawler(Crawler):
                     # Create a Vectara document with the metadata and the issue fields
                     title = issue["fields"]["summary"]
                     document = {
-                        "documentId": issue["key"],
+                        "id": issue["key"],
                         "title": title,
-                        "metadataJson": json.dumps(metadata),
+                        "metadata": metadata,
                         "section": []
                     }
                     comments_data = issue["fields"]["comment"]["comments"]
@@ -79,10 +79,10 @@ class JiraCrawler(Crawler):
 
                     succeeded = self.indexer.index_document(document)
                     if succeeded:
-                        logging.info(f"Indexed issue {document['documentId']}")
+                        logging.info(f"Indexed issue {document['id']}")
                         issue_count += 1
                     else:
-                        logging.info(f"Error indexing issue {document['documentId']}")
+                        logging.info(f"Error indexing issue {document['id']}")
                 startAt = startAt + actual_cnt
             else:
                 break

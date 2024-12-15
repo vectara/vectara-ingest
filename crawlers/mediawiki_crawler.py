@@ -51,15 +51,15 @@ class MediawikiCrawler(Crawler):
 
             # Index the page into Vectara
             document = {
-                "documentId": title,
+                "id": title,
                 "title": title,
                 "description": "",
-                "metadataJson": json.dumps({
+                "metadata": {
                     "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title)}",
                     "last_edit_time": last_edited_at,
                     "last_edit_user": last_editor,
                     "source": "mediawiki",
-                }),
+                },
                 "section": [
                     {
                         "text": page_content,

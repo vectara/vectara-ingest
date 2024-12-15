@@ -115,13 +115,14 @@ class NotionCrawler(Crawler):
                 continue
 
             doc = {
-                'documentId': page_id,
+                'id': page_id,
                 'title': extract_title(page),
-                'metadataJson': json.dumps({
+                'metadata': {
                     'source': 'notion',
                     'url': page['url'],
                     'title': extract_title(page),
-                }),
+                },
+                #TODO fix section --> sections
                 'section': [{'text': all_text}]
             }
             succeeded = self.indexer.index_document(doc)

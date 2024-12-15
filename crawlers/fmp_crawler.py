@@ -31,12 +31,12 @@ class FmpCrawler(Crawler):
         try:
             succeeded = self.indexer.index_document(document)
             if succeeded:
-                logging.info(f"Indexed {document['documentId']}")
+                logging.info(f"Indexed {document['id']}")
             else:
-                logging.info(f"Error indexing issue {document['documentId']}")
+                logging.info(f"Error indexing issue {document['id']}")
             return succeeded
         except Exception as e:
-            logging.info(f"Error during indexing of {document['documentId']}: {e}")
+            logging.info(f"Error during indexing of {document['id']}: {e}")
             return False
 
     def index_10k(self, ticker: str, company_name: str, year: int) -> None:
@@ -66,9 +66,9 @@ class FmpCrawler(Crawler):
                     'type': 'filing', 'filing_type': '10-K', 'url': url
                 }
                 document: Dict[str, Any] = {
-                    "documentId": f"10-K-{company_name}-{year}",
+                    "id": f"10-K-{company_name}-{year}",
                     "title": doc_title,
-                    "metadataJson": json.dumps(metadata),
+                    "metadata": metadata,
                     "section": []
                 }
                 for key in data.keys():
@@ -108,9 +108,9 @@ class FmpCrawler(Crawler):
                             'year': year, 'quarter': quarter, 'type': 'transcript'
                         }
                         document = {
-                            "documentId": f"transcript-{company_name}-{year}-{quarter}",
+                            "id": f"transcript-{company_name}-{year}-{quarter}",
                             "title": title,
-                            "metadataJson": json.dumps(metadata),
+                            "metadata": metadata,
                             "section": [
                                 {
                                     'text': transcript['content']

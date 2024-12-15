@@ -109,10 +109,10 @@ class GithubCrawler(Crawler):
                     text_content = html_to_text(markdown.markdown(file_content))
                     metadata = {'file': fname, 'source': 'github', 'url': url}
                     code_doc = {
-                        'documentId': f'github-{item["path"]}',
+                        'id': f'github-{item["path"]}',
                         'title': item["name"],
                         'description': f'Markdown of {fname}',
-                        'metadataJson': json.dumps(metadata),
+                        'metadata': metadata,
                         'section': [{
                             'title': 'markdown',
                             'text': text_content,
@@ -134,7 +134,7 @@ class GithubCrawler(Crawler):
             doc['section'].append({
                 'title': f'comment by {comment.user.login}',
                 'text': comment.body,
-                'metadataJson': json.dumps(metadata),
+                'metadata': metadata,
             })
 
     def crawl_repo(self, repo: str, owner: str, token: str) -> None:
@@ -158,9 +158,9 @@ class GithubCrawler(Crawler):
                 'updated_at': convert_date(pr.updated_at)
             }
             pr_doc = {
-                'documentId': f'github-{repo}-pr-{pr.number}',
+                'id': f'github-{repo}-pr-{pr.number}',
                 'title': pr.title,
-                'metadataJson': json.dumps(doc_metadata),
+                'metadata': doc_metadata,
                 'section': [{
                     'title': pr.title,
                     'text': pr.body,
@@ -195,18 +195,18 @@ class GithubCrawler(Crawler):
             metadata = {'issue_number': issue.number, 'labels': labels, 'source': 'github', 'url': issue.html_url, 'state': issue.state}
 
             issue_doc = {
-                'documentId': f'github-{repo}-issue-{issue.number}',
+                'id': f'github-{repo}-issue-{issue.number}',
                 'title': title,
                 'description': description,
-                'metadataJson': json.dumps(metadata),
+                'metadata': metadata,
                 'section': [{
                     'title': 'issue',
                     'text': description,
-                    'metadataJson': json.dumps({
+                    'metadata': {
                         'author': author,
                         'created_at': created_at,
                         'updated_at': updated_at
-                    })
+                    }
                 }]
             }
 

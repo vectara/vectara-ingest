@@ -51,27 +51,27 @@ class DiscourseCrawler(Crawler):
         # parse the response JSON
         posts = list(json.loads(response.text)['post_stream']['posts'])
         document = {
-            'documentId': 'topic-' + str(topic_id),
+            'id': 'topic-' + str(topic_id),
             'title': topic['title'],
-            'metadataJson': json.dumps({
+            'metadata': {
                 'created_at': datetime_to_date(topic['created_at']),
                 'last_posted_at': datetime_to_date(topic['last_posted_at']),
                 'source': 'discourse',
                 'url': self.discourse_base_url + '/t/' + str(topic_id)
-            }),
+            },
             'section': []
         }
         for post in posts:
             section = {
                 'text': html_to_text(post['cooked']),
-                'metadataJson': json.dumps({
+                'metadata': {
                     'created_at': datetime_to_date(post['created_at']),
                     'updated_at': datetime_to_date(post['updated_at']),
                     'poster': post['username'],
                     'poster_name': post['name'],
                     'source': 'discourse',
                     'url': self.discourse_base_url + '/p/' + str(post['id'])
-                }),
+                },
             }
             if 'title' in post:
                 section['title'] = post['title']

@@ -17,12 +17,12 @@ class SynapseCrawler(Crawler):
 
         study_text = html_to_text(markdown.markdown(wiki_dict['markdown']))        
         doc = {
-            "documentId": wiki_id,
-            "metadataJson": json.dumps({ 
+            "id": wiki_id,
+            "metadata": { 
                 'url': url,
                 'source': source,
                 'created': wiki_dict['createdOn']
-            }),
+            },
             "section": [
                 { "text": f"{wiki_type} description: {description}\n" },
                 { "text": study_text },
@@ -56,19 +56,19 @@ class SynapseCrawler(Crawler):
             logging.info(f"Indexing program {tup.program}")
             url = f'https://adknowledgeportal.synapse.org/Explore/Programs/DetailsPage?Program={tup.program}'
             doc = {
-                "documentId": tup.program,
+                "id": tup.program,
                 "title": f'Program {tup.program}',
-                "metadataJson": json.dumps({ 
+                "metadata": { 
                     'url': url,
                     'source': source,
-                }),
+                },
                 "section": [{ "text": tup.description }],
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:
-                logging.info(f"Indexed study {doc['documentId']}")
+                logging.info(f"Indexed study {doc['id']}")
             else:
-                logging.info(f"Error indexing study {doc['documentId']}")
+                logging.info(f"Error indexing study {doc['id']}")
         logging.info(f"Finished indexing all programs (total={len(df)})")
 
         # crawl and index all studies

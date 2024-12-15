@@ -154,14 +154,14 @@ class PmcCrawler(Crawler):
             summary = html_to_text(ht['full-summary'])
             meta_desc = ht['@meta-desc']
             document = {
-                "documentId": f'medline-plus-{medline_id}',
+                "id": f'medline-plus-{medline_id}',
                 "title": title,
                 "description": f'medline information for {title}',
-                "metadataJson": json.dumps({
+                "metadata": {
                     "url": topic_url,
                     "publicationDate": date_created,
                     "source": "pmc",
-                }),
+                },
                 "section": [
                     {
                         'text': meta_desc

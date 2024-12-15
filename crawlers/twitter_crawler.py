@@ -59,9 +59,9 @@ class TwitterCrawler(Crawler):
             tweets = fetch_tweets(client, query, num_tweets=num_tweets,
                                   fields = ['public_metrics', 'author_id', 'lang', 'geo', 'entities'])
             doc = {
-                "documentId": 'tweets-' + username,
+                "id": 'tweets-' + username,
                 "title": f'top {num_tweets} tweets of {username}',
-                "metadataJson": json.dumps({ 
+                "metadata": { 
                     'url': f'https://twitter.com/{username}',
                     'source': 'twitter',
                     'username': username,
@@ -72,13 +72,13 @@ class TwitterCrawler(Crawler):
                     'description': user.data.description,
                     'location': user.data.location,
                     'verified': user.data.verified,
-                }),
+                },
                 "section": []
             }
             for tweet in tweets.data:
                 doc["section"].append({ 
                     "text": clean_tweet(tweet.text) if self.cfg.twitter_crawler.get("clean_tweets", True) else tweet.text,
-                    "metadataJson": json.dumps({
+                    "metadata": {
                         "author": get_username_from_id(client, tweet.author_id),
                         "created_at": tweet.created_at,
                         "retweet_count": tweet.public_metrics['retweet_count'] if tweet.public_metrics else None,
@@ -86,7 +86,7 @@ class TwitterCrawler(Crawler):
                         "like_count": tweet.public_metrics['like_count'] if tweet.public_metrics else None,
                         "quote_count": tweet.public_metrics['quote_count'] if tweet.public_metrics else None,
                         "lang": tweet.lang
-                    }),
+                    },
                 })
             succeeded = self.indexer.index_document(doc)            
             if succeeded:

@@ -427,7 +427,6 @@ class Indexer(object):
         """
         api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
 
-        # TODO: fix
         if use_core_indexing:
             document['type'] = 'core'
         else:
@@ -446,7 +445,7 @@ class Indexer(object):
         try:
             response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
         except Exception as e:
-            self.logger.info(f"Exception {e} while indexing document {document['documentId']}")
+            self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
         if response.status_code != 200:
@@ -461,20 +460,20 @@ class Indexer(object):
            ("ALREADY_EXISTS" in result["status"]["code"] or \
             ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
             if self.reindex:
-                self.logger.info(f"Document {document['documentId']} already exists, re-indexing")
-                self.delete_doc(document['documentId'])
+                self.logger.info(f"Document {document['id']} already exists, re-indexing")
+                self.delete_doc(document['id'])
                 response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
                 return True
             else:
-                self.logger.info(f"Document {document['documentId']} already exists, skipping")
+                self.logger.info(f"Document {document['id']} already exists, skipping")
                 return False
         if "status" in result and result["status"] and "OK" in result["status"]["code"]:
             if self.store_docs:
-                with open(f"{self.store_docs_folder}/{document['documentId']}.json", "w") as f:
+                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                     json.dump(document, f)
             return True
         
-        self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        self.logger.info(f"Indexing document {document['id']} failed, response = {result}")
         return False
     
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
@@ -649,12 +648,12 @@ class Indexer(object):
             metadatas = [{k:self.normalize_value(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
-        document["documentId"] = doc_id
+        document["id"] = doc_id
         if not use_core_indexing:
             if doc_title is not None and len(doc_title)>0:
                 document["title"] = self.normalize_text(doc_title)
             document["section"] = [
-                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
+                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
                 for text,title,md in zip(texts,titles,metadatas)
             ]
         else:
@@ -662,12 +661,12 @@ class Indexer(object):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["parts"] = [
-                {"text": self.normalize_text(text), "metadataJson": json.dumps(md)} 
+                {"text": self.normalize_text(text), "metadata": md) 
                 for text,md in zip(texts,metadatas)
             ]
 
         if doc_metadata:
-            document["metadataJson"] = json.dumps(doc_metadata)
+            document["metadata"] = doc_metadata
 
         if self.verbose:
             self.logger.info(f"Indexing document {doc_id} with {document}")
@@ -677,7 +676,7 @@ class Indexer(object):
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus).
-        Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
+        Document is a dictionary that includes documentId, title, optionally metadata, and section (which is a list of segments).
 
         Args:
             document (dict): Document to index.
@@ -784,7 +783,7 @@ class Indexer(object):
         result = self.model.transcribe(file_path, temperature=0, verbose=False)
         text = result['segments']
         doc = {
-            'documentId': slugify(file_path),
+            'id': slugify(file_path),
             'title': file_path,
             'section': [
                 { 
@@ -793,7 +792,7 @@ class Indexer(object):
             ]
         }
         if metadata:
-            doc['metadataJson'] = json.dumps(metadata)
+            doc['metadata'] = metadata
         self.index_document(doc)
 
 

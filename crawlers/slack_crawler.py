@@ -124,7 +124,7 @@ def get_document(channel, message, users_info):
 
     Example output : {
         "documentId": "vectara_123_1234556",
-        "metadataJson": {"author": "Vectara"},
+        "metadata": {"author": "Vectara"},
         "section": [{"text": "Slack messages info"},
         {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
     }
@@ -164,10 +164,10 @@ def get_document(channel, message, users_info):
                 try:
                     sections.append({
                         "text": reply.get("text"),
-                        "metadataJson": json.dumps({
+                        "metadata": {
                             "replier": users_info[reply["user"]],
                             "reply_time": get_datetime_from_epoch(reply["ts"])
-                        })
+                        }
                     })
                 except KeyError:
                     continue
@@ -175,7 +175,7 @@ def get_document(channel, message, users_info):
     return {
         "documentId": doc_id,
         "title": title,
-        "metadataJson": doc_metadata,
+        "metadata": doc_metadata,
         "section": sections
     }
 
