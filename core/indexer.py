@@ -334,10 +334,9 @@ class Indexer(object):
     
         # Loop until there's no next page
         while True:
-            # TODO: fix numResults and page_key
-            body = {"corpusId": self.corpus_id, "numResults": 1000}
+            params = {"limit": 100}
             if page_key:  # Add page_key to the request if it's not None
-                body["pageKey"] = page_key
+                params["pageKey"] = page_key
 
             post_headers = { 
                 'x-api-key': self.api_key,
@@ -345,7 +344,7 @@ class Indexer(object):
             }
             response = self.session.get(
                 f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents",
-                verify=True, headers=post_headers)
+                verify=True, headers=post_headers, params=params)
             if response.status_code != 200:
                 self.logger.error(f"Error listing documents with status code {response.status_code}")
                 return []
@@ -380,7 +379,7 @@ class Indexer(object):
         def get_files(filename: str, metadata: dict):
             return  {
                 "file": (uri, open(filename, 'rb')),
-                "doc_metadata": (None, json.dumps(metadata)),
+                "metadata": (None, json.dumps(metadata)),
             }  
 
         post_headers = { 
@@ -388,8 +387,7 @@ class Indexer(object):
             'X-Source': self.x_source
         }
         response = self.session.post(
-            # TODO: fix this
-            f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
             files=get_files(filename, metadata), verify=True, headers=post_headers
         )
         if response.status_code == 409:
@@ -397,8 +395,7 @@ class Indexer(object):
                 doc_id = response.json()['details'].split('document id')[1].split("'")[1]
                 self.delete_doc(doc_id)
                 response = self.session.post(
-                    # TODO: fix this
-                    f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
+                    f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
                     files=get_files(filename, metadata), verify=True, headers=post_headers
                 )
                 if response.status_code == 200:
@@ -428,25 +425,20 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        if use_core_indexing:
-            # TODO: fix this
-            api_endpoint = f"https://{self.endpoint}/v2/core/index"
-        else:
-            # TODO: fix this
-            api_endpoint = f"https://{self.endpoint}/v1/index"
+        api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
 
-        request = {
-            'customer_id': self.customer_id,
-            'corpus_key': self.corpus_key,
-            'document': document,
-        }
+        # TODO: fix
+        if use_core_indexing:
+            document['type'] = 'core'
+        else:
+            document['type'] = 'structured'
 
         post_headers = { 
             'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
         try:
-            data = json.dumps(request)
+            data = json.dumps(document)
         except Exception as e:
             self.logger.info(f"Can't serialize request {request} (error {e}), skipping")   
             return False
