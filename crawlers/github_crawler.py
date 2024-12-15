@@ -113,7 +113,7 @@ class GithubCrawler(Crawler):
                         'title': item["name"],
                         'description': f'Markdown of {fname}',
                         'metadata': metadata,
-                        'section': [{
+                        'sections': [{
                             'title': 'markdown',
                             'text': text_content,
                         }]
@@ -131,7 +131,7 @@ class GithubCrawler(Crawler):
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
                 'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'updated_at': convert_date(comment.updated_at)
             }
-            doc['section'].append({
+            doc['sections'].append({
                 'title': f'comment by {comment.user.login}',
                 'text': comment.body,
                 'metadata': metadata,
@@ -161,7 +161,7 @@ class GithubCrawler(Crawler):
                 'id': f'github-{repo}-pr-{pr.number}',
                 'title': pr.title,
                 'metadata': doc_metadata,
-                'section': [{
+                'sections': [{
                     'title': pr.title,
                     'text': pr.body,
                 }]
@@ -199,7 +199,7 @@ class GithubCrawler(Crawler):
                 'title': title,
                 'description': description,
                 'metadata': metadata,
-                'section': [{
+                'sections': [{
                     'title': 'issue',
                     'text': description,
                     'metadata': {

@@ -122,8 +122,7 @@ class NotionCrawler(Crawler):
                     'url': page['url'],
                     'title': extract_title(page),
                 },
-                #TODO fix section --> sections
-                'section': [{'text': all_text}]
+                'sections': [{'text': all_text}]
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:

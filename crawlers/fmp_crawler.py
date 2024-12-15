@@ -69,7 +69,7 @@ class FmpCrawler(Crawler):
                     "id": f"10-K-{company_name}-{year}",
                     "title": doc_title,
                     "metadata": metadata,
-                    "section": []
+                    "sections": []
                 }
                 for key in data.keys():
                     if isinstance(data[key], str):
@@ -80,8 +80,8 @@ class FmpCrawler(Crawler):
                             values = [v for v in values if v and isinstance(v, str) and len(v)>=50]
                             text = '\n'.join(values)
                             if len(values)>0 and len(text)>100:
-                                document['section'].append({'title': title, 'text': text})
-                if len(document['section'])>0:
+                                document['sections'].append({'title': title, 'text': text})
+                if len(document['sections'])>0:
                     self.index_doc(document)
 
     def index_call_transcripts(self, ticker: str, company_name: str, year: int) -> None:

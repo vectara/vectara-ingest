@@ -785,7 +785,7 @@ class Indexer(object):
         doc = {
             'id': slugify(file_path),
             'title': file_path,
-            'section': [
+            'sections': [
                 { 
                     'text': t['text'],
                 } for t in text

@@ -59,7 +59,7 @@ class DiscourseCrawler(Crawler):
                 'source': 'discourse',
                 'url': self.discourse_base_url + '/t/' + str(topic_id)
             },
-            'section': []
+            'sections': []
         }
         for post in posts:
             section = {
@@ -75,7 +75,7 @@ class DiscourseCrawler(Crawler):
             }
             if 'title' in post:
                 section['title'] = post['title']
-            document['section'].append(section)
+            document['sections'].append(section)
 
         self.indexer.index_document(document)
         return posts
