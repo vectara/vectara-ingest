@@ -357,7 +357,7 @@ class Indexer(object):
 
             response_metadata = res.get('metadata', None)
             # Check if we need to go further
-            if response_metadata and not response_metadata['page_key']:  # Break the loop if there's no next page
+            if not response_metadata or not response_metadata['page_key']:  # Break the loop if there's no next page
                 break
             else:
                 page_key = response_metadata['page_key']
