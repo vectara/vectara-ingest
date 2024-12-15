@@ -336,7 +336,7 @@ class Indexer(object):
         while True:
             params = {"limit": 100}
             if page_key:  # Add page_key to the request if it's not None
-                params["pageKey"] = page_key
+                params["page_key"] = page_key
 
             post_headers = { 
                 'x-api-key': self.api_key,
@@ -351,14 +351,16 @@ class Indexer(object):
             res = response.json()
 
             # Extract URLs from documents
-            for doc in res['document']:
+            for doc in res['documents']:
                 url = next((md['value'] for md in doc['metadata'] if md['name'] == 'url'), None)
                 docs.append({'doc_id': doc['id'], 'url': url})
 
+            response_metadata = res.get('metadata', None)
             # Check if we need to go further
-            page_key = res.get('nextPageKey', None)    
-            if not page_key:  # Break the loop if there's no next page
+            if response_metadata and not response_metadata['page_key']:  # Break the loop if there's no next page
                 break
+            else:
+                page_key = response_metadata['page_key']
     
         return docs
 
