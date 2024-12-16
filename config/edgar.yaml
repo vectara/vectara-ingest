@@ -1,6 +1,5 @@
 vectara:
   corpus_key: edgar
-  : 1526022105
   reindex: true
 
 crawling:
