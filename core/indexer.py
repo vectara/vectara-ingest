@@ -316,7 +316,7 @@ class Indexer(object):
             f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
             verify=True, headers=post_headers)
         
-        if response.status_code != 200:
+        if response.status_code != 204:
             self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
@@ -399,7 +399,7 @@ class Indexer(object):
                     f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
                     files=get_files(filename, metadata), verify=True, headers=post_headers
                 )
-                if response.status_code == 200:
+                if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
                     return True
@@ -407,7 +407,7 @@ class Indexer(object):
                     self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
-        elif response.status_code != 200:
+        elif response.status_code != 201:
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
@@ -449,7 +449,7 @@ class Indexer(object):
             self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
-        if response.status_code != 200:
+        if response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
