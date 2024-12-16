@@ -72,8 +72,8 @@ class Github(object):
 
 class GithubCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.github_token = self.cfg.github_crawler.get("github_token", None)
         self.owner = self.cfg.github_crawler.owner
         self.repos = self.cfg.github_crawler.repos

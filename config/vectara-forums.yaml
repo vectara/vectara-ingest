@@ -1,6 +1,5 @@
 vectara:
   corpus_key: vectara-forums
-  customer_id: 1526022105
   reindex: false
 
 crawling:

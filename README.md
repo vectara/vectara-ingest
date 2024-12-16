@@ -90,10 +90,6 @@ For our example we would index the content of https://www.paulgraham.com website
    1. Change the `vectara.corpus_key` value to the ID of the corpus into which you want to ingest the content of the website.
 
       To retrieve your corpus ID from the Vectara console, click **Data > Your Corpus Name** and you will see the ID on the top of the screen.
-      
-   2. Change the `vectara.customer_id` value to the ID of your account.
-
-      To retrieve your customer ID from the Vectara console, click your username in the upper-right corner.
 
    3. Change `rss_crawler.source` to `pg`.
       
@@ -171,9 +167,6 @@ Each configuration YAML file includes a set of standard variables, for example:
 vectara:
   # the corpus ID for indexing
   corpus_key: my-corpus
-  
-  # the Vectara customer ID
-  customer_id: 1234567
   
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false

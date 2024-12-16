@@ -1,6 +1,5 @@
 vectara:
   corpus_key: csv
-  customer_id: 1169579801
   reindex: true
 
 crawling:

@@ -84,8 +84,8 @@ def extract_title(page):
 
 class NotionCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.notion_api_key = self.cfg.notion_crawler.notion_api_key
 
     def crawl(self) -> None:

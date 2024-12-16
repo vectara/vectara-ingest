@@ -232,8 +232,8 @@ def contains_url(message):
 
 
 class SlackCrawler(Crawler):
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: int, corpus_key: str, api_key: str):
-        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str):
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.user_token = self.cfg.slack_crawler.slack_user_token
         self.client = WebClient(token=self.user_token)
         self.days_past = self.cfg.slack_crawler.get("days_past", None)

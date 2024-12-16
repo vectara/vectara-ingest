@@ -14,8 +14,8 @@ def datetime_to_date(datetime_str: str) -> str:
 
 class DiscourseCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.discourse_base_url = self.cfg.discourse_crawler.base_url
         self.discourse_api_key = self.cfg.discourse_crawler.discourse_api_key
         self.session = create_session_with_retries()

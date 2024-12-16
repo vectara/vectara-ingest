@@ -1,6 +1,6 @@
 vectara:
   corpus_key: ask-hbs
-  customer_id: 1526022105
+  : 1526022105
   reindex: true
 
 crawling:

@@ -47,16 +47,14 @@ class Indexer(object):
     Vectara API class.
     Args:
         endpoint (str): Endpoint for the Vectara API.
-        customer_id (str): ID of the Vectara customer.
         corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
     def __init__(self, cfg: OmegaConf, endpoint: str, 
-                 customer_id: str, corpus_key: str, api_key: str) -> None:
+                 corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
         self.browser_use_limit = 100
         self.endpoint = endpoint
-        self.customer_id = customer_id
         self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)

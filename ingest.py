@@ -31,26 +31,25 @@ def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **
     logging.info(f'end of instantiate crawler')
     return class_(*args, **kwargs)
 
-def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str, customer_id: str) -> Any:
+def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str) -> Any:
     """Connect to the server and get a JWT token."""
     token_endpoint = f'{auth_url}/oauth2/token'
     session = OAuth2Session(auth_id, auth_secret, scope="")
     token = session.fetch_token(token_endpoint, grant_type="client_credentials")
     return token["access_token"]
 
-def reset_corpus(endpoint: str, customer_id: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
+def reset_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
     Reset the corpus by deleting all documents and metadata.
 
     Args:
         endpoint (str): Endpoint for the Vectara API.
-        customer_id (str): ID of the Vectara customer.
         appclient_id (str): ID of the Vectara app client.
         appclient_secret (str): Secret key for the Vectara app client.
         corpus_key (str): Corpus key of the Vectara corpus to index to.
     """
     url = f"https://{endpoint}/v2/corpora/{corpus_key}/reset"
-    token = get_jwt_token(auth_url, auth_id, auth_secret, customer_id)
+    token = get_jwt_token(auth_url, auth_id, auth_secret)
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -134,7 +133,6 @@ def main() -> None:
     logging.info("Configuration loaded...")
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     auth_url = cfg.vectara.get("auth_url", "auth.vectara.io")
-    customer_id = cfg.vectara.customer_id
     corpus_key = cfg.vectara.corpus_key
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
@@ -142,7 +140,7 @@ def main() -> None:
     # instantiate the crawler
     crawler = instantiate_crawler(
         Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', 
-        cfg, endpoint, customer_id, corpus_key, api_key
+        cfg, endpoint, corpus_key, api_key
     )
 
     logging.info("Crawling instantiated...")
@@ -153,7 +151,7 @@ def main() -> None:
     # TODO: add a "create_corpus_flag"
     if reset_corpus_flag:
         logging.info("Resetting corpus")
-        reset_corpus(endpoint, customer_id, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        reset_corpus(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
     logging.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()

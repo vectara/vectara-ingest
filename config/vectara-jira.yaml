@@ -1,6 +1,5 @@
 vectara:
   corpus_key: jira
-  customer_id: 1526022105
   reindex: true
 
 crawling:

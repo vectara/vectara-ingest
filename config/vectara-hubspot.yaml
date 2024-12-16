@@ -1,6 +1,5 @@
 vectara:
   corpus_key: hubspot
-  customer_id: 2081868821
   reindex: true
   
 crawling:

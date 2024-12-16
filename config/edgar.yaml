@@ -1,6 +1,6 @@
 vectara:
   corpus_key: edgar
-  customer_id: 1526022105
+  : 1526022105
   reindex: true
 
 crawling:

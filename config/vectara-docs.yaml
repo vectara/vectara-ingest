@@ -1,6 +1,5 @@
 vectara:
   corpus_key: vectara-docs
-  customer_id: 1526022105
   reindex: true
 
 crawling:

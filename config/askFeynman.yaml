@@ -1,6 +1,5 @@
 vectara:
   corpus_key: feynman
-  customer_id: 1169579801
   reindex: false
 
 crawling:
