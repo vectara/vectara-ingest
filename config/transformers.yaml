@@ -1,6 +1,7 @@
 vectara:
   corpus_key: arxiv-transformers
   reindex: True
+  create_corpus: true
 
 crawling:
   crawler_type: arxiv

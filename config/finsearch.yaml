@@ -1,6 +1,7 @@
 vectara:
   corpus_key: finsearch
   reindex: true
+  create_corpus: true
 
 crawling:
   crawler_type: fmp

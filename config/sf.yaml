@@ -2,6 +2,7 @@ vectara:
   corpus_key: sf-gov
   reindex: false
   verbose: false
+  create_corpus: true
 
 crawling:
   crawler_type: website

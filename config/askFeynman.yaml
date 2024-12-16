@@ -1,6 +1,7 @@
 vectara:
   corpus_key: feynman
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: website

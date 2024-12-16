@@ -1,6 +1,7 @@
 vectara:
   corpus_key: hubspot
   reindex: true
+  create_corpus: true
   
 crawling:
   crawler_type: hubspot

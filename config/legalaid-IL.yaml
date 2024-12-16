@@ -1,6 +1,7 @@
 vectara:
   corpus_key: legalaid-il
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: website

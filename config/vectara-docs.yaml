@@ -1,6 +1,7 @@
 vectara:
   corpus_key: vectara-docs
   reindex: true
+  create_corpus: true
 
 crawling:
   crawler_type: docs

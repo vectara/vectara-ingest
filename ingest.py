@@ -38,7 +38,7 @@ def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str) -> Any:
     token = session.fetch_token(token_endpoint, grant_type="client_credentials")
     return token["access_token"]
 
-def reset_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
+def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
     Reset the corpus by deleting all documents and metadata.
 
@@ -61,7 +61,29 @@ def reset_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, au
     else:
         logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
-def create_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
+def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
+    """
+    Reset the corpus by deleting all documents and metadata.
+
+    Args:
+        endpoint (str): Endpoint for the Vectara API.
+        appclient_id (str): ID of the Vectara app client.
+        appclient_secret (str): Secret key for the Vectara app client.
+        corpus_key (str): Corpus key of the Vectara corpus to index to.
+    """
+    url = f"https://{endpoint}/v2/corpora/{corpus_key}/reset"
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-api-key': api_key
+    }
+    response = requests.request("POST", url, headers=headers)
+    if response.status_code == 200:
+        logging.info(f"Reset corpus {corpus_key}")
+    else:
+        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+
+def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
     Create the corpus.
 
@@ -83,11 +105,37 @@ def create_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, a
         'key': corpus_key
     }
 
-    response = requests.request("POST", url, headers=headers, data=payload)
-    if response.status_code == 200:
+    response = requests.request("POST", url, headers=headers, json=payload)
+    if response.status_code == 201:
         logging.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+
+def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
+    """
+    Create the corpus.
+
+    Args:
+        endpoint (str): Endpoint for the Vectara API.
+        corpus_key (str): Corpus key of the Vectara corpus to index to.
+        api_key (str): API key to create the 
+    """
+    url = f"https://{endpoint}/v2/corpora"
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-api-key': api_key
+    }
+
+    payload = {
+        'key': corpus_key
+    }
+
+    response = requests.request("POST", url, headers=headers, json=payload)
+    if response.status_code == 201:
+        logging.info(f"Reset corpus {corpus_key}")
+    else:
+        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
                       
 
 def main() -> None:
@@ -177,7 +225,10 @@ def main() -> None:
     # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
     if create_corpus_flag:
         logging.info("Creating corpus")
-        create_corpus(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
+            create_corpus_oauth(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        else:
+            create_corpus_apikey(endpoint, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow create_corpus enough time to complete on the backend
 
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
@@ -186,7 +237,10 @@ def main() -> None:
     reset_corpus_flag = False
     if reset_corpus_flag:
         logging.info("Resetting corpus")
-        reset_corpus(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
+            reset_corpus_oauth(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        else:
+            reset_corpus_apikey(endpoint, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logging.info(f"Starting crawl of type {crawler_type}...")

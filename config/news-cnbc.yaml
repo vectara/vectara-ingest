@@ -1,6 +1,7 @@
 vectara:
   corpus_key: news-cnbc
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: rss

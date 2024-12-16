@@ -1,6 +1,7 @@
 vectara:
   corpus_key: hn
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: hackernews

@@ -1,6 +1,7 @@
 vectara:
   corpus_key: pubmed-central
   reindex: true
+  create_corpus: true
 
 crawling:
   crawler_type: pmc

@@ -1,6 +1,7 @@
 vectara:
   corpus_key: slack
   reindex: true
+  create_corpus: true
   
 crawling:
   crawler_type: slack
