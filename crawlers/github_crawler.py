@@ -72,8 +72,8 @@ class Github(object):
 
 class GithubCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.github_token = self.cfg.github_crawler.get("github_token", None)
         self.owner = self.cfg.github_crawler.owner
         self.repos = self.cfg.github_crawler.repos
@@ -109,11 +109,11 @@ class GithubCrawler(Crawler):
                     text_content = html_to_text(markdown.markdown(file_content))
                     metadata = {'file': fname, 'source': 'github', 'url': url}
                     code_doc = {
-                        'documentId': f'github-{item["path"]}',
+                        'id': f'github-{item["path"]}',
                         'title': item["name"],
                         'description': f'Markdown of {fname}',
-                        'metadataJson': json.dumps(metadata),
-                        'section': [{
+                        'metadata': metadata,
+                        'sections': [{
                             'title': 'markdown',
                             'text': text_content,
                         }]
@@ -131,10 +131,10 @@ class GithubCrawler(Crawler):
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
                 'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'updated_at': convert_date(comment.updated_at)
             }
-            doc['section'].append({
+            doc['sections'].append({
                 'title': f'comment by {comment.user.login}',
                 'text': comment.body,
-                'metadataJson': json.dumps(metadata),
+                'metadata': metadata,
             })
 
     def crawl_repo(self, repo: str, owner: str, token: str) -> None:
@@ -158,10 +158,10 @@ class GithubCrawler(Crawler):
                 'updated_at': convert_date(pr.updated_at)
             }
             pr_doc = {
-                'documentId': f'github-{repo}-pr-{pr.number}',
+                'id': f'github-{repo}-pr-{pr.number}',
                 'title': pr.title,
-                'metadataJson': json.dumps(doc_metadata),
-                'section': [{
+                'metadata': doc_metadata,
+                'sections': [{
                     'title': pr.title,
                     'text': pr.body,
                 }]
@@ -195,18 +195,18 @@ class GithubCrawler(Crawler):
             metadata = {'issue_number': issue.number, 'labels': labels, 'source': 'github', 'url': issue.html_url, 'state': issue.state}
 
             issue_doc = {
-                'documentId': f'github-{repo}-issue-{issue.number}',
+                'id': f'github-{repo}-issue-{issue.number}',
                 'title': title,
                 'description': description,
-                'metadataJson': json.dumps(metadata),
-                'section': [{
+                'metadata': metadata,
+                'sections': [{
                     'title': 'issue',
                     'text': description,
-                    'metadataJson': json.dumps({
+                    'metadata': {
                         'author': author,
                         'created_at': created_at,
                         'updated_at': updated_at
-                    })
+                    }
                 }]
             }
 

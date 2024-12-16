@@ -124,7 +124,7 @@ def get_document(channel, message, users_info):
 
     Example output : {
         "documentId": "vectara_123_1234556",
-        "metadataJson": {"author": "Vectara"},
+        "metadata": {"author": "Vectara"},
         "section": [{"text": "Slack messages info"},
         {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
     }
@@ -164,10 +164,10 @@ def get_document(channel, message, users_info):
                 try:
                     sections.append({
                         "text": reply.get("text"),
-                        "metadataJson": json.dumps({
+                        "metadata": {
                             "replier": users_info[reply["user"]],
                             "reply_time": get_datetime_from_epoch(reply["ts"])
-                        })
+                        }
                     })
                 except KeyError:
                     continue
@@ -175,8 +175,8 @@ def get_document(channel, message, users_info):
     return {
         "documentId": doc_id,
         "title": title,
-        "metadataJson": doc_metadata,
-        "section": sections
+        "metadata": doc_metadata,
+        "sections": sections
     }
 
 
@@ -232,8 +232,8 @@ def contains_url(message):
 
 
 class SlackCrawler(Crawler):
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str):
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str):
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.user_token = self.cfg.slack_crawler.slack_user_token
         self.client = WebClient(token=self.user_token)
         self.days_past = self.cfg.slack_crawler.get("days_past", None)

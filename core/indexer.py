@@ -47,19 +47,18 @@ class Indexer(object):
     Vectara API class.
     Args:
         endpoint (str): Endpoint for the Vectara API.
-        customer_id (str): ID of the Vectara customer.
-        corpus_id (int): ID of the Vectara corpus to index to.
+        corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
     def __init__(self, cfg: OmegaConf, endpoint: str, 
-                 customer_id: str, corpus_id: int, api_key: str) -> None:
+                 corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
         self.browser_use_limit = 100
         self.endpoint = endpoint
-        self.customer_id = customer_id
-        self.corpus_id = corpus_id
+        self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
+        self.create_corpus = cfg.vectara.get("create_corpus", False)
         self.verbose = cfg.vectara.get("verbose", False)
         self.store_docs = cfg.vectara.get("store_docs", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
@@ -309,17 +308,15 @@ class Indexer(object):
         Returns:
             bool: True if the delete was successful, False otherwise.
         """
-        body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
         post_headers = { 
-            'x-api-key': self.api_key, 
-            'customer-id': str(self.customer_id), 
+            'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
-        response = self.session.post(
-            f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
+        response = self.session.delete(
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
             verify=True, headers=post_headers)
         
-        if response.status_code != 200:
+        if response.status_code != 204:
             self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
@@ -336,32 +333,33 @@ class Indexer(object):
     
         # Loop until there's no next page
         while True:
-            body = {"corpusId": self.corpus_id, "numResults": 1000}
+            params = {"limit": 100}
             if page_key:  # Add page_key to the request if it's not None
-                body["pageKey"] = page_key
+                params["page_key"] = page_key
 
             post_headers = { 
-                'x-api-key': self.api_key, 
-                'customer-id': str(self.customer_id), 
+                'x-api-key': self.api_key,
                 'X-Source': self.x_source
             }
-            response = self.session.post(
-                f"https://{self.endpoint}/v1/list-documents", data=json.dumps(body),
-                verify=True, headers=post_headers)
+            response = self.session.get(
+                f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents",
+                verify=True, headers=post_headers, params=params)
             if response.status_code != 200:
                 self.logger.error(f"Error listing documents with status code {response.status_code}")
                 return []
             res = response.json()
 
             # Extract URLs from documents
-            for doc in res['document']:
+            for doc in res['documents']:
                 url = next((md['value'] for md in doc['metadata'] if md['name'] == 'url'), None)
                 docs.append({'doc_id': doc['id'], 'url': url})
 
+            response_metadata = res.get('metadata', None)
             # Check if we need to go further
-            page_key = res.get('nextPageKey', None)    
-            if not page_key:  # Break the loop if there's no next page
+            if not response_metadata or not response_metadata['page_key']:  # Break the loop if there's no next page
                 break
+            else:
+                page_key = response_metadata['page_key']
     
         return docs
 
@@ -382,16 +380,15 @@ class Indexer(object):
         def get_files(filename: str, metadata: dict):
             return  {
                 "file": (uri, open(filename, 'rb')),
-                "doc_metadata": (None, json.dumps(metadata)),
+                "metadata": (None, json.dumps(metadata)),
             }  
 
         post_headers = { 
             'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
         response = self.session.post(
-            f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
             files=get_files(filename, metadata), verify=True, headers=post_headers
         )
         if response.status_code == 409:
@@ -399,10 +396,10 @@ class Indexer(object):
                 doc_id = response.json()['details'].split('document id')[1].split("'")[1]
                 self.delete_doc(doc_id)
                 response = self.session.post(
-                    f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
+                    f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
                     files=get_files(filename, metadata), verify=True, headers=post_headers
                 )
-                if response.status_code == 200:
+                if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
                     return True
@@ -410,7 +407,7 @@ class Indexer(object):
                     self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             return False
-        elif response.status_code != 200:
+        elif response.status_code != 201:
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
@@ -429,24 +426,19 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        if use_core_indexing:
-            api_endpoint = f"https://{self.endpoint}/v1/core/index"
-        else:
-            api_endpoint = f"https://{self.endpoint}/v1/index"
+        api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
 
-        request = {
-            'customer_id': self.customer_id,
-            'corpus_id': self.corpus_id,
-            'document': document,
-        }
+        if use_core_indexing:
+            document['type'] = 'core'
+        else:
+            document['type'] = 'structured'
 
         post_headers = { 
             'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
         try:
-            data = json.dumps(request)
+            data = json.dumps(document)
         except Exception as e:
             self.logger.info(f"Can't serialize request {request} (error {e}), skipping")   
             return False
@@ -454,10 +446,10 @@ class Indexer(object):
         try:
             response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
         except Exception as e:
-            self.logger.info(f"Exception {e} while indexing document {document['documentId']}")
+            self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
-        if response.status_code != 200:
+        if response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
@@ -469,20 +461,20 @@ class Indexer(object):
            ("ALREADY_EXISTS" in result["status"]["code"] or \
             ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
             if self.reindex:
-                self.logger.info(f"Document {document['documentId']} already exists, re-indexing")
-                self.delete_doc(document['documentId'])
+                self.logger.info(f"Document {document['id']} already exists, re-indexing")
+                self.delete_doc(document['id'])
                 response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
                 return True
             else:
-                self.logger.info(f"Document {document['documentId']} already exists, skipping")
+                self.logger.info(f"Document {document['id']} already exists, skipping")
                 return False
         if "status" in result and result["status"] and "OK" in result["status"]["code"]:
             if self.store_docs:
-                with open(f"{self.store_docs_folder}/{document['documentId']}.json", "w") as f:
+                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                     json.dump(document, f)
             return True
         
-        self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
+        self.logger.info(f"Indexing document {document['id']} failed, response = {result}")
         return False
     
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
@@ -657,12 +649,12 @@ class Indexer(object):
             metadatas = [{k:self.normalize_value(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
-        document["documentId"] = doc_id
+        document["id"] = doc_id
         if not use_core_indexing:
             if doc_title is not None and len(doc_title)>0:
                 document["title"] = self.normalize_text(doc_title)
-            document["section"] = [
-                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
+            document["sections"] = [
+                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
                 for text,title,md in zip(texts,titles,metadatas)
             ]
         else:
@@ -670,12 +662,12 @@ class Indexer(object):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["parts"] = [
-                {"text": self.normalize_text(text), "metadataJson": json.dumps(md)} 
+                {"text": self.normalize_text(text), "metadata": md} 
                 for text,md in zip(texts,metadatas)
             ]
 
         if doc_metadata:
-            document["metadataJson"] = json.dumps(doc_metadata)
+            document["metadata"] = doc_metadata
 
         if self.verbose:
             self.logger.info(f"Indexing document {doc_id} with {document}")
@@ -685,7 +677,7 @@ class Indexer(object):
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus).
-        Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
+        Document is a dictionary that includes documentId, title, optionally metadata, and sections (which is a list of segments).
 
         Args:
             document (dict): Document to index.
@@ -792,16 +784,16 @@ class Indexer(object):
         result = self.model.transcribe(file_path, temperature=0, verbose=False)
         text = result['segments']
         doc = {
-            'documentId': slugify(file_path),
+            'id': slugify(file_path),
             'title': file_path,
-            'section': [
+            'sections': [
                 { 
                     'text': t['text'],
                 } for t in text
             ]
         }
         if metadata:
-            doc['metadataJson'] = json.dumps(metadata)
+            doc['metadata'] = metadata
         self.index_document(doc)
 
 

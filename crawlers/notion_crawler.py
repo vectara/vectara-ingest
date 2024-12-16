@@ -84,8 +84,8 @@ def extract_title(page):
 
 class NotionCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.notion_api_key = self.cfg.notion_crawler.notion_api_key
 
     def crawl(self) -> None:
@@ -115,14 +115,14 @@ class NotionCrawler(Crawler):
                 continue
 
             doc = {
-                'documentId': page_id,
+                'id': page_id,
                 'title': extract_title(page),
-                'metadataJson': json.dumps({
+                'metadata': {
                     'source': 'notion',
                     'url': page['url'],
                     'title': extract_title(page),
-                }),
-                'section': [{'text': all_text}]
+                },
+                'sections': [{'text': all_text}]
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:
