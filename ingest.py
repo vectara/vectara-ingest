@@ -161,6 +161,7 @@ def main() -> None:
     logging.info("Configuration loaded...")
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     auth_url = cfg.vectara.get("auth_url", "auth.vectara.io")
+    create_corpus_flag = cfg.vectara.get("create_corpus", False)
     corpus_key = cfg.vectara.corpus_key
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
@@ -172,15 +173,22 @@ def main() -> None:
     )
 
     logging.info("Crawling instantiated...")
+    # It is sometimes useful to create the corpus (remove all documents)
+    # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
+    if create_corpus_flag:
+        logging.info("Creating corpus")
+        create_corpus(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+        time.sleep(5)   # wait 5 seconds to allow create_corpus enough time to complete on the backend
+
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
-    # To do that you would have to set this to True and also include <auth_url> and <auth_id> in the secrets.toml file
+    # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
     # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
     reset_corpus_flag = False
-    # TODO: add a "create_corpus_flag"
     if reset_corpus_flag:
         logging.info("Resetting corpus")
         reset_corpus(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
+
     logging.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")

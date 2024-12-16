@@ -162,7 +162,7 @@ class PmcCrawler(Crawler):
                     "publicationDate": date_created,
                     "source": "pmc",
                 },
-                "section": [
+                "sections": [
                     {
                         'text': meta_desc
                     },

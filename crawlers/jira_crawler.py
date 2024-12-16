@@ -45,7 +45,7 @@ class JiraCrawler(Crawler):
                         "id": issue["key"],
                         "title": title,
                         "metadata": metadata,
-                        "section": []
+                        "sections": []
                     }
                     comments_data = issue["fields"]["comment"]["comments"]
                     comments = []
@@ -62,7 +62,7 @@ class JiraCrawler(Crawler):
                     except Exception as e:
                         description = str(issue['key'])
 
-                    document["section"] = [
+                    document["sections"] = [
                         {
                             "title": "Comments",
                             "text": "\n\n".join(comments)

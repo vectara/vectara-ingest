@@ -111,7 +111,7 @@ class FmpCrawler(Crawler):
                             "id": f"transcript-{company_name}-{year}-{quarter}",
                             "title": title,
                             "metadata": metadata,
-                            "section": [
+                            "sections": [
                                 {
                                     'text': transcript['content']
                                 }

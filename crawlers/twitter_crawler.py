@@ -73,10 +73,10 @@ class TwitterCrawler(Crawler):
                     'location': user.data.location,
                     'verified': user.data.verified,
                 },
-                "section": []
+                "sections": []
             }
             for tweet in tweets.data:
-                doc["section"].append({ 
+                doc["sections"].append({ 
                     "text": clean_tweet(tweet.text) if self.cfg.twitter_crawler.get("clean_tweets", True) else tweet.text,
                     "metadata": {
                         "author": get_username_from_id(client, tweet.author_id),

@@ -60,7 +60,7 @@ class MediawikiCrawler(Crawler):
                     "last_edit_user": last_editor,
                     "source": "mediawiki",
                 },
-                "section": [
+                "sections": [
                     {
                         "text": page_content,
                     }

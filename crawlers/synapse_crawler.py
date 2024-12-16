@@ -23,7 +23,7 @@ class SynapseCrawler(Crawler):
                 'source': source,
                 'created': wiki_dict['createdOn']
             },
-            "section": [
+            "sections": [
                 { "text": f"{wiki_type} description: {description}\n" },
                 { "text": study_text },
             ]
@@ -62,7 +62,7 @@ class SynapseCrawler(Crawler):
                     'url': url,
                     'source': source,
                 },
-                "section": [{ "text": tup.description }],
+                "sections": [{ "text": tup.description }],
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:

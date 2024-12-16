@@ -170,6 +170,9 @@ vectara:
   
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
+
+  # flag: should vectara-ingest create the corpus (optional)
+  create_corpus: false
   
   # flag: store a copy of all crawled data that is indexed into a local folder
   store_docs: false

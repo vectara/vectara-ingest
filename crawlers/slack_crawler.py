@@ -176,7 +176,7 @@ def get_document(channel, message, users_info):
         "documentId": doc_id,
         "title": title,
         "metadata": doc_metadata,
-        "section": sections
+        "sections": sections
     }
 
 

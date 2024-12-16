@@ -58,6 +58,7 @@ class Indexer(object):
         self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
+        self.create_corpus = cfg.vectara.get("create_corpus", False)
         self.verbose = cfg.vectara.get("verbose", False)
         self.store_docs = cfg.vectara.get("store_docs", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
@@ -652,7 +653,7 @@ class Indexer(object):
         if not use_core_indexing:
             if doc_title is not None and len(doc_title)>0:
                 document["title"] = self.normalize_text(doc_title)
-            document["section"] = [
+            document["sections"] = [
                 {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
                 for text,title,md in zip(texts,titles,metadatas)
             ]
@@ -661,7 +662,7 @@ class Indexer(object):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["parts"] = [
-                {"text": self.normalize_text(text), "metadata": md) 
+                {"text": self.normalize_text(text), "metadata": md} 
                 for text,md in zip(texts,metadatas)
             ]
 
@@ -676,7 +677,7 @@ class Indexer(object):
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus).
-        Document is a dictionary that includes documentId, title, optionally metadata, and section (which is a list of segments).
+        Document is a dictionary that includes documentId, title, optionally metadata, and sections (which is a list of segments).
 
         Args:
             document (dict): Document to index.
