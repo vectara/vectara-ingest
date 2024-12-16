@@ -55,6 +55,34 @@ def reset_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, au
         'Accept': 'application/json',
         'Authorization': f'Bearer {token}'
     }
+    response = requests.request("POST", url, headers=headers)
+    if response.status_code == 200:
+        logging.info(f"Reset corpus {corpus_key}")
+    else:
+        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+
+def create_corpus(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
+    """
+    Create the corpus.
+
+    Args:
+        endpoint (str): Endpoint for the Vectara API.
+        appclient_id (str): ID of the Vectara app client.
+        appclient_secret (str): Secret key for the Vectara app client.
+        corpus_key (str): Corpus key of the Vectara corpus to index to.
+    """
+    url = f"https://{endpoint}/v2/corpora"
+    token = get_jwt_token(auth_url, auth_id, auth_secret)
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {token}'
+    }
+
+    payload = {
+        'key': corpus_key
+    }
+
     response = requests.request("POST", url, headers=headers, data=payload)
     if response.status_code == 200:
         logging.info(f"Reset corpus {corpus_key}")
