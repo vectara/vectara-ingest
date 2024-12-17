@@ -258,8 +258,8 @@ class UserWorker(object):
 
 class GdriveCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
         logging.info("Google Drive Crawler initialized")
 
         self.delegated_users = cfg.gdrive_crawler.delegated_users

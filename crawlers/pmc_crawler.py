@@ -31,8 +31,8 @@ def get_top_n_papers(topic: str, n: int, email: str) -> Any:
 
 class PmcCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
         self.site_urls: Set[str] = set()
         self.crawled_pmc_ids: Set[str] = set()
         self.rate_limiter = RateLimiter(self.cfg.pmc_crawler.get("num_per_second", 3))

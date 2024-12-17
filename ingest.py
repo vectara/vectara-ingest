@@ -14,7 +14,7 @@ from core.utils import setup_logging
 from authlib.integrations.requests_client import OAuth2Session
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
-    logging.info(f'inside instantiate crawler')
+    logging.info('inside instantiate crawler')
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
@@ -28,7 +28,7 @@ def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **
         raise TypeError(f"{class_name} is not a subclass of {base_class.__name__}")
 
     # Instantiate the class and return the instance
-    logging.info(f'end of instantiate crawler')
+    logging.info('end of instantiate crawler')
     return class_(*args, **kwargs)
 
 def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str, customer_id: str) -> Any:
@@ -140,13 +140,14 @@ def main() -> None:
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
     customer_id = cfg.vectara.customer_id
     corpus_id = cfg.vectara.corpus_id
+    corpus_key = cfg.vectara.get("corpus_key", None)
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
 
     # instantiate the crawler
     crawler = instantiate_crawler(
         Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', 
-        cfg, endpoint, customer_id, corpus_id, api_key
+        cfg, endpoint, customer_id, corpus_id, corpus_key, api_key
     )
 
     logging.info("Crawling instantiated...")
