@@ -171,6 +171,9 @@ Each configuration YAML file includes a set of standard variables, for example:
 vectara:
   # the corpus ID for indexing
   corpus_id: 4
+
+  # the corpus key for indexing with APIv2
+  corpus_key: my-corpus-key
   
   # the Vectara customer ID
   customer_id: 1234567

@@ -86,8 +86,9 @@ class Crawler(object):
         endpoint: str,
         customer_id: str,
         corpus_id: int,
+        corpus_key: str,
         api_key: str,
     ) -> None:
         self.cfg: DictConfig = DictConfig(cfg)
-        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, api_key)
+        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
         self.verbose = cfg.vectara.get("verbose", False)

@@ -11,11 +11,11 @@ from core.utils import create_session_with_retries
 # To use this crawler you have to have an fmp API_key in your secrets.toml profile
 class FmpCrawler(Crawler):
     
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, api_key: str) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
         '''
         Initialize the FmpCrawler
         '''
-        super().__init__(cfg, endpoint, customer_id, corpus_id, api_key)
+        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
         cfg_dict: DictConfig = DictConfig(cfg)
         self.tickers = cfg_dict.fmp_crawler.tickers
         self.start_year = int(cfg_dict.fmp_crawler.start_year)
