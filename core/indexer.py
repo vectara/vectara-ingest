@@ -460,9 +460,7 @@ class Indexer(object):
                         self.logger.error(f"Failed to extract document id from error message: {error_msg}")
                         return False
                     self.delete_doc(doc_id)
-                    self.logger.info(f"DEBUG 1, Reindexing, document {doc_id}, url={url}, post_headers={post_headers}")                    
                     response = self.session.request("POST", url, headers=post_headers, files=files)
-                    self.logger.info(f"DEBUG 2, response code={response.status_code}")
                     if response.status_code == 201:
                         self.logger.info(f"REST upload for {uri} successful (reindex)")
                         self.store_file(filename, url_to_filename(uri))
@@ -481,7 +479,7 @@ class Indexer(object):
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
-        self.logger.info(f"REST upload for {uri} succeesful")
+        self.logger.info(f"REST upload for {uri} successful")
         self.store_file(filename, url_to_filename(uri))
         return True
 
