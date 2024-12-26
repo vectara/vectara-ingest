@@ -125,7 +125,7 @@ def get_document(channel, message, users_info):
     Example output : {
         "id": "vectara_123_1234556",
         "metadata": {"author": "Vectara"},
-        "section": [{"text": "Slack messages info"},
+        "sections": [{"text": "Slack messages info"},
         {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
     }
 
