@@ -440,7 +440,7 @@ class Indexer(object):
         try:
             data = json.dumps(document)
         except Exception as e:
-            self.logger.info(f"Can't serialize request {request} (error {e}), skipping")   
+            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")   
             return False
 
         try:
@@ -463,7 +463,7 @@ class Indexer(object):
             if self.reindex:
                 self.logger.info(f"Document {document['id']} already exists, re-indexing")
                 self.delete_doc(document['id'])
-                response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
+                response = self.session.post(api_endpoint, data=json.dumps(document), verify=True, headers=post_headers)
                 return True
             else:
                 self.logger.info(f"Document {document['id']} already exists, skipping")

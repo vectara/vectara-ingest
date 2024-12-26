@@ -123,7 +123,7 @@ def get_document(channel, message, users_info):
     Returns the document to indexed in vectara
 
     Example output : {
-        "documentId": "vectara_123_1234556",
+        "id": "vectara_123_1234556",
         "metadata": {"author": "Vectara"},
         "section": [{"text": "Slack messages info"},
         {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
@@ -173,7 +173,7 @@ def get_document(channel, message, users_info):
                     continue
 
     return {
-        "documentId": doc_id,
+        "id": doc_id,
         "title": title,
         "metadata": doc_metadata,
         "sections": sections

@@ -87,15 +87,15 @@ For our example we would index the content of https://www.paulgraham.com website
 
 5. Edit the `pg-rss.yaml` file and make the following changes:
 
-   1. Change the `vectara.corpus_key` value to the ID of the corpus into which you want to ingest the content of the website.
+   1. Change the `vectara.corpus_key` value to the corpus_key for the corpus into which you want to ingest the content of the website.
 
-      To retrieve your corpus ID from the Vectara console, click **Data > Your Corpus Name** and you will see the ID on the top of the screen.
+      To retrieve your corpus key from the Vectara console, click your corpus name dropdown and you will see the key on the top of the screen.
 
-   3. Change `rss_crawler.source` to `pg`.
+   2. Change `rss_crawler.source` to `pg`.
       
-   4. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]` so it points to the Paul Graham RSS feed.
+   3. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]` so it points to the Paul Graham RSS feed.
       
-   5. Change `rss_crawler.days_past` to `365`.
+   4. Change `rss_crawler.days_past` to `365`.
 
 ## Step 3: Run the crawler
 
@@ -165,7 +165,7 @@ Each configuration YAML file includes a set of standard variables, for example:
 
 ```yaml
 vectara:
-  # the corpus ID for indexing
+  # the corpus key for indexing
   corpus_key: my-corpus
   
   # flag: should vectara-ingest reindex if document already exists (optional)
