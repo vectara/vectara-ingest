@@ -460,9 +460,7 @@ class Indexer(object):
                         self.logger.error(f"Failed to extract document id from error message: {error_msg}")
                         return False
                     self.delete_doc(doc_id)
-                    self.logger.info(f"DEBUG 1, Reindexing, document {doc_id}, url={url}, post_headers={post_headers}")                    
                     response = self.session.request("POST", url, headers=post_headers, files=files)
-                    self.logger.info(f"DEBUG 2, response code={response.status_code}")
                     if response.status_code == 201:
                         self.logger.info(f"REST upload for {uri} successful (reindex)")
                         self.store_file(filename, url_to_filename(uri))
@@ -481,7 +479,7 @@ class Indexer(object):
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
-        self.logger.info(f"REST upload for {uri} succeesful")
+        self.logger.info(f"REST upload for {uri} successful")
         self.store_file(filename, url_to_filename(uri))
         return True
 
@@ -840,14 +838,15 @@ class Indexer(object):
             return succeeded
         else:
             # Parse file content to extract images and get text content
-            self.logger.info(f"Reading contents of {filename} (url={uri})")
-            dp = UnstructuredDocumentParser(
-                verbose=self.verbose,
-                openai_api_key=openai_api_key,
-                summarize_tables=False,
-                summarize_images=self.summarize_images,
-            )
-            title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+            if len(self.extract_metadata)>0 and self.summarize_images and openai_api_key:
+                self.logger.info(f"Reading contents of {filename} (url={uri})")
+                dp = UnstructuredDocumentParser(
+                    verbose=self.verbose,
+                    openai_api_key=openai_api_key,
+                    summarize_tables=False,
+                    summarize_images=self.summarize_images,
+                )
+                title, texts, metadatas, image_summaries = dp.parse(filename, uri)
 
             # Get metadata from text content
             if len(self.extract_metadata)>0:
@@ -865,10 +864,16 @@ class Indexer(object):
             # index the file within Vectara (use FILE UPLOAD API)
             if self.corpus_key is None:
                 succeeded = self._index_file_v1(filename, uri, metadata)
-                self.logger.info(f"For {uri} - uploaded via Vectara file upload API v1")
+                if succeeded:
+                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v1")
+                else:
+                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v1 failed")
             else:
                 succeeded = self._index_file_v2(filename, uri, metadata)
-                self.logger.info(f"For {uri} - uploaded via Vectara file upload API v2")
+                if succeeded:
+                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v2")
+                else:
+                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v2 failed")
             
             # If needs to summarize images - then do it locally
             if self.summarize_images and openai_api_key:
