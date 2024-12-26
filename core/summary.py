@@ -110,6 +110,7 @@ class TableSummarizer():
         prompt = f"""
             Adopt the perspective of a professional data analyst, with expertise in generating insight from structured data. 
             Provide a detailed description of the results reported in this table, ensuring clarity, depth and relevance. Don't omit any data points.
+            Start with a description for each each row in the table. Then follow by a broader analysis of trends and insights, and conclude with an interpretation of the data.
             Contextual Details:
             - Examine the table headings, footnotes, or accompanying text to identify key contextual details such as the time period, location, subject area, and units of measurement.
             - Always include the table title, time frame, and geographical or thematic scope in your description.
@@ -129,7 +130,7 @@ class TableSummarizer():
             Clarity and Accuracy:
             - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
             - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
-            Your response should be without headings.
+            Your response should be without headings, and in text (not markdown). 
             Table chunk: {text} 
         """
         try:
