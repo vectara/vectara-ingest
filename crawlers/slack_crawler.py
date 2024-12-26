@@ -120,7 +120,7 @@ def replace_user_id_with_user_handler(messages, users_info):
 
 def get_document(channel, message, users_info):
     """
-    Returns the document to indexed in vectara
+    Returns the document to be indexed in Vectara
 
     Example output : {
         "id": "vectara_123_1234556",
