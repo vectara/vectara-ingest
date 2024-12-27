@@ -82,6 +82,7 @@ For our example we would index the content of https://www.paulgraham.com website
 3. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
    To retrieve your API key from the Vectara console, click **Access Control** in your corpus view or use the **Authorization** Tab.
+   You can use your Vectara personal API key, or a query+write api key.
 
 4. In the `config/` directory, copy the `news-bbc.yaml` config file to `pg-rss.yaml`.
 
@@ -171,7 +172,8 @@ vectara:
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
 
-  # flag: should vectara-ingest create the corpus (optional)
+  # flag: should vectara-ingest create the corpus (optional). defaults to false. 
+  # When using this option, make sure your secrets.toml includes the personal api key.
   create_corpus: false
   
   # flag: store a copy of all crawled data that is indexed into a local folder

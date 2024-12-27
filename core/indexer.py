@@ -352,9 +352,9 @@ class Indexer(object):
 
             # Extract URLs from documents
             for doc in res['documents']:
-                url = next((md['value'] for md in doc['metadata'] if md['name'] == 'url'), None)
-                docs.append({'doc_id': doc['id'], 'url': url})
-
+                url = doc['metadata']['url'] if 'url' in doc['metadata'] else None
+                docs.append({'id': doc['id'], 'url': url})
+ 
             response_metadata = res.get('metadata', None)
             # Check if we need to go further
             if not response_metadata or not response_metadata['page_key']:  # Break the loop if there's no next page
@@ -799,7 +799,8 @@ class Indexer(object):
                 self.logger.info(f"For {uri} - uploade via Vectara file upload API failed")
             
             # If needs to summarize images - then do it locally
-            if self.summarize_images and openai_api_key:
+            image_summaries = []
+            if self.summarize_images and openai_api_key and image_summaries:
                 self.logger.info(f"Parsing images from {uri}")
                 self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
                 for inx,image_summary in enumerate(image_summaries):

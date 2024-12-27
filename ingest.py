@@ -91,7 +91,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
         endpoint (str): Endpoint for the Vectara API.
         appclient_id (str): ID of the Vectara app client.
         appclient_secret (str): Secret key for the Vectara app client.
-        corpus_key (str): Corpus key of the Vectara corpus to index to.
+        corpus_key (str): Corpus key of the Vectara corpus to create
     """
     url = f"https://{endpoint}/v2/corpora"
     token = get_jwt_token(auth_url, auth_id, auth_secret)
@@ -118,7 +118,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     Args:
         endpoint (str): Endpoint for the Vectara API.
         corpus_key (str): Corpus key of the Vectara corpus to index to.
-        api_key (str): API key to create the 
+        api_key (str): personal API key to create the corpus
     """
     url = f"https://{endpoint}/v2/corpora"
     headers = {
@@ -221,7 +221,7 @@ def main() -> None:
     )
 
     logging.info("Crawling instantiated...")
-    # It is sometimes useful to create the corpus (remove all documents)
+    # It is sometimes useful to create a new corpus.
     # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
     if create_corpus_flag:
         logging.info("Creating corpus")

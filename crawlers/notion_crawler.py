@@ -147,7 +147,7 @@ class NotionCrawler(Crawler):
             docs_to_remove = [doc for doc in existing_docs if doc['doc_id'] not in indexed_ids]
             logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             for doc in docs_to_remove:
-                self.indexer.delete_doc(doc['doc_id'])
+                self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
                 with open('/home/vectara/env/pages_removed.txt', 'w') as f:
                     for doc in docs_to_remove:
