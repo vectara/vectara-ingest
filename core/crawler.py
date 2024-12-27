@@ -25,6 +25,9 @@ def url_is_relative(url: str) -> bool:
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
                     indexer: Indexer, visited: Optional[Set[str]]=None, 
                     verbose: bool = False) -> Set[str]:
+    """
+    Recursively crawl a URL and extract all links from it.
+    """    
     if visited is None:
         visited = set()
 

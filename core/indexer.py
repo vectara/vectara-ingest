@@ -364,61 +364,7 @@ class Indexer(object):
     
         return docs
 
-    def _index_file_v1(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
-        """
-        Index a file on local file system by uploading it to the Vectara corpus, using APIv1.
-        Args:
-            filename (str): Name of the file to create.
-            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
-            metadata (dict): Metadata for the document.
-        Returns:
-            bool: True if the upload was successful, False otherwise.
-        """
-        if not os.path.exists(filename):
-            self.logger.error(f"File {filename} does not exist")
-            return False
-
-        def get_files(filename: str, metadata: dict):
-            return  {
-                "file": (uri, open(filename, 'rb')),
-                "metadata": (None, json.dumps(metadata)),
-            }  
-
-        post_headers = { 
-            'x-api-key': self.api_key,
-            'X-Source': self.x_source
-        }
-        response = self.session.post(
-            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
-            files=get_files(filename, metadata), verify=True, headers=post_headers
-        )
-        if response.status_code == 409:
-            if self.reindex:
-                doc_id = response.json()['details'].split('document id')[1].split("'")[1]
-                self.delete_doc(doc_id)
-                response = self.session.post(
-                    f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file",
-                    files=get_files(filename, metadata), verify=True, headers=post_headers
-                )
-                if response.status_code == 201:
-                    self.logger.info(f"REST upload for {uri} successful (reindex)")
-                    self.store_file(filename, url_to_filename(uri))
-                    return True
-                else:
-                    self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
-                    return True
-            else:
-                self.logger.info(f"REST upload for {uri} failed with code {response.status_code}")
-            return False
-        elif response.status_code != 201:
-            self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
-            return False
-
-        self.logger.info(f"REST upload for {uri} succeesful")
-        self.store_file(filename, url_to_filename(uri))
-        return True
-
-    def _index_file_v2(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus, using APIv2
         Args:
@@ -513,33 +459,26 @@ class Indexer(object):
             self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
-        if response.status_code != 201:
+        if response.status_code == 409 or response.status_code == 412:
+            if self.reindex:
+                self.logger.info(f"Document {document['id']} already exists, re-indexing")
+                self.delete_doc(document['id'])
+                response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+            else:
+                self.logger.info(f"Document {document['id']} already exists, skipping")
+                return False
+        elif response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
                           response.text)
             return False
 
-        result = response.json()
-        if "status" in result and result["status"] and \
-           ("ALREADY_EXISTS" in result["status"]["code"] or \
-            ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
-            if self.reindex:
-                self.logger.info(f"Document {document['id']} already exists, re-indexing")
-                self.delete_doc(document['id'])
-                response = self.session.post(api_endpoint, data=json.dumps(document), verify=True, headers=post_headers)
-                return True
-            else:
-                self.logger.info(f"Document {document['id']} already exists, skipping")
-                return False
-        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
-            if self.store_docs:
-                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
-                    json.dump(document, f)
-            return True
+        if self.store_docs:
+            with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
+                json.dump(document, f)
+        return True
         
-        self.logger.info(f"Indexing document {document['id']} failed, response = {result}")
-        return False
     
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
         """
@@ -853,18 +792,11 @@ class Indexer(object):
             metadata.update(ex_metadata)
 
             # index the file within Vectara (use FILE UPLOAD API)
-            if self.corpus_key is None:
-                succeeded = self._index_file_v1(filename, uri, metadata)
-                if succeeded:
-                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v1")
-                else:
-                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v1 failed")
+            succeeded = self._index_file(filename, uri, metadata)
+            if succeeded:
+                self.logger.info(f"For {uri} - uploaded via Vectara file upload API")
             else:
-                succeeded = self._index_file_v2(filename, uri, metadata)
-                if succeeded:
-                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v2")
-                else:
-                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v2 failed")
+                self.logger.info(f"For {uri} - uploade via Vectara file upload API failed")
             
             # If needs to summarize images - then do it locally
             if self.summarize_images and openai_api_key:
