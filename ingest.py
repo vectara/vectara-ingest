@@ -1,26 +1,30 @@
 import logging
-import json
-import requests
 import time
-from omegaconf import OmegaConf, DictConfig
-import toml     # type: ignore
 import sys
 import os
 from typing import Any
-
 import importlib
-from core.crawler import Crawler
-from core.utils import setup_logging
+
+import requests
+import toml     # type: ignore
+
+from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
+from core.crawler import Crawler
+from core.utils import setup_logging
+
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
+    """
+    Dynamically import a module and instantiate a crawler class.
+    """
     logging.info('inside instantiate crawler')
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
     module_name = f"{folder_name}.{crawler_name.lower()}_crawler"  # Construct the full module path
     module = importlib.import_module(module_name)
-    
+
     class_ = getattr(module, class_name)
 
     # Ensure the class is a subclass of the base class
@@ -136,7 +140,6 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         logging.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error creating corpus: {response.status_code} {response.text}")
-                      
 
 def main() -> None:
     """
@@ -155,10 +158,10 @@ def main() -> None:
 
     # process arguments 
     cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
-    
+
     # add .env params, by profile
     volume = '/home/vectara/env'
-    with open(f"{volume}/secrets.toml", 'r') as f:
+    with open(f"{volume}/secrets.toml", "r") as f:
         env_dict = toml.load(f)
     if profile_name not in env_dict:
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
@@ -216,7 +219,7 @@ def main() -> None:
 
     # instantiate the crawler
     crawler = instantiate_crawler(
-        Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler', 
+        Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler',
         cfg, endpoint, corpus_key, api_key
     )
 
