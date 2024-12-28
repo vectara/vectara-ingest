@@ -1,15 +1,25 @@
 import json
-from core.crawler import Crawler
-from omegaconf import OmegaConf
-import requests
+from typing import List, Any
+from datetime import datetime
 import logging
 import base64
-from datetime import datetime
+
+from box import Box
+from omegaconf import OmegaConf
+
+import requests
 import markdown
 
+from core.crawler import Crawler
 from core.utils import create_session_with_retries, html_to_text, RateLimiter
 
-from typing import List, Any
+def clean_empty_sections(doc: dict) -> dict:
+    len_before = len(doc['sections'])
+    doc['sections'] = [section for section in doc['sections'] if section['text']]
+    len_after = len(doc['sections'])
+    if len_after < len_before:
+        logging.info(f"Removed {len_before-len_after} empty sections for doc {doc['id']}")
+    return doc
 
 def convert_date(date_str: str) -> str:
     # Remove the 'Z' at the end and parse the date string to a datetime object
@@ -26,7 +36,6 @@ class Github(object):
         self.owner = owner
         self.token = token
         self.session = create_session_with_retries()
-
 
     def get_issues(self, state: str) -> List[Any]:
         # state can be "open", "closed", or "all"
@@ -84,7 +93,7 @@ class GithubCrawler(Crawler):
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
 
-    def crawl_code_folder(self, base_url: str, path: str = "") -> None:
+    def crawl_code_folder(self, base_url: str, repo: str, path: str = "") -> None:
         headers = { "Accept": "application/vnd.github+json"}
         if self.github_token:
             headers["Authorization"] = f"token {self.github_token}"
@@ -109,7 +118,7 @@ class GithubCrawler(Crawler):
                     text_content = html_to_text(markdown.markdown(file_content))
                     metadata = {'file': fname, 'source': 'github', 'url': url}
                     code_doc = {
-                        'id': f'github-{item["path"]}',
+                        'id': f'github-{repo}-{item["path"]}',
                         'title': item["name"],
                         'description': f'Markdown of {fname}',
                         'metadata': metadata,
@@ -122,11 +131,11 @@ class GithubCrawler(Crawler):
                     logging.info(f"Indexing codebase markdown: {item['path']}")
                     self.indexer.index_document(code_doc)
             elif item["type"] == "dir":
-                self.crawl_code_folder(base_url, path=item["path"])
+                self.crawl_code_folder(base_url, repo=repo, path=item["path"])
 
     def add_comments(self, doc: dict, comments: List[Any]) -> None:
         for d_comment in comments:
-            comment = OmegaConf.create(d_comment)
+            comment = Box(d_comment)
             metadata = {
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
                 'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'updated_at': convert_date(comment.updated_at)
@@ -145,7 +154,7 @@ class GithubCrawler(Crawler):
         # Extract and index pull requests
         prs = g.get_pull_requests("all")
         for d_pr in prs:
-            pr = OmegaConf.create(d_pr)
+            pr = Box(d_pr)
             doc_metadata = {
                 'source': 'github',
                 'id': pr.id, 
@@ -163,7 +172,7 @@ class GithubCrawler(Crawler):
                 'metadata': doc_metadata,
                 'sections': [{
                     'title': pr.title,
-                    'text': pr.body,
+                    'text': pr.body if pr.body else "",
                 }]
             }
 
@@ -173,6 +182,12 @@ class GithubCrawler(Crawler):
                 self.add_comments(pr_doc, comments)
             else:
                 logging.info(f"No comments for repo {repo}, PR {pr.number}")
+
+            # remove any empty text sections
+            pr_doc = clean_empty_sections(pr_doc)
+            if len(pr_doc['sections']) == 0:
+                logging.info(f"No text sections for repo {repo}, PR {pr.number}")
+                continue
 
             # index everything
             try:
@@ -185,7 +200,7 @@ class GithubCrawler(Crawler):
         issues = g.get_issues("all")
         for d_issue in issues:
             # Extract issue metadata
-            issue = OmegaConf.create(d_issue)
+            issue = Box(d_issue)
             title = issue.title
             description = issue.body
             created_at = convert_date(issue.created_at)
@@ -218,6 +233,11 @@ class GithubCrawler(Crawler):
             else:
                 logging.info(f"No comments for repo {repo}, issue {issue.number}")
 
+            issue_doc = clean_empty_sections(issue_doc)
+            if len(pr_doc['sections']) == 0:
+                logging.info(f"No text sections for repo {repo}, issue {issue.number}")
+                continue
+
             # index everything
             logging.info(f"Indexing issue: {issue.number}")
             try:
@@ -230,10 +250,9 @@ class GithubCrawler(Crawler):
         # Extract and index codebase if requested
         if self.crawl_code:
             base_url = f"https://api.github.com/repos/{owner}/{repo}"
-            self.crawl_code_folder(base_url)
+            self.crawl_code_folder(base_url, repo)
 
     def crawl(self) -> None:
         for repo in self.repos:
             logging.info(f"Crawling repo {repo}")
             self.crawl_repo(repo, self.owner, self.github_token)
-

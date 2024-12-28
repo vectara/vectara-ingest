@@ -30,12 +30,15 @@ def get_block_text(notion, block):
     
     # Check for child blocks
     if block.get("has_children", False):
-        children = notion.blocks.children.list(block["id"])
-        for child in children["results"]:
-            if block["type"] in ['child_page']:
-                continue
-            text += get_block_text(notion, child) + " "
-    
+        try:
+            children = notion.blocks.children.list(block["id"])
+            for child in children["results"]:
+                if block["type"] in ['child_page']:
+                    continue
+                text += get_block_text(notion, child) + " "
+        except Exception as e:
+            logging.info(f"Failed to get children for block {block['id']}, likely due to permissions: {e}")
+            
     return text
 
 def list_all_pages(notion: Any):

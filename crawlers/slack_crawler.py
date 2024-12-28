@@ -2,7 +2,6 @@ import time
 import re
 import ray
 import psutil
-import json
 import logging
 import datetime
 from omegaconf import OmegaConf
@@ -91,7 +90,7 @@ def get_doc_metadata(channel, message, users_info):
     except KeyError as e:
         logging.error(f"Error while creating the metadata: {e}")
 
-    return json.dumps(metadata)
+    return metadata
 
 
 def replace_user_id_with_user_handler(messages, users_info):
