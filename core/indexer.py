@@ -173,7 +173,7 @@ class Indexer:
         '''
         page = context = None
         text = ''
-        html = ''
+        html_content = ''
         title = ''
         links = []
         out_url = url
@@ -195,7 +195,7 @@ class Indexer:
             self._scroll_to_bottom(page)
 
             title = page.title()
-            html = page.content()
+            html_content = page.content()
 
             out_url = page.url
             text = page.evaluate(f"""() => {{
@@ -272,7 +272,7 @@ class Indexer:
 
         return {
             'text': text,
-            'html': html,
+            'html': html_content,
             'title': title,
             'url': out_url,
             'links': links,
@@ -295,6 +295,24 @@ class Indexer:
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.wait_for_timeout(pause)
 
+    def _does_doc_exist(self, doc_id: str) -> bool:
+        """
+        Check if a document exists in the Vectara corpus.
+
+        Args:
+            doc_id (str): ID of the document to check.
+
+        Returns:
+            bool: True if the document exists, False otherwise.
+        """
+        post_headers = {
+            'x-api-key': self.api_key,
+            'X-Source': self.x_source
+        }
+        response = self.session.get(
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            verify=True, headers=post_headers)
+        return response.status_code == 200
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -390,32 +408,26 @@ class Indexer:
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
-        if response.status_code == 400:
-            error_msg = json.loads(html.unescape(response.text))
-            if error_msg['httpCode'] == 409:
-                if self.reindex:
-                    match = re.search(r"document id '([^']+)'", error_msg['details'])
-                    if match:
-                        doc_id = match.group(1)
-                    else:
-                        self.logger.error(f"Failed to extract document id from error message: {error_msg}")
-                        return False
-                    self.delete_doc(doc_id)
-                    response = self.session.request("POST", url, headers=post_headers, files=files)
-                    if response.status_code == 201:
-                        self.logger.info(f"REST upload for {uri} successful (reindex)")
-                        self.store_file(filename, url_to_filename(uri))
-                        return True
-                    else:
-                        self.logger.info(f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
-                        return True
+        if response.status_code == 409:
+            if self.reindex:
+                match = re.search(r"document id '([^']+)'", response.text)
+                if match:
+                    doc_id = match.group(1)
                 else:
-                    self.logger.info(f"document {uri} already indexed, skipping")
+                    self.logger.error(f"Failed to extract document id from error message: {response.text}")
                     return False
+                self.delete_doc(doc_id)
+                response = self.session.request("POST", url, headers=post_headers, files=files)
+                if response.status_code == 201:
+                    self.logger.info(f"REST upload for {uri} successful (reindex)")
+                    self.store_file(filename, url_to_filename(uri))
+                    return True
+                else:
+                    self.logger.info(f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
+                    return True
             else:
-                self.logger.info(f"REST upload for {uri} failed with code {response.status_code}")
+                self.logger.info(f"document {uri} already indexed, skipping")
                 return False
-            return False
         elif response.status_code != 201:
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
@@ -436,6 +448,14 @@ class Indexer:
             bool: True if the upload was successful, False otherwise.
         """
         api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
+        doc_exists = self._does_doc_exist(document['id'])
+        if doc_exists:
+            if self.reindex:
+                self.logger.info(f"Document {document['id']} already exists, deleting then reindexing")
+                self.delete_doc(document['id'])
+            else:
+                self.logger.info(f"Document {document['id']} already exists, skipping")
+                return False
 
         if use_core_indexing:
             document['type'] = 'core'
@@ -458,15 +478,7 @@ class Indexer:
             self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
-        if response.status_code == 409 or response.status_code == 412:
-            if self.reindex:
-                self.logger.info(f"Document {document['id']} already exists, re-indexing")
-                self.delete_doc(document['id'])
-                response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
-            else:
-                self.logger.info(f"Document {document['id']} already exists, skipping")
-                return False
-        elif response.status_code != 201:
+        if response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
