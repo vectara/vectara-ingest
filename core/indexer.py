@@ -847,6 +847,11 @@ class Indexer(object):
                     summarize_images=self.summarize_images,
                 )
                 title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+            else:
+                title = None
+                texts = []
+                metadatas = []
+                image_summaries = []
 
             # Get metadata from text content
             if len(self.extract_metadata)>0:
