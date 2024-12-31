@@ -838,7 +838,7 @@ class Indexer(object):
             return succeeded
         else:
             # Parse file content to extract images and get text content
-            if len(self.extract_metadata)>0 and self.summarize_images and openai_api_key:
+            if (len(self.extract_metadata)>0 or self.summarize_images) and openai_api_key:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
                     verbose=self.verbose,
