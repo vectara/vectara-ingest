@@ -14,8 +14,8 @@ def datetime_to_date(datetime_str: str) -> str:
 
 class DiscourseCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.discourse_base_url = self.cfg.discourse_crawler.base_url
         self.discourse_api_key = self.cfg.discourse_crawler.discourse_api_key
         self.session = create_session_with_retries()
@@ -51,31 +51,31 @@ class DiscourseCrawler(Crawler):
         # parse the response JSON
         posts = list(json.loads(response.text)['post_stream']['posts'])
         document = {
-            'documentId': 'topic-' + str(topic_id),
+            'id': 'topic-' + str(topic_id),
             'title': topic['title'],
-            'metadataJson': json.dumps({
+            'metadata': {
                 'created_at': datetime_to_date(topic['created_at']),
                 'last_posted_at': datetime_to_date(topic['last_posted_at']),
                 'source': 'discourse',
                 'url': self.discourse_base_url + '/t/' + str(topic_id)
-            }),
-            'section': []
+            },
+            'sections': []
         }
         for post in posts:
             section = {
                 'text': html_to_text(post['cooked']),
-                'metadataJson': json.dumps({
+                'metadata': {
                     'created_at': datetime_to_date(post['created_at']),
                     'updated_at': datetime_to_date(post['updated_at']),
                     'poster': post['username'],
                     'poster_name': post['name'],
                     'source': 'discourse',
                     'url': self.discourse_base_url + '/p/' + str(post['id'])
-                }),
+                },
             }
             if 'title' in post:
                 section['title'] = post['title']
-            document['section'].append(section)
+            document['sections'].append(section)
 
         self.indexer.index_document(document)
         return posts

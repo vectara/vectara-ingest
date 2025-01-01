@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 153
-  customer_id: 1526022105
+  corpus_key: news-fox
   reindex: false
+  create_corpus: false
 
 crawling:
   crawler_type: rss
@@ -9,10 +9,10 @@ crawling:
 rss_crawler:
   source: fox
   rss_pages: [
-    "http://feeds.foxnews.com/foxnews/latest", "http://feeds.foxnews.com/foxnews/national", "http://feeds.foxnews.com/foxnews/world",
-    "http://feeds.foxnews.com/foxnews/politics", "http://feeds.foxnews.com/foxnews/business", "http://feeds.foxnews.com/foxnews/entertainment",
-    "http://feeds.foxnews.com/foxnews/health", "http://feeds.foxnews.com/foxnews/science", "http://feeds.foxnews.com/foxnews/tech",
-    "http://feeds.foxnews.com/foxnews/internal/travel/mixed", "http://feeds.foxnews.com/foxnews/section/lifestyle"
+    "https://feeds.foxnews.com/foxnews/latest", "https://feeds.foxnews.com/foxnews/national", "http://feeds.foxnews.com/foxnews/world",
+    "https://feeds.foxnews.com/foxnews/politics", "https://feeds.foxnews.com/foxnews/business", "https://feeds.foxnews.com/foxnews/entertainment",
+    "https://feeds.foxnews.com/foxnews/health", "https://feeds.foxnews.com/foxnews/science", "https://feeds.foxnews.com/foxnews/tech",
+    "https://feeds.foxnews.com/foxnews/internal/travel/mixed", "https://feeds.foxnews.com/foxnews/section/lifestyle"
   ]
   days_past: 30
   delay: 1

@@ -82,24 +82,21 @@ For our example we would index the content of https://www.paulgraham.com website
 3. In the `secrets.toml` file, change `api_key` to the Vectara API Key.
 
    To retrieve your API key from the Vectara console, click **Access Control** in your corpus view or use the **Authorization** Tab.
+   You can use your Vectara personal API key, or a query+write API key.
 
 4. In the `config/` directory, copy the `news-bbc.yaml` config file to `pg-rss.yaml`.
 
 5. Edit the `pg-rss.yaml` file and make the following changes:
 
-   1. Change the `vectara.corpus_id` value to the ID of the corpus into which you want to ingest the content of the website.
+   1. Change the `vectara.corpus_key` value to the corpus_key for the corpus into which you want to ingest the content of the website.
 
-      To retrieve your corpus ID from the Vectara console, click **Data > Your Corpus Name** and you will see the ID on the top of the screen.
-      
-   2. Change the `vectara.customer_id` value to the ID of your account.
+      To retrieve your corpus key from the Vectara console, click your corpus name dropdown and you will see the key on the top of the screen.
 
-      To retrieve your customer ID from the Vectara console, click your username in the upper-right corner.
-
-   3. Change `rss_crawler.source` to `pg`.
+   2. Change `rss_crawler.source` to `pg`.
       
-   4. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]` so it points to the Paul Graham RSS feed.
+   3. Change `rss_crawler.rss_pages` to `["http://www.aaronsw.com/2002/feeds/pgessays.rss"]` so it points to the Paul Graham RSS feed.
       
-   5. Change `rss_crawler.days_past` to `365`.
+   4. Change `rss_crawler.days_past` to `365`.
 
 ## Step 3: Run the crawler
 
@@ -169,17 +166,15 @@ Each configuration YAML file includes a set of standard variables, for example:
 
 ```yaml
 vectara:
-  # the corpus ID for indexing
-  corpus_id: 4
-
-  # the corpus key for indexing with APIv2
-  corpus_key: my-corpus-key
-  
-  # the Vectara customer ID
-  customer_id: 1234567
+  # the corpus key for indexing
+  corpus_key: my-corpus
   
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
+
+  # flag: should vectara-ingest create the corpus (optional). defaults to false. 
+  # When using this option, make sure your secrets.toml includes the personal API key.
+  create_corpus: false
   
   # flag: store a copy of all crawled data that is indexed into a local folder
   store_docs: false

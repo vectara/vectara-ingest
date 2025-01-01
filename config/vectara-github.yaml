@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 150
-  customer_id: 1526022105
+  corpus_key: github
   reindex: true
+  create_corpus: false
 
 crawling:
   crawler_type: github

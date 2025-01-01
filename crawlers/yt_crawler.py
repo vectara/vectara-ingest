@@ -94,12 +94,12 @@ class YtCrawler(Crawler):
 
         # Index the main playlist information
         main_doc = {
-            'documentId': playlist.playlist_id,
+            'id': playlist.playlist_id,
             'title': playlist.title,
-            'metadataJson': json.dumps({'url': playlist.playlist_url}),
+            'metadata': {'url': playlist.playlist_url},
         }
         try:
-            main_doc['section'].append({'text': playlist.description})
+            main_doc['sections'].append({'text': playlist.description})
         except Exception as e:
             logging.info(f"Can't index description of playlist {playlist.title}, skipping")
 
@@ -155,17 +155,17 @@ class YtCrawler(Crawler):
             
             # Restore puncutation            
             subtitles_doc = {
-                'documentId': video.video_id,
+                'id': video.video_id,
                 'title': video.title,
-                'metadataJson': json.dumps({'url': video.watch_url}),
-                'section': [
+                'metadata': {'url': video.watch_url},
+                'sections': [
                     { 
                         'text': st['text'],
-                        'metadataJson': json.dumps({
+                        'metadata': {
                             'start': st['start'], 
                             'end': st['end'],
                             'url': f"{video.watch_url}&t={st['start']}s",
-                        }),
+                        },
                     } for st in subtitles
                 ]
             }

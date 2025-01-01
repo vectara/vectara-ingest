@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 3
-  customer_id: 1169579801
+  corpus_key: hn
   reindex: false
+  create_corpus: false
 
 crawling:
   crawler_type: hackernews

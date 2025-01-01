@@ -11,11 +11,11 @@ from core.utils import create_session_with_retries
 # To use this crawler you have to have an fmp API_key in your secrets.toml profile
 class FmpCrawler(Crawler):
     
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         '''
         Initialize the FmpCrawler
         '''
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         cfg_dict: DictConfig = DictConfig(cfg)
         self.tickers = cfg_dict.fmp_crawler.tickers
         self.start_year = int(cfg_dict.fmp_crawler.start_year)
@@ -31,12 +31,12 @@ class FmpCrawler(Crawler):
         try:
             succeeded = self.indexer.index_document(document)
             if succeeded:
-                logging.info(f"Indexed {document['documentId']}")
+                logging.info(f"Indexed {document['id']}")
             else:
-                logging.info(f"Error indexing issue {document['documentId']}")
+                logging.info(f"Error indexing issue {document['id']}")
             return succeeded
         except Exception as e:
-            logging.info(f"Error during indexing of {document['documentId']}: {e}")
+            logging.info(f"Error during indexing of {document['id']}: {e}")
             return False
 
     def index_10k(self, ticker: str, company_name: str, year: int) -> None:
@@ -66,10 +66,10 @@ class FmpCrawler(Crawler):
                     'type': 'filing', 'filing_type': '10-K', 'url': url
                 }
                 document: Dict[str, Any] = {
-                    "documentId": f"10-K-{company_name}-{year}",
+                    "id": f"10-K-{company_name}-{year}",
                     "title": doc_title,
-                    "metadataJson": json.dumps(metadata),
-                    "section": []
+                    "metadata": metadata,
+                    "sections": []
                 }
                 for key in data.keys():
                     if isinstance(data[key], str):
@@ -80,8 +80,8 @@ class FmpCrawler(Crawler):
                             values = [v for v in values if v and isinstance(v, str) and len(v)>=50]
                             text = '\n'.join(values)
                             if len(values)>0 and len(text)>100:
-                                document['section'].append({'title': title, 'text': text})
-                if len(document['section'])>0:
+                                document['sections'].append({'title': title, 'text': text})
+                if len(document['sections'])>0:
                     self.index_doc(document)
 
     def index_call_transcripts(self, ticker: str, company_name: str, year: int) -> None:
@@ -108,10 +108,10 @@ class FmpCrawler(Crawler):
                             'year': year, 'quarter': quarter, 'type': 'transcript'
                         }
                         document = {
-                            "documentId": f"transcript-{company_name}-{year}-{quarter}",
+                            "id": f"transcript-{company_name}-{year}-{quarter}",
                             "title": title,
-                            "metadataJson": json.dumps(metadata),
-                            "section": [
+                            "metadata": metadata,
+                            "sections": [
                                 {
                                     'text': transcript['content']
                                 }

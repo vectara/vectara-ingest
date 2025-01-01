@@ -31,8 +31,8 @@ def get_top_n_papers(topic: str, n: int, email: str) -> Any:
 
 class PmcCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.site_urls: Set[str] = set()
         self.crawled_pmc_ids: Set[str] = set()
         self.rate_limiter = RateLimiter(self.cfg.pmc_crawler.get("num_per_second", 3))
@@ -154,15 +154,15 @@ class PmcCrawler(Crawler):
             summary = html_to_text(ht['full-summary'])
             meta_desc = ht['@meta-desc']
             document = {
-                "documentId": f'medline-plus-{medline_id}',
+                "id": f'medline-plus-{medline_id}',
                 "title": title,
                 "description": f'medline information for {title}',
-                "metadataJson": json.dumps({
+                "metadata": {
                     "url": topic_url,
                     "publicationDate": date_created,
                     "source": "pmc",
-                }),
-                "section": [
+                },
+                "sections": [
                     {
                         'text': meta_desc
                     },

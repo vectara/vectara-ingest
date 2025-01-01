@@ -25,6 +25,9 @@ def url_is_relative(url: str) -> bool:
 def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[Any], 
                     indexer: Indexer, visited: Optional[Set[str]]=None, 
                     verbose: bool = False) -> Set[str]:
+    """
+    Recursively crawl a URL and extract all links from it.
+    """    
     if visited is None:
         visited = set()
 
@@ -75,8 +78,7 @@ class Crawler(object):
 
     Args:
         endpoint (str): Endpoint for the Vectara API.
-        customer_id (str): ID of the Vectara customer.
-        corpus_id (int): ID of the Vectara corpus to index to.
+        corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key to use for indexing into Vectara
     """
 
@@ -84,11 +86,9 @@ class Crawler(object):
         self,
         cfg: OmegaConf,
         endpoint: str,
-        customer_id: str,
-        corpus_id: int,
         corpus_key: str,
         api_key: str,
     ) -> None:
         self.cfg: DictConfig = DictConfig(cfg)
-        self.indexer = Indexer(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+        self.indexer = Indexer(cfg, endpoint, corpus_key, api_key)
         self.verbose = cfg.vectara.get("verbose", False)

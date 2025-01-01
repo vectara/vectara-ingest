@@ -1,10 +1,11 @@
+import os
 import logging
+
 from omegaconf import OmegaConf
 from slugify import slugify
-from bs4 import BeautifulSoup 
+
 import pandas as pd
 from datetime import datetime
-import os
 
 from sec_downloader import Downloader
 from sec_downloader.types import RequestedFilings
@@ -56,8 +57,8 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
 
 class EdgarCrawler(Crawler):
     
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.tickers = self.cfg.edgar_crawler.tickers
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date
@@ -79,7 +80,7 @@ class EdgarCrawler(Crawler):
         for ticker in self.tickers:
 
             for filing_type in self.filing_types:
-                logging.info(f"downloading {filing_type}s for {ticker}")
+                logging.info(f"downloading {filing_type}s for company with ticker {ticker}")
                 filings = get_filings(ticker, self.start_date, self.end_date, filing_type)
 
                 # no more filings in search universe
