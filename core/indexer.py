@@ -767,6 +767,22 @@ class Indexer:
             else:
                 self.logger.info(f"For file {filename}, extracted text locally since file size is larger than {size_limit}MB")
             return succeeded
+        else:
+            # Parse file content to extract images and get text content
+            if (len(self.extract_metadata)>0 or self.summarize_images) and openai_api_key:
+                self.logger.info(f"Reading contents of {filename} (url={uri})")
+                dp = UnstructuredDocumentParser(
+                    verbose=self.verbose,
+                    openai_api_key=openai_api_key,
+                    summarize_tables=False,
+                    summarize_images=self.summarize_images,
+                )
+                title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+            else:
+                title = None
+                texts = []
+                metadatas = []
+                image_summaries = []
 
         #
         # Otherwise, use Vectara file_upload
