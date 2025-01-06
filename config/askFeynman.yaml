@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 4
-  customer_id: 1169579801
+  corpus_key: feynman
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: website

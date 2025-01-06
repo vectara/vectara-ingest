@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 24
-  customer_id: 1169579801
+  corpus_key: s3
   reindex: false
+  create_corpus: true
 
 crawling:
   crawler_type: s3

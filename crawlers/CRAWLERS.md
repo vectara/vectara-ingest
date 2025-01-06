@@ -146,7 +146,7 @@ The csv crawler is similar to the database crawler, but instead of pulling data 
 In the above example, the crawler would
 1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
-3. Each such Vectara document that is indexed, will include several section (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
+3. Each such Vectara document that is indexed, will include several sections (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
 
 Note that the type of file is determined by it's extension (e.g. CSV vs XLSX)
 

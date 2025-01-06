@@ -30,12 +30,15 @@ def get_block_text(notion, block):
     
     # Check for child blocks
     if block.get("has_children", False):
-        children = notion.blocks.children.list(block["id"])
-        for child in children["results"]:
-            if block["type"] in ['child_page']:
-                continue
-            text += get_block_text(notion, child) + " "
-    
+        try:
+            children = notion.blocks.children.list(block["id"])
+            for child in children["results"]:
+                if block["type"] in ['child_page']:
+                    continue
+                text += get_block_text(notion, child) + " "
+        except Exception as e:
+            logging.info(f"Failed to get children for block {block['id']}, likely due to permissions: {e}")
+            
     return text
 
 def list_all_pages(notion: Any):
@@ -84,8 +87,8 @@ def extract_title(page):
 
 class NotionCrawler(Crawler):
 
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.notion_api_key = self.cfg.notion_crawler.notion_api_key
 
     def crawl(self) -> None:
@@ -115,14 +118,14 @@ class NotionCrawler(Crawler):
                 continue
 
             doc = {
-                'documentId': page_id,
+                'id': page_id,
                 'title': extract_title(page),
-                'metadataJson': json.dumps({
+                'metadata': {
                     'source': 'notion',
                     'url': page['url'],
                     'title': extract_title(page),
-                }),
-                'section': [{'text': all_text}]
+                },
+                'sections': [{'text': all_text}]
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:
@@ -144,12 +147,12 @@ class NotionCrawler(Crawler):
         if self.cfg.notion_crawler.get("remove_old_content", False):
             indexed_ids = set([page['id'] for page in pages])
             existing_docs = self.indexer._list_docs()
-            docs_to_remove = [doc for doc in existing_docs if doc['doc_id'] not in indexed_ids]
+            docs_to_remove = [doc for doc in existing_docs if doc['id'] not in indexed_ids]
             logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             for doc in docs_to_remove:
-                self.indexer.delete_doc(doc['doc_id'])
+                self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
                 with open('/home/vectara/env/pages_removed.txt', 'w') as f:
                     for doc in docs_to_remove:
-                        f.write(f"Page with ID {doc['doc_id']}: {doc['url']}\n")
+                        f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
 

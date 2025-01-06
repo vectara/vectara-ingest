@@ -2,7 +2,6 @@ import time
 import re
 import ray
 import psutil
-import json
 import logging
 import datetime
 from omegaconf import OmegaConf
@@ -91,7 +90,7 @@ def get_doc_metadata(channel, message, users_info):
     except KeyError as e:
         logging.error(f"Error while creating the metadata: {e}")
 
-    return json.dumps(metadata)
+    return metadata
 
 
 def replace_user_id_with_user_handler(messages, users_info):
@@ -120,12 +119,12 @@ def replace_user_id_with_user_handler(messages, users_info):
 
 def get_document(channel, message, users_info):
     """
-    Returns the document to indexed in vectara
+    Returns the document to be indexed in Vectara
 
     Example output : {
-        "documentId": "vectara_123_1234556",
-        "metadataJson": {"author": "Vectara"},
-        "section": [{"text": "Slack messages info"},
+        "id": "vectara_123_1234556",
+        "metadata": {"author": "Vectara"},
+        "sections": [{"text": "Slack messages info"},
         {"text": "Messages has replies", "metadata": "{"author": "Vectara"}"}]
     }
 
@@ -164,19 +163,19 @@ def get_document(channel, message, users_info):
                 try:
                     sections.append({
                         "text": reply.get("text"),
-                        "metadataJson": json.dumps({
+                        "metadata": {
                             "replier": users_info[reply["user"]],
                             "reply_time": get_datetime_from_epoch(reply["ts"])
-                        })
+                        }
                     })
                 except KeyError:
                     continue
 
     return {
-        "documentId": doc_id,
+        "id": doc_id,
         "title": title,
-        "metadataJson": doc_metadata,
-        "section": sections
+        "metadata": doc_metadata,
+        "sections": sections
     }
 
 
@@ -232,8 +231,8 @@ def contains_url(message):
 
 
 class SlackCrawler(Crawler):
-    def __init__(self, cfg: OmegaConf, endpoint: str, customer_id: str, corpus_id: int, corpus_key: str, api_key: str):
-        super().__init__(cfg, endpoint, customer_id, corpus_id, corpus_key, api_key)
+    def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str):
+        super().__init__(cfg, endpoint, corpus_key, api_key)
         self.user_token = self.cfg.slack_crawler.slack_user_token
         self.client = WebClient(token=self.user_token)
         self.days_past = self.cfg.slack_crawler.get("days_past", None)

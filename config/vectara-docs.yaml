@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 210
-  customer_id: 1526022105
+  corpus_key: vectara-docs
   reindex: true
+  create_corpus: false
 
 crawling:
   crawler_type: docs

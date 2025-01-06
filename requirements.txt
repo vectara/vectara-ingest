@@ -10,6 +10,7 @@ google-auth-httplib2==0.1.0
 google-api-python-client==2.82.0
 psutil==6.1.0
 omegaconf==2.3.0
+python-box==7.3.0
 python-dotenv==1.0.1
 python-slugify==8.0.1
 markdown==3.5.2

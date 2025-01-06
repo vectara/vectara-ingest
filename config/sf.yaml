@@ -1,8 +1,8 @@
 vectara:
-  corpus_id: 28
-  customer_id: 1169579801
+  corpus_key: sf-gov
   reindex: false
   verbose: false
+  create_corpus: true
 
 crawling:
   crawler_type: website

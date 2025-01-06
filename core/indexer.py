@@ -3,15 +3,16 @@ import json
 import html
 import re
 import os
+import time
+import warnings
+import unicodedata
 from typing import Dict, Any, List, Optional
+import shutil
+
 import uuid
 import pandas as pd
-import shutil
-import warnings
 import requests
 
-import time
-import unicodedata
 from slugify import slugify
 
 from omegaconf import OmegaConf
@@ -21,17 +22,16 @@ import markdown
 import whisper
 
 from html2markdown import convert
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
-
 from core.utils import (
-    html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries, 
+    html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
@@ -44,25 +44,23 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
-class Indexer(object):
+class Indexer:
     """
     Vectara API class.
     Args:
         endpoint (str): Endpoint for the Vectara API.
-        customer_id (str): ID of the Vectara customer.
-        corpus_id (int): ID of the Vectara corpus to index to.
+        corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str, 
-                 customer_id: str, corpus_id: int, corpus_key: str, api_key: str) -> None:
+    def __init__(self, cfg: OmegaConf, endpoint: str,
+                 corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
         self.browser_use_limit = 100
         self.endpoint = endpoint
-        self.customer_id = customer_id
-        self.corpus_id = corpus_id
         self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
+        self.create_corpus = cfg.vectara.get("create_corpus", False)
         self.verbose = cfg.vectara.get("verbose", False)
         self.store_docs = cfg.vectara.get("store_docs", False)
         self.remove_code = cfg.vectara.get("remove_code", True)
@@ -81,7 +79,7 @@ class Indexer(object):
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
-        self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
+        self.unstructured_config = cfg.doc_processing.get("unstructured_config",
                                                           {'chunking_strategy': 'none', 'chunk_size': 1024})
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
@@ -107,7 +105,7 @@ class Indexer(object):
             return self.normalize_text(v)
         else:
             return v
-    
+
     def setup(self, use_playwright: bool = True) -> None:
         self.session = create_session_with_retries()
         # Create playwright browser so we can reuse it across all Indexer operations
@@ -125,7 +123,6 @@ class Indexer(object):
         if self.store_docs:
             dest_path = f"{self.store_docs_folder}/{orig_filename}"
             shutil.copyfile(filename, dest_path)
-
 
     def url_triggers_download(self, url: str) -> bool:
         download_triggered = False
@@ -149,7 +146,7 @@ class Indexer(object):
         return download_triggered
 
     def fetch_page_contents(
-            self, 
+            self,
             url: str,
             extract_tables: bool = False,
             extract_images: bool = False,
@@ -176,7 +173,7 @@ class Indexer(object):
         '''
         page = context = None
         text = ''
-        html = ''
+        html_content = ''
         title = ''
         links = []
         out_url = url
@@ -186,10 +183,10 @@ class Indexer(object):
             context = self.browser.new_context()
             page = context.new_page()
             page.set_extra_http_headers(get_headers)
-            page.route("**/*", lambda route: route.abort()  
-                if route.request.resource_type == "image" 
-                else route.continue_() 
-            ) 
+            page.route("**/*", lambda route: route.abort()
+                if route.request.resource_type == "image"
+                else route.continue_()
+            )
             if debug:
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
@@ -198,7 +195,7 @@ class Indexer(object):
             self._scroll_to_bottom(page)
 
             title = page.title()
-            html = page.content()
+            html_content = page.content()
 
             out_url = page.url
             text = page.evaluate(f"""() => {{
@@ -275,7 +272,7 @@ class Indexer(object):
 
         return {
             'text': text,
-            'html': html,
+            'html': html_content,
             'title': title,
             'url': out_url,
             'links': links,
@@ -298,6 +295,24 @@ class Indexer(object):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.wait_for_timeout(pause)
 
+    def _does_doc_exist(self, doc_id: str) -> bool:
+        """
+        Check if a document exists in the Vectara corpus.
+
+        Args:
+            doc_id (str): ID of the document to check.
+
+        Returns:
+            bool: True if the document exists, False otherwise.
+        """
+        post_headers = {
+            'x-api-key': self.api_key,
+            'X-Source': self.x_source
+        }
+        response = self.session.get(
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            verify=True, headers=post_headers)
+        return response.status_code == 200
 
     # delete document; returns True if successful, False otherwise
     def delete_doc(self, doc_id: str) -> bool:
@@ -311,21 +326,19 @@ class Indexer(object):
         Returns:
             bool: True if the delete was successful, False otherwise.
         """
-        body = {'customer_id': self.customer_id, 'corpus_id': self.corpus_id, 'document_id': doc_id}
-        post_headers = { 
-            'x-api-key': self.api_key, 
-            'customer-id': str(self.customer_id), 
+        post_headers = {
+            'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
-        response = self.session.post(
-            f"https://{self.endpoint}/v1/delete-doc", data=json.dumps(body),
+        response = self.session.delete(
+            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
             verify=True, headers=post_headers)
-        
-        if response.status_code != 200:
+
+        if response.status_code != 204:
             self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
-    
+
     def _list_docs(self) -> List[Dict[str, str]]:
         """
         List documents in the corpus.
@@ -335,94 +348,40 @@ class Indexer(object):
         """
         page_key = None  # Initialize page_key as None
         docs = []
-    
+
         # Loop until there's no next page
         while True:
-            body = {"corpusId": self.corpus_id, "numResults": 1000}
+            params = {"limit": 100}
             if page_key:  # Add page_key to the request if it's not None
-                body["pageKey"] = page_key
+                params["page_key"] = page_key
 
-            post_headers = { 
-                'x-api-key': self.api_key, 
-                'customer-id': str(self.customer_id), 
+            post_headers = {
+                'x-api-key': self.api_key,
                 'X-Source': self.x_source
             }
-            response = self.session.post(
-                f"https://{self.endpoint}/v1/list-documents", data=json.dumps(body),
-                verify=True, headers=post_headers)
+            response = self.session.get(
+                f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents",
+                verify=True, headers=post_headers, params=params)
             if response.status_code != 200:
                 self.logger.error(f"Error listing documents with status code {response.status_code}")
                 return []
             res = response.json()
 
             # Extract URLs from documents
-            for doc in res['document']:
-                url = next((md['value'] for md in doc['metadata'] if md['name'] == 'url'), None)
-                docs.append({'doc_id': doc['id'], 'url': url})
+            for doc in res['documents']:
+                url = doc['metadata']['url'] if 'url' in doc['metadata'] else None
+                docs.append({'id': doc['id'], 'url': url})
 
+            response_metadata = res.get('metadata', None)
             # Check if we need to go further
-            page_key = res.get('nextPageKey', None)    
-            if not page_key:  # Break the loop if there's no next page
+            if not response_metadata or not response_metadata['page_key']:  # Break the loop if there's no next page
                 break
-    
+            else:
+                page_key = response_metadata['page_key']
+
         return docs
 
-    def _index_file_v1(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
-        """
-        Index a file on local file system by uploading it to the Vectara corpus, using APIv1.
-        Args:
-            filename (str): Name of the file to create.
-            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
-            metadata (dict): Metadata for the document.
-        Returns:
-            bool: True if the upload was successful, False otherwise.
-        """
-        if not os.path.exists(filename):
-            self.logger.error(f"File {filename} does not exist")
-            return False
-
-        def get_files(filename: str, metadata: dict):
-            return  {
-                "file": (uri, open(filename, 'rb')),
-                "doc_metadata": (None, json.dumps(metadata)),
-            }  
-
-        post_headers = { 
-            'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
-            'X-Source': self.x_source
-        }
-        response = self.session.post(
-            f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}&d=True",
-            files=get_files(filename, metadata), verify=True, headers=post_headers
-        )
-        if response.status_code == 409:
-            if self.reindex:
-                doc_id = response.json()['details'].split('document id')[1].split("'")[1]
-                self.delete_doc(doc_id)
-                response = self.session.post(
-                    f"https://{self.endpoint}/upload?c={self.customer_id}&o={self.corpus_id}",
-                    files=get_files(filename, metadata), verify=True, headers=post_headers
-                )
-                if response.status_code == 200:
-                    self.logger.info(f"REST upload for {uri} successful (reindex)")
-                    self.store_file(filename, url_to_filename(uri))
-                    return True
-                else:
-                    self.logger.info(f"REST upload for {uri} ({filename}) (reindex) failed with code = {response.status_code}, text = {response.text}")
-                    return True
-            else:
-                self.logger.info(f"REST upload for {uri} failed with code {response.status_code}")
-            return False
-        elif response.status_code != 200:
-            self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
-            return False
-
-        self.logger.info(f"REST upload for {uri} succeesful")
-        self.store_file(filename, url_to_filename(uri))
-        return True
-
-    def _index_file_v2(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus, using APIv2
         Args:
@@ -449,32 +408,26 @@ class Indexer(object):
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
-        if response.status_code == 400:
-            error_msg = json.loads(html.unescape(response.text))
-            if error_msg['httpCode'] == 409:
-                if self.reindex:
-                    match = re.search(r"document id '([^']+)'", error_msg['details'])
-                    if match:
-                        doc_id = match.group(1)
-                    else:
-                        self.logger.error(f"Failed to extract document id from error message: {error_msg}")
-                        return False
-                    self.delete_doc(doc_id)
-                    response = self.session.request("POST", url, headers=post_headers, files=files)
-                    if response.status_code == 201:
-                        self.logger.info(f"REST upload for {uri} successful (reindex)")
-                        self.store_file(filename, url_to_filename(uri))
-                        return True
-                    else:
-                        self.logger.info(f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
-                        return True
+        if response.status_code == 409:
+            if self.reindex:
+                match = re.search(r"document id '([^']+)'", response.text)
+                if match:
+                    doc_id = match.group(1)
                 else:
-                    self.logger.info(f"document {uri} already indexed, skipping")
+                    self.logger.error(f"Failed to extract document id from error message: {response.text}")
                     return False
+                self.delete_doc(doc_id)
+                response = self.session.request("POST", url, headers=post_headers, files=files)
+                if response.status_code == 201:
+                    self.logger.info(f"REST upload for {uri} successful (reindex)")
+                    self.store_file(filename, url_to_filename(uri))
+                    return True
+                else:
+                    self.logger.info(f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
+                    return True
             else:
-                self.logger.info(f"REST upload for {uri} failed with code {response.status_code}")
+                self.logger.info(f"document {uri} already indexed, skipping")
                 return False
-            return False
         elif response.status_code != 201:
             self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
@@ -483,7 +436,7 @@ class Indexer(object):
         self.store_file(filename, url_to_filename(uri))
         return True
 
-    def _index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
+    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
 
@@ -494,63 +447,51 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        if use_core_indexing:
-            api_endpoint = f"https://{self.endpoint}/v1/core/index"
-        else:
-            api_endpoint = f"https://{self.endpoint}/v1/index"
+        api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
+        doc_exists = self._does_doc_exist(document['id'])
+        if doc_exists:
+            if self.reindex:
+                self.logger.info(f"Document {document['id']} already exists, deleting then reindexing")
+                self.delete_doc(document['id'])
+            else:
+                self.logger.info(f"Document {document['id']} already exists, skipping")
+                return False
 
-        request = {
-            'customer_id': self.customer_id,
-            'corpus_id': self.corpus_id,
-            'document': document,
-        }
+        if use_core_indexing:
+            document['type'] = 'core'
+        else:
+            document['type'] = 'structured'
 
         post_headers = { 
             'x-api-key': self.api_key,
-            'customer-id': str(self.customer_id),
             'X-Source': self.x_source
         }
         try:
-            data = json.dumps(request)
+            data = json.dumps(document)
         except Exception as e:
-            self.logger.info(f"Can't serialize request {request} (error {e}), skipping")   
+            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")   
             return False
 
         try:
             response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
         except Exception as e:
-            self.logger.info(f"Exception {e} while indexing document {document['documentId']}")
+            self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
-        if response.status_code != 200:
+        if response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
                           response.status_code,
                           response.reason,
                           response.text)
             return False
 
-        result = response.json()
-        if "status" in result and result["status"] and \
-           ("ALREADY_EXISTS" in result["status"]["code"] or \
-            ("CONFLICT" in result["status"]["code"] and "Indexing doesn't support updating documents" in result["status"]["statusDetail"])):
-            if self.reindex:
-                self.logger.info(f"Document {document['documentId']} already exists, re-indexing")
-                self.delete_doc(document['documentId'])
-                response = self.session.post(api_endpoint, data=json.dumps(request), verify=True, headers=post_headers)
-                return True
-            else:
-                self.logger.info(f"Document {document['documentId']} already exists, skipping")
-                return False
-        if "status" in result and result["status"] and "OK" in result["status"]["code"]:
-            if self.store_docs:
-                with open(f"{self.store_docs_folder}/{document['documentId']}.json", "w") as f:
-                    json.dump(document, f)
-            return True
+        if self.store_docs:
+            with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
+                json.dump(document, f)
+        return True
         
-        self.logger.info(f"Indexing document {document['documentId']} failed, response = {result}")
-        return False
     
-    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = {}) -> bool:
+    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
         
@@ -561,6 +502,9 @@ class Indexer(object):
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
+        succeeded = False
+        if html_processing is None:
+            html_processing = {}
         st = time.time()
         url = url.split("#")[0]     # remove fragment, if exists
 
@@ -698,7 +642,7 @@ class Indexer(object):
         return succeeded
 
     def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
-                       doc_metadata: Dict[str, Any] = {}, doc_title: str = "", use_core_indexing: bool = False) -> bool:
+                       doc_metadata: Dict[str, Any] = None, doc_title: str = "", use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
 
@@ -716,50 +660,38 @@ class Indexer(object):
         """
         if titles is None:
             titles = ["" for _ in range(len(texts))]
+        if doc_metadata is None:
+            doc_metadata = {}
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
         else:
             metadatas = [{k:self.normalize_value(v) for k,v in md.items()} for md in metadatas]
 
         document = {}
-        document["documentId"] = doc_id
+        document["id"] = doc_id
         if not use_core_indexing:
             if doc_title is not None and len(doc_title)>0:
                 document["title"] = self.normalize_text(doc_title)
-            document["section"] = [
-                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadataJson": json.dumps(md)} 
+            document["sections"] = [
+                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
                 for text,title,md in zip(texts,titles,metadatas)
             ]
         else:
-            if any([len(text)>16384 for text in texts]):
+            if any((len(text)>16384 for text in texts)):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["parts"] = [
-                {"text": self.normalize_text(text), "metadataJson": json.dumps(md)} 
+                {"text": self.normalize_text(text), "metadata": md} 
                 for text,md in zip(texts,metadatas)
             ]
 
         if doc_metadata:
-            document["metadataJson"] = json.dumps(doc_metadata)
+            document["metadata"] = doc_metadata
 
         if self.verbose:
             self.logger.info(f"Indexing document {doc_id} with {document}")
 
         return self.index_document(document, use_core_indexing)
-
-    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
-        """
-        Index a document (by uploading it to the Vectara corpus).
-        Document is a dictionary that includes documentId, title, optionally metadataJson, and section (which is a list of segments).
-
-        Args:
-            document (dict): Document to index.
-            use_core_indexing (bool): Whether to use the core indexing API.
-
-        Returns:
-            bool: True if the upload was successful, False otherwise.
-        """
-        return self._index_document(document, use_core_indexing)
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
         """
@@ -777,8 +709,7 @@ class Indexer(object):
             self.logger.error(f"File {filename} does not exist")
             return False
         
-        # If we have a PDF file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
-        # Otherwise - send to Vectara's default upload file mechanism
+        # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
         openai_api_key = self.cfg.vectara.get("openai_api_key", None)
         size_limit = 50
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
@@ -853,47 +784,56 @@ class Indexer(object):
                 metadatas = []
                 image_summaries = []
 
-            # Get metadata from text content
-            if len(self.extract_metadata)>0:
-                all_text = "\n".join(texts)[:32768]
-                ex_metadata = get_attributes_from_text(
-                    all_text,
-                    metadata_questions=self.extract_metadata,
-                    openai_api_key=openai_api_key
-                )
-                metadata.update(ex_metadata)
-            else:
-                ex_metadata = {}
+        #
+        # Otherwise, use Vectara file_upload
+        #
+
+        # If needed, parse file content to extract images and get text content
+        if len(self.extract_metadata)>0 and self.summarize_images and openai_api_key:
+            self.logger.info(f"Reading contents of {filename} (url={uri})")
+            dp = UnstructuredDocumentParser(
+                verbose=self.verbose,
+                openai_api_key=openai_api_key,
+                summarize_tables=False,
+                summarize_images=self.summarize_images,
+            )
+            title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+
+        # Get metadata attribute values from text content (if defined)
+        if len(self.extract_metadata)>0:
+            all_text = "\n".join(texts)[:32768]
+            ex_metadata = get_attributes_from_text(
+                all_text,
+                metadata_questions=self.extract_metadata,
+                openai_api_key=openai_api_key
+            )
             metadata.update(ex_metadata)
+        else:
+            ex_metadata = {}
+        metadata.update(ex_metadata)
 
-            # index the file within Vectara (use FILE UPLOAD API)
-            if self.corpus_key is None:
-                succeeded = self._index_file_v1(filename, uri, metadata)
-                if succeeded:
-                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v1")
-                else:
-                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v1 failed")
-            else:
-                succeeded = self._index_file_v2(filename, uri, metadata)
-                if succeeded:
-                    self.logger.info(f"For {uri} - uploaded via Vectara file upload API v2")
-                else:
-                    self.logger.info(f"For {uri} - uploade via Vectara file upload API v2 failed")
-            
-            # If needs to summarize images - then do it locally
-            if self.summarize_images and openai_api_key:
-                self.logger.info(f"Parsing images from {uri}")
-                self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
-                for inx,image_summary in enumerate(image_summaries):
-                    if image_summary:
-                        metadata = {'element_type': 'image'}
-                        if ex_metadata:
-                            metadata.update(ex_metadata)
-                        doc_id = slugify(uri) + "_image_" + str(inx)
-                        succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                         doc_metadata=metadata, doc_title=title)
+        # index the file within Vectara (use FILE UPLOAD API)
+        succeeded = self._index_file(filename, uri, metadata)
+        if succeeded:
+            self.logger.info(f"For {uri} - uploaded via Vectara file upload API")
+        else:
+            self.logger.info(f"For {uri} - uploade via Vectara file upload API failed")
+        
+        # If needed, summarize images - and upload each image summary as a single doc
+        image_summaries = []
+        if self.summarize_images and openai_api_key and image_summaries:
+            self.logger.info(f"Parsing images from {uri}")
+            self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
+            for inx,image_summary in enumerate(image_summaries):
+                if image_summary:
+                    metadata = {'element_type': 'image'}
+                    if ex_metadata:
+                        metadata.update(ex_metadata)
+                    doc_id = slugify(uri) + "_image_" + str(inx)
+                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                        doc_metadata=metadata, doc_title=title)
 
-            return succeeded
+        return succeeded
 
     def index_media_file(self, file_path, metadata=None):
         """
@@ -912,16 +852,16 @@ class Indexer(object):
         result = self.model.transcribe(file_path, temperature=0, verbose=False)
         text = result['segments']
         doc = {
-            'documentId': slugify(file_path),
+            'id': slugify(file_path),
             'title': file_path,
-            'section': [
+            'sections': [
                 { 
                     'text': t['text'],
                 } for t in text
             ]
         }
         if metadata:
-            doc['metadataJson'] = json.dumps(metadata)
+            doc['metadata'] = metadata
         self.index_document(doc)
 
 

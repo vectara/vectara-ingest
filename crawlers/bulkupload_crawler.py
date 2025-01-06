@@ -3,7 +3,7 @@ from core.crawler import Crawler
 import json
 
 def is_valid(json_object):
-    return 'documentId' in json_object and 'section' in json_object
+    return 'id' in json_object and 'sections' in json_object
 
 class JACrawler(Crawler):
 
@@ -12,7 +12,7 @@ class JACrawler(Crawler):
         with open(json_file, 'r') as file:
             data = file.read()
         json_array = json.loads(data)
-        if type(json_array) != list:
+        if not isinstance(json_array, list):
             raise Exception("JSON file must contain an array of JSON objects")
 
         logging.info(f"indexing {len(json_array)} JSON documents from JSON file")

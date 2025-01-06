@@ -1,7 +1,7 @@
 vectara:
-  corpus_id: 148
-  customer_id: 1526022105
+  corpus_key: wikipedia
   reindex: True
+  create_corpus: true
 
 crawling:
   crawler_type: mediawiki

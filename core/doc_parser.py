@@ -103,10 +103,10 @@ class DoclingDocumentParser(DocumentParser):
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
 
+        image_summaries = []
         if self.summarize_images:
             image_path = 'image.png'
             self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
-            image_summaries = []
             for pic in doc.pictures:
                 image = pic.get_image(res.document)
                 if image:
