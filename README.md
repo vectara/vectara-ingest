@@ -221,9 +221,6 @@ doc_processing:
   # which document parser to use for local file parsing: unstructured or docling
   doc_parser: unstructured
 
-  # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
-  use_core_indexing: false            
-
   # Unstructured document parsing configuration
   unstructured_config:
     chunking_strategy: none            # chunking strategy to use: basic, by_title or none; default none
@@ -233,7 +230,13 @@ doc_processing:
   docling_config:
     chunk: false                            # Whether to use Docling Chunking
 
-  # defines a set of optional metadata attributes, each with a "query" to extract that value; required OPENAI_API_KEY to be defined.
+  # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
+  use_core_indexing: false            
+
+  # enable contextual chunking
+  contextual_chunking: false            
+
+# defines a set of optional metadata attributes, each with a "query" to extract that value; required OPENAI_API_KEY to be defined.
   extract_metadata:
     'num_pages': 'number of pages in this document'
     'date': 'date of this document'

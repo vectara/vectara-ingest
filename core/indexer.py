@@ -31,6 +31,7 @@ from core.utils import (
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
+from core.contextual import ContextualChunker
 
 
 # Suppress FutureWarning related to torch.load
@@ -83,12 +84,14 @@ class Indexer:
                                                           {'chunking_strategy': 'none', 'chunk_size': 1024})
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
+        self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
         if cfg.vectara.get("openai_api_key", None) is None:
             if self.summarize_tables or self.summarize_images:
                 self.logger.info("OpenAI API key not found, disabling table/image summarization")
             self.summarize_tables = False
             self.summarize_images = False
             self.extract_metadata = []
+            self.contextual_chunking = False
 
         self.setup()
 
@@ -713,8 +716,12 @@ class Indexer:
         openai_api_key = self.cfg.vectara.get("openai_api_key", None)
         size_limit = 50
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
+        
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
-           (get_file_size_in_MB(filename) >= size_limit or (self.summarize_tables and self.corpus_key is None))):            
+             (get_file_size_in_MB(filename) >= size_limit or 
+               (self.summarize_tables and self.corpus_key is None) or 
+               self.contextual_chunking
+            )):
             self.logger.info(f"Parsing file {filename}")
             if self.doc_parser == "docling":
                 dp = DoclingDocumentParser(
@@ -734,6 +741,8 @@ class Indexer:
                     summarize_images=self.summarize_images, 
                 )
             title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+
+            # Get metadata attribute values from text content (if defined)
             if len(self.extract_metadata)>0:
                 all_text = "\n".join(texts)[:32768]
                 ex_metadata = get_attributes_from_text(
@@ -745,6 +754,12 @@ class Indexer:
             else:
                 ex_metadata = {}
 
+            # Apply contextual chunking if indicated
+            if self.contextual_chunking:
+                all_text = "\n".join(texts)
+                cc = ContextualChunker(openai_api_key=openai_api_key, whole_document = all_text)
+                texts = [cc.chunk_text(text) for text in texts]
+                    
             # index the main document (text and tables)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas,
