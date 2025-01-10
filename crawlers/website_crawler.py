@@ -1,5 +1,4 @@
 import logging
-import os
 from core.crawler import Crawler, recursive_crawl
 from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
 from core.indexer import Indexer

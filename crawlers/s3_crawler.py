@@ -5,8 +5,58 @@ from typing import List, Tuple
 import logging
 
 from core.crawler import Crawler
+from core.indexer import Indexer
+from core.utils import RateLimiter, setup_logging
+
 from slugify import slugify
 import pandas as pd
+import ray
+import psutil
+
+class FileCrawlWorker(object):
+    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str):
+        self.crawler = crawler
+        self.indexer = indexer
+        self.rate_limiter = RateLimiter(num_per_second)
+        self.bucket = bucket
+
+    def setup(self):
+        self.indexer.setup()
+        setup_logging()
+
+    def process(self, s3_file: str, metadata: dict, source: str):
+        s3 = boto3.client('s3')
+        extension = pathlib.Path(s3_file).suffix
+        local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
+        metadata = {"source": source, "url": s3_file}
+        logging.info(f"Crawling and indexing {s3_file}")
+        try:
+            with self.rate_limiter:
+                s3.download_file(self.bucket, s3_file, local_fname)
+                url = f's3://{self.bucket}/{s3_file}'
+                metadata = {
+                    'source': 's3',
+                    'title': s3_file,
+                    'url': url
+                }
+                if s3_file in metadata:
+                    metadata.update(metadata.get(s3_file, {}))    
+                if extension in ['.mp3', '.mp4']:
+                    succeeded = self.indexer.index_media_file(local_fname, metadata)
+                else:
+                    succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
+            if not succeeded:
+                logging.info(f"Indexing failed for {url}")
+            else:
+                logging.info(f"Indexing {url} was successful")
+        except Exception as e:
+            import traceback
+            logging.error(
+                f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
+            )
+            return -1
+        return 0
+
 
 def list_files_in_s3_bucket(bucket_name: str, prefix: str) -> List[str]:
     """
@@ -49,6 +99,9 @@ class S3Crawler(Crawler):
         folder = self.cfg.s3_crawler.s3_path
         extensions = self.cfg.s3_crawler.extensions
         metadata_file = self.cfg.s3_crawler.get("metadata_file", None)
+        ray_workers = self.cfg.s3_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
+        num_per_second = max(self.cfg.s3_crawler.get("num_per_second", 10), 1)
+        source = self.cfg.s3_crawler.get("source", "S3")
 
         s3 = boto3.client('s3')
         bucket, key = split_s3_uri(folder)
@@ -67,23 +120,30 @@ class S3Crawler(Crawler):
 
         # process all files
         s3_files = list_files_in_s3_bucket(bucket, key)
+        files_to_process = []
         for s3_file in s3_files:
             if s3_file.endswith(metadata_file):
                 continue
             file_extension = pathlib.Path(s3_file).suffix
             if file_extension in extensions or "*" in extensions:
-                extension = s3_file.split('.')[-1]
-                local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
-                s3.download_file(bucket, s3_file, local_fname)
-                url = f's3://{bucket}/{s3_file}'
-                metadata = {
-                    'source': 's3',
-                    'title': s3_file,
-                    'url': url
-                }
-                if s3_file in metadata:
-                    metadata.update(metadata.get(s3_file, {}))    
-                if file_extension in ['.mp3', '.mp4']:
-                    self.indexer.index_media_file(local_fname, metadata)
-                else:
-                   self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
+                files_to_process.append(s3_file)
+
+        # Now process all files
+        if ray_workers == -1:
+            ray_workers = psutil.cpu_count(logical=True)
+
+        if ray_workers > 0:
+            logging.info(f"Using {ray_workers} ray workers")
+            self.indexer.p = self.indexer.browser = None
+            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket) for _ in range(ray_workers)]
+            for a in actors:
+                a.setup.remote()
+            pool = ray.util.ActorPool(actors)
+            _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
+        else:
+            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket)
+            for inx, url in enumerate(files_to_process):
+                if inx % 100 == 0:
+                    logging.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
+                crawl_worker.process(url, source=source)
