@@ -27,7 +27,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
@@ -78,6 +78,7 @@ class Indexer:
             cfg.doc_processing = {}
         self.summarize_tables = cfg.doc_processing.get("summarize_tables", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
+        self.process_locally = cfg.doc_processing.get("process_locally", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
         self.unstructured_config = cfg.doc_processing.get("unstructured_config",
@@ -644,8 +645,10 @@ class Indexer:
         
         return succeeded
 
-    def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None, 
-                       doc_metadata: Dict[str, Any] = None, doc_title: str = "", use_core_indexing: bool = False) -> bool:
+    def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None,
+                       doc_metadata: Dict[str, Any] = None, doc_title: str = "", 
+                       tables: Optional[List[Dict[str, Any]]] = None,
+                       use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
 
@@ -656,6 +659,7 @@ class Indexer:
             metadatas (List[dict]): List of metadata for each segment.
             doc_metadata (dict): Metadata for the document.
             doc_title (str): Title of the document.
+            tables (List[dict]): List of tables. Each table is a dictionary with 'headers', 'rows', and 'summary'.
             use_core_indexing (bool): Whether to use the core indexing API.
 
         Returns:
@@ -672,6 +676,42 @@ class Indexer:
 
         document = {}
         document["id"] = doc_id
+
+        # Create tables structure
+
+        def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
+            res = []
+            for item in items:
+                if isinstance(item, str):
+                    res.append({'text_value': self.normalize_value(item)})
+                elif isinstance(item, int):
+                    res.append({'int_value': item})
+                elif isinstance(item, float):
+                    res.append({'float_value': item})
+                elif isinstance(item, bool):
+                    res.append({'bool_value': item})
+                else:
+                    self.logger.info(f"Unsupported type {type(item)} for item {item}")
+            return res
+
+        tables_array = []
+        if tables:
+            for inx,table in enumerate(tables):
+                table_dict = {
+                    'id': 'table_' + str(inx),
+                    'title': '',
+                    'data': {
+                        'headers': [
+                            create_row_items(h) for h in table['headers']
+                        ],
+                        'rows': [
+                            create_row_items(row) for row in table['rows']
+                        ]
+                    },
+                    'description': table['summary']
+                }
+                tables_array.append(table_dict)
+
         if not use_core_indexing:
             if doc_title is not None and len(doc_title)>0:
                 document["title"] = self.normalize_text(doc_title)
@@ -679,14 +719,20 @@ class Indexer:
                 {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
                 for text,title,md in zip(texts,titles,metadatas)
             ]
+            if tables:
+                document["sections"].append(
+                    {"text": '', "title": '', "metadata": {}, "tables": tables_array}
+                )
         else:
             if any((len(text)>16384 for text in texts)):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
-            document["parts"] = [
+            document["document_parts"] = [
                 {"text": self.normalize_text(text), "metadata": md} 
                 for text,md in zip(texts,metadatas)
             ]
+            if tables:
+                document["tables"] = tables_array
 
         if doc_metadata:
             document["metadata"] = doc_metadata
@@ -715,36 +761,33 @@ class Indexer:
         # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
         openai_api_key = self.cfg.vectara.get("openai_api_key", None)
         size_limit = 50
+        max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
         
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
-             (get_file_size_in_MB(filename) >= size_limit or 
-               (self.summarize_tables and self.corpus_key is None) or 
-               self.contextual_chunking
-            )):
-            self.logger.info(f"Parsing file {filename}")
-            if self.doc_parser == "docling":
-                dp = DoclingDocumentParser(
-                    verbose=self.verbose,
-                    openai_api_key=openai_api_key,
-                    chunk=self.docling_config['chunk'], 
-                    summarize_tables=self.summarize_tables, 
-                    summarize_images=self.summarize_images
-                )
-            else:
+            (get_file_size_in_MB(filename) >= size_limit or self.contextual_chunking or
+             self.summarize_images)
+        ):
+            self.process_locally = True
+
+        #
+        # Case A: using the file-upload API
+        #
+        if not self.process_locally:
+            self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
+            if len(self.extract_metadata)>0 or self.summarize_images:
+                self.logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
                     verbose=self.verbose,
                     openai_api_key=openai_api_key,
-                    chunking_strategy=self.unstructured_config['chunking_strategy'],
-                    chunk_size=self.unstructured_config['chunk_size'],
-                    summarize_tables=self.summarize_tables, 
-                    summarize_images=self.summarize_images, 
+                    summarize_tables=False,
+                    summarize_images=self.summarize_images,
                 )
-            title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+                title, texts, metadatas, _, image_summaries = dp.parse(filename, uri)
 
             # Get metadata attribute values from text content (if defined)
             if len(self.extract_metadata)>0:
-                all_text = "\n".join(texts)[:32768]
+                all_text = "\n".join(texts)[:max_chars]
                 ex_metadata = get_attributes_from_text(
                     all_text,
                     metadata_questions=self.extract_metadata,
@@ -753,70 +796,51 @@ class Indexer:
                 metadata.update(ex_metadata)
             else:
                 ex_metadata = {}
+            metadata.update(ex_metadata)
 
-            # Apply contextual chunking if indicated
-            if self.contextual_chunking:
-                all_text = "\n".join(texts)
-                cc = ContextualChunker(openai_api_key=openai_api_key, whole_document = all_text)
-                texts = [cc.chunk_text(text) for text in texts]
-                    
-            # index the main document (text and tables)
-            succeeded = self.index_segments(
-                doc_id=slugify(uri), texts=texts, metadatas=metadatas,
-                doc_metadata=metadata, doc_title=title,
-                use_core_indexing=self.use_core_indexing
-            )            
-
-            # index the images - one per document
-            for inx,image_summary in enumerate(image_summaries):
-                if image_summary:
-                    metadata = {'element_type': 'image'}
-                    if ex_metadata:
-                        metadata.update(ex_metadata)
-                    doc_id = slugify(uri) + "_image_" + str(inx)
-                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                     doc_metadata=metadata, doc_title=title)
-
-            if self.summarize_tables or self.summarize_images:
-                self.logger.info(f"For file {filename}, extracted text locally since summarize_tables/images is activated")
-            else:
-                self.logger.info(f"For file {filename}, extracted text locally since file size is larger than {size_limit}MB")
+            # index the file within Vectara (use FILE UPLOAD API)
+            succeeded = self._index_file(filename, uri, metadata)
+            
+            # If indicated, summarize images - and upload each image summary as a single doc
+            if self.summarize_images and image_summaries:
+                self.logger.info(f"Parsing images from {uri}")
+                self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
+                for inx,image_summary in enumerate(image_summaries):
+                    if image_summary:
+                        metadata = {'element_type': 'image'}
+                        if ex_metadata:
+                            metadata.update(ex_metadata)
+                        doc_id = slugify(uri) + "_image_" + str(inx)
+                        succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                            doc_metadata=metadata, doc_title=title)
             return succeeded
+
+        #
+        # Case B: Process locally and upload to Vectara
+        #
+        self.logger.info(f"Parsing file {filename} locally")
+        if self.doc_parser == "docling":
+            dp = DoclingDocumentParser(
+                verbose=self.verbose,
+                openai_api_key=openai_api_key,
+                chunk=self.docling_config['chunk'], 
+                summarize_tables=self.summarize_tables, 
+                summarize_images=self.summarize_images
+            )
         else:
-            # Parse file content to extract images and get text content
-            if (len(self.extract_metadata)>0 or self.summarize_images) and openai_api_key:
-                self.logger.info(f"Reading contents of {filename} (url={uri})")
-                dp = UnstructuredDocumentParser(
-                    verbose=self.verbose,
-                    openai_api_key=openai_api_key,
-                    summarize_tables=False,
-                    summarize_images=self.summarize_images,
-                )
-                title, texts, metadatas, image_summaries = dp.parse(filename, uri)
-            else:
-                title = None
-                texts = []
-                metadatas = []
-                image_summaries = []
-
-        #
-        # Otherwise, use Vectara file_upload
-        #
-
-        # If needed, parse file content to extract images and get text content
-        if len(self.extract_metadata)>0 and self.summarize_images and openai_api_key:
-            self.logger.info(f"Reading contents of {filename} (url={uri})")
             dp = UnstructuredDocumentParser(
                 verbose=self.verbose,
                 openai_api_key=openai_api_key,
-                summarize_tables=False,
-                summarize_images=self.summarize_images,
+                chunking_strategy=self.unstructured_config['chunking_strategy'],
+                chunk_size=self.unstructured_config['chunk_size'],
+                summarize_tables=self.summarize_tables, 
+                summarize_images=self.summarize_images, 
             )
-            title, texts, metadatas, image_summaries = dp.parse(filename, uri)
+        title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
 
         # Get metadata attribute values from text content (if defined)
         if len(self.extract_metadata)>0:
-            all_text = "\n".join(texts)[:32768]
+            all_text = "\n".join(texts)[:max_chars]
             ex_metadata = get_attributes_from_text(
                 all_text,
                 metadata_questions=self.extract_metadata,
@@ -825,30 +849,45 @@ class Indexer:
             metadata.update(ex_metadata)
         else:
             ex_metadata = {}
-        metadata.update(ex_metadata)
 
-        # index the file within Vectara (use FILE UPLOAD API)
-        succeeded = self._index_file(filename, uri, metadata)
-        if succeeded:
-            self.logger.info(f"For {uri} - uploaded via Vectara file upload API")
+        # prepare tables
+        vec_tables = []
+        for [df, summary] in tables:
+            cols = df_cols_to_headers(df)
+            rows = df.to_numpy().tolist()
+            vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary})
+
+        # Index text portions
+        # Apply contextual chunking if indicated, otherwise just the text directly.
+        if self.contextual_chunking:
+            all_text = "\n".join(texts)[:max_chars]
+            cc = ContextualChunker(openai_api_key=openai_api_key, whole_document = all_text)
+            texts = cc.parallel_transform(texts)
+            succeeded = self.index_segments(
+                doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
+                doc_metadata=metadata, doc_title=title,
+                use_core_indexing=True
+            )
         else:
-            self.logger.info(f"For {uri} - uploade via Vectara file upload API failed")
-        
-        # If needed, summarize images - and upload each image summary as a single doc
-        image_summaries = []
-        if self.summarize_images and openai_api_key and image_summaries:
-            self.logger.info(f"Parsing images from {uri}")
-            self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
-            for inx,image_summary in enumerate(image_summaries):
-                if image_summary:
-                    metadata = {'element_type': 'image'}
-                    if ex_metadata:
-                        metadata.update(ex_metadata)
-                    doc_id = slugify(uri) + "_image_" + str(inx)
-                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                        doc_metadata=metadata, doc_title=title)
+            succeeded = self.index_segments(
+                doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
+                doc_metadata=metadata, doc_title=title,
+                use_core_indexing=self.use_core_indexing
+            )            
 
+        # index the images - one per document
+        for inx,image_summary in enumerate(image_summaries):
+            if image_summary:
+                metadata = {'element_type': 'image'}
+                if ex_metadata:
+                    metadata.update(ex_metadata)
+                doc_id = slugify(uri) + "_image_" + str(inx)
+                succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                    doc_metadata=metadata, doc_title=title)
+
+        self.logger.info(f"For file {filename}, extracted text locally")
         return succeeded
+
 
     def index_media_file(self, file_path, metadata=None):
         """

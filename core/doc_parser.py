@@ -1,6 +1,7 @@
 import logging
 from typing import List, Tuple
 import time
+import pandas as pd
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type
@@ -33,6 +34,7 @@ class DocumentParser():
         self.verbose = verbose
 
 class DoclingDocumentParser(DocumentParser):
+
     def __init__(
         self,
         verbose: bool = False,
@@ -92,6 +94,7 @@ class DoclingDocumentParser(DocumentParser):
         metadatas = [{'parser_element_type': 'text'} for _ in texts]
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
+        tables = []
         if self.summarize_tables:
             self.logger.info(f"DoclingParser: {len(doc.tables)} tables")
             for table in doc.tables:
@@ -102,6 +105,7 @@ class DoclingDocumentParser(DocumentParser):
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
+                tables.append([table.export_to_dataframe(), table_summary])
 
         image_summaries = []
         if self.summarize_images:
@@ -122,7 +126,7 @@ class DoclingDocumentParser(DocumentParser):
                     continue
 
         self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
-        return doc_title, texts, metadatas, image_summaries
+        return doc_title, texts, metadatas, tables, image_summaries
 
 
 class UnstructuredDocumentParser(DocumentParser):
@@ -215,6 +219,7 @@ class UnstructuredDocumentParser(DocumentParser):
         )
         texts = []
         metadatas = []
+        tables = []
         num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
         self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
         for inx,e in enumerate(elements):
@@ -225,6 +230,9 @@ class UnstructuredDocumentParser(DocumentParser):
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
+                html_table = e.metadata.text_as_html
+                df = pd.read_html(html_table)[0]
+                tables.append([df, table_summary])
             else:
                 texts.append(str(e))
                 metadatas.append({'parser_element_type': 'text'})
@@ -253,4 +261,4 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-        return doc_title, texts, metadatas, image_summaries
+        return doc_title, texts, metadatas, tables, image_summaries

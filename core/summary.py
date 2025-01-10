@@ -110,7 +110,8 @@ class TableSummarizer():
         prompt = f"""
             Adopt the perspective of a professional data analyst, with expertise in generating insight from structured data. 
             Provide a detailed description of the results reported in this table, ensuring clarity, depth and relevance. Don't omit any data points.
-            Start with a description for each each row in the table. Then follow by a broader analysis of trends and insights, and conclude with an interpretation of the data.
+            Start with a description for each each row in the table and its values. 
+            Then follow by a broader analysis of trends and insights, and conclude with an interpretation of the data.
             Contextual Details:
             - Examine the table headings, footnotes, or accompanying text to identify key contextual details such as the time period, location, subject area, and units of measurement.
             - Always include the table title, time frame, and geographical or thematic scope in your description.
@@ -137,11 +138,11 @@ class TableSummarizer():
             response = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant tasked with summarizing tables."},
+                    {"role": "system", "content": "You are a helpful assistant tasked with summarizing data tables."},
                     {"role": "user", "content": prompt }
                 ],
                 temperature=0,
-                max_tokens=4096,
+                max_tokens=8192,
             )
             return response.choices[0].message.content
         except Exception as e:
