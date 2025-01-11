@@ -15,6 +15,7 @@ import magic
 
 import shutil
 import pandas as pd
+from io import StringIO
 
 import time
 import threading
@@ -357,3 +358,16 @@ def df_cols_to_headers(df: pd.DataFrame):
         rows.append(row)
 
     return rows
+
+def markdown_to_df(markdown_table):
+    # Create a file-like object from the markdown table string
+    table_io = StringIO(markdown_table.strip())
+    df = pd.read_csv(table_io, sep='|', skipinitialspace=True)
+    
+    # Clean up the DataFrame
+    df = df.dropna(axis=1, how='all')   # Remove empty columns
+    df = df.iloc[1:]                    # Remove the row with dashes (separator row)
+    df.columns = df.columns.str.strip() # Remove whitespace from column names
+    df = df.reset_index(drop=True)      # Reset the index
+    
+    return df.applymap(lambda x: x.strip() if isinstance(x, str) else x)

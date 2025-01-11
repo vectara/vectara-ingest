@@ -157,7 +157,11 @@ def main() -> None:
     profile_name = sys.argv[2]
 
     # process arguments 
-    cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+    try:
+        cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+    except Exception as e:
+        logging.error(f"Error loading config file ({config_name}): {e}")
+        return
 
     # add .env params, by profile
     volume = '/home/vectara/env'

@@ -27,7 +27,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
@@ -591,19 +591,22 @@ class Indexer:
                 metadatas = [{'element_type': 'text'}]
 
                 if self.summarize_tables:
+                    vec_tables = []
                     table_summarizer = TableSummarizer(openai_api_key=openai_api_key)
                     for table in res['tables']:
                         table_md = convert(table)
+                        df = markdown_to_df(table_md)
                         table_summary = table_summarizer.summarize_table_text(table_md)
                         if table_summary:
-                            parts.append(table_summary)
-                            metadatas.append({'element_type': 'table'}) 
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
+                            cols = df_cols_to_headers(df)
+                            rows = df.to_numpy().tolist()
+                            vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
 
                 # index text and tables
                 doc_id = slugify(url)
-                succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas,
+                succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas, tables=vec_tables,
                                                 doc_metadata=metadata, doc_title=doc_title)
 
                 # index images - each image as a separate "document" in Vectara
