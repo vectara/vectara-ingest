@@ -823,6 +823,7 @@ class Indexer:
         #
         self.logger.info(f"Parsing file {filename} locally")
         if self.contextual_chunking:
+            self.logger.info(f"Applying contextual chunking for {filename}")
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 openai_api_key=openai_api_key,
@@ -830,7 +831,7 @@ class Indexer:
                 summarize_tables=self.summarize_tables, 
                 summarize_images=self.summarize_images
             )
-        if self.doc_parser == "docling":
+        elif self.doc_parser == "docling":
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 openai_api_key=openai_api_key,
