@@ -233,7 +233,7 @@ doc_processing:
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   use_core_indexing: false            
 
-  # enable contextual chunking
+  # enable contextual chunking (only for PDF files at the moment)
   contextual_chunking: false            
 
 # defines a set of optional metadata attributes, each with a "query" to extract that value; required OPENAI_API_KEY to be defined.
