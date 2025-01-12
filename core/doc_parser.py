@@ -50,11 +50,12 @@ class DoclingDocumentParser(DocumentParser):
     @staticmethod
     def _lazy_load_docling():
         from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling_core.transforms.chunker import HierarchicalChunker
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.datamodel.base_models import InputFormat
+        from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 
-        return DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
+
+        return DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
 
     def parse(
             self,
@@ -72,7 +73,7 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using Docling
-        DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+        DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
 
         st = time.time()        
         pipeline_options = PdfPipelineOptions()
@@ -87,7 +88,7 @@ class DoclingDocumentParser(DocumentParser):
         doc_title = doc.name
 
         if self.chunk:
-            chunks = list(HierarchicalChunker().chunk(doc))
+            chunks = list(HybridChunker().chunk(doc))
             texts = [chunk.text for chunk in chunks]
         else:
             texts = [e.text for e in doc.texts]
@@ -134,7 +135,7 @@ class UnstructuredDocumentParser(DocumentParser):
         self,
         verbose: bool = False,
         openai_api_key: str = None,
-        chunking_strategy: str = "none",
+        chunking_strategy: str = "by_title",
         chunk_size: int = 1024,
         summarize_tables: bool = False,
         summarize_images: bool = False

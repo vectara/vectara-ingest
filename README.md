@@ -219,16 +219,16 @@ doc_processing:
   summarize_images: false
 
   # which document parser to use for local file parsing: unstructured or docling
-  doc_parser: unstructured
+  doc_parser: docling
 
   # Unstructured document parsing configuration
   unstructured_config:
-    chunking_strategy: none            # chunking strategy to use: basic, by_title or none; default none
+    chunking_strategy: by_title        # chunking strategy to use: basic, by_title or none; default none
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
 
   # Docling document parsing configuation
   docling_config:
-    chunk: false                            # Whether to use Docling Chunking
+    chunk: true                            # Whether to use Docling Hybrid chunking
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   use_core_indexing: false            

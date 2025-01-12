@@ -82,8 +82,8 @@ class Indexer:
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
         self.unstructured_config = cfg.doc_processing.get("unstructured_config",
-                                                          {'chunking_strategy': 'none', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': False})
+                                                          {'chunking_strategy': 'by_title', 'chunk_size': 1024})
+        self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': True})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
         if cfg.vectara.get("openai_api_key", None) is None:
@@ -822,6 +822,14 @@ class Indexer:
         # Case B: Process locally and upload to Vectara
         #
         self.logger.info(f"Parsing file {filename} locally")
+        if self.contextual_chunking:
+            dp = DoclingDocumentParser(
+                verbose=self.verbose,
+                openai_api_key=openai_api_key,
+                chunk=True,
+                summarize_tables=self.summarize_tables, 
+                summarize_images=self.summarize_images
+            )
         if self.doc_parser == "docling":
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
@@ -864,7 +872,7 @@ class Indexer:
         # Apply contextual chunking if indicated, otherwise just the text directly.
         if self.contextual_chunking:
             all_text = "\n".join(texts)[:max_chars]
-            cc = ContextualChunker(openai_api_key=openai_api_key, whole_document = all_text)
+            cc = ContextualChunker(openai_api_key=openai_api_key, whole_document=all_text)
             texts = cc.parallel_transform(texts)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
