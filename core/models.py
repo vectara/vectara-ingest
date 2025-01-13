@@ -36,7 +36,7 @@ def generate(
                         {
                             "type": "text",
                             "text": user_prompt,
-                            "cache_control": "prompt-caching-2024-07-31",
+                            "cache_control": {"type": "ephemeral"}
                         }
                     ]
                 }
@@ -104,12 +104,11 @@ def generate_image_summary(
                         {
                             "type": "text",
                             "text": prompt,
-                            "cache_control": "prompt-caching-2024-07-31",
+                            "cache_control": {"type": "ephemeral"}
                         }
                     ],
                 }
             ],
-            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
         )
         summary = str(response.content)
         return summary
