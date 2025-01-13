@@ -1,12 +1,12 @@
 import logging
-from openai import OpenAI
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from core.models import generate
 
 class ContextualChunker():
-    def __init__(self, openai_api_key: str, whole_document: str):
-        self.client = OpenAI(api_key=openai_api_key)
+    def __init__(self, model_name: str, model_api_key: str, whole_document: str):
+        self.model_name = model_name
+        self.model_api_key = model_api_key
         self.whole_document = whole_document
 
     def transform(self, chunk: str) -> str:
@@ -22,17 +22,9 @@ class ContextualChunker():
             Please provide a short, succinct context to situate this chunk within the overall document to improve search retrieval. 
             Respond only with the context, don't include text of the originl chunk.
             """
-
+        system_prompt = "You are a helpful assistant tasked with contextualizing text in a larger document."
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant tasked with contextualizing text in a larger document."},
-                    {"role": "user", "content": prompt }
-                ],
-                temperature=0,
-            )
-            context = response.choices[0].message.content
+            context = generate(system_prompt, prompt, self.model_name, self.model_api_key)
             return chunk + "\n" + context
         except Exception as e:
             logging.info(f"Failed to summarize table text: {e}")

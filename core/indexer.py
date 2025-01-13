@@ -33,7 +33,6 @@ from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
 from core.contextual import ContextualChunker
 
-
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
@@ -71,8 +70,8 @@ class Indexer:
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.logger = logging.getLogger()
-        self.model = None
-        self.whisper_model = cfg.vectara.get("whisper_model", "base")
+        self.whisper_model = None
+        self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
@@ -86,9 +85,14 @@ class Indexer:
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': True})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
-        if cfg.vectara.get("openai_api_key", None) is None:
+
+        self.model_name = self.cfg.doc_processing.get("model_name", "openai")
+        self.model_api_key = self.cfg.vectara.get("openai_api_key", None) if self.model_name=='openai' else \
+            self.cfg.vectara.get("anthropic_api_key", None)
+
+        if self.model_api_key is None:
             if self.summarize_tables or self.summarize_images:
-                self.logger.info("OpenAI API key not found, disabling table/image summarization")
+                self.logger.info(f"Model ({self.model_name}) API key not found, disabling table/image summarization")
             self.summarize_tables = False
             self.summarize_images = False
             self.extract_metadata = []
@@ -546,7 +550,6 @@ class Indexer:
         else:
             try:
                 # Use Playwright to get the page content
-                openai_api_key = self.cfg.vectara.get("openai_api_key", None)
                 res = self.fetch_page_contents(
                     url, 
                     self.remove_code,
@@ -568,7 +571,8 @@ class Indexer:
                     ex_metadata = get_attributes_from_text(
                         text,
                         metadata_questions=self.extract_metadata,
-                        openai_api_key=openai_api_key
+                        model_name=self.model_name,
+                        model_api_key=self.model_api_key
                     )
                     metadata.update(ex_metadata)
                 else:
@@ -592,7 +596,7 @@ class Indexer:
 
                 if self.summarize_tables:
                     vec_tables = []
-                    table_summarizer = TableSummarizer(openai_api_key=openai_api_key)
+                    table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
                         table_md = convert(table)
                         df = markdown_to_df(table_md)
@@ -614,7 +618,7 @@ class Indexer:
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                     }
-                    image_summarizer = ImageSummarizer(openai_api_key=openai_api_key)
+                    image_summarizer = ImageSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     image_filename = 'image.png'
                     for inx,image in enumerate(res['images']):
                         image_url = image['src']
@@ -762,7 +766,6 @@ class Indexer:
             return False
         
         # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
-        openai_api_key = self.cfg.vectara.get("openai_api_key", None)
         size_limit = 50
         max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
@@ -782,7 +785,7 @@ class Indexer:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
                     verbose=self.verbose,
-                    openai_api_key=openai_api_key,
+                    model_name=self.model_name, model_api_key=self.model_api_key,
                     summarize_tables=False,
                     summarize_images=self.summarize_images,
                 )
@@ -794,7 +797,7 @@ class Indexer:
                 ex_metadata = get_attributes_from_text(
                     all_text,
                     metadata_questions=self.extract_metadata,
-                    openai_api_key=openai_api_key
+                    model_name=self.model_name, model_api_key=self.model_api_key,
                 )
                 metadata.update(ex_metadata)
             else:
@@ -826,7 +829,7 @@ class Indexer:
             self.logger.info(f"Applying contextual chunking for {filename}")
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
-                openai_api_key=openai_api_key,
+                model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=True,
                 summarize_tables=self.summarize_tables, 
                 summarize_images=self.summarize_images
@@ -834,7 +837,7 @@ class Indexer:
         elif self.doc_parser == "docling":
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
-                openai_api_key=openai_api_key,
+                model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=self.docling_config['chunk'], 
                 summarize_tables=self.summarize_tables, 
                 summarize_images=self.summarize_images
@@ -842,7 +845,7 @@ class Indexer:
         else:
             dp = UnstructuredDocumentParser(
                 verbose=self.verbose,
-                openai_api_key=openai_api_key,
+                model_name=self.model_name, model_api_key=self.model_api_key,
                 chunking_strategy=self.unstructured_config['chunking_strategy'],
                 chunk_size=self.unstructured_config['chunk_size'],
                 summarize_tables=self.summarize_tables, 
@@ -856,7 +859,7 @@ class Indexer:
             ex_metadata = get_attributes_from_text(
                 all_text,
                 metadata_questions=self.extract_metadata,
-                openai_api_key=openai_api_key
+                model_name=self.model_name, model_api_key=self.model_api_key,
             )
             metadata.update(ex_metadata)
         else:
@@ -873,7 +876,7 @@ class Indexer:
         # Apply contextual chunking if indicated, otherwise just the text directly.
         if self.contextual_chunking:
             all_text = "\n".join(texts)[:max_chars]
-            cc = ContextualChunker(openai_api_key=openai_api_key, whole_document=all_text)
+            cc = ContextualChunker(model_name=self.model_name, model_api_key=self.model_api_key, whole_document=all_text)
             texts = cc.parallel_transform(texts)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
@@ -913,9 +916,9 @@ class Indexer:
             bool: True if the upload was successful, False
         """
         logging.info(f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
-        if self.model is None:
-            self.model = whisper.load_model(self.whisper_model, device="cpu")
-        result = self.model.transcribe(file_path, temperature=0, verbose=False)
+        if self.whisper_model is None:
+            self.whisper_model = whisper.load_model(self.whisper_model, device="cpu")
+        result = self.whisper_model.transcribe(file_path, temperature=0, verbose=False)
         text = result['segments']
         doc = {
             'id': slugify(file_path),

@@ -1,7 +1,7 @@
 # Table Summary
 
-This optional capability of vectara-ingest will use `unstructured` to identify tables and `OpenAI`'s GPT-4 
-to summarize the table into a text segment.
+This optional capability of vectara-ingest will use `unstructured` or `docling` to identify tables in the document
+and utilize `OpenAI`'s GPT-4o or `Anthropic` claude to summarize the table into a text segment.
 
 The main rationale here is that this works much better in the context of RAG.
 

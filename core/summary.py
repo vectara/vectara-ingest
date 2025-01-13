@@ -5,13 +5,15 @@ import logging
 
 from PIL import Image
 from io import BytesIO
-from openai import OpenAI
 
-def get_attributes_from_text(text: str, metadata_questions: list[dict], openai_api_key) -> Set[str]:
+from core.models import generate, generate_image_summary
+
+def get_attributes_from_text(text: str, metadata_questions: list[dict], model_name: str, model_api_key: str) -> Set[str]:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
     """
+    system_prompt = "You are a helpful assistant tasked with answering questions from text."
     prompt = f"""
         Here is text: {text}.
         Here is a list of attribute/question pairs:
@@ -20,20 +22,9 @@ def get_attributes_from_text(text: str, metadata_questions: list[dict], openai_a
         prompt += f"- {attr}: {question}\n"
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format."
-    client = OpenAI(api_key=openai_api_key)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant tasked with answering questions from text."},
-            {"role": "user", "content": prompt }
-        ],
-        temperature=0,
-        max_tokens=4096,
-    )
-    res = str(response.choices[0].message.content)
+    res = generate(system_prompt, prompt, model_name, model_api_key)
     cleaned_res = res.strip().removeprefix("```json").removesuffix("```")
     return json.loads(cleaned_res)
-
 
 def get_image_shape(content: str) -> tuple:
     """
@@ -44,8 +35,9 @@ def get_image_shape(content: str) -> tuple:
     return img.size  # (width, height)
 
 class ImageSummarizer():
-    def __init__(self, openai_api_key: str):
-        self.client = OpenAI(api_key=openai_api_key)
+    def __init__(self, model_name: str, model_api_key: str):
+        self.model_name = model_name
+        self.model_api_key = model_api_key
 
     def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
         content = None
@@ -71,40 +63,17 @@ class ImageSummarizer():
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url":  f"data:image/jpeg;base64,{content}"
-                        },
-                    },
-                ]
-            }
-        ]
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                max_tokens=4096
-            )
-            summary = response.choices[0].message.content
-            if len(summary) < 100:      # If the summary is too short, it is likely not useful
-                return ""
+            summary = generate_image_summary(prompt, content, self.model_name, self.model_api_key)
             return summary
         except Exception as e:
             logging.info(f"Failed to summarize image ({image_url}): {e}")
             return ""
 
 class TableSummarizer():
-    def __init__(self, openai_api_key: str):
-        self.client = OpenAI(api_key=openai_api_key)
+    def __init__(self, model_name: str, model_api_key: str):
+        self.model_name = model_name
+        self.model_api_key = model_api_key
 
     def summarize_table_text(self, text: str):
         prompt = f"""
@@ -135,16 +104,10 @@ class TableSummarizer():
             Table chunk: {text} 
         """
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant tasked with summarizing data tables."},
-                    {"role": "user", "content": prompt }
-                ],
-                temperature=0,
-                max_tokens=8192,
-            )
-            return response.choices[0].message.content
+            system_prompt = "You are a helpful assistant tasked with summarizing data tables."
+            summary = generate(system_prompt, prompt, self.model_name, self.model_api_key)
+            return summary
         except Exception as e:
-            logging.info(f"Failed to summarize table text: {e}")
+            import traceback
+            logging.info(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
             return None

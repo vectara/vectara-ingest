@@ -21,15 +21,17 @@ class DocumentParser():
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
+        model_name: str = None,
+        model_api_key: str = None,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        self.openai_api_key = openai_api_key
-        self.summarize_tables = summarize_tables and openai_api_key
-        self.summarize_images = summarize_images and openai_api_key
-        self.table_summarizer = TableSummarizer(openai_api_key) if self.summarize_tables else None
-        self.image_summarizer = ImageSummarizer(openai_api_key) if self.summarize_images else None
+        self.model_name = model_name
+        self.model_api_key = model_api_key
+        self.summarize_tables = summarize_tables and model_api_key
+        self.summarize_images = summarize_images and model_api_key
+        self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.summarize_tables else None
+        self.image_summarizer = ImageSummarizer(model_name, model_api_key) if self.summarize_images else None
         self.logger = logging.getLogger()
         self.verbose = verbose
 
@@ -38,12 +40,13 @@ class DoclingDocumentParser(DocumentParser):
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
+        model_name: str = None,
+        model_api_key: str = None,
         chunk: bool = False,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunk = chunk
         self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
 
@@ -134,13 +137,14 @@ class UnstructuredDocumentParser(DocumentParser):
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
+        model_name: str = None,
+        model_api_key: str = None,
         chunking_strategy: str = "by_title",
         chunk_size: int = 1024,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")

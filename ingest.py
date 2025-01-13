@@ -171,6 +171,7 @@ def main() -> None:
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
         return
     logging.info(f'Using profile "{profile_name}" from secrets.toml')
+    
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
     for k,v in general_dict.items():
