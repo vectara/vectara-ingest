@@ -21,10 +21,11 @@ def get_attributes_from_text(text: str, metadata_questions: list[dict], model_na
     for attr,question in metadata_questions.items():
         prompt += f"- {attr}: {question}\n"
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
-    prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format."
+    prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
     res = generate(system_prompt, prompt, model_name, model_api_key)
-    cleaned_res = res.strip().removeprefix("```json").removesuffix("```")
-    return json.loads(cleaned_res)
+    if res.strip().startswith("```json"):
+        res = res.strip().removeprefix("```json").removesuffix("```")
+    return json.loads(res)
 
 def get_image_shape(content: str) -> tuple:
     """

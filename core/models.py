@@ -44,7 +44,7 @@ def generate(
             temperature=0,
             max_tokens=max_tokens,
         )
-        res = str(response.content)
+        res = str(response.content[0].text)
 
     return res
 
@@ -97,7 +97,7 @@ def generate_image_summary(
                             "type": "image",
                             "source": {
                                 "type": "base64",
-#                                "media_type": "image/jpeg",
+                                "media_type": "image/png",
                                 "data": image_content,
                             },
                         },
@@ -110,6 +110,6 @@ def generate_image_summary(
                 }
             ],
         )
-        summary = str(response.content)
+        summary = str(response.content[0].text)
         return summary
 
