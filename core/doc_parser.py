@@ -1,6 +1,7 @@
 import logging
 from typing import List, Tuple
 import time
+import pandas as pd
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type
@@ -20,39 +21,44 @@ class DocumentParser():
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
+        model_name: str = None,
+        model_api_key: str = None,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        self.openai_api_key = openai_api_key
-        self.summarize_tables = summarize_tables and openai_api_key
-        self.summarize_images = summarize_images and openai_api_key
-        self.table_summarizer = TableSummarizer(openai_api_key) if self.summarize_tables else None
-        self.image_summarizer = ImageSummarizer(openai_api_key) if self.summarize_images else None
+        self.model_name = model_name
+        self.model_api_key = model_api_key
+        self.summarize_tables = summarize_tables and model_api_key
+        self.summarize_images = summarize_images and model_api_key
+        self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.summarize_tables else None
+        self.image_summarizer = ImageSummarizer(model_name, model_api_key) if self.summarize_images else None
         self.logger = logging.getLogger()
         self.verbose = verbose
 
 class DoclingDocumentParser(DocumentParser):
+
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
+        model_name: str = None,
+        model_api_key: str = None,
         chunk: bool = False,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunk = chunk
         self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
 
     @staticmethod
     def _lazy_load_docling():
         from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling_core.transforms.chunker import HierarchicalChunker
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.datamodel.base_models import InputFormat
+        from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 
-        return DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
+
+        return DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
 
     def parse(
             self,
@@ -70,7 +76,7 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using Docling
-        DocumentConverter, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+        DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
 
         st = time.time()        
         pipeline_options = PdfPipelineOptions()
@@ -85,13 +91,14 @@ class DoclingDocumentParser(DocumentParser):
         doc_title = doc.name
 
         if self.chunk:
-            chunks = list(HierarchicalChunker().chunk(doc))
+            chunks = list(HybridChunker().chunk(doc))
             texts = [chunk.text for chunk in chunks]
         else:
             texts = [e.text for e in doc.texts]
         metadatas = [{'parser_element_type': 'text'} for _ in texts]
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
+        tables = []
         if self.summarize_tables:
             self.logger.info(f"DoclingParser: {len(doc.tables)} tables")
             for table in doc.tables:
@@ -102,6 +109,7 @@ class DoclingDocumentParser(DocumentParser):
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
+                tables.append([table.export_to_dataframe(), table_summary])
 
         image_summaries = []
         if self.summarize_images:
@@ -122,20 +130,21 @@ class DoclingDocumentParser(DocumentParser):
                     continue
 
         self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
-        return doc_title, texts, metadatas, image_summaries
+        return doc_title, texts, metadatas, tables, image_summaries
 
 
 class UnstructuredDocumentParser(DocumentParser):
     def __init__(
         self,
         verbose: bool = False,
-        openai_api_key: str = None,
-        chunking_strategy: str = "none",
+        model_name: str = None,
+        model_api_key: str = None,
+        chunking_strategy: str = "by_title",
         chunk_size: int = 1024,
         summarize_tables: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, openai_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
@@ -215,6 +224,7 @@ class UnstructuredDocumentParser(DocumentParser):
         )
         texts = []
         metadatas = []
+        tables = []
         num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
         self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
         for inx,e in enumerate(elements):
@@ -225,6 +235,9 @@ class UnstructuredDocumentParser(DocumentParser):
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
+                html_table = e.metadata.text_as_html
+                df = pd.read_html(html_table)[0]
+                tables.append([df, table_summary])
             else:
                 texts.append(str(e))
                 metadatas.append({'parser_element_type': 'text'})
@@ -253,4 +266,4 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = titles[0] if len(titles)>0 else ''
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-        return doc_title, texts, metadatas, image_summaries
+        return doc_title, texts, metadatas, tables, image_summaries

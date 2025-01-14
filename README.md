@@ -207,33 +207,44 @@ vectara:
 
 
 doc_processing:
+
+  # which model to use for table summary, image summary or contextual retrevial
+  # Options are "openai" or "anthropic". default is "openai"
+  model: openai
+
   # Whether or not to summarize table content with GPT-4o (inside PDF, HTML, PPT, DOCX; optional)
-  # When using this feature, you need to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
-  # This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
+  # When using this feature, you need to list the OPENAI_API_KEY or ANTHROPIC_API_KEY in your `secrets.toml` 
+  # under a special profile called `general`.
+  # This processing might be slow and will require you to have an additional paid subscription to OpenAI or ANTHROPIC. 
   # See [here](TABLE_SUMMARY.md) for some examples of how table summary works.
   summarize_tables: false
   
   # Whether or not to summarize image content using GPT-4o vision 
-  # When using this feature, you need to list the OPENAI_API_KEY in your `secrets.toml` under a special profile called `general`.
-  # This processing is quite slow and will require you to have an additional paid subscription to OpenAI. 
+  # When using this feature, you need to list the OPENAI_API_KEY or ANTHRPIC_API_KEY in your `secrets.toml` 
+  # under a special profile called `general`.
+  # This processing might be slow and will require you to have an additional paid subscription to OpenAI or ANTHROPIC. 
   summarize_images: false
 
   # which document parser to use for local file parsing: unstructured or docling
-  doc_parser: unstructured
-
-  # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
-  use_core_indexing: false            
+  doc_parser: docling
 
   # Unstructured document parsing configuration
   unstructured_config:
-    chunking_strategy: none            # chunking strategy to use: basic, by_title or none; default none
+    chunking_strategy: by_title        # chunking strategy to use: basic, by_title or none; default none
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
 
   # Docling document parsing configuation
   docling_config:
-    chunk: false                            # Whether to use Docling Chunking
+    chunk: true                            # Whether to use Docling Hybrid chunking
 
-  # defines a set of optional metadata attributes, each with a "query" to extract that value; required OPENAI_API_KEY to be defined.
+  # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
+  use_core_indexing: false            
+
+  # enable contextual chunking (only for PDF files at the moment)
+  contextual_chunking: false            
+
+# defines a set of optional metadata attributes, each with a "query" to extract that value
+# requires OPENAI_API_KEY or ANTHROPIC_API_KEY to be defined.
   extract_metadata:
     'num_pages': 'number of pages in this document'
     'date': 'date of this document'
@@ -258,6 +269,7 @@ We use a `secrets.toml` file to hold secret keys and parameters. You need to cre
 ```
 [general]
 OPENAI_API_KEY="sk-..."
+ANTHROPIC_API_KEY="sk-..."
 
 [profile1]
 api_key="<VECTAR-API-KEY-1>"
@@ -274,7 +286,9 @@ The use of the `toml` standard allows easy secrets management when you have mult
 
 Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the `secrets.toml` file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
 
-If you are using the table summarization feature, which utilizes OPENAI, you have to provide your own OPENAI API key. In this case, you would need to put that key under the `[general]` profile. This is a special profile name reserved for this purpose.
+If you are using the table summarization, image summarization or contextual retreival features, 
+you have to provide your own LLM key (either OPENAI_API_KEY or ANTHROPIC_API_KEY). 
+In this case, you would need to put that key under the `[general]` profile. This is a special profile name reserved for this purpose.
 
 ### Indexer Class
 
@@ -328,7 +342,8 @@ Specify Docker Image: In the "Image URL" fill in "vectara/vectara-ingest" and cl
 1. Choose a name for your deployment (e.g. "vectara-ingest"), and if you need to pick a region or leave the default. Then pick your instance type.
 2. Click "Create Web Service"
 3. Click "Environment", then "Add Secret File": name the file config.yaml, and copy the contents of the config.yaml for your crawler
-4. Assuming you have a `secrets.toml` file with multiple profiles and you want to use the secrets for the profile `[my-profile]`, click "Environment", then "Add Secret File": name the file secrets.toml, and copy only the contents of `[my-profile]` from the secrets.toml to this file (incuding the profile name). Make sure to copy `[general]` profile and your OPENAI_API_KEY if you are using table summarization.
+4. Assuming you have a `secrets.toml` file with multiple profiles and you want to use the secrets for the profile `[my-profile]`, click "Environment", then "Add Secret File": name the file secrets.toml, and copy only the contents of `[my-profile]` from the secrets.toml to this file (incuding the profile name). 
+Make sure to copy `[general]` profile and your OPENAI_API_KEY or ANTHROPIC_API_KEY if you are using table summarization, image summarization of contextual retreival.
 5. Click "Settings" and go to "Docker Command" and click "Edit", the enter the following command:
 `/bin/bash -c mkdir /home/vectara/env && cp /etc/secrets/config.yaml /home/vectara/env/ && cp /etc/secrets/secrets.toml /home/vectara/env/ && python3 ingest.py /home/vectara/env/config.yaml <my-profile>"`
 

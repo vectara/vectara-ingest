@@ -103,7 +103,7 @@ hfdataset_crawler:
     text_columns: [review]
     metadata_columns: [city, hotel]
 ```
-The database crawler can be used to read data from a relational database and index relevant columns into Vectara.
+The huggingface crawler can be used to read data from a HF dataset and index relevant columns into Vectara.
 - `dataset_name` the huggingface dataset name
 - `split` the "split" of the dataset in the HF datasets hub (e.g. "train", or "test", or "corpus"; look at DS card to determine)
 - `select_condition` optional condition to filter rows in the table by
@@ -222,12 +222,12 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
 ```
 
 The Docs crawler processes and indexes content published on different documentation systems.
-It has two parameters
+It has the following parameters:
 - `base_urls` defines one or more base URLS for the documentation content.
 - `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion
 - `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
-- `doc_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
+- `docs_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
@@ -379,6 +379,8 @@ For more information see [Google documentation](https://developers.google.com/wo
   folder_crawler:
     path: "/Users/ofer/Downloads/some-interesting-content/"
     extensions: ['.pdf']
+    source: 'my-folder'
+    metadata_file: '/path/to/metadata.csv'
 ```
 
 The folder crawler indexes all files specified from a local folder.
@@ -408,7 +410,7 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 ```yaml
 ...
   yt_crawler:
-    playlist_url: <some-yotube-playlist-url>
+    playlist_url: <some-youtube-playlist-url>
 ```
 
 The Youtube crawler loads all videos from a playlist, extracts the subtitles into text (or transcribes the audio if subtitles don't exist), and indexes that text.
@@ -431,7 +433,7 @@ To use the slack crawler you need to create slack bot app and give it permission
 
 - **Install the Bot to Your Workspace**: Once you've configured your app, navigate to the "Install App" section. Click on the "Install App to Workspace" button to add the bot to your Slack workspace. This step will generate an OAuth access token that you'll need to use to authenticate your bot.
 
-- **Add User Token Scope**: To add user token scope, navigate to the "OAuth & Permissions" section in your app settings. Under the "OAuth Tokens for Your Workspace" section, you'll need to add  `users:read`, `channel:read`, `channel:history` scopes.
+- **Add User Token Scope**: To add user token scope, navigate to the "OAuth & Permissions" section in your app settings. Under the "OAuth Tokens for Your Workspace" section, you'll need to add  `users:read`, `channels:read`, `channels:history` scopes.
 
 - **Save Changes**: Make sure to save any changes you've made to your app settings.
 

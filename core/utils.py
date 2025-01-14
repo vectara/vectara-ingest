@@ -14,12 +14,12 @@ from slugify import slugify
 import magic
 
 import shutil
+import pandas as pd
+from io import StringIO
 
 import time
 import threading
 import logging
-
-import magic
 
 from langdetect import detect
 
@@ -304,3 +304,70 @@ def get_urls_from_sitemap(homepage_url):
                 urls.add(loc.text.strip())
     
     return list(urls)
+
+def df_cols_to_headers(df: pd.DataFrame):
+    """
+    Returns the columns of a pandas dataframe.
+    1. If it's a simple header - return a list with a single list of column names.
+    2. If it's a MultiIndex, return a list of headers with colspans
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input Dataframe
+
+    Returns
+    -------
+    List[str] or List[List[Tuple[str, int]]]
+    """
+    columns = df.columns
+    if not isinstance(columns, pd.MultiIndex):
+        return [list(columns)]
+    
+    n_levels = columns.nlevels
+    rows = []
+
+    # For each level i, we scan the columns in order
+    # and group consecutive columns with the same label at that level.
+    for level in range(n_levels):
+        row = []
+        
+        current_label = None
+        current_colspan = 0
+        
+        # Iterate over each column's tuple
+        for col_tuple in columns:
+            label_at_level = col_tuple[level]
+            
+            if label_at_level == current_label:
+                # Same label → increase the colspan
+                current_colspan += 1
+            else:
+                # Different label → push the previous label/colspan to row
+                if current_label is not None:
+                    row.append((current_label, current_colspan))
+                
+                # Start a new group
+                current_label = label_at_level
+                current_colspan = 1
+        
+        # Don't forget the last one
+        if current_label is not None:
+            row.append((current_label, current_colspan))
+        
+        rows.append(row)
+
+    return rows
+
+def markdown_to_df(markdown_table):
+    # Create a file-like object from the markdown table string
+    table_io = StringIO(markdown_table.strip())
+    df = pd.read_csv(table_io, sep='|', skipinitialspace=True)
+    
+    # Clean up the DataFrame
+    df = df.dropna(axis=1, how='all')   # Remove empty columns
+    df = df.iloc[1:]                    # Remove the row with dashes (separator row)
+    df.columns = df.columns.str.strip() # Remove whitespace from column names
+    df = df.reset_index(drop=True)      # Reset the index
+    
+    return df.applymap(lambda x: x.strip() if isinstance(x, str) else x)

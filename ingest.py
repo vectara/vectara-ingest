@@ -157,7 +157,11 @@ def main() -> None:
     profile_name = sys.argv[2]
 
     # process arguments 
-    cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+    try:
+        cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+    except Exception as e:
+        logging.error(f"Error loading config file ({config_name}): {e}")
+        return
 
     # add .env params, by profile
     volume = '/home/vectara/env'
@@ -167,6 +171,7 @@ def main() -> None:
         logging.info(f'Profile "{profile_name}" not found in secrets.toml')
         return
     logging.info(f'Using profile "{profile_name}" from secrets.toml')
+    
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
     for k,v in general_dict.items():
