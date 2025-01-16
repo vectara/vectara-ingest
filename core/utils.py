@@ -370,4 +370,4 @@ def markdown_to_df(markdown_table):
     df.columns = df.columns.str.strip() # Remove whitespace from column names
     df = df.reset_index(drop=True)      # Reset the index
     
-    return df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+    return df.map(lambda x: x.strip() if isinstance(x, str) else x)

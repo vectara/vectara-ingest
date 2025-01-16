@@ -235,7 +235,7 @@ doc_processing:
 
   # Docling document parsing configuation
   docling_config:
-    chunk: true                            # Whether to use Docling Hybrid chunking
+    chunk: true                        # Whether to use Docling Hybrid chunking
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   use_core_indexing: false            
@@ -243,8 +243,8 @@ doc_processing:
   # enable contextual chunking (only for PDF files at the moment)
   contextual_chunking: false            
 
-# defines a set of optional metadata attributes, each with a "query" to extract that value
-# requires OPENAI_API_KEY or ANTHROPIC_API_KEY to be defined.
+  # defines a set of optional metadata attributes, each with a "query" to extract that value
+  # requires OPENAI_API_KEY or ANTHROPIC_API_KEY to be defined.
   extract_metadata:
     'num_pages': 'number of pages in this document'
     'date': 'date of this document'

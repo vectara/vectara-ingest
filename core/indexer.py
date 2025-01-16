@@ -1,6 +1,5 @@
 import logging
 import json
-import html
 import re
 import os
 import time
@@ -201,11 +200,10 @@ class Indexer:
             page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
             page.wait_for_timeout(self.post_load_timeout*1000)  # Wait additional time to handle AJAX
             self._scroll_to_bottom(page)
-
-            title = page.title()
             html_content = page.content()
-
+            title = page.title()
             out_url = page.url
+
             text = page.evaluate(f"""() => {{
                 let content = Array.from(document.body.childNodes)
                     .map(node => node.textContent || "")
@@ -594,8 +592,8 @@ class Indexer:
                 parts = [text]
                 metadatas = [{'element_type': 'text'}]
 
+                vec_tables = []
                 if self.summarize_tables:
-                    vec_tables = []
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
                         table_md = convert(table)
