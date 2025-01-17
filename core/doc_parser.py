@@ -2,15 +2,19 @@ import logging
 from typing import List, Tuple
 import time
 import pandas as pd
+import os
 
 from core.summary import TableSummarizer, ImageSummarizer
-from core.utils import detect_file_type
+from core.utils import detect_file_type, markdown_to_df
 
 import unstructured as us
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.html import partition_html
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.docx import partition_docx
+
+import nest_asyncio
+from llama_parse import LlamaParse
 
 import nltk
 nltk.download('punkt_tab', quiet=True)
@@ -35,6 +39,82 @@ class DocumentParser():
         self.logger = logging.getLogger()
         self.verbose = verbose
 
+class LlamaParseDocumentParser(DocumentParser):
+
+    def __init__(
+        self,
+        verbose: bool = False,
+        model_name: str = None,
+        model_api_key: str = None,
+        llama_parse_api_key: str = None,
+        summarize_tables: bool = False,
+        summarize_images: bool = False
+    ):
+        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
+        if llama_parse_api_key:
+            self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
+            self.logger.info("Using LlamaParse, premium mode")
+        else:
+            raise ValueError("No LlamaParse API key found, skipping LlamaParse")
+
+    def parse(
+            self,
+            filename: str, 
+            source_url: str = "No URL"
+        ) -> Tuple[str, List[str], List[dict], list[str]]:
+        """
+        Parse a local file and return the title and text content.
+        Using LlamaPase
+        
+        Args:
+            filename (str): Name of the file to parse.
+
+        Returns:
+            Tuple with doc_title, list of texts, list of metdatas
+        """
+        st = time.time()
+        doc_title = ''
+        texts = []
+        image_summaries = []
+        tables = []
+        metadatas = []
+        img_folder = '/images'
+        os.makedirs(img_folder, exist_ok=True)
+
+        nest_asyncio.apply()
+        json_objs = self.parser.get_json_result(filename)
+        pages = json_objs[0]['pages']
+        for page in pages:
+            texts.append(page['text'])
+ 
+            # process tables
+            if self.summarize_tables:
+                lm_tables = [item for item in page['items'] if item['type']=='table']
+                for table in lm_tables:
+                    table_md = table['md']
+                    table_summary = self.table_summarizer.summarize_table_text(table_md)
+                    if table_summary:
+                        texts.append(table_summary)
+                        metadatas.append({'parser_element_type': 'table', 'page': page['page']})
+                        if self.verbose:
+                            self.logger.info(f"Table summary: {table_summary}")
+                    tables.append([markdown_to_df(table_md), table_summary])
+
+            # process images
+            if self.summarize_images:
+                images = self.parser.get_images(page, download_path=img_folder)
+                for image in images:
+                    image_summary = self.image_summarizer.summarize_image(image['path'], source_url, None)
+                    if image_summary:
+                        image_summaries.append(image_summary)
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary}")
+
+        self.logger.info(f"LlamaParse: {len(tables)} tables, and {len(image_summaries)} images")
+        self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
+
+        return doc_title, texts, metadatas, tables, image_summaries
+
 class DoclingDocumentParser(DocumentParser):
 
     def __init__(
@@ -57,7 +137,6 @@ class DoclingDocumentParser(DocumentParser):
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 
-
         return DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
 
     def parse(
@@ -78,7 +157,7 @@ class DoclingDocumentParser(DocumentParser):
         # Process using Docling
         DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
 
-        st = time.time()        
+        st = time.time()
         pipeline_options = PdfPipelineOptions()
         pipeline_options.images_scale = 2.0
         pipeline_options.generate_picture_images = True
@@ -178,6 +257,7 @@ class UnstructuredDocumentParser(DocumentParser):
         ]:
             partition_kwargs.update({
                 "extract_images_in_pdf": True,
+                "extract_image_block_types": ["Image", "Table"],
                 "strategy": "hi_res", 
                 "hi_res_model_name": "yolox",
             })

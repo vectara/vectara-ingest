@@ -359,11 +359,28 @@ def df_cols_to_headers(df: pd.DataFrame):
 
     return rows
 
+def get_file_path_from_url(url):
+    path = urlparse(url).path
+    # Get the file name (last segment of path)
+    filename = os.path.basename(path)
+    # Strip off any trailing query string if present
+    filename = filename.split("?")[0]
+    
+    # Split into name + extension
+    name_part, ext = os.path.splitext(filename)
+    
+    # Slugify the name part only
+    slugified_name = slugify(name_part)
+    
+    # Construct new filename
+    new_filename = f"{slugified_name}{ext}"
+    return new_filename
+
 def markdown_to_df(markdown_table):
     # Create a file-like object from the markdown table string
     table_io = StringIO(markdown_table.strip())
     df = pd.read_csv(table_io, sep='|', skipinitialspace=True)
-    
+
     # Clean up the DataFrame
     df = df.dropna(axis=1, how='all')   # Remove empty columns
     df = df.iloc[1:]                    # Remove the row with dashes (separator row)

@@ -26,10 +26,11 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df,
+    get_file_path_from_url
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
 from core.contextual import ContextualChunker
 
 # Suppress FutureWarning related to torch.load
@@ -516,7 +517,7 @@ class Indexer:
 
         # if file is going to download, then handle it as local file
         if self.url_triggers_download(url):
-            file_path = "/tmp/" + slugify(url)
+            file_path = os.path.join("/tmp/" + get_file_path_from_url(url))
             response = self.session.get(url, headers=get_headers, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
@@ -603,8 +604,9 @@ class Indexer:
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
                             cols = df_cols_to_headers(df)
-                            rows = df.to_numpy().tolist()
-                            vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
+                            rows = df.fillna('').to_numpy().tolist()
+                            if len(cols)>0 and len(rows)>0:
+                                vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
 
                 # index text and tables
                 doc_id = slugify(url)
@@ -807,7 +809,6 @@ class Indexer:
             
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and image_summaries:
-                self.logger.info(f"Parsing images from {uri}")
                 self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
                 for inx,image_summary in enumerate(image_summaries):
                     if image_summary:
@@ -829,6 +830,14 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=True,
+                summarize_tables=self.summarize_tables, 
+                summarize_images=self.summarize_images
+            )
+        elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
+            dp = LlamaParseDocumentParser(
+                verbose=self.verbose,
+                model_name=self.model_name, model_api_key=self.model_api_key,
+                llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
                 summarize_tables=self.summarize_tables, 
                 summarize_images=self.summarize_images
             )
@@ -867,8 +876,9 @@ class Indexer:
         vec_tables = []
         for [df, summary] in tables:
             cols = df_cols_to_headers(df)
-            rows = df.to_numpy().tolist()
-            vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary})
+            rows = df.fillna('').to_numpy().tolist()
+            if len(rows)>0 and len(cols)>0:
+                vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary})
 
         # Index text portions
         # Apply contextual chunking if indicated, otherwise just the text directly.
@@ -896,7 +906,7 @@ class Indexer:
                     metadata.update(ex_metadata)
                 doc_id = slugify(uri) + "_image_" + str(inx)
                 succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                    doc_metadata=metadata, doc_title=title)
+                                                 doc_metadata=metadata, doc_title=title)
 
         self.logger.info(f"For file {filename}, extracted text locally")
         return succeeded
