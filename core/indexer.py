@@ -27,7 +27,7 @@ from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_t
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df,
-    get_file_path_from_url
+    get_file_path_from_url, create_row_items
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
@@ -44,6 +44,7 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
 class Indexer:
     """
     Vectara API class.
@@ -685,22 +686,6 @@ class Indexer:
         document["id"] = doc_id
 
         # Create tables structure
-
-        def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
-            res = []
-            for item in items:
-                if isinstance(item, str):
-                    res.append({'text_value': self.normalize_value(item)})
-                elif isinstance(item, int):
-                    res.append({'int_value': item})
-                elif isinstance(item, float):
-                    res.append({'float_value': item})
-                elif isinstance(item, bool):
-                    res.append({'bool_value': item})
-                else:
-                    self.logger.info(f"Unsupported type {type(item)} for item {item}")
-            return res
-
         tables_array = []
         if tables:
             for inx,table in enumerate(tables):
@@ -783,7 +768,7 @@ class Indexer:
             self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata)>0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
-                dp = UnstructuredDocumentParser(
+                dp = DoclingDocumentParser(
                     verbose=self.verbose,
                     model_name=self.model_name, model_api_key=self.model_api_key,
                     summarize_tables=False,
@@ -830,7 +815,7 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=True,
-                summarize_tables=self.summarize_tables, 
+                summarize_tables=self.summarize_tables,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
@@ -838,7 +823,7 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
-                summarize_tables=self.summarize_tables, 
+                summarize_tables=self.summarize_tables,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docling":
@@ -846,7 +831,7 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=self.docling_config['chunk'], 
-                summarize_tables=self.summarize_tables, 
+                summarize_tables=self.summarize_tables,
                 summarize_images=self.summarize_images
             )
         else:

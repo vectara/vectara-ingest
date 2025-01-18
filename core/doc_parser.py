@@ -3,6 +3,7 @@ from typing import List, Tuple
 import time
 import pandas as pd
 import os
+from io import StringIO
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
@@ -53,7 +54,8 @@ class LlamaParseDocumentParser(DocumentParser):
         super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         if llama_parse_api_key:
             self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
-            self.logger.info("Using LlamaParse, premium mode")
+            if self.verbose:
+                self.logger.info("Using LlamaParse, premium mode")
         else:
             raise ValueError("No LlamaParse API key found, skipping LlamaParse")
 
@@ -128,7 +130,8 @@ class DoclingDocumentParser(DocumentParser):
     ):
         super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunk = chunk
-        self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
+        if self.verbose:
+            self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
 
     @staticmethod
     def _lazy_load_docling():
@@ -226,7 +229,8 @@ class UnstructuredDocumentParser(DocumentParser):
         super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
-        self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
+        if self.verbose:
+            self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
 
     def _get_elements(
         self,
@@ -306,7 +310,8 @@ class UnstructuredDocumentParser(DocumentParser):
         metadatas = []
         tables = []
         num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
-        self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
+        if self.verbose:
+            self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
         for inx,e in enumerate(elements):
             if (type(e)==us.documents.elements.Table and self.summarize_tables):
                 table_summary = self.table_summarizer.summarize_table_text(str(e))
@@ -316,7 +321,7 @@ class UnstructuredDocumentParser(DocumentParser):
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
                 html_table = e.metadata.text_as_html
-                df = pd.read_html(html_table)[0]
+                df = pd.read_html(StringIO(html_table))[0]
                 tables.append([df, table_summary])
             else:
                 texts.append(str(e))

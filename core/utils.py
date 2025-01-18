@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import requests
-from typing import List, Set
+from typing import List, Set, Any, Dict
 
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
@@ -377,14 +377,61 @@ def get_file_path_from_url(url):
     return new_filename
 
 def markdown_to_df(markdown_table):
-    # Create a file-like object from the markdown table string
     table_io = StringIO(markdown_table.strip())
-    df = pd.read_csv(table_io, sep='|', skipinitialspace=True)
-
-    # Clean up the DataFrame
-    df = df.dropna(axis=1, how='all')   # Remove empty columns
-    df = df.iloc[1:]                    # Remove the row with dashes (separator row)
-    df.columns = df.columns.str.strip() # Remove whitespace from column names
-    df = df.reset_index(drop=True)      # Reset the index
+    lines = table_io.readlines()
     
-    return df.map(lambda x: x.strip() if isinstance(x, str) else x)
+    if not lines:
+        return pd.DataFrame()
+    
+    # Read header and clean it
+    header = [col.strip() for col in lines[0].strip().split('|')]
+    # Remove empty strings at start/end if present
+    header = [col for col in header if col]
+    
+    # Check if the second row is a separator row
+    if len(lines) > 1 and all(col.strip('- ') == '' for col in lines[1].strip().split('|') if col):
+        data_lines = lines[2:]
+    else:
+        data_lines = lines[1:]
+    
+    # Parse data rows
+    rows = []
+    for line in data_lines:
+        # Split and clean each row
+        row = [cell.strip() for cell in line.strip().split('|')]
+        # Remove empty strings at start/end if present
+        row = [cell for cell in row if cell]
+        rows.append(row)
+    
+    if not rows:
+        return pd.DataFrame(columns=header)
+    
+    # Find the maximum number of columns
+    max_cols = max(len(header), max(len(row) for row in rows))
+    
+    # Extend header if necessary
+    if len(header) < max_cols:
+        header.extend([f'Column_{i+1}' for i in range(len(header), max_cols)])
+    
+    # Extend rows if necessary
+    cleaned_rows = [row + [''] * (max_cols - len(row)) for row in rows]
+    
+    # Create DataFrame
+    df = pd.DataFrame(cleaned_rows, columns=header[:max_cols])
+    return df
+
+def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
+    res = []
+    for item in items:
+        if isinstance(item, str):
+            res.append({'text_value': item})
+        elif isinstance(item, int):
+            res.append({'int_value': item})
+        elif isinstance(item, float):
+            res.append({'float_value': item})
+        elif isinstance(item, bool):
+            res.append({'bool_value': item})
+        else:
+            logging.info(f"Unsupported type {type(item)} for item {item}")
+    return res
+
