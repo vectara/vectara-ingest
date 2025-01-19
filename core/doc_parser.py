@@ -33,8 +33,8 @@ class DocumentParser():
     ):
         self.model_name = model_name
         self.model_api_key = model_api_key
-        self.summarize_tables = summarize_tables and model_api_key
-        self.summarize_images = summarize_images and model_api_key
+        self.summarize_tables = summarize_tables and model_api_key is not None
+        self.summarize_images = summarize_images and model_api_key is not None
         self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.summarize_tables else None
         self.image_summarizer = ImageSummarizer(model_name, model_api_key) if self.summarize_images else None
         self.logger = logging.getLogger()
@@ -235,36 +235,33 @@ class UnstructuredDocumentParser(DocumentParser):
     def _get_elements(
         self,
         filename: str, 
-        mode: str = "default",
+        mode: str = "text",
     ) -> List[us.documents.elements.Element]:
         '''
         Get elements from document using Unstructured partition_XXX functions
         Args:
             filename (str): Name of the file to parse.
-            mode (str): Mode to use for parsing: none, tables or images
+            mode (str): Mode to use for parsing: text, images (images and tables)
         Returns:
             List of elements from the document
         '''
 
-        partition_kwargs = {} if self.chunking_strategy == 'none' or mode == "images" else {
-            "chunking_strategy": self.chunking_strategy,
-            "max_characters": self.chunk_size
-        }
-        if mode == 'tables':
-            partition_kwargs['infer_table_structure'] = True
-
         mime_type = detect_file_type(filename)
-        if mime_type in [
-            'application/pdf', 
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-        ]:
-            partition_kwargs.update({
-                "extract_images_in_pdf": True,
-                "extract_image_block_types": ["Image", "Table"],
-                "strategy": "hi_res", 
-                "hi_res_model_name": "yolox",
-            })
+        partition_kwargs = {}
+        if mode == 'text':
+            partition_kwargs = {} if self.chunking_strategy == 'none' else {
+                "chunking_strategy": self.chunking_strategy,
+                "max_characters": self.chunk_size
+            }
+        else:
+            partition_kwargs = {'infer_table_structure': True }
+            if mime_type == 'application/pdf':
+                partition_kwargs.update({
+                    'extract_images_in_pdf': True,
+                    'extract_image_block_types': ["Image", "Table"],
+                    'strategy': "hi_res", 
+                    'hi_res_model_name': "yolox",
+                })
 
         if mime_type == 'application/pdf':
             partition_func = partition_pdf
@@ -301,54 +298,45 @@ class UnstructuredDocumentParser(DocumentParser):
         # Process using unstructured partitioning functionality
         st = time.time()
         
-        # Pass 1: process text and tables (if summarize_tables is True)
-        elements = self._get_elements(
-            filename,
-            mode='tables' if self.summarize_tables else 'default',
-        )
-        texts = []
-        metadatas = []
-        tables = []
-        num_tables = len([x for x in elements if type(x)==us.documents.elements.Table])
-        if self.verbose:
-            self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 1, {num_tables} are tables")
-        for inx,e in enumerate(elements):
-            if (type(e)==us.documents.elements.Table and self.summarize_tables):
-                table_summary = self.table_summarizer.summarize_table_text(str(e))
-                if table_summary:
-                    texts.append(table_summary)
-                    metadatas.append({'parser_element_type': 'table'})
-                    if self.verbose:
-                        self.logger.info(f"Table summary: {table_summary}")
-                html_table = e.metadata.text_as_html
-                df = pd.read_html(StringIO(html_table))[0]
-                tables.append([df, table_summary])
-            else:
-                texts.append(str(e))
-                metadatas.append({'parser_element_type': 'text'})
-
-        # Pass 2: process any images; here we never use unstructured chunking, and ignore any text
-        elements = self._get_elements(
-            filename,
-            mode = 'images' if self.summarize_images else 'default',
-        )
-        num_images = len([x for x in elements if type(x)==us.documents.elements.Image])
-        self.logger.info(f"UnstructuredDocumentParser: {len(elements)} elements in pass 2, {num_images} are images")
-        image_summaries = []
-        for inx,e in enumerate(elements):
-            if (type(e)==us.documents.elements.Image and  self.summarize_images):
-                if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
-                else:
-                    image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
-                if image_summary:
-                    image_summaries.append(image_summary)
-                    if self.verbose:
-                        self.logger.info(f"Image summary: {image_summary}")
+        # Pass 1: process text
+        elements = self._get_elements(filename, mode='text')
+        texts = [str(e) for e in elements]
+        metadatas = [{'parser_element_type': 'text'} for _ in texts]
 
         # No chunking strategy may result in title elements; if so - use the first one as doc_title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
         doc_title = titles[0] if len(titles)>0 else ''
+
+        # Pass 2: extract tables and images; here we never use unstructured chunking, and ignore any text
+        elements = self._get_elements(filename, mode='images')
+
+        tables = []
+        if self.summarize_tables:
+            for inx,e in enumerate(elements):
+                if isinstance(e, us.documents.elements.Table):
+                    try:
+                        table_summary = self.table_summarizer.summarize_table_text(str(e))
+                        html_table = e.metadata.text_as_html
+                        df = pd.read_html(StringIO(html_table))[0]
+                        tables.append([df, table_summary])
+                        if self.verbose:
+                            self.logger.info(f"Table summary: {table_summary}")
+                    except ValueError as e:
+                        self.logger.error(f"Error parsing HTML table: {e}. Skipping...")
+                        continue
+
+        image_summaries = []
+        if self.summarize_images:
+            for inx,e in enumerate(elements):
+                if isinstance(e, us.documents.elements.Image):
+                    if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
+                        image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
+                    else:
+                        image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
+                    if image_summary:
+                        image_summaries.append(image_summary)
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary}")
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
         return doc_title, texts, metadatas, tables, image_summaries

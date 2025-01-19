@@ -431,7 +431,9 @@ def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
             res.append({'float_value': item})
         elif isinstance(item, bool):
             res.append({'bool_value': item})
+        elif isinstance(item, tuple):   # Tuple of (colname, colspan)
+            res.extend([{'text_value': item[0]}] + [{'text_value':''} for _ in range(item[1] - 1)])
         else:
-            logging.info(f"Unsupported type {type(item)} for item {item}")
+            logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
     return res
 
