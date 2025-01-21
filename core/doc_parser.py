@@ -370,7 +370,7 @@ class UnstructuredDocumentParser(DocumentParser):
         image_summaries = []
         if self.summarize_images:
             for inx,e in enumerate(elements):
-                if isinstance(e, us.documents.elements.Image):
+                if isinstance(e, us.documents.elements.Image) and e.metadata.coordinates.system.width > 200 and e.metadata.coordinates.system.height > 200:
                     if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
                         image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
                     else:
