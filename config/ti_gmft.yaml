@@ -1,0 +1,23 @@
+vectara:
+  corpus_id: 31
+  corpus_key: gmft_ti_table_test
+  customer_id: 425566757
+  endpoint: api.vectara.dev
+  reindex: true
+  verbose: true
+
+doc_processing:
+  doc_parser: unstructured
+  summarize_tables: true
+  parse_tables: true
+  enable_gmft: true
+  summarize_images: false  
+  use_core_indexing: false
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/home/suleman/vectara/vectara-ingest/ti_data"
+  extensions: ['.pdf']
+  source: 'pdf-folder'

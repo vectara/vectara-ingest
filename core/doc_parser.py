@@ -61,7 +61,7 @@ class DocumentParser():
         for page in doc:
             for table in detector.extract(page):
                 ft = formatter.extract(table)
-                dfs.append((ft.df(), ft.captions()))
+                dfs.append((ft.df(), " ".join(ft.captions())))
         tables = []
         for df, title in dfs:
             table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
