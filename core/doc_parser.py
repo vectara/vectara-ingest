@@ -17,6 +17,9 @@ from unstructured.partition.docx import partition_docx
 import nest_asyncio
 from llama_parse import LlamaParse
 
+from gmft.pdf_bindings import PyPDFium2Document
+from gmft.auto import TableDetector, AutoTableFormatter, AutoFormatConfig
+
 import nltk
 nltk.download('punkt_tab', quiet=True)
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
@@ -28,17 +31,48 @@ class DocumentParser():
         verbose: bool = False,
         model_name: str = None,
         model_api_key: str = None,
-        summarize_tables: bool = False,
-        summarize_images: bool = False
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
+        summarize_images: bool = False,
     ):
         self.model_name = model_name
         self.model_api_key = model_api_key
-        self.summarize_tables = summarize_tables and model_api_key is not None
+        self.enable_gmft = enable_gmft
+        self.parse_tables = parse_tables and (model_api_key is not None)
         self.summarize_images = summarize_images and model_api_key is not None
-        self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.summarize_tables else None
+        self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.parse_tables else None
         self.image_summarizer = ImageSummarizer(model_name, model_api_key) if self.summarize_images else None
         self.logger = logging.getLogger()
         self.verbose = verbose
+
+    def get_tables_with_gmft(self, filename: str) -> List[pd.DataFrame]:
+        if not filename.endswith('.pdf'):
+            self.logger.warning(f"GMFT: only PDF files are supported, skipping {filename}")
+            return None
+        
+        detector = TableDetector()
+        config = AutoFormatConfig()
+        config.semantic_spanning_cells = True   # [Experimental] better spanning cells
+        config.enable_multi_header = True       # multi-indices
+        formatter = AutoTableFormatter(config)
+
+        doc = PyPDFium2Document(filename)
+        dfs = []
+        for page in doc:
+            for table in detector.extract(page):
+                ft = formatter.extract(table)
+                dfs.append(ft.df())
+        tables = []
+        for df in dfs:
+            table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
+            tables.append((df, table_summary))
+
+        doc.close()
+        if self.verbose:
+            self.logger.info(f"GMFT: extracted {len(tables)} tables")
+
+        return tables
+
 
 class LlamaParseDocumentParser(DocumentParser):
 
@@ -48,10 +82,11 @@ class LlamaParseDocumentParser(DocumentParser):
         model_name: str = None,
         model_api_key: str = None,
         llama_parse_api_key: str = None,
-        summarize_tables: bool = False,
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
         if llama_parse_api_key:
             self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
             if self.verbose:
@@ -89,8 +124,7 @@ class LlamaParseDocumentParser(DocumentParser):
         for page in pages:
             texts.append(page['text'])
  
-            # process tables
-            if self.summarize_tables:
+            if self.parse_tables and not (self.enable_gmft and filename.endswith('.pdf')):
                 lm_tables = [item for item in page['items'] if item['type']=='table']
                 for table in lm_tables:
                     table_md = table['md']
@@ -112,6 +146,9 @@ class LlamaParseDocumentParser(DocumentParser):
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary}")
 
+        if self.enable_gmft and self.parse_tables and filename.endswith('.pdf'):
+            tables = self.get_tables_with_gmft(filename)
+
         self.logger.info(f"LlamaParse: {len(tables)} tables, and {len(image_summaries)} images")
         self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
@@ -125,10 +162,11 @@ class DoclingDocumentParser(DocumentParser):
         model_name: str = None,
         model_api_key: str = None,
         chunk: bool = False,
-        summarize_tables: bool = False,
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
         self.chunk = chunk
         if self.verbose:
             self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
@@ -181,7 +219,7 @@ class DoclingDocumentParser(DocumentParser):
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
         tables = []
-        if self.summarize_tables:
+        if self.parse_tables and not (self.enable_gmft and filename.endswith('.pdf')):
             self.logger.info(f"DoclingParser: {len(doc.tables)} tables")
             for table in doc.tables:
                 table_md = table.export_to_markdown()
@@ -211,6 +249,9 @@ class DoclingDocumentParser(DocumentParser):
                     self.logger.info(f"Failed to retrieve image {pic}")
                     continue
 
+        if self.enable_gmft and self.parse_tables and filename.endswith('.pdf'):
+            tables = self.get_tables_with_gmft(filename)
+
         self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
         return doc_title, texts, metadatas, tables, image_summaries
 
@@ -223,10 +264,11 @@ class UnstructuredDocumentParser(DocumentParser):
         model_api_key: str = None,
         chunking_strategy: str = "by_title",
         chunk_size: int = 1024,
-        summarize_tables: bool = False,
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, summarize_tables, summarize_images)
+        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         if self.verbose:
@@ -311,7 +353,7 @@ class UnstructuredDocumentParser(DocumentParser):
         elements = self._get_elements(filename, mode='images')
 
         tables = []
-        if self.summarize_tables:
+        if self.parse_tables and not (self.enable_gmft and filename.endswith('.pdf')):
             for inx,e in enumerate(elements):
                 if isinstance(e, us.documents.elements.Table):
                     try:
@@ -337,6 +379,9 @@ class UnstructuredDocumentParser(DocumentParser):
                         image_summaries.append(image_summary)
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary}")
+
+        if self.enable_gmft and self.parse_tables and filename.endswith('.pdf'):
+            tables = self.get_tables_with_gmft(filename)
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
         return doc_title, texts, metadatas, tables, image_summaries

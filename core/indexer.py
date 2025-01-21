@@ -76,7 +76,8 @@ class Indexer:
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
-        self.summarize_tables = cfg.doc_processing.get("summarize_tables", False)
+        self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables", False)) # backward compatibility
+        self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.process_locally = cfg.doc_processing.get("process_locally", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
@@ -92,9 +93,9 @@ class Indexer:
             self.cfg.vectara.get("anthropic_api_key", None)
 
         if self.model_api_key is None:
-            if self.summarize_tables or self.summarize_images:
+            if self.parse_tables or self.summarize_images:
                 self.logger.info(f"Model ({self.model_name}) API key not found, disabling table/image summarization")
-            self.summarize_tables = False
+            self.parse_tables = False
             self.summarize_images = False
             self.extract_metadata = []
             self.contextual_chunking = False
@@ -412,7 +413,7 @@ class Indexer:
             'file': (filename.split('/')[-1], open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        if self.summarize_tables:
+        if self.parse_tables:
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
@@ -553,7 +554,7 @@ class Indexer:
                 res = self.fetch_page_contents(
                     url, 
                     self.remove_code,
-                    self.summarize_tables,
+                    self.parse_tables,
                     self.summarize_images,
                 )
                 html = res['html']
@@ -595,7 +596,7 @@ class Indexer:
                 metadatas = [{'element_type': 'text'}]
 
                 vec_tables = []
-                if self.summarize_tables:
+                if self.parse_tables:
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
                         table_md = convert(table)
@@ -750,7 +751,7 @@ class Indexer:
             self.logger.error(f"File {filename} does not exist")
             return False
         
-        # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
+        # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the parse_tables option, then we parse locally and index
         size_limit = 50
         max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
@@ -771,7 +772,8 @@ class Indexer:
                 dp = DoclingDocumentParser(
                     verbose=self.verbose,
                     model_name=self.model_name, model_api_key=self.model_api_key,
-                    summarize_tables=False,
+                    parse_tables=False,
+                    enable_gmft=False,
                     summarize_images=self.summarize_images,
                 )
                 title, texts, metadatas, _, image_summaries = dp.parse(filename, uri)
@@ -815,7 +817,8 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=True,
-                summarize_tables=self.summarize_tables,
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
@@ -823,7 +826,8 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
-                summarize_tables=self.summarize_tables,
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docling":
@@ -831,7 +835,8 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=self.docling_config['chunk'], 
-                summarize_tables=self.summarize_tables,
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         else:
@@ -840,7 +845,8 @@ class Indexer:
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunking_strategy=self.unstructured_config['chunking_strategy'],
                 chunk_size=self.unstructured_config['chunk_size'],
-                summarize_tables=self.summarize_tables, 
+                parse_tables=self.parse_tables, 
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 
             )
         title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)

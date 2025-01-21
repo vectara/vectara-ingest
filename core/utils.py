@@ -339,6 +339,10 @@ def df_cols_to_headers(df: pd.DataFrame):
         for col_tuple in columns:
             label_at_level = col_tuple[level]
             
+            # Replace NaN with an empty string
+            if pd.isna(label_at_level):
+                label_at_level = ""
+            
             if label_at_level == current_label:
                 # Same label → increase the colspan
                 current_colspan += 1
@@ -432,7 +436,9 @@ def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
         elif isinstance(item, bool):
             res.append({'bool_value': item})
         elif isinstance(item, tuple):   # Tuple of (colname, colspan)
-            res.extend([{'text_value': item[0]}] + [{'text_value':''} for _ in range(item[1] - 1)])
+            val = '' if pd.isnull(item[0]) else item[0]
+            extra_colspan = item[1] - 1
+            res.extend([{'text_value': val}] + [{'text_value':''} for _ in range(extra_colspan)])
         else:
             logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
     return res
