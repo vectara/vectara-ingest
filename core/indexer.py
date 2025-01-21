@@ -692,7 +692,7 @@ class Indexer:
             for inx,table in enumerate(tables):
                 table_dict = {
                     'id': 'table_' + str(inx),
-                    'title': '',
+                    'title': table['title'],
                     'data': {
                         'headers': [
                             create_row_items(h) for h in table['headers']
@@ -758,7 +758,7 @@ class Indexer:
         
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
             (get_file_size_in_MB(filename) >= size_limit or self.contextual_chunking or
-             self.summarize_images)
+             self.summarize_images or self.enable_gmft)
         ):
             self.process_locally = True
 
@@ -865,11 +865,11 @@ class Indexer:
 
         # prepare tables
         vec_tables = []
-        for [df, summary] in tables:
+        for [df, summary, table_title] in tables: # This will fail if tables don't have titles.
             cols = df_cols_to_headers(df)
             rows = df.fillna('').to_numpy().tolist()
             if len(rows)>0 and len(cols)>0:
-                vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary})
+                vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary, 'title': table_title})
 
         # Index text portions
         # Apply contextual chunking if indicated, otherwise just the text directly.

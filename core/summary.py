@@ -103,8 +103,9 @@ class TableSummarizer():
             - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
             - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
             Your response should be without headings, and in text (not markdown). 
-            Review your response for accuracy and coherence, ensuring that all key details are included and clearly explained, without hallucinations.
-            Table chunk: {text} 
+            Review your response for accuracy and coherence, ensuring that all key details are included and clearly explained, without hallucinations.            
+            The table you are being given is in the markdown format, please be careful about which row and which column a particular value is in. 
+            Here is the table: {text} 
         """
         try:
             system_prompt = "You are a helpful assistant tasked with summarizing data tables."
