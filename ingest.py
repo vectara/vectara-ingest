@@ -164,7 +164,7 @@ def main() -> None:
         return
 
     # add .env params, by profile
-    volume = '/home/vectara/env'
+    volume = '.'
     with open(f"{volume}/secrets.toml", "r") as f:
         env_dict = toml.load(f)
     if profile_name not in env_dict:
@@ -197,6 +197,12 @@ def main() -> None:
             continue
         if k=='JIRA_PASSWORD':
             OmegaConf.update(cfg, f'jira_crawler.{k.lower()}', v)
+            continue
+        if k=='CONFLUENCE_PASSWORD':
+            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
+            continue
+        if k=='CONFLUENCE_USERNAME':
+            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
             continue
         if k=='GITHUB_TOKEN':
             OmegaConf.update(cfg, f'github_crawler.{k.lower()}', v)

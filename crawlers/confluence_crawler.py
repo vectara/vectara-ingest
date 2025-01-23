@@ -6,6 +6,7 @@ from furl import furl
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
 import json
+import tempfile
 
 class ConfluenceCrawler(Crawler):
 
@@ -97,22 +98,6 @@ class ConfluenceCrawler(Crawler):
                         metadata[property] = user_lookup[value]
 
 
-    def append_content(self, document, page_data):
-        section = None
-        if 'body' in page_data:
-            if 'anonymous_export_view' in page_data['body']:
-                section =  {
-                    'title': 'Contents',
-                    'text': page_data['body']['anonymous_export_view']['value'],
-                    'metadata': {
-                        'representation': page_data['body']['anonymous_export_view']['representation']
-                    }
-                }
-
-        if section != None:
-            document['sections'].append(section)
-
-
     def raise_for_status(self, response):
         if response.status_code == 400:
             logging.error(f"Bad Request: \n {response.json()}")
@@ -125,9 +110,15 @@ class ConfluenceCrawler(Crawler):
             result.path = os.path.join(str(result.path), str(p))
         return result
 
+    def get_content(self, page_data):
+        result = None
+        if 'body' in page_data:
+            if 'anonymous_export_view' in page_data['body']:
+                result = page_data['body']['anonymous_export_view']['value']
+        return result
 
 
-    def process_page(self, id, document):
+    def process_page(self, id, metadata):
         confluence_page_url = self.new_url("api/v2/pages", id)
         confluence_page_url.args['include-labels'] = 'true'
         confluence_page_url.args['include-properties'] = 'true'
@@ -140,13 +131,13 @@ class ConfluenceCrawler(Crawler):
                                            auth=self.confluence_auth)
         self.raise_for_status(confluence_page_response)
         confluence_page_data = confluence_page_response.json()
-        self.append_labels(document['metadata'], confluence_page_data)
-        self.append_links(document['metadata'], confluence_page_data)
-        self.append_users(document['metadata'], confluence_page_data)
-        self.append_content(document, confluence_page_data)
-        self.copy_properties(confluence_page_data, document['metadata'], ['title', 'spaceId', 'status', 'createdAt', 'parentId', 'parentType'])
+        self.append_labels(metadata, confluence_page_data)
+        self.append_links(metadata, confluence_page_data)
+        self.append_users(metadata, confluence_page_data)
+        self.copy_properties(confluence_page_data, metadata, ['title', 'spaceId', 'status', 'createdAt', 'parentId', 'parentType'])
+        return self.get_content(confluence_page_data)
 
-    def process_blogpost(self, id, document):
+    def process_blogpost(self, id, metadata):
         confluence_page_url = self.new_url("api/v2/pages", id)
         confluence_page_url.args['include-labels'] = 'true'
         confluence_page_url.args['include-properties'] = 'true'
@@ -159,12 +150,12 @@ class ConfluenceCrawler(Crawler):
                                            auth=self.confluence_auth)
         self.raise_for_status(confluence_page_response)
         confluence_page_data = confluence_page_response.json()
-        self.append_labels(document['metadata'], confluence_page_data)
-        self.append_links(document['metadata'], confluence_page_data)
-        self.append_users(document['metadata'], confluence_page_data)
-        self.append_content(document, confluence_page_data)
-        self.copy_properties(confluence_page_data, document['metadata'], ['title', 'spaceId', 'status', 'createdAt', 'parentId', 'parentType'])
-
+        self.append_labels(metadata, confluence_page_data)
+        self.append_links(metadata, confluence_page_data)
+        self.append_users(metadata, confluence_page_data)
+    
+        self.copy_properties(confluence_page_data, metadata, ['title', 'spaceId', 'status', 'createdAt', 'parentId', 'parentType'])
+        return self.get_content(confluence_page_data)
 
     def crawl(self) -> None:
         self.confluence_headers = {"Accept": "application/json"}
@@ -191,26 +182,43 @@ class ConfluenceCrawler(Crawler):
 
             for search_result in confluence_search_data['results']:
                 id = search_result['id']
-                document = {
-                    'id': id,
-                    'sections': [],
-                    'metadata': {}
+                metadata = {
+                    'id': id
                 }
 
+                content = None
+
                 if search_result['type'] == 'page':
-                    self.process_page(id, document)
+                    content = self.process_page(id, metadata)
                 elif search_result['type'] == 'blogpost':
-                    self.process_blogpost(id, document)
+                    content = self.process_blogpost(id, metadata)
                 else:
                     logging.error(f"Unsupported type: {search_result['type']} id: {search_result['id']}")
+                    continue
+                    
+                if content is None:
+                    logging.warning(f"Could not find content for id:{search_result['id']} type:{search_result['type']}")
+                    continue
 
-                succeeded = self.indexer.index_document(document)
+                url = metadata['links']['webui'] if 'links' in metadata and 'webui' in metadata['links'] else id
+                with tempfile.NamedTemporaryFile(suffix=".html", mode='w', delete=False) as f:
+                    logging.debug(f"Writing content for {id} to {f.name}")
+                    f.write(content)
+                    f.flush()
+                    f.close()
+                    try:
+                        succeeded = self.indexer.index_file(f.name, url, metadata, id)
+                    finally:
+                        if os.path.exists(f.name):
+                            os.remove(f.name)
+
+
 
                 if succeeded:
-                    logging.info(f"Indexed page {document['id']}")
+                    # logging.info(f"Indexed {search_result['type']} {search_result['id']}")
                     count+=1
                 else:
-                    logging.info(f"Error indexing issue {document['id']}")
+                    logging.info(f"Error indexing {search_result['type']} {search_result['id']}")
 
             if 'next' in confluence_search_data['_links']:
                 base_url = furl(confluence_search_data['_links']['base'])
