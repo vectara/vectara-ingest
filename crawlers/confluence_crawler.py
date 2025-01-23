@@ -12,9 +12,10 @@ class ConfluenceCrawler(Crawler):
 
     def copy_properties(self, source, target, properties):
         for property in properties:
-            value = source[property]
-            if value is not None:
-                target[property] = value
+            if property in source:
+                value = source[property]
+                if value is not None:
+                    target[property] = value
 
     def append_links(self, metadata, page_data):
         if page_data['_links']:
@@ -138,7 +139,7 @@ class ConfluenceCrawler(Crawler):
         return self.get_content(confluence_page_data)
 
     def process_blogpost(self, id, metadata):
-        confluence_page_url = self.new_url("api/v2/pages", id)
+        confluence_page_url = self.new_url("api/v2/blogposts", id)
         confluence_page_url.args['include-labels'] = 'true'
         confluence_page_url.args['include-properties'] = 'true'
         confluence_page_url.args['include-likes'] = 'true'
@@ -156,6 +157,53 @@ class ConfluenceCrawler(Crawler):
     
         self.copy_properties(confluence_page_data, metadata, ['title', 'spaceId', 'status', 'createdAt', 'parentId', 'parentType'])
         return self.get_content(confluence_page_data)
+
+    def process_attachments(self, metadata):
+        attachment_url = self.new_url('api/v2', f"{metadata['type']}s", metadata['id'], 'attachments')
+        attachment_response = self.session.get(attachment_url.url, headers=self.confluence_headers,
+                                               auth=self.confluence_auth)
+        self.raise_for_status(attachment_response)
+        attachment_data = attachment_response.json()
+
+        supported_extensions = {'.pdf', '.md', '.odt', '.doc', '.docx', '.ppt',
+                                '.pptx', '.txt', '.html', '.htm', '.lxml',
+                                '.rtf', '.epub'
+                                }
+
+
+        for result in attachment_data['results']:
+            title = result['title']
+            filename, file_extension = os.path.splitext(title)
+            if file_extension not in supported_extensions:
+                logging.warning(f"Extension not supported, skipping. '{file_extension}' title:{title}")
+                continue
+            attachment_metadata={}
+
+            self.copy_properties(result, attachment_metadata, ['title', 'pageId', 'fileId', 'comment', 'mediaType', 'status'])
+            id = f"{metadata['id']}/{result['id']}"
+            download_stub = furl(result['downloadLink'][1:])
+            download_url = self.new_url(download_stub.path)
+            self.copy_properties(download_stub.args, download_url.args, ['version', 'modificationDate', 'cacheVersion', 'api'])
+            logging.info(f"Downloading Attachment {result['id']} - {download_url.url}")
+            download_response = self.session.get(download_url.url, headers=self.confluence_headers,
+                                                   auth=self.confluence_auth)
+            self.raise_for_status(download_response)
+            with tempfile.NamedTemporaryFile(suffix=file_extension, mode='wb', delete=False) as f:
+                logging.debug(f"Writing content for {id} to {f.name}")
+                for chunk in download_response.iter_content(chunk_size=32000):  # Read in chunks
+                    f.write(chunk)
+                f.write(download_response.content)
+                f.flush()
+                f.close()
+                try:
+                    succeeded = self.indexer.index_file(f.name, download_url.url, attachment_metadata, id)
+                finally:
+                    if os.path.exists(f.name):
+                        os.remove(f.name)
+
+                if not succeeded:
+                    logging.error(f"Error indexing {result['id']} - {download_url.url}")
+
 
     def crawl(self) -> None:
         self.confluence_headers = {"Accept": "application/json"}
@@ -183,9 +231,9 @@ class ConfluenceCrawler(Crawler):
             for search_result in confluence_search_data['results']:
                 id = search_result['id']
                 metadata = {
-                    'id': id
-                }
 
+                }
+                self.copy_properties(search_result, metadata, ['type', 'status', 'id'])
                 content = None
 
                 if search_result['type'] == 'page':
@@ -212,7 +260,8 @@ class ConfluenceCrawler(Crawler):
                         if os.path.exists(f.name):
                             os.remove(f.name)
 
-
+                if self.cfg.confluence_crawler.confluence_include_attachments:
+                    self.process_attachments(metadata)
 
                 if succeeded:
                     # logging.info(f"Indexed {search_result['type']} {search_result['id']}")
