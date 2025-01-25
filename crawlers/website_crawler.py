@@ -1,14 +1,15 @@
 import logging
+import os
+import psutil
+import gc
+import ray
 from core.crawler import Crawler, recursive_crawl
 from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
 from core.indexer import Indexer
 import re
 
-import ray
-import psutil
-
-
-class PageCrawlWorker(object):
+@ray.remote(memory=0.5 * 1024**3)  # Limit each worker to 0.5 GB
+class PageCrawlWorker:
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
         self.crawler = crawler
         self.indexer = indexer
@@ -16,14 +17,21 @@ class PageCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
+        logging.info("Worker setup complete")
 
     def process(self, url: str, source: str):
+        # Initialize memory profiling
+        process = psutil.Process(os.getpid())
+        memory_before = process.memory_info().rss / 1024**2  # Memory in MB
+        logging.info(f"Memory usage before indexing {url}: {memory_before:.2f} MB")
+
         metadata = {"source": source, "url": url}
         logging.info(f"Crawling and indexing {url}")
         try:
             with self.rate_limiter:
-                succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
+                succeeded = self.indexer.index_url(
+                    url, metadata=metadata, html_processing=self.crawler.html_processing
+                )
             if not succeeded:
                 logging.info(f"Indexing failed for {url}")
             else:
@@ -34,6 +42,12 @@ class PageCrawlWorker(object):
                 f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
+        finally:
+            # Final memory profiling and cleanup
+            memory_after = process.memory_info().rss / 1024**2  # Memory in MB
+            logging.info(f"Memory usage after indexing {url}: {memory_after:.2f} MB")
+            del metadata  # Explicitly release memory
+            gc.collect()  # Trigger garbage collection to free memory
         return 0
 
 class WebsiteCrawler(Crawler):
@@ -84,7 +98,7 @@ class WebsiteCrawler(Crawler):
         logging.info(f"Note: file types = {file_types}")
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
-        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
+        ray_workers = self.cfg.website_crawler.get("ray_workers", 40)            # Default to 40 workers
         source = self.cfg.website_crawler.get("source", "website")
 
         if ray_workers == -1:
@@ -94,17 +108,16 @@ class WebsiteCrawler(Crawler):
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
+            actors = [PageCrawlWorker.remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
-            pool = ray.util.ActorPool(actors)
-
-            # BATCH URL PROCESSING
-            batch_size = 100  # Number of URLs processed per batch
+            
+            # Batch task submission
+            batch_size = 100
             for i in range(0, len(urls), batch_size):
                 batch = urls[i:i + batch_size]
                 logging.info(f"Processing batch {i // batch_size + 1} with {len(batch)} URLs")
-                _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                _ = list(ray.util.ActorPool(actors).map(lambda a, u: a.process.remote(u, source=source), batch))
                 
         else:
             crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
@@ -126,5 +139,3 @@ class WebsiteCrawler(Crawler):
                 with open('/home/vectara/env/urls_removed.txt', 'w') as f:
                     for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
                         f.write(url + '\n')
-
-
