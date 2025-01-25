@@ -117,6 +117,10 @@ class WebsiteCrawler(Crawler):
         if ray_workers > 0:
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
+            if ray.is_initialized():
+                logging.info("Ray is already initialized. Shutting down the existing instance.")
+                ray.shutdown()
+            
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             logging.info("Ray initialized with %d workers.", ray_workers)
             actors = [PageCrawlWorker.remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
