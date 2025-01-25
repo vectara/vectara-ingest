@@ -24,8 +24,7 @@ class PageCrawlWorker:
         import time
         # Start a timer to measure task duration
         start_time = time.time()
-        import time
-        # Initialize xmemory profiling
+        # Initialize memory profiling
         process = psutil.Process(os.getpid())
         memory_before = process.memory_info().rss / 1024**2  # Memory in MB
         logging.info(f"Memory usage before indexing {url}: {memory_before:.2f} MB")
@@ -35,7 +34,7 @@ class PageCrawlWorker:
         try:
             with self.rate_limiter:
                 succeeded = self.indexer.index_url(
-                    url, metadata=metadata, html_processing=self.crawler.html_processing
+                    url, metadata=metadata, html_processing=ray.get(self.crawler.shared_html_processing)
                 )
             if not succeeded:
                 logging.info(f"Indexing failed for {url}")
@@ -66,6 +65,8 @@ class WebsiteCrawler(Crawler):
         self.neg_regex = [re.compile(r) for r in self.cfg.website_crawler.get("neg_regex", [])]
         keep_query_params = self.cfg.website_crawler.get('keep_query_params', False)
         self.html_processing = self.cfg.website_crawler.get('html_processing', {})
+        # Share the HTML processing config using Ray's object store to avoid duplication
+        self.shared_html_processing = ray.put(self.html_processing)
 
         # grab all URLs to crawl from all base_urls
         all_urls = []
@@ -117,6 +118,7 @@ class WebsiteCrawler(Crawler):
             logging.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+            logging.info("Ray initialized with %d workers.", ray_workers)
             actors = [PageCrawlWorker.remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
@@ -124,10 +126,12 @@ class WebsiteCrawler(Crawler):
             # Batch task submission
             batch_size = 100
             for i in range(0, len(urls), batch_size):
+                gc.collect()  # Trigger garbage collection before processing each batch
                 batch = urls[i:i + batch_size]
                 logging.info(f"Processing batch {i // batch_size + 1} with {len(batch)} URLs")
                 _ = list(ray.util.ActorPool(actors).map(lambda a, u: a.process.remote(u, source=source), batch))
-                
+            logging.info("Ray workers shutting down.")
+            ray.shutdown()
         else:
             crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
             for inx, url in enumerate(urls):
