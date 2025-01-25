@@ -17,6 +17,7 @@ class PageCrawlWorker:
 
     def setup(self):
         self.indexer.setup()
+        setup_logging()
         logging.info("Worker setup complete")
 
     def process(self, url: str, source: str):
@@ -98,7 +99,7 @@ class WebsiteCrawler(Crawler):
         logging.info(f"Note: file types = {file_types}")
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
-        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)  # Default to 0 if not set
+        ray_workers = self.cfg.website_crawler.get("ray_workers", 0)  # Default to 0 if not set            # Default to 40 workers
         source = self.cfg.website_crawler.get("source", "website")
 
         if ray_workers == -1:
