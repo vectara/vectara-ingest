@@ -21,7 +21,11 @@ class PageCrawlWorker:
         logging.info("Worker setup complete")
 
     def process(self, url: str, source: str):
-        # Initialize memory profiling
+        import time
+        # Start a timer to measure task duration
+        start_time = time.time()
+        import time
+        # Initialize xmemory profiling
         process = psutil.Process(os.getpid())
         memory_before = process.memory_info().rss / 1024**2  # Memory in MB
         logging.info(f"Memory usage before indexing {url}: {memory_before:.2f} MB")
@@ -47,6 +51,10 @@ class PageCrawlWorker:
             # Final memory profiling and cleanup
             memory_after = process.memory_info().rss / 1024**2  # Memory in MB
             logging.info(f"Memory usage after indexing {url}: {memory_after:.2f} MB")
+            # Log the time taken to process the URL
+            end_time = time.time()
+            duration = end_time - start_time
+            logging.info(f"Time taken to process {url}: {duration:.2f} seconds")
             del metadata  # Explicitly release memory
             gc.collect()  # Trigger garbage collection to free memory
         return 0
