@@ -98,7 +98,13 @@ class WebsiteCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), urls))
+
+            # BATCH URL PROCESSING
+            batch_size = 100  # Number of URLs processed per batch
+            for i in range(0, len(urls), batch_size):
+                batch = urls[i:i + batch_size]
+                logging.info(f"Processing batch {i // batch_size + 1} with {len(batch)} URLs")
+                _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
                 
         else:
             crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
