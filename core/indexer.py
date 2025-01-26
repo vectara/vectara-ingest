@@ -20,7 +20,7 @@ import nbformat
 import markdown
 import whisper
 
-from html2markdown import convert
+from markdownify import markdownify
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
@@ -552,7 +552,7 @@ class Indexer:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(
-                    url, 
+                    url,
                     self.remove_code,
                     self.parse_tables,
                     self.summarize_images,
@@ -599,7 +599,7 @@ class Indexer:
                 if self.parse_tables:
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
-                        table_md = convert(table)
+                        table_md = markdownify(table, heading_style="ATX")
                         df = markdown_to_df(table_md)
                         table_summary = table_summarizer.summarize_table_text(table_md)
                         if table_summary:
