@@ -1,6 +1,5 @@
 import logging
 import json
-import html
 import re
 import os
 import time
@@ -21,16 +20,16 @@ import nbformat
 import markdown
 import whisper
 
-from html2markdown import convert
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
+    get_file_path_from_url, create_row_items
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
 from core.contextual import ContextualChunker
 
 # Suppress FutureWarning related to torch.load
@@ -44,6 +43,7 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
 class Indexer:
     """
     Vectara API class.
@@ -75,7 +75,8 @@ class Indexer:
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
-        self.summarize_tables = cfg.doc_processing.get("summarize_tables", False)
+        self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables", False)) # backward compatibility
+        self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.process_locally = cfg.doc_processing.get("process_locally", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
@@ -91,9 +92,9 @@ class Indexer:
             self.cfg.vectara.get("anthropic_api_key", None)
 
         if self.model_api_key is None:
-            if self.summarize_tables or self.summarize_images:
+            if self.parse_tables or self.summarize_images:
                 self.logger.info(f"Model ({self.model_name}) API key not found, disabling table/image summarization")
-            self.summarize_tables = False
+            self.parse_tables = False
             self.summarize_images = False
             self.extract_metadata = []
             self.contextual_chunking = False
@@ -201,11 +202,10 @@ class Indexer:
             page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
             page.wait_for_timeout(self.post_load_timeout*1000)  # Wait additional time to handle AJAX
             self._scroll_to_bottom(page)
-
-            title = page.title()
             html_content = page.content()
-
+            title = page.title()
             out_url = page.url
+
             text = page.evaluate(f"""() => {{
                 let content = Array.from(document.body.childNodes)
                     .map(node => node.textContent || "")
@@ -412,7 +412,7 @@ class Indexer:
             'file': (filename.split('/')[-1], open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        if self.summarize_tables:
+        if self.parse_tables:
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
@@ -518,7 +518,12 @@ class Indexer:
 
         # if file is going to download, then handle it as local file
         if self.url_triggers_download(url):
-            file_path = "/tmp/" + slugify(url)
+            os.makedirs("/tmp", exist_ok=True)
+            url_file_path = get_file_path_from_url(url)
+            if not url_file_path:
+                self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
+                return False
+            file_path = os.path.join("/tmp/" + url_file_path)
             response = self.session.get(url, headers=get_headers, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
@@ -551,9 +556,9 @@ class Indexer:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(
-                    url, 
+                    url,
                     self.remove_code,
-                    self.summarize_tables,
+                    self.parse_tables,
                     self.summarize_images,
                 )
                 html = res['html']
@@ -594,19 +599,19 @@ class Indexer:
                 parts = [text]
                 metadatas = [{'element_type': 'text'}]
 
-                if self.summarize_tables:
-                    vec_tables = []
+                vec_tables = []
+                if self.parse_tables:
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
-                        table_md = convert(table)
-                        df = markdown_to_df(table_md)
-                        table_summary = table_summarizer.summarize_table_text(table_md)
+                        table_summary = table_summarizer.summarize_table_text(table)
                         if table_summary:
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
-                            cols = df_cols_to_headers(df)
-                            rows = df.to_numpy().tolist()
-                            vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
+                            cols, rows = html_table_to_header_and_rows(table)
+                            cols_not_empty = any(col for col in cols)
+                            rows_not_empty = any(any(cell for cell in row) for row in rows)
+                            if cols_not_empty or rows_not_empty:
+                                vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
 
                 # index text and tables
                 doc_id = slugify(url)
@@ -685,28 +690,12 @@ class Indexer:
         document["id"] = doc_id
 
         # Create tables structure
-
-        def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
-            res = []
-            for item in items:
-                if isinstance(item, str):
-                    res.append({'text_value': self.normalize_value(item)})
-                elif isinstance(item, int):
-                    res.append({'int_value': item})
-                elif isinstance(item, float):
-                    res.append({'float_value': item})
-                elif isinstance(item, bool):
-                    res.append({'bool_value': item})
-                else:
-                    self.logger.info(f"Unsupported type {type(item)} for item {item}")
-            return res
-
         tables_array = []
         if tables:
             for inx,table in enumerate(tables):
                 table_dict = {
                     'id': 'table_' + str(inx),
-                    'title': '',
+                    'title': table['title'],
                     'data': {
                         'headers': [
                             create_row_items(h) for h in table['headers']
@@ -765,14 +754,14 @@ class Indexer:
             self.logger.error(f"File {filename} does not exist")
             return False
         
-        # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the summarize_tables option, then we parse locally and index
+        # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the parse_tables option, then we parse locally and index
         size_limit = 50
         max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
         
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
             (get_file_size_in_MB(filename) >= size_limit or self.contextual_chunking or
-             self.summarize_images)
+             self.summarize_images or self.enable_gmft)
         ):
             self.process_locally = True
 
@@ -783,10 +772,11 @@ class Indexer:
             self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata)>0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
-                dp = UnstructuredDocumentParser(
+                dp = DoclingDocumentParser(
                     verbose=self.verbose,
                     model_name=self.model_name, model_api_key=self.model_api_key,
-                    summarize_tables=False,
+                    parse_tables=False,
+                    enable_gmft=False,
                     summarize_images=self.summarize_images,
                 )
                 title, texts, metadatas, _, image_summaries = dp.parse(filename, uri)
@@ -809,7 +799,6 @@ class Indexer:
             
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and image_summaries:
-                self.logger.info(f"Parsing images from {uri}")
                 self.logger.info(f"Extracted {len(image_summaries)} images from {uri}")
                 for inx,image_summary in enumerate(image_summaries):
                     if image_summary:
@@ -831,7 +820,17 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=True,
-                summarize_tables=self.summarize_tables, 
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
+                summarize_images=self.summarize_images
+            )
+        elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
+            dp = LlamaParseDocumentParser(
+                verbose=self.verbose,
+                model_name=self.model_name, model_api_key=self.model_api_key,
+                llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docling":
@@ -839,7 +838,8 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunk=self.docling_config['chunk'], 
-                summarize_tables=self.summarize_tables, 
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         else:
@@ -848,7 +848,8 @@ class Indexer:
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 chunking_strategy=self.unstructured_config['chunking_strategy'],
                 chunk_size=self.unstructured_config['chunk_size'],
-                summarize_tables=self.summarize_tables, 
+                parse_tables=self.parse_tables, 
+                enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 
             )
         title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
@@ -867,10 +868,11 @@ class Indexer:
 
         # prepare tables
         vec_tables = []
-        for [df, summary] in tables:
+        for [df, summary, table_title] in tables:
             cols = df_cols_to_headers(df)
-            rows = df.to_numpy().tolist()
-            vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary})
+            rows = df.fillna('').to_numpy().tolist()
+            if len(rows)>0 and len(cols)>0:
+                vec_tables.append({'headers': cols, 'rows': rows, 'summary': summary, 'title': table_title})
 
         # Index text portions
         # Apply contextual chunking if indicated, otherwise just the text directly.
@@ -898,7 +900,7 @@ class Indexer:
                     metadata.update(ex_metadata)
                 doc_id = slugify(uri) + "_image_" + str(inx)
                 succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                    doc_metadata=metadata, doc_title=title)
+                                                 doc_metadata=metadata, doc_title=title)
 
         self.logger.info(f"For file {filename}, extracted text locally")
         return succeeded

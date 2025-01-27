@@ -21,6 +21,7 @@ def get_attributes_from_text(text: str, metadata_questions: list[dict], model_na
     for attr,question in metadata_questions.items():
         prompt += f"- {attr}: {question}\n"
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
+    prompt += "Your response should be as concise and accurate as possible. Prioritize 1-2 word responses."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
     res = generate(system_prompt, prompt, model_name, model_api_key)
     if res.strip().startswith("```json"):
@@ -78,31 +79,31 @@ class TableSummarizer():
 
     def summarize_table_text(self, text: str):
         prompt = f"""
-            Adopt the perspective of a professional data analyst, with expertise in generating insight from structured data. 
+            Adopt the perspective of a professional data analyst, with expertise in generating insight from structured data.
             Provide a detailed description of the results reported in this table, ensuring clarity, depth and relevance. Don't omit any data points.
-            Start with a description for each each row in the table and its values. 
-            Then follow by a broader analysis of trends and insights, and conclude with an interpretation of the data.
-            Contextual Details:
+            Include the following in your description:
+            1. Contextual details:
             - Examine the table headings, footnotes, or accompanying text to identify key contextual details such as the time period, location, subject area, and units of measurement.
             - Always include the table title, time frame, and geographical or thematic scope in your description.
             - If context is missing, acknowledge this explicitly and provide plausible assumptions where appropriate.
-            Data Analysis:
+            2. Data analysis:
             - Describe each data point or category individually if values are listed for different categories or time periods.
             - Highlight key metrics, trends, and patterns evident in the data.
             - Provide numerical evidence for any insights (e.g., "Revenue grew from $X in 2019 to $Y in 2022, representing a Z% increase over three years").
-            Trends and Insights:
+            3. Trends and insights:
             - Analyze relationships between variables or categories (e.g., correlations, contrasts).
             - Include comparisons across time periods, groups, or locations, as supported by the data.
             - Identify and discuss patterns, outliers, and significant changes or consistencies, specifying the relevant data points.
-            Interpretation and Implications:
+            4. Interpretation and implications:
             - Discuss the broader implications of observed trends and patterns.
             - If the table represents a time series, emphasize changes over time and provide context for those changes (e.g., market trends, economic conditions).
             - If the table shows categorical comparisons, focus on key differences or similarities between groups.
-            Clarity and Accuracy:
-            - Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
-            - If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
-            Your response should be without headings, and in text (not markdown). 
-            Table chunk: {text} 
+            Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
+            If uncertainties exist in the data or context, state them and clarify how they might impact the analysis.
+            Your response should be without headings, and in text (not markdown).
+            Review your response for accuracy and coherence, ensuring that all key details are included and clearly explained, without hallucinations.
+            The table you are being given is in the markdown format, please be careful about which row and which column a particular value is in.
+            Here is the table: {text}
         """
         try:
             system_prompt = "You are a helpful assistant tasked with summarizing data tables."

@@ -47,7 +47,7 @@ anthropic==0.42.0
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.16.8
+unstructured[pdf]==0.16.13
 transformers[torch]==4.46.2
 safetensors[torch]==0.4.3
 datasets==2.20.0
@@ -62,6 +62,7 @@ sec_downloader==0.11.1
 matplotlib==3.8.4
 python-pptx==1.0.2
 python-docx==1.1.2
-html2markdown==0.1.7
 Pillow==10.4.0
 docling==2.15.1
+llama-parse==0.5.19
+gmft==0.4.0

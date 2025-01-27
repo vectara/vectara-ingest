@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import requests
-from typing import List, Set
+from typing import List, Set, Any, Dict
 
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
@@ -339,6 +339,10 @@ def df_cols_to_headers(df: pd.DataFrame):
         for col_tuple in columns:
             label_at_level = col_tuple[level]
             
+            # Replace NaN with an empty string
+            if pd.isna(label_at_level):
+                label_at_level = ""
+            
             if label_at_level == current_label:
                 # Same label → increase the colspan
                 current_colspan += 1
@@ -359,15 +363,177 @@ def df_cols_to_headers(df: pd.DataFrame):
 
     return rows
 
+def get_file_path_from_url(url):
+    path = urlparse(url).path
+    # Get the file name (last segment of path)
+    filename = os.path.basename(path)
+    # Strip off any trailing query string if present
+    filename = filename.split("?")[0]
+    
+    # Split into name + extension
+    name_part, ext = os.path.splitext(filename)
+    
+    # Slugify the name part only
+    slugified_name = slugify(name_part)
+    
+    # Construct new filename
+    new_filename = f"{slugified_name}{ext}"
+    return new_filename
+
 def markdown_to_df(markdown_table):
-    # Create a file-like object from the markdown table string
     table_io = StringIO(markdown_table.strip())
-    df = pd.read_csv(table_io, sep='|', skipinitialspace=True)
+    lines = table_io.readlines()
     
-    # Clean up the DataFrame
-    df = df.dropna(axis=1, how='all')   # Remove empty columns
-    df = df.iloc[1:]                    # Remove the row with dashes (separator row)
-    df.columns = df.columns.str.strip() # Remove whitespace from column names
-    df = df.reset_index(drop=True)      # Reset the index
+    if not lines:
+        return pd.DataFrame()
     
-    return df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+    # Read header and clean it
+    header = [col.strip() for col in lines[0].strip().split('|')]
+    # Remove empty strings at start/end if present
+    header = [col for col in header if col]
+    
+    # Check if the second row is a separator row
+    if len(lines) > 1 and all(col.strip('- ') == '' for col in lines[1].strip().split('|') if col):
+        data_lines = lines[2:]
+    else:
+        data_lines = lines[1:]
+    
+    # Parse data rows
+    rows = []
+    for line in data_lines:
+        # Split and clean each row
+        row = [cell.strip() for cell in line.strip().split('|')]
+        # Remove empty strings at start/end if present
+        row = [cell for cell in row if cell]
+        rows.append(row)
+    
+    if not rows:
+        return pd.DataFrame(columns=header)
+    
+    # Find the maximum number of columns
+    max_cols = max(len(header), max(len(row) for row in rows))
+    
+    # Extend header if necessary
+    if len(header) < max_cols:
+        header.extend([f'Column_{i+1}' for i in range(len(header), max_cols)])
+    
+    # Extend rows if necessary
+    cleaned_rows = [row + [''] * (max_cols - len(row)) for row in rows]
+    
+    # Create DataFrame
+    df = pd.DataFrame(cleaned_rows, columns=header[:max_cols])
+    return df
+
+def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
+    res = []
+    for item in items:
+        if isinstance(item, str):
+            res.append({'text_value': item})
+        elif isinstance(item, int):
+            res.append({'int_value': item})
+        elif isinstance(item, float):
+            res.append({'float_value': item})
+        elif isinstance(item, bool):
+            res.append({'bool_value': item})
+        elif isinstance(item, tuple):   # Tuple of (colname, colspan)
+            val = '' if pd.isnull(item[0]) else item[0]
+            extra_colspan = item[1] - 1
+            res.extend([{'text_value': val}] + [{'text_value':''} for _ in range(extra_colspan)])
+        else:
+            logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
+    return res
+
+def _expand_table(table_tag):
+    """
+    Return a list of rows (list of strings), expanding any rowspan/colspan.
+    """
+    rows_data = []
+    # Occupied map tracks which (row, col) positions are already filled
+    occupied = {}
+
+    # Gather all <tr>
+    all_tr = table_tag.find_all('tr')
+    
+    for row_idx, tr in enumerate(all_tr):
+        # Ensure we have a sublist for this row
+        if len(rows_data) <= row_idx:
+            rows_data.append([])
+        
+        # Current column position
+        col_idx = 0
+        
+        # Move over any positions occupied by row-spans from previous rows
+        while (row_idx, col_idx) in occupied:
+            col_idx += 1
+
+        cells = tr.find_all(['td','th'])
+        for cell in cells:
+            # Skip forward if the current position is occupied
+            while (row_idx, col_idx) in occupied:
+                col_idx += 1
+            
+            rowspan = int(cell.get('rowspan', 1))
+            colspan = int(cell.get('colspan', 1))
+            text = cell.get_text(strip=True)
+            
+            # Expand rows_data if needed
+            while len(rows_data[row_idx]) < col_idx:
+                rows_data[row_idx].append('')
+            # Make sure the current row has enough columns
+            while len(rows_data[row_idx]) < col_idx + colspan:
+                rows_data[row_idx].append('')
+            
+            # Place text in all spanned columns of the current row
+            for c in range(colspan):
+                rows_data[row_idx][col_idx + c] = text
+            
+            # If there's a rowspan > 1, mark those positions as occupied
+            # so we duplicate the text in subsequent rows
+            for r in range(1, rowspan):
+                rpos = row_idx + r
+                # Ensure rows_data has enough rows
+                while len(rows_data) <= rpos:
+                    rows_data.append([])
+                for c in range(colspan):
+                    # Expand that row's columns if needed
+                    while len(rows_data[rpos]) < col_idx + c:
+                        rows_data[rpos].append('')
+                    rows_data[rpos].append('')
+                    # Mark the future cell as occupied with the same text
+                    occupied[(rpos, col_idx + c)] = text
+            
+            col_idx += colspan
+    
+    # Normalize all rows to the same length
+    max_cols = max(len(r) for r in rows_data) if rows_data else 0
+    for r in rows_data:
+        while len(r) < max_cols:
+            r.append('')
+    return rows_data
+
+def html_table_to_header_and_rows(html):
+    """
+    Parse the FIRST <table> from 'html' into a header row + data rows.
+    All 'rowspan'/'colspan' cells are expanded (duplicated) so each row
+    in the final output has the same number of columns.
+    
+    Returns:
+      (header, rows)
+    where
+      header: list of cell texts for the first row
+      rows: list of lists of cell texts for subsequent rows
+    """
+    soup = BeautifulSoup(html, 'html.parser')
+    table = soup.find('table')
+    if not table:
+        return [], []
+
+    # Expand into a full 2D list of rows
+    matrix = _expand_table(table)
+    if not matrix:
+        return [], []
+    
+    # First row is the "header"
+    header = matrix[0]
+    rows = matrix[1:]
+    return header, rows

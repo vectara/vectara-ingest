@@ -6,7 +6,6 @@ import logging
 from typing import Set, Optional, List, Any
 from core.indexer import Indexer
 from core.utils import img_extensions, doc_extensions, archive_extensions
-from slugify import slugify
 from urllib.parse import urlparse
 
 
@@ -33,6 +32,7 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
 
     # For archive or image - we don't extract links from them, nor are they included in the crawled URLs list
     url_without_fragment = url.split("#")[0]
+
     if any([url_without_fragment.endswith(ext) for ext in (archive_extensions + img_extensions)]):
         return visited
 
@@ -56,6 +56,7 @@ def recursive_crawl(url: str, depth: int, pos_regex: List[Any], neg_regex: List[
                     and     (len(neg_regex)==0 or (not any([r.match(u) for r in neg_regex]))) 
                    ]
         new_urls = list(set(new_urls))
+        new_urls = [u for u in new_urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
         visited.update(new_urls)
 
         if len(new_urls) > 0:
