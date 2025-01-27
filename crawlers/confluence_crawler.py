@@ -41,8 +41,6 @@ class ConfluenceCrawler(Crawler):
                 metadata['label_names'] = label_names
                 metadata['label_ids'] = label_names
 
-    # def find_user(self, session, user_cache, user_id):
-
     def find_users(self, userids):
         result = {}
 
