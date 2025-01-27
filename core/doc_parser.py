@@ -61,11 +61,11 @@ class DocumentParser():
         for page in doc:
             for table in detector.extract(page):
                 ft = formatter.extract(table)
-                dfs.append(ft.df())
+                dfs.append(ft.df(), " ".join(ft.captions()))
         tables = []
-        for df in dfs:
+        for df, title in dfs:
             table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
-            tables.append((df, table_summary))
+            tables.append((df, table_summary, title))
 
         doc.close()
         if self.verbose:
@@ -370,7 +370,7 @@ class UnstructuredDocumentParser(DocumentParser):
         image_summaries = []
         if self.summarize_images:
             for inx,e in enumerate(elements):
-                if isinstance(e, us.documents.elements.Image):
+                if isinstance(e, us.documents.elements.Image) and e.metadata.coordinates.system.width>100 and e.metadata.coordinates.system.height>100:
                     if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
                         image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
                     else:
