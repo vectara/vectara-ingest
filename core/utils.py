@@ -443,3 +443,97 @@ def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
             logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
     return res
 
+def _expand_table(table_tag):
+    """
+    Return a list of rows (list of strings), expanding any rowspan/colspan.
+    """
+    rows_data = []
+    # Occupied map tracks which (row, col) positions are already filled
+    occupied = {}
+
+    # Gather all <tr>
+    all_tr = table_tag.find_all('tr')
+    
+    for row_idx, tr in enumerate(all_tr):
+        # Ensure we have a sublist for this row
+        if len(rows_data) <= row_idx:
+            rows_data.append([])
+        
+        # Current column position
+        col_idx = 0
+        
+        # Move over any positions occupied by row-spans from previous rows
+        while (row_idx, col_idx) in occupied:
+            col_idx += 1
+
+        cells = tr.find_all(['td','th'])
+        for cell in cells:
+            # Skip forward if the current position is occupied
+            while (row_idx, col_idx) in occupied:
+                col_idx += 1
+            
+            rowspan = int(cell.get('rowspan', 1))
+            colspan = int(cell.get('colspan', 1))
+            text = cell.get_text(strip=True)
+            
+            # Expand rows_data if needed
+            while len(rows_data[row_idx]) < col_idx:
+                rows_data[row_idx].append('')
+            # Make sure the current row has enough columns
+            while len(rows_data[row_idx]) < col_idx + colspan:
+                rows_data[row_idx].append('')
+            
+            # Place text in all spanned columns of the current row
+            for c in range(colspan):
+                rows_data[row_idx][col_idx + c] = text
+            
+            # If there's a rowspan > 1, mark those positions as occupied
+            # so we duplicate the text in subsequent rows
+            for r in range(1, rowspan):
+                rpos = row_idx + r
+                # Ensure rows_data has enough rows
+                while len(rows_data) <= rpos:
+                    rows_data.append([])
+                for c in range(colspan):
+                    # Expand that row's columns if needed
+                    while len(rows_data[rpos]) < col_idx + c:
+                        rows_data[rpos].append('')
+                    rows_data[rpos].append('')
+                    # Mark the future cell as occupied with the same text
+                    occupied[(rpos, col_idx + c)] = text
+            
+            col_idx += colspan
+    
+    # Normalize all rows to the same length
+    max_cols = max(len(r) for r in rows_data) if rows_data else 0
+    for r in rows_data:
+        while len(r) < max_cols:
+            r.append('')
+    return rows_data
+
+def html_table_to_header_and_rows(html):
+    """
+    Parse the FIRST <table> from 'html' into a header row + data rows.
+    All 'rowspan'/'colspan' cells are expanded (duplicated) so each row
+    in the final output has the same number of columns.
+    
+    Returns:
+      (header, rows)
+    where
+      header: list of cell texts for the first row
+      rows: list of lists of cell texts for subsequent rows
+    """
+    soup = BeautifulSoup(html, 'html.parser')
+    table = soup.find('table')
+    if not table:
+        return [], []
+
+    # Expand into a full 2D list of rows
+    matrix = _expand_table(table)
+    if not matrix:
+        return [], []
+    
+    # First row is the "header"
+    header = matrix[0]
+    rows = matrix[1:]
+    return header, rows

@@ -20,13 +20,12 @@ import nbformat
 import markdown
 import whisper
 
-from markdownify import markdownify
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, markdown_to_df,
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items
 )
 from core.extract import get_article_content
@@ -599,15 +598,14 @@ class Indexer:
                 if self.parse_tables:
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
-                        table_md = markdownify(table, heading_style="ATX")
-                        df = markdown_to_df(table_md)
-                        table_summary = table_summarizer.summarize_table_text(table_md)
+                        table_summary = table_summarizer.summarize_table_text(table)
                         if table_summary:
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary}")
-                            cols = df_cols_to_headers(df)
-                            rows = df.fillna('').to_numpy().tolist()
-                            if len(cols)>0 and len(rows)>0:
+                            cols, rows = html_table_to_header_and_rows(table)
+                            cols_not_empty = any(col for col in cols)
+                            rows_not_empty = any(any(cell for cell in row) for row in rows)
+                            if cols_not_empty or rows_not_empty:
                                 vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
 
                 # index text and tables
