@@ -127,7 +127,6 @@ class LlamaParseDocumentParser(DocumentParser):
             if self.parse_tables and not (self.enable_gmft and filename.endswith('.pdf')):
                 lm_tables = [item for item in page['items'] if item['type']=='table']
                 for table in lm_tables:
-                    print(f"DEBUG llama_parse table: {table}")
                     table_md = table['md']
                     table_summary = self.table_summarizer.summarize_table_text(table_md)
                     if table_summary:
