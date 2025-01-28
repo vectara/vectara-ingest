@@ -212,7 +212,8 @@ doc_processing:
   # Options are "openai" or "anthropic". default is "openai"
   model: openai
 
-  # which document parser to use for local file parsing: unstructured or docling
+  # which document parser to use for local file parsing: unstructured, llama_parse or docling
+  # If using llama_parse you need to add LLAMA_CLOUD_API_KEY in your `secrets.toml` file.
   doc_parser: docling
 
   # Whether or not to parse tables from documents and ingest into Vectara.
