@@ -134,7 +134,7 @@ class LlamaParseDocumentParser(DocumentParser):
                         metadatas.append({'parser_element_type': 'table', 'page': page['page']})
                         if self.verbose:
                             self.logger.info(f"Table summary: {table_summary}")
-                    tables.append([markdown_to_df(table_md), table_summary])
+                    tables.append([markdown_to_df(table_md), table_summary, ''])
 
             # process images
             if self.summarize_images:
@@ -229,7 +229,7 @@ class DoclingDocumentParser(DocumentParser):
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
-                tables.append([table.export_to_dataframe(), table_summary])
+                tables.append([table.export_to_dataframe(), table_summary, ''])
 
         image_summaries = []
         if self.summarize_images:
@@ -360,7 +360,7 @@ class UnstructuredDocumentParser(DocumentParser):
                         table_summary = self.table_summarizer.summarize_table_text(str(e))
                         html_table = e.metadata.text_as_html
                         df = pd.read_html(StringIO(html_table))[0]
-                        tables.append([df, table_summary])
+                        tables.append([df, table_summary, ''])
                         if self.verbose:
                             self.logger.info(f"Table summary: {table_summary}")
                     except ValueError as e:
