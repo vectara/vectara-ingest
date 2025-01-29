@@ -164,7 +164,7 @@ def main() -> None:
         return
 
     # add .env params, by profile
-    volume = '.'
+    volume = '/home/vectara/env'
     with open(f"{volume}/secrets.toml", "r") as f:
         env_dict = toml.load(f)
     if profile_name not in env_dict:
