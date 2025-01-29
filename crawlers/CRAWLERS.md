@@ -303,6 +303,18 @@ The JIRA crawler indexes issues and comments into Vectara.
 - `jira_username`: the user name that the crawler should use (`JIRA_PASSWORD` should be separately defined in the `secrets.toml` file)
 - `jira_jql`: a Jira JQL condition on the issues identified; in this example it is configured to only include items from the last year.
 
+### Confluence crawler
+
+```yaml
+  confluence_crawler:
+    confluence_base_url: "https://vectara.atlassian.net/wiki"
+    confluence_cql: 'space = Test and LastModified > now("-365d") and type IN (blogpost, page)'
+    confluence_include_attachments: true
+```
+
+This Python crawler is designed to pull content from a Confluence instance and index it into Vectara. It queries Confluence using a CQL query, 
+retrieves pages and blogposts (including attachments if configured), extracts relevant metadata (e.g., labels, authors, space information).  
+
 ### Twitter crawler
 
 ```yaml
