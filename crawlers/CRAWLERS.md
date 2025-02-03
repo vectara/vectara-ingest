@@ -312,7 +312,7 @@ The JIRA crawler indexes issues and comments into Vectara.
     confluence_include_attachments: true
 ```
 
-This Python crawler is designed to pull content from a Confluence instance and index it into Vectara. It queries Confluence using a CQL query, 
+This Python crawler is designed to pull content from a Confluence instance and index it into Vectara. It queries Confluence using a [CQL query](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/), 
 retrieves pages and blogposts (including attachments if configured), extracts relevant metadata (e.g., labels, authors, space information).  
 
 ### Twitter crawler

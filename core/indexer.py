@@ -396,7 +396,7 @@ class Indexer:
             filename (str): Name of the file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
-            id (str): Document id for the uploaded document.
+            id (str, optional): Document id for the uploaded document.
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -761,7 +761,7 @@ class Indexer:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
-            id (str): Document id for the uploaded document.
+            id (str, optional): Document id for the uploaded document.
         
         Returns:
             bool: True if the upload was successful, False otherwise.
