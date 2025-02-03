@@ -389,13 +389,14 @@ class Indexer:
 
         return docs
 
-    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+    def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus, using APIv2
         Args:
             filename (str): Name of the file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
+            id (str, optional): Document id for the uploaded document.
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -408,8 +409,11 @@ class Indexer:
             'x-api-key': self.api_key,
         }
         url = f"https://api.vectara.io/v2/corpora/{self.corpus_key}/upload_file"
+
+        upload_filename = id if id is not None else filename.split('/')[-1]
+
         files = {
-            'file': (filename.split('/')[-1], open(filename, 'rb')),
+            'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
         if self.parse_tables:
@@ -738,7 +742,7 @@ class Indexer:
 
         return self.index_document(document, use_core_indexing)
 
-    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any]) -> bool:
+    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
         
@@ -746,6 +750,7 @@ class Indexer:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
+            id (str, optional): Document id for the uploaded document.
         
         Returns:
             bool: True if the upload was successful, False otherwise.
@@ -795,7 +800,7 @@ class Indexer:
             metadata.update(ex_metadata)
 
             # index the file within Vectara (use FILE UPLOAD API)
-            succeeded = self._index_file(filename, uri, metadata)
+            succeeded = self._index_file(filename, uri, metadata, id)
             
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and image_summaries:

@@ -1,0 +1,12 @@
+vectara:
+  corpus_key: ingest_confluence
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: confluence
+
+confluence_crawler:
+  confluence_base_url: "https://vectara.atlassian.net/wiki"
+  confluence_cql: 'space = Test and LastModified > now("-365d") and type IN (blogpost, page)'
+  confluence_include_attachments: true

@@ -198,6 +198,12 @@ def main() -> None:
         if k=='JIRA_PASSWORD':
             OmegaConf.update(cfg, f'jira_crawler.{k.lower()}', v)
             continue
+        if k=='CONFLUENCE_PASSWORD':
+            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
+            continue
+        if k=='CONFLUENCE_USERNAME':
+            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
+            continue
         if k=='GITHUB_TOKEN':
             OmegaConf.update(cfg, f'github_crawler.{k.lower()}', v)
             continue
