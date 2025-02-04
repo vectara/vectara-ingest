@@ -163,7 +163,7 @@ class Indexer:
             debug: bool = False
         ) -> dict:
         '''
-        Fetch content from a URL with a timeout.
+        Fetch content from a URL with a timeout, including content from the Shadow DOM.
         Args:
             url (str): URL to fetch.
             extract_tables (bool): Whether to extract tables from the page.
@@ -172,11 +172,11 @@ class Indexer:
             debug (bool): Whether to enable playwright debug logging.
         Returns:
             dict with
-            - 'text': text extracted from the page
+            - 'text': text extracted from the page (including Shadow DOM)
             - 'html': html of the page
             - 'title': title of the page
             - 'url': final URL of the page (if redirected)
-            - 'links': list of links in the page
+            - 'links': list of links in the page (including Shadow DOM)
             - 'images': list of dictionaries with image info: [{'src': ..., 'alt': ...}, ...]
             - 'tables': list of strings representing the outerHTML of each table
         '''
@@ -229,7 +229,22 @@ class Indexer:
                         content = content.replace(el.innerText, '');
                     }});
                 }});
-
+                
+                function extractShadowText(root) {{
+                    let text = "";
+                    if (root.shadowRoot) {{
+                        root.shadowRoot.childNodes.forEach(node => {{
+                            text += node.textContent + " ";
+                            text += extractShadowText(node);
+                        }});
+                    }}
+                    return text;
+                }}
+                
+                document.querySelectorAll("*").forEach(el => {{
+                    content += extractShadowText(el);
+                }});
+                
                 {'// Remove code elements' if remove_code else ''}
                 {'''
                 const codeElements = document.querySelectorAll('code, pre');
@@ -237,51 +252,74 @@ class Indexer:
                     content = content.replace(el.innerText, '');
                 });
                 ''' if remove_code else ''}
-
-                content = content.replace(/\s{2,}/g, ' ').trim();
-                return content;
+                
+                return content.replace(/\s{2,}/g, ' ').trim();
             }}""")
 
             # Extract links (direct and in shadow DOM)
-            def extract_links(page):
-                return page.evaluate("""
-                    () => {
-                        let links = [];
-                        
-                        // Standard links
-                        document.querySelectorAll('a').forEach(a => {
+            links = page.evaluate("""
+                () => {
+                    let links = [];
+                    
+                    function extractLinks(root) {
+                        root.querySelectorAll('a').forEach(a => {
                             if (a.href) links.push(a.href);
                         });
-
-                        // Extract links from Shadow DOM
-                        document.querySelectorAll('*').forEach(el => {
+                        root.querySelectorAll('*').forEach(el => {
                             if (el.shadowRoot) {
-                                el.shadowRoot.querySelectorAll('a').forEach(a => {
-                                    if (a.href) links.push(a.href);
-                                });
+                                extractLinks(el.shadowRoot);
                             }
                         });
-
-                        return [...new Set(links)]; // Remove duplicates
                     }
-                """)
-            links = extract_links(page)
-            links = list(set(links))  # Remove duplicates
+                    
+                    extractLinks(document);
+                    return [...new Set(links)];
+                }
+            """)
 
             # Extract tables
             if extract_tables:
-                tables_script = """Array.from(document.querySelectorAll('table')).map(t => t.outerHTML)"""
-                tables = page.evaluate(tables_script)
+                tables = page.evaluate("""
+                    () => {
+                        let tables = [];
+                        
+                        function extractTables(root) {
+                            root.querySelectorAll("table").forEach(t => {
+                                tables.push(t.outerHTML);
+                            });
+                            root.querySelectorAll("*").forEach(el => {
+                                if (el.shadowRoot) {
+                                    extractTables(el.shadowRoot);
+                                }
+                            });
+                        }
+                        
+                        extractTables(document);
+                        return tables;
+                    }
+                """)
 
             # Extract images
             if extract_images:
-                images_script = """
-                Array.from(document.querySelectorAll('img')).map(img => ({
-                    src: img.src,
-                    alt: img.alt || ''
-                }))
-                """
-                images = page.evaluate(images_script)
+                images = page.evaluate("""
+                    () => {
+                        let images = [];
+                        
+                        function extractImages(root) {
+                            root.querySelectorAll("img").forEach(img => {
+                                images.push({ src: img.src, alt: img.alt || "" });
+                            });
+                            root.querySelectorAll("*").forEach(el => {
+                                if (el.shadowRoot) {
+                                    extractImages(el.shadowRoot);
+                                }
+                            });
+                        }
+                        
+                        extractImages(document);
+                        return images;
+                    }
+                """)
 
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
