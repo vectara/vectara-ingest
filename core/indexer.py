@@ -203,6 +203,7 @@ class Indexer:
             page.wait_for_timeout(self.post_load_timeout*1000)  # Wait additional time to handle AJAX
             self._scroll_to_bottom(page)
             html_content = page.content()
+
             title = page.title()
             out_url = page.url
 
@@ -241,9 +242,31 @@ class Indexer:
                 return content;
             }}""")
 
-            # Extract links
-            links_script = """Array.from(document.querySelectorAll('a')).map(a => a.href)"""
-            links = page.evaluate(links_script)
+            # Extract links (direct and in shadow DOM)
+            def extract_links(page):
+                return page.evaluate("""
+                    () => {
+                        let links = [];
+                        
+                        // Standard links
+                        document.querySelectorAll('a').forEach(a => {
+                            if (a.href) links.push(a.href);
+                        });
+
+                        // Extract links from Shadow DOM
+                        document.querySelectorAll('*').forEach(el => {
+                            if (el.shadowRoot) {
+                                el.shadowRoot.querySelectorAll('a').forEach(a => {
+                                    if (a.href) links.push(a.href);
+                                });
+                            }
+                        });
+
+                        return [...new Set(links)]; // Remove duplicates
+                    }
+                """)
+            links = extract_links(page)
+            links = list(set(links))  # Remove duplicates
 
             # Extract tables
             if extract_tables:
