@@ -143,3 +143,4 @@ dmypy.json
 project.yaml
 
 .idea/
+config-private
