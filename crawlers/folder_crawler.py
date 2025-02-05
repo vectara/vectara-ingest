@@ -41,7 +41,7 @@ class FileCrawlWorker(object):
 class FolderCrawler(Crawler):
 
     def crawl(self) -> None:
-        folder = "/home/vectara/data"
+        folder =  self.cfg.folder_crawler.path
         extensions = self.cfg.folder_crawler.get("extensions", ["*"])
         metadata_file = self.cfg.folder_crawler.get("metadata_file", None)
         ray_workers = self.cfg.folder_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
