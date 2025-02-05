@@ -1,0 +1,12 @@
+vectara:
+  corpus_key: ingest_servicenow
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: servicenow
+
+servicenow_crawler:
+  servicenow_instance_url: "https://dev189594.service-now.com/"
+  servicenow_process_attachments: true
+  servicenow_table:
