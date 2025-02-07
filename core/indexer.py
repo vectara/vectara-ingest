@@ -477,7 +477,7 @@ class Indexer:
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        if self.parse_tables:
+        if self.parse_tables and filename.lower().endswith('.pdf'):
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
