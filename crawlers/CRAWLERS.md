@@ -452,6 +452,30 @@ To use the slack crawler you need to create slack bot app and give it permission
 - Place the generated user token in `secrets.toml`.
   - `SLACK_USER_TOKEN= <user_token>`
 
+### ServiceNow Crawler
+
+```yaml
+servicenow_crawler:
+  servicenow_instance_url: "https://dev189594.service-now.com/"
+  servicenow_process_attachments: true
+```
+
+This crawler indexes articles (and optional file attachments) from a ServiceNow Knowledge Base into [Vectara](https://vectara.com). It uses 
+the [ServiceNow Table API](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI) to fetch data from the `kb_knowledge` 
+table in batches and then sends each article's content to Vectara for indexing. If enabled, it will also retrieve attachments via ServiceNow's 
+attachment API and index them in Vectara as well.
+
+- `servicenow_instance_url`: The base URL of the ServiceNow instance (e.g., "https://dev12345.service-now.com/").
+- `servicenow_process_attachments`: Boolean flag indicating whether to retrieve and index file attachments in addition to the article content.
+- `servicenow_batch_size` (if present): The number of articles to fetch in each API call. Default: 100.
+- `servicenow_table` (if present):The ServiceNow table to query for articles. Default: `"kb_knowledge"`.
+- `servicenow_query` (if present): A query (e.g., `sysparm_query`) for filtering the knowledge-base articles returned by the ServiceNow API.
+
+- **[Table API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI)**  
+  Contains details on the various endpoints, query parameters, and usage examples for retrieving data from ServiceNow tables.
+- **[Attachment API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_AttachmentAPI)**  
+  Covers how to list and download attachments from ServiceNow records.
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara

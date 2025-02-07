@@ -469,7 +469,7 @@ class Indexer:
             'Accept': 'application/json',
             'x-api-key': self.api_key,
         }
-        url = f"https://api.vectara.io/v2/corpora/{self.corpus_key}/upload_file"
+        url = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
 
