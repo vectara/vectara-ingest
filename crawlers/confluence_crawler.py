@@ -316,7 +316,6 @@ class ConfluenceCrawler(Crawler):
                 logging.debug(f"Writing content for {attachment_id} to {f.name}")
                 for chunk in download_response.iter_content(chunk_size=32000):
                     f.write(chunk)
-                f.write(download_response.content)
                 f.flush()
                 f.close()
                 try:
