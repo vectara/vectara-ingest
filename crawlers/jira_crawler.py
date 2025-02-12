@@ -33,7 +33,7 @@ class JiraCrawler(Crawler):
                     metadata["reporter"] = issue["fields"]["reporter"]["displayName"]
                     metadata["assignee"] = issue["fields"]["assignee"]["displayName"] if issue["fields"]["assignee"] else None
                     metadata["created"] = issue["fields"]["created"]
-                    metadata["updated"] = issue["fields"]["updated"]
+                    metadata["last_updated"] = issue["fields"]["updated"]
                     metadata["resolved"] = issue["fields"]["resolutiondate"] if "resolutiondate" in issue["fields"] else None
                     metadata["labels"] = issue["fields"]["labels"]
                     metadata["source"] = "jira"

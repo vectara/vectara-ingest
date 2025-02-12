@@ -7,6 +7,7 @@ import warnings
 import unicodedata
 from typing import Dict, Any, List, Optional
 import shutil
+from datetime import datetime
 
 import uuid
 import pandas as pd
@@ -44,6 +45,27 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
+def extract_last_modified_from_html(html: str) -> Optional[str]:
+    """
+    Extract the last modified date from HTML meta tags.
+    Looks for meta tags with property "article:modified_time" or name "last-modified".
+    
+    Args:
+        html (str): HTML content of the page.
+        
+    Returns:
+        Optional[str]: The extracted date string or None if not found.
+    """
+    # Define regex patterns to match meta tags
+    patterns = [
+        r'<meta\s+(?:property|name)=["\'](?:article:modified_time|last-modified)["\']\s+content=["\']([^"\']+)["\']',
+        r'<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\'](?:article:modified_time|last-modified)["\']'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
 class Indexer:
     """
     Vectara API class.
@@ -631,6 +653,23 @@ class Indexer:
                 doc_title = res['title']
                 if text is None or len(text)<3:
                     return False
+
+                # Extract the last modified date from the HTML content.
+                last_modified = extract_last_modified_from_html(html)
+                if not last_modified:
+                    # If not found in HTML, try using an HTTP HEAD request.
+                    response = self.session.head(url, headers=get_headers)
+                    last_modified = response.headers.get("Last-Modified")
+
+                if last_modified:
+                    try:
+                        # Attempt to parse the date if it follows a common HTTP format.
+                        # Example format: "Wed, 21 Oct 2015 07:28:00 GMT"
+                        last_modified_dt = datetime.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z")
+                        metadata["last_updated"] = last_modified_dt.strftime("%Y-%m-%d")
+                    except ValueError:
+                        # If parsing fails, store the raw value.
+                        metadata["last_updated"] = last_modified
 
                 # Detect language if needed
                 if self.detected_language is None:

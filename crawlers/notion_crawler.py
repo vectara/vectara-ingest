@@ -134,7 +134,7 @@ class NotionCrawler(Crawler):
                 logging.info(f"Indexing failed for notion page {page_id}")
             
 
-    # report pages crawled if specified
+        # report pages crawled if specified
         if self.cfg.notion_crawler.get("crawl_report", False):
             logging.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
             with open('/home/vectara/env/pages_indexed.txt', 'w') as f:

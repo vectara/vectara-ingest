@@ -200,7 +200,7 @@ class UserWorker(object):
                 'name': name,
                 'title': name,
                 'created_at': created_time,
-                'modified_at': modified_time,
+                'last_updated': modified_time,
                 'owners': owners,
                 'size': size,
                 'url': get_gdrive_url(file_id, mime_type),
