@@ -156,17 +156,13 @@ def load_environment_variables(source:dict, cfg:DictConfig) -> None:
         'TWITTER_': 'twitter_crawler',
         'AWS_': 's3_crawler',
         'aws_': 's3_crawler',
+        'VECTARA_': 'vectara'
     }
     for k,v in source.items():
         config_set = False
         for prefix, crawler_name in prefix_mappings.items():
             if k.startswith(prefix):
                 OmegaConf.update(cfg, f'{crawler_name}.{k.lower()}', v)
-                config_set = True
-                break
-            if k.startswith('VECTARA_'):
-                k_trimmed = k.removeprefix("VECTARA_")
-                OmegaConf.update(cfg, f'vectara.{k_trimmed.lower()}', v)
                 config_set = True
                 break
         if config_set:
