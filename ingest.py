@@ -141,6 +141,39 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     else:
         logging.error(f"Error creating corpus: {response.status_code} {response.text}")
 
+def load_environment_variables(source:dict, cfg:DictConfig) -> None:
+    prefix_mappings = {
+        'JIRA_': 'jira_crawler',
+        'CONFLUENCE_': 'confluence_crawler',
+        'HUBSPOT_': 'hubspot_crawler',
+        'NOTION_': 'notion_crawler',
+        'SLACK_': 'slack_crawler',
+        'DISCOURSE_': 'discourse_crawler',
+        'FMP_': 'fmp_crawler',
+        'SERVICENOW_': 'servicenow_crawler',
+        'GITHUB_': 'github_crawler',
+        'SYNAPSE_': 'synapse_crawler',
+        'TWITTER_': 'twitter_crawler',
+        'AWS_': 's3_crawler',
+        'aws_': 's3_crawler',
+    }
+    for k,v in source.items():
+        config_set = False
+        for prefix, crawler_name in prefix_mappings.items():
+            if k.startswith(prefix):
+                OmegaConf.update(cfg, f'{crawler_name}.{k.lower()}', v)
+                config_set = True
+                break
+            if k.startswith('VECTARA_'):
+                k_trimmed = k.removeprefix("VECTARA_")
+                OmegaConf.update(cfg, f'vectara.{k_trimmed.lower()}', v)
+                config_set = True
+                break
+        if config_set:
+            continue
+        OmegaConf.update(cfg['vectara'], k, v)
+
+
 def main() -> None:
     """
     Main function that runs the web crawler based on environment variables.
@@ -153,82 +186,35 @@ def main() -> None:
         return
     
     logging.info("Starting the Crawler...")
-    config_name = sys.argv[1]
+    config_file = sys.argv[1]
     profile_name = sys.argv[2]
 
     # process arguments 
     try:
-        cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+        cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
-        logging.error(f"Error loading config file ({config_name}): {e}")
+        logging.error(f"Error loading config file ({config_file}): {e}")
         return
 
-    secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
-    # add .env params, by profile
-    logging.info(f"Loading {secrets_path}")
-    with open(secrets_path, "r") as f:
-        env_dict = toml.load(f)
-    if profile_name not in env_dict:
-        logging.info(f'Profile "{profile_name}" not found in secrets.toml')
-        return
-    logging.info(f'Using profile "{profile_name}" from secrets.toml')
-    
-    # Add all keys from "general" section to the vectara config
-    general_dict = env_dict.get('general', {})
-    for k,v in general_dict.items():
-        OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
+    if not os.getenv('DISABLE_SECRETS_TOML'):
+        secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
+        # add .env params, by profile
+        logging.info(f"Loading {secrets_path}")
+        with open(secrets_path, "r") as f:
+            env_dict = toml.load(f)
+        if profile_name not in env_dict:
+            logging.info(f'Profile "{profile_name}" not found in secrets.toml')
+            return
+        logging.info(f'Using profile "{profile_name}" from secrets.toml')
+        # Add all keys from "general" section to the vectara config
+        general_dict = env_dict.get('general', {})
+        for k,v in general_dict.items():
+            OmegaConf.update(cfg, f'vectara.{k.lower()}', v)
+        env_dict = env_dict[profile_name]
+        load_environment_variables(env_dict, cfg)
 
-    # Add all supported special secrets from the specified profile to the specific crawler config
-    env_dict = env_dict[profile_name]
-    for k,v in env_dict.items():
-        if k=='HUBSPOT_API_KEY':
-            OmegaConf.update(cfg, f'hubspot_crawler.{k.lower()}', v)
-            continue
-        if k=='NOTION_API_KEY':
-            OmegaConf.update(cfg, f'notion_crawler.{k.lower()}', v)
-            continue
-        if k=='SLACK_USER_TOKEN':
-            OmegaConf.update(cfg, f'slack_crawler.{k.lower()}', v)
-            continue
-        if k=='DISCOURSE_API_KEY':
-            OmegaConf.update(cfg, f'discourse_crawler.{k.lower()}', v)
-            continue
-        if k=='FMP_API_KEY':
-            OmegaConf.update(cfg, f'fmp_crawler.{k.lower()}', v)
-            continue
-        if k=='JIRA_PASSWORD':
-            OmegaConf.update(cfg, f'jira_crawler.{k.lower()}', v)
-            continue
-        if k=='CONFLUENCE_PASSWORD':
-            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
-            continue
-        if k=='CONFLUENCE_USERNAME':
-            OmegaConf.update(cfg, f'confluence_crawler.{k.lower()}', v)
-            continue
-        if k=='SERVICENOW_PASSWORD':
-            OmegaConf.update(cfg, f'servicenow_crawler.{k.lower()}', v)
-            continue
-        if k=='SERVICENOW_USERNAME':
-            OmegaConf.update(cfg, f'servicenow_crawler.{k.lower()}', v)
-            continue
-        if k=='GITHUB_TOKEN':
-            OmegaConf.update(cfg, f'github_crawler.{k.lower()}', v)
-            continue
-        if k=='SYNAPSE_TOKEN':
-            OmegaConf.update(cfg, f'synapse_crawler.{k.lower()}', v)
-            continue
-        if k=='TWITTER_BEARER_TOKEN':
-            OmegaConf.update(cfg, f'twitter_crawler.{k.lower()}', v)
-            continue
-        if k=='LLAMA_CLOUD_API_KEY':
-            OmegaConf.update(cfg, 'llama_cloud_api_key', v)
-            continue
-        if k.startswith('aws_'):
-            OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
-            continue
-
-        # default (otherwise) - add to vectara config
-        OmegaConf.update(cfg['vectara'], k, v)
+    env_vars = dict(os.environ)
+    load_environment_variables(env_vars, cfg)
 
     logging.info("Configuration loaded...")
     endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
