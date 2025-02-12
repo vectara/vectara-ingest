@@ -83,7 +83,7 @@ class Indexer:
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
         self.unstructured_config = cfg.doc_processing.get("unstructured_config",
                                                           {'chunking_strategy': 'by_title', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': True})
+        self.docling_config = cfg.doc_processing.get("docling_config", {'chunking_strategy': 'none'})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
@@ -903,7 +903,7 @@ class Indexer:
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunk=self.docling_config['chunk'], 
+                chunking_strategy=self.docling_config.get('chunking_stragety', 'none'), 
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
@@ -918,7 +918,12 @@ class Indexer:
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 
             )
-        title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
+
+        try:
+            title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
+        except Exception as e:
+            self.logger.info(f"Failed to parse {filename} with error {e}")
+            return False
 
         # Get metadata attribute values from text content (if defined)
         if len(self.extract_metadata)>0:

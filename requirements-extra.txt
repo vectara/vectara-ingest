@@ -1,5 +1,5 @@
 
-unstructured[all-docs]==0.16.13
+unstructured[all-docs]==0.16.20
 presidio-analyzer==2.2.355
 presidio-anonymizer==2.2.355
 pikepdf==9.1.1
