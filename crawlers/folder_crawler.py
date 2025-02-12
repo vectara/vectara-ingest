@@ -68,7 +68,7 @@ class FolderCrawler(Crawler):
                     file_name = os.path.relpath(file_path, folder)
                     file_metadata = {
                         'created_at': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getctime(file_path))),
-                        'modified_at': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getmtime(file_path))),
+                        'last_updated': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getmtime(file_path))),
                         'file_size': os.path.getsize(file_path),
                         'source': source,
                         'title': file_name
