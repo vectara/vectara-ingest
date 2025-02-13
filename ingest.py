@@ -190,7 +190,7 @@ def main() -> None:
         cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
         logging.error(f"Error loading config file ({config_file}): {e}")
-        return
+        exit(1)
 
     if not os.getenv('DISABLE_SECRETS_TOML'):
         secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
@@ -200,7 +200,7 @@ def main() -> None:
             env_dict = toml.load(f)
         if profile_name not in env_dict:
             logging.info(f'Profile "{profile_name}" not found in secrets.toml')
-            return
+            exit(1)
         logging.info(f'Using profile "{profile_name}" from secrets.toml')
         # Add all keys from "general" section to the vectara config
         general_dict = env_dict.get('general', {})
