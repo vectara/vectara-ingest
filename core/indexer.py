@@ -632,7 +632,7 @@ class Indexer:
             if url.lower().endswith('md'):
                 html_content = markdown.markdown(dl_content)
             elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
+                nb = nbformat.reads(dl_content)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             doc_title = url.split('/')[-1]      # no title in these files, so using file name
@@ -643,10 +643,10 @@ class Indexer:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(
-                    url,
-                    self.remove_code,
-                    self.parse_tables,
-                    self.summarize_images,
+                    url=url,
+                    extract_tables=self.parse_tables,
+                    extract_images=self.summarize_images,
+                    remove_code=self.remove_code,
                 )
                 html = res['html']
                 text = res['text']
@@ -799,7 +799,7 @@ class Indexer:
             for inx,table in enumerate(tables):
                 table_dict = {
                     'id': 'table_' + str(inx),
-                    'title': table['title'],
+                    'title': table.get('title', ''),
                     'data': {
                         'headers': [
                             create_row_items(h) for h in table['headers']
