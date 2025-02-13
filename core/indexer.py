@@ -872,8 +872,9 @@ class Indexer:
 
         #
         # Case A: using the file-upload API
+        # Used when we don't need to process the file locally, and we don't need to parse tables from non-PDF files
         #
-        if not self.process_locally:
+        if not self.process_locally and ((self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
             self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata)>0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
