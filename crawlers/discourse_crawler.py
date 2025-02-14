@@ -55,7 +55,7 @@ class DiscourseCrawler(Crawler):
             'title': topic['title'],
             'metadata': {
                 'created_at': datetime_to_date(topic['created_at']),
-                'last_posted_at': datetime_to_date(topic['last_posted_at']),
+                'last_updated': datetime_to_date(topic['last_posted_at']),
                 'source': 'discourse',
                 'url': self.discourse_base_url + '/t/' + str(topic_id)
             },
@@ -66,7 +66,7 @@ class DiscourseCrawler(Crawler):
                 'text': html_to_text(post['cooked']),
                 'metadata': {
                     'created_at': datetime_to_date(post['created_at']),
-                    'updated_at': datetime_to_date(post['updated_at']),
+                    'last_updated': datetime_to_date(post['updated_at']),
                     'poster': post['username'],
                     'poster_name': post['name'],
                     'source': 'discourse',

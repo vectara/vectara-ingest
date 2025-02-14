@@ -7,6 +7,7 @@ import warnings
 import unicodedata
 from typing import Dict, Any, List, Optional
 import shutil
+from datetime import datetime
 
 import uuid
 import pandas as pd
@@ -43,6 +44,26 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+def extract_last_modified_from_html(html: str) -> Optional[str]:
+    """
+    Extract the last modified date from HTML meta tags.
+    Looks for meta tags with property "article:modified_time" or name "last-modified".
+    
+    Args:
+        html (str): HTML content of the page.
+        
+    Returns:
+        Optional[str]: The extracted date string or None if not found.
+    """
+    # Define regex patterns to match meta tags
+    pattern = re.compile(
+        r'<meta\s+(?=[^>]*(?:property|name)\s*=\s*["\'](?:article:modified_time|last-modified)["\'])'
+        r'[^>]*content\s*=\s*["\']([^"\']+)["\']',
+        re.IGNORECASE | re.DOTALL
+    )
+    match = pattern.search(html)
+    return match.group(1) if match else None
 
 class Indexer:
     """
@@ -83,7 +104,7 @@ class Indexer:
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
         self.unstructured_config = cfg.doc_processing.get("unstructured_config",
                                                           {'chunking_strategy': 'by_title', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", {'chunk': True})
+        self.docling_config = cfg.doc_processing.get("docling_config", {'chunking_strategy': 'none'})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
@@ -602,7 +623,7 @@ class Indexer:
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
-        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+        # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
         if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -610,7 +631,7 @@ class Indexer:
             if url.lower().endswith('md'):
                 html_content = markdown.markdown(dl_content)
             elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content, nbformat.NO_CONVERT)    # type: ignore
+                nb = nbformat.reads(dl_content, as_version=4)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             doc_title = url.split('/')[-1]      # no title in these files, so using file name
@@ -621,16 +642,35 @@ class Indexer:
             try:
                 # Use Playwright to get the page content
                 res = self.fetch_page_contents(
-                    url,
-                    self.remove_code,
-                    self.parse_tables,
-                    self.summarize_images,
+                    url=url,
+                    extract_tables=self.parse_tables,
+                    extract_images=self.summarize_images,
+                    remove_code=self.remove_code,
                 )
                 html = res['html']
                 text = res['text']
                 doc_title = res['title']
                 if text is None or len(text)<3:
                     return False
+
+                # Extract the last modified date from the HTML content.
+                last_modified = extract_last_modified_from_html(html)
+                if not last_modified:
+                    # If not found in HTML, try using an HTTP HEAD request.
+                    response = self.session.head(url, headers=get_headers)
+                    last_modified = response.headers.get("Last-Modified")
+
+                if last_modified:
+                    try:
+                        # Attempt to parse the date if it follows a common HTTP format.
+                        # Example format: "Wed, 21 Oct 2015 07:28:00 GMT"
+                        last_modified_dt = datetime.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z")
+                        metadata["last_updated"] = last_modified_dt.strftime("%Y-%m-%d")
+                    except ValueError:
+                        # If parsing fails, store the raw value.
+                        metadata["last_updated"] = last_modified
+                else:
+                    self.logger.info(f"Last modified date not found for {url}")
 
                 # Detect language if needed
                 if self.detected_language is None:
@@ -760,7 +800,7 @@ class Indexer:
             for inx,table in enumerate(tables):
                 table_dict = {
                     'id': 'table_' + str(inx),
-                    'title': table['title'],
+                    'title': table.get('title', ''),
                     'data': {
                         'headers': [
                             create_row_items(h) for h in table['headers']
@@ -833,8 +873,9 @@ class Indexer:
 
         #
         # Case A: using the file-upload API
+        # Used when we don't need to process the file locally, and we don't need to parse tables from non-PDF files
         #
-        if not self.process_locally:
+        if not self.process_locally and ((self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
             self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata)>0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
@@ -903,7 +944,7 @@ class Indexer:
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunk=self.docling_config['chunk'], 
+                chunking_strategy=self.docling_config.get('chunking_stragety', 'none'), 
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
@@ -918,7 +959,12 @@ class Indexer:
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 
             )
-        title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
+
+        try:
+            title, texts, metadatas, tables, image_summaries = dp.parse(filename, uri)
+        except Exception as e:
+            self.logger.info(f"Failed to parse {filename} with error {e}")
+            return False
 
         # Get metadata attribute values from text content (if defined)
         if len(self.extract_metadata)>0:

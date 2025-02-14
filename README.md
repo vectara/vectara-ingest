@@ -241,7 +241,7 @@ doc_processing:
 
   # Docling document parsing configuation
   docling_config:
-    chunk: true                        # Whether to use Docling Hybrid chunking
+    chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none (default hybrid)
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   use_core_indexing: false            

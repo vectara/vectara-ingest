@@ -138,7 +138,7 @@ class GithubCrawler(Crawler):
             comment = Box(d_comment)
             metadata = {
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
-                'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'updated_at': convert_date(comment.updated_at)
+                'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'last_modified': convert_date(comment.updated_at)
             }
             doc['sections'].append({
                 'title': f'comment by {comment.user.login}',
@@ -164,7 +164,7 @@ class GithubCrawler(Crawler):
                 'state': pr.state,
                 'author': pr.user.login,
                 'created_at': convert_date(pr.created_at),
-                'updated_at': convert_date(pr.updated_at)
+                'last_modified': convert_date(pr.updated_at)
             }
             pr_doc = {
                 'id': f'github-{repo}-pr-{pr.number}',
@@ -220,7 +220,7 @@ class GithubCrawler(Crawler):
                     'metadata': {
                         'author': author,
                         'created_at': created_at,
-                        'updated_at': updated_at
+                        'last_modified': updated_at
                     }
                 }]
             }

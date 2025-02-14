@@ -102,15 +102,12 @@ class DocsCrawler(Crawler):
                         if href is None:
                             continue
                         abs_url = self.concat_url_and_href(url, href)
-                        if ((any([r.match(abs_url) for r in self.pos_regex])) and                           # match any of the positive regexes
-                            (not any([r.match(abs_url) for r in self.neg_regex])) and                       # don't match any of the negative regexes
-                            (abs_url.startswith("http")) and                                                # starts with http/https
-                            (abs_url not in self.ignored_urls) and                                          # not previously ignored    
-                            (len(urlparse(abs_url).fragment)==0) and                                        # does not have fragment
-                            (not any([abs_url.endswith(ext) for ext in self.extensions_to_ignore]))):    # not any of the specified extensions to ignore
-                                # add URL if needed
-                                if abs_url not in self.crawled_urls and abs_url not in new_urls:
-                                    new_urls.append(abs_url)
+                        if (abs_url.startswith("http") and len(urlparse(abs_url).fragment) == 0 and
+                            not any([abs_url.endswith(ext) for ext in self.extensions_to_ignore]) and 
+                            any([r.match(url) for r in self.pos_regex]) and                 # match any of the positive regexes
+                            not any([r.match(url) for r in self.neg_regex])):               # don't match any of the negative regexes
+                            if abs_url not in self.crawled_urls and abs_url not in new_urls:
+                                new_urls.append(abs_url)
                         else:
                             self.ignored_urls.add(abs_url)
 

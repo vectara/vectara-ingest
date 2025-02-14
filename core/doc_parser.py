@@ -161,15 +161,15 @@ class DoclingDocumentParser(DocumentParser):
         verbose: bool = False,
         model_name: str = None,
         model_api_key: str = None,
-        chunk: bool = False,
+        chunking_strategy: str = 'hybrid',
         parse_tables: bool = False,
         enable_gmft: bool = False,
         summarize_images: bool = False
     ):
         super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
-        self.chunk = chunk
+        self.chunking_strategy = chunking_strategy
         if self.verbose:
-            self.logger.info(f"Using DoclingParser with chunking {'enabled' if self.chunk else 'disabled'}")
+            self.logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy}")
 
     @staticmethod
     def _lazy_load_docling():
@@ -177,8 +177,9 @@ class DoclingDocumentParser(DocumentParser):
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+        from docling_core.transforms.chunker import HierarchicalChunker
 
-        return DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
+        return DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
 
     def parse(
             self,
@@ -196,7 +197,7 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using Docling
-        DocumentConverter, HybridChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+        DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
 
         st = time.time()
         pipeline_options = PdfPipelineOptions()
@@ -210,11 +211,14 @@ class DoclingDocumentParser(DocumentParser):
         doc = res.document
         doc_title = doc.name
 
-        if self.chunk:
-            chunks = list(HybridChunker().chunk(doc))
-            texts = [chunk.text for chunk in chunks]
+        if self.chunking_strategy == 'hybrid':
+            chunker = HybridChunker()
+            texts = [chunker.serialize(chunk=chunk) for chunk in chunker.chunk(doc)]
+        elif self.chunking_strategy == 'hierarchical':
+            chunker = HierarchicalChunker()
+            texts = [chunk.text for chunk in chunker.chunk(doc)]
         else:
-            texts = [e.text for e in doc.texts]
+            texts = [e.text for e in doc.texts]     # No chunking
         metadatas = [{'parser_element_type': 'text'} for _ in texts]
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
