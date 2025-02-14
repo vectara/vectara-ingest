@@ -632,7 +632,7 @@ class Indexer:
             if url.lower().endswith('md'):
                 html_content = markdown.markdown(dl_content)
             elif url.lower().endswith('ipynb'):
-                nb = nbformat.reads(dl_content)
+                nb = nbformat.reads(dl_content, as_version=4)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             doc_title = url.split('/')[-1]      # no title in these files, so using file name
