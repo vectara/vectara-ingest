@@ -66,7 +66,7 @@ class DiscourseCrawler(Crawler):
                 'text': html_to_text(post['cooked']),
                 'metadata': {
                     'created_at': datetime_to_date(post['created_at']),
-                    'last_modified': datetime_to_date(post['updated_at']),
+                    'last_updated': datetime_to_date(post['updated_at']),
                     'poster': post['username'],
                     'poster_name': post['name'],
                     'source': 'discourse',

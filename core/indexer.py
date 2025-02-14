@@ -57,15 +57,14 @@ def extract_last_modified_from_html(html: str) -> Optional[str]:
         Optional[str]: The extracted date string or None if not found.
     """
     # Define regex patterns to match meta tags
-    patterns = [
-        r'<meta\s+(?:property|name)=["\'](?:article:modified_time|last-modified)["\']\s+content=["\']([^"\']+)["\']',
-        r'<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\'](?:article:modified_time|last-modified)["\']'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, html, re.IGNORECASE)
-        if match:
-            return match.group(1)
-    return None
+    pattern = re.compile(
+        r'<meta\s+(?=[^>]*(?:property|name)\s*=\s*["\'](?:article:modified_time|last-modified)["\'])'
+        r'[^>]*content\s*=\s*["\']([^"\']+)["\']',
+        re.IGNORECASE | re.DOTALL
+    )
+    match = pattern.search(html)
+    return match.group(1) if match else None
+
 class Indexer:
     """
     Vectara API class.
@@ -624,7 +623,7 @@ class Indexer:
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
-        # If MD, RST of IPYNB file, then we don't need playwright - can just download content directly and convert to text
+        # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
         if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -670,6 +669,8 @@ class Indexer:
                     except ValueError:
                         # If parsing fails, store the raw value.
                         metadata["last_updated"] = last_modified
+                else:
+                    self.logger.info(f"Last modified date not found for {url}")
 
                 # Detect language if needed
                 if self.detected_language is None:
