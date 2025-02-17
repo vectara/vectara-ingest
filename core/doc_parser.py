@@ -161,7 +161,7 @@ class DoclingDocumentParser(DocumentParser):
         verbose: bool = False,
         model_name: str = None,
         model_api_key: str = None,
-        chunking_strategy: str = 'hybrid',
+        chunking_strategy: str = 'hierarchical',
         parse_tables: bool = False,
         enable_gmft: bool = False,
         summarize_images: bool = False
@@ -205,7 +205,7 @@ class DoclingDocumentParser(DocumentParser):
         pipeline_options.generate_picture_images = True
         res = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
             }
         ).convert(filename)
         doc = res.document
@@ -218,7 +218,7 @@ class DoclingDocumentParser(DocumentParser):
             chunker = HierarchicalChunker()
             texts = [chunk.text for chunk in chunker.chunk(doc)]
         else:
-            texts = [e.text for e in doc.texts]     # No chunking
+            texts = [e.text for e in doc.texts]     # no chunking
         metadatas = [{'parser_element_type': 'text'} for _ in texts]
         self.logger.info(f"DoclingParser: {len(texts)} text elements")
 
@@ -229,7 +229,6 @@ class DoclingDocumentParser(DocumentParser):
                 table_md = table.export_to_markdown()
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 if table_summary:
-                    texts.append(table_summary)
                     metadatas.append({'parser_element_type': 'table'})
                     if self.verbose:
                         self.logger.info(f"Table summary: {table_summary}")
@@ -348,6 +347,7 @@ class UnstructuredDocumentParser(DocumentParser):
         elements = self._get_elements(filename, mode='text')
         texts = [str(e) for e in elements]
         metadatas = [{'parser_element_type': 'text'} for _ in texts]
+        self.logger.info(f"UnstructuredParser: {len(texts)} text elements")
 
         # No chunking strategy may result in title elements; if so - use the first one as doc_title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]

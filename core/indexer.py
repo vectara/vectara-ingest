@@ -734,7 +734,7 @@ class Indexer:
                         image_url = image['src']
                         response = requests.get(image_url, headers=headers, stream=True)
                         if response.status_code != 200:
-                            logging.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                            self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                             continue
                         with open(image_filename, 'wb') as f:
                             for chunk in response.iter_content(chunk_size=8192):
@@ -926,7 +926,7 @@ class Indexer:
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunk=True,
+                chunking_strategy='hybrid',
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
@@ -966,6 +966,15 @@ class Indexer:
             self.logger.info(f"Failed to parse {filename} with error {e}")
             return False
 
+        # docling has a bug with some HTML files where it doesn't extract text properly
+        # in this case, we just extract the text directly from file, and do simple chunking.
+        if self.doc_parser == "docling" and len(texts)==0 and (len(tables)>0 or len(image_summaries)>0):
+            with open(filename, 'r') as f:
+                html_content = f.read()
+                text = html_to_text(html_content, remove_code=self.remove_code)
+                chunk_size = 1024
+                texts = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+            
         # Get metadata attribute values from text content (if defined)
         if len(self.extract_metadata)>0:
             all_text = "\n".join(texts)[:max_chars]
@@ -998,6 +1007,7 @@ class Indexer:
                 use_core_indexing=True
             )
         else:
+            self.logger.info(f"DEBUG - extracted {len(texts)} text segments from {filename}, and {len(vec_tables)} tables")
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
                 doc_metadata=metadata, doc_title=title,
