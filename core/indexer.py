@@ -21,6 +21,10 @@ import nbformat
 import markdown
 import whisper
 
+from bs4 import BeautifulSoup
+from email.utils import parsedate_to_datetime
+import hashlib
+
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
@@ -44,6 +48,92 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+def extract_last_modified(url: str, html: str) -> dict:
+    """
+    Extracts the last modified date from HTML content.
+
+    Tries the following strategies in order:
+      1. Look for a meta tag with http-equiv="last-modified" or name="last-modified".
+      2. Search for <time> elements with a datetime attribute.
+      3. Use a regex to find ISO-like date strings in the page text.
+      4. If no date is found, returns an MD5 hash of the content as a fingerprint.
+
+    Args:
+        url (str): The URL of the resource.
+        html (str): The HTML content of the resource.
+
+    Returns:
+        dict: A dictionary containing:
+              - 'url': the input URL.
+              - 'last_modified': a datetime object if a date was found,
+                                 or omitted if not.
+              - 'content_hash': MD5 hash string if no date was found.
+              - 'detection_method': one of 'meta', 'time', 'regex', or 'hash'.
+    """
+    result = {'url': url, 'detection_method': None}
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # 1. Try meta tags with http-equiv="last-modified" or name="last-modified"
+    for attr in ['http-equiv', 'name']:
+        meta_tag = soup.find('meta', attrs={attr: lambda v: v and v.lower() == 'last-modified'})
+        if meta_tag and meta_tag.get('content'):
+            try:
+                dt = parsedate_to_datetime(meta_tag['content'])
+                result['last_modified'] = dt
+                result['detection_method'] = 'meta'
+                return result
+            except Exception:
+                pass  # Fall through to next method if parsing fails
+
+    # 2. Look for <time> elements with a datetime attribute
+    time_elements = soup.find_all('time', attrs={'datetime': True})
+    dates = []
+    for time_elem in time_elements:
+        dt_str = time_elem.get('datetime', '').strip()
+        if not dt_str:
+            continue
+        try:
+            # Try using parsedate_to_datetime first
+            dt = parsedate_to_datetime(dt_str)
+        except Exception:
+            try:
+                # If that fails, try fromisoformat (Python 3.7+)
+                dt = datetime.fromisoformat(dt_str)
+            except Exception:
+                continue
+        dates.append(dt)
+    if dates:
+        result['last_modified'] = max(dates)
+        result['detection_method'] = 'time'
+        return result
+
+    # 3. Use regex to search for ISO-like date strings in the visible text
+    text = soup.get_text(" ", strip=True)
+    # A simple pattern to match YYYY-MM-DD optionally with time info.
+    iso_pattern = r'\b(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)\b'
+    found_dates = re.findall(iso_pattern, text)
+    date_candidates = []
+    for dt_str in found_dates:
+        try:
+            dt = parsedate_to_datetime(dt_str)
+            date_candidates.append(dt)
+        except Exception:
+            try:
+                dt = datetime.fromisoformat(dt_str)
+                date_candidates.append(dt)
+            except Exception:
+                continue
+    if date_candidates:
+        result['last_modified'] = max(date_candidates)
+        result['detection_method'] = 'regex'
+        return result
+
+    # 4. Fallback: use a hash of the content as a fingerprint.
+    content_hash = hashlib.md5(html.encode('utf-8')).hexdigest()
+    result['content_hash'] = content_hash
+    result['detection_method'] = 'hash'
+    return result
 
 def extract_last_modified_from_html(html: str) -> Optional[str]:
     """
@@ -654,23 +744,10 @@ class Indexer:
                     return False
 
                 # Extract the last modified date from the HTML content.
-                last_modified = extract_last_modified_from_html(html)
-                if not last_modified:
-                    # If not found in HTML, try using an HTTP HEAD request.
-                    response = self.session.head(url, headers=get_headers)
-                    last_modified = response.headers.get("Last-Modified")
-
+                res = extract_last_modified(url, html)
+                last_modified = res.get('last_modified', None)
                 if last_modified:
-                    try:
-                        # Attempt to parse the date if it follows a common HTTP format.
-                        # Example format: "Wed, 21 Oct 2015 07:28:00 GMT"
-                        last_modified_dt = datetime.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z")
-                        metadata["last_updated"] = last_modified_dt.strftime("%Y-%m-%d")
-                    except ValueError:
-                        # If parsing fails, store the raw value.
-                        metadata["last_updated"] = last_modified
-                else:
-                    self.logger.info(f"Last modified date not found for {url}")
+                    metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
                 # Detect language if needed
                 if self.detected_language is None:
@@ -705,7 +782,7 @@ class Indexer:
                 metadatas = [{'element_type': 'text'}]
 
                 vec_tables = []
-                if self.parse_tables:
+                if self.parse_tables and 'tables' in res:
                     table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
                     for table in res['tables']:
                         table_summary = table_summarizer.summarize_table_text(table)
@@ -1007,7 +1084,6 @@ class Indexer:
                 use_core_indexing=True
             )
         else:
-            self.logger.info(f"DEBUG - extracted {len(texts)} text segments from {filename}, and {len(vec_tables)} tables")
             succeeded = self.index_segments(
                 doc_id=slugify(uri), texts=texts, metadatas=metadatas, tables=vec_tables,
                 doc_metadata=metadata, doc_title=title,

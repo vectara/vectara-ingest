@@ -9,6 +9,7 @@ from typing import Tuple, Set
 from core.indexer import Indexer
 import psutil
 import ray
+import requests
 
 class UrlCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
