@@ -17,7 +17,6 @@ import shutil
 import pandas as pd
 from io import StringIO
 
-import socket
 import time
 import threading
 import logging
