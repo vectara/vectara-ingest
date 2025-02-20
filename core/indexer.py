@@ -20,10 +20,10 @@ from nbconvert import HTMLExporter      # type: ignore
 import nbformat
 import markdown
 import whisper
+import hashlib
 
 from bs4 import BeautifulSoup
 from email.utils import parsedate_to_datetime
-import hashlib
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
