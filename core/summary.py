@@ -84,7 +84,7 @@ class TableSummarizer():
             Make sure your summary is concise, informative and comprehensive.
             Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
             Your response should be without headings, and in text (not markdown).
-            Review your response for accuracy and coherence, and no hallucinations.
+            Review your response for accuracy, coherence, and no hallucinations.
             Here is the table: {text}
         """
         try:
