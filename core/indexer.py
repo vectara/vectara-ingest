@@ -1042,15 +1042,6 @@ class Indexer:
         except Exception as e:
             self.logger.info(f"Failed to parse {filename} with error {e}")
             return False
-
-        # docling has a bug with some HTML files where it doesn't extract text properly
-        # in this case, we just extract the text directly from file, and do simple chunking.
-        if self.doc_parser == "docling" and len(texts)==0 and (len(tables)>0 or len(image_summaries)>0):
-            with open(filename, 'r') as f:
-                html_content = f.read()
-                text = html_to_text(html_content, remove_code=self.remove_code)
-                chunk_size = 1024
-                texts = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
             
         # Get metadata attribute values from text content (if defined)
         if len(self.extract_metadata)>0:
