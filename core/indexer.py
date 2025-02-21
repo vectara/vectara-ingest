@@ -36,6 +36,8 @@ from core.utils import (
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
 from core.contextual import ContextualChunker
+from PyPDF2 import PdfReader, PdfWriter
+import tempfile
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
@@ -941,9 +943,10 @@ class Indexer:
         size_limit = 50
         max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
-        
+        filesize_mb = get_file_size_in_MB(filename)
+
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
-            (get_file_size_in_MB(filename) >= size_limit or self.contextual_chunking or
+            (filesize_mb >= size_limit or self.contextual_chunking or
              self.summarize_images or self.enable_gmft)
         ):
             self.process_locally = True
@@ -978,8 +981,36 @@ class Indexer:
                 ex_metadata = {}
             metadata.update(ex_metadata)
 
-            # index the file within Vectara (use FILE UPLOAD API)
-            succeeded = self._index_file(filename, uri, metadata, id)
+            max_pdf_size = 50
+            pages_per_pdf = 50
+
+            if filesize_mb > max_pdf_size:
+                pdf_reader = PdfReader(filename)
+                total_pages = len(pdf_reader.pages)
+                logging.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with #{total_pages} pages. Splitting into #{pages_per_pdf} chunks")
+                error_count = 0
+                for i in range(0, total_pages, pages_per_pdf):
+                    pdf_writer = PdfWriter()
+                    for j in range(i, min(i + pages_per_pdf, total_pages)):
+                        pdf_writer.add_page(pdf_reader.pages[j])
+                    part_id = f"#{filename}-#{i}"
+                    part_metadata = {}
+                    part_metadata.update(metadata)
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", mode='wb', delete=False) as f:
+                        pdf_writer.write(f)
+                        f.flush()
+                        f.close()
+                        try:
+                            part_success = self.indexer._index_file(f.name, uri, part_metadata, part_id)
+                            if not part_success:
+                                error_count+=1
+                        finally:
+                            if os.path.exists(f.name):
+                                os.remove(f.name)
+                    succeeded = error_count==0
+            else:
+                # index the file within Vectara (use FILE UPLOAD API)
+                succeeded = self._index_file(filename, uri, metadata, id)
             
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and image_summaries:
