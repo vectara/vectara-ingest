@@ -33,11 +33,13 @@ class DocumentParser():
         model_api_key: str = None,
         parse_tables: bool = False,
         enable_gmft: bool = False,
+        do_ocr: bool = False,
         summarize_images: bool = False,
     ):
         self.model_name = model_name
         self.model_api_key = model_api_key
         self.enable_gmft = enable_gmft
+        self.do_ocr = do_ocr
         self.parse_tables = parse_tables and (model_api_key is not None)
         self.summarize_images = summarize_images and model_api_key is not None
         self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.parse_tables else None
@@ -86,7 +88,15 @@ class LlamaParseDocumentParser(DocumentParser):
         enable_gmft: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
+        super().__init__(
+            verbose=verbose, 
+            model_name=model_name, 
+            model_api_key=model_api_key, 
+            parse_tables=parse_tables, 
+            enable_gmft=enable_gmft, 
+            do_ocr=False,
+            summarize_images=summarize_images
+        )
         if llama_parse_api_key:
             self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
             if self.verbose:
@@ -164,9 +174,18 @@ class DoclingDocumentParser(DocumentParser):
         chunking_strategy: str = 'hierarchical',
         parse_tables: bool = False,
         enable_gmft: bool = False,
+        do_ocr: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
+        super().__init__(
+            verbose=verbose, 
+            model_name=model_name, 
+            model_api_key=model_api_key, 
+            parse_tables=parse_tables, 
+            enable_gmft=enable_gmft, 
+            do_ocr=do_ocr,
+            summarize_images=summarize_images
+        )
         self.chunking_strategy = chunking_strategy
         if self.verbose:
             self.logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy}")
@@ -174,12 +193,12 @@ class DoclingDocumentParser(DocumentParser):
     @staticmethod
     def _lazy_load_docling():
         from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
         from docling_core.transforms.chunker import HierarchicalChunker
 
-        return DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat
+        return DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat, EasyOcrOptions
 
     def parse(
             self,
@@ -197,12 +216,19 @@ class DoclingDocumentParser(DocumentParser):
             Tuple with doc_title, list of texts, list of metdatas
         """
         # Process using Docling
-        DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat = self._lazy_load_docling()
+        (
+            DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, 
+            PdfFormatOption, InputFormat, EasyOcrOptions
+        ) = self._lazy_load_docling()
 
         st = time.time()
         pipeline_options = PdfPipelineOptions()
         pipeline_options.images_scale = 2.0
         pipeline_options.generate_picture_images = True
+        if self.do_ocr:
+            pipeline_options.do_ocr = True
+            ocr_options = EasyOcrOptions(force_full_page_ocr=True)
+            pipeline_options.ocr_options = ocr_options
         res = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
@@ -271,7 +297,15 @@ class UnstructuredDocumentParser(DocumentParser):
         enable_gmft: bool = False,
         summarize_images: bool = False
     ):
-        super().__init__(verbose, model_name, model_api_key, parse_tables, enable_gmft, summarize_images)
+        super().__init__(
+            verbose=verbose, 
+            model_name=model_name, 
+            model_api_key=model_api_key, 
+            parse_tables=parse_tables, 
+            enable_gmft=enable_gmft, 
+            do_ocr=False,
+            summarize_images=summarize_images
+        )
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         if self.verbose:

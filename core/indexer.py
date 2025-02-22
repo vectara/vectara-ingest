@@ -188,6 +188,7 @@ class Indexer:
             cfg.doc_processing = {}
         self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables", False)) # backward compatibility
         self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
+        self.do_ocr = cfg.doc_processing.get("do_ocr", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.process_locally = cfg.doc_processing.get("process_locally", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
@@ -961,6 +962,7 @@ class Indexer:
                     model_name=self.model_name, model_api_key=self.model_api_key,
                     parse_tables=False,
                     enable_gmft=False,
+                    do_ocr=False,
                     summarize_images=self.summarize_images,
                 )
                 title, texts, metadatas, _, image_summaries = dp.parse(filename, uri)
@@ -1006,6 +1008,7 @@ class Indexer:
                 chunking_strategy='hybrid',
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
+                do_ocr=self.do_ocr,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
@@ -1024,6 +1027,7 @@ class Indexer:
                 chunking_strategy=self.docling_config.get('chunking_stragety', 'none'), 
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
+                do_ocr=self.do_ocr,
                 summarize_images=self.summarize_images
             )
         else:
