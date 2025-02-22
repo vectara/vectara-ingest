@@ -228,6 +228,9 @@ doc_processing:
   # use GMFT to parse tables from PDF
   enable_gmft: true
 
+  # use OCR when parsing documents (Docling only)
+  do_ocr: true
+
   # Whether or not to summarize image content using GPT-4o vision 
   # When using this feature, you need to list the OPENAI_API_KEY or ANTHRPIC_API_KEY in your `secrets.toml` 
   # under a special profile called `general`.
