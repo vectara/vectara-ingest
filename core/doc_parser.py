@@ -4,7 +4,6 @@ import time
 import pandas as pd
 import os
 from io import StringIO
-from enum import Enum
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
