@@ -981,31 +981,31 @@ class Indexer:
             metadata.update(ex_metadata)
             metadata['file_name'] = filename.split('/')[-1]
 
-            max_pdf_size = int(self.cfg.vectara.get('max_pdf_size', 50))
-            pages_per_pdf = int(self.cfg.vectara.get('pages_per_pdf', 100))
+            max_pdf_size = int(self.cfg.doc_processing.get('max_pdf_size', 50))
+            pages_per_pdf = int(self.cfg.doc_processing.get('pages_per_pdf', 100))
 
             if filesize_mb > max_pdf_size:
                 pdf_reader = PdfReader(filename)
                 total_pages = len(pdf_reader.pages)
-                logging.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} chunks")
+                logging.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
                 error_count = 0
                 for i in range(0, total_pages, pages_per_pdf):
                     pdf_writer = PdfWriter()
-                    part_metadata = {
+                    pdf_part_metadata = {
                         "start_page": i,
                         "end_page": min(i + pages_per_pdf, total_pages)
                     }
                     for j in range(i, min(i + pages_per_pdf, total_pages)):
                         pdf_writer.add_page(pdf_reader.pages[j])
-                    part_id = f"{metadata['file_name']}-{i}"
+                    pdf_part_id = f"{metadata['file_name']}-{i}"
 
-                    part_metadata.update(metadata)
+                    pdf_part_metadata.update(metadata)
                     with tempfile.NamedTemporaryFile(suffix=".pdf", mode='wb', delete=False) as f:
                         pdf_writer.write(f)
                         f.flush()
                         f.close()
                         try:
-                            part_success = self._index_file(f.name, uri, part_metadata, part_id)
+                            part_success = self._index_file(f.name, uri, pdf_part_metadata, pdf_part_id)
                             if not part_success:
                                 error_count+=1
                         finally:
