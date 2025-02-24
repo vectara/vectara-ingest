@@ -196,8 +196,8 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
     ```
     """
     trust_env = config.get("ssl_trust_env", None)
-    if trust_env:
-        session.trust_env = trust_env
+    if trust_env is False:
+        session.trust_env = False
     ca_cert = config.get("ssl_ca_cert", None)
     if ca_cert:
         session.cert = ca_cert
