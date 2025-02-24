@@ -24,6 +24,9 @@ import nltk
 nltk.download('punkt_tab', quiet=True)
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 MAX_VERBOSE_LENGTH = 1000
 
 class DocumentParser():
@@ -295,7 +298,7 @@ class DoclingDocumentParser(DocumentParser):
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
                         images.append((image_summary, 
-                                                {'parser_element_type': 'image', 'page': pic.prov.page_no}))
+                                      {'parser_element_type': 'image', 'page': pic.prov.page_no}))
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
@@ -415,6 +418,8 @@ class UnstructuredDocumentParser(DocumentParser):
         st = time.time()
         
         # Pass 1: process text
+        if self.verbose:
+            self.logger.info(f"Unstructured pass 1: extracting text from {filename}")
         elements = self._get_elements(filename, mode='text')
         texts = [
             (str(e), {'parser_element_type': 'text', 'page': e.metadata.page_number})
@@ -427,6 +432,8 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = titles[0] if len(titles)>0 else ''
 
         # Pass 2: extract tables and images; here we never use unstructured chunking, and ignore any text
+        if self.verbose:
+            self.logger.info(f"Unstructured pass 2: extracting tables and images from {filename}")
         elements = self._get_elements(filename, mode='images')
 
         # get image summaries
