@@ -7,7 +7,6 @@ import requests
 from furl import furl
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
 
 
 import json
@@ -19,7 +18,7 @@ import requests
 from furl import furl
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, configure_session_for_ssl
 
 
 def raise_for_status(response: requests.Response):
@@ -374,6 +373,7 @@ class ConfluenceCrawler(Crawler):
             self.cfg.confluence_crawler.confluence_password
         )
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.confluence_crawler)
         self.base_url = furl(self.cfg.confluence_crawler.confluence_base_url)
         self.user_cache = {}
         self.space_cache = {}

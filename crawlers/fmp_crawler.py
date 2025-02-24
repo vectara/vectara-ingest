@@ -5,7 +5,8 @@ from typing import Dict, Any
 from omegaconf import OmegaConf, DictConfig
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, configure_session_for_ssl
+
 
 # Crawler for financial information using the financialmodelingprep.com service
 # To use this crawler you have to have an fmp API_key in your secrets.toml profile
@@ -22,6 +23,7 @@ class FmpCrawler(Crawler):
         self.end_year = int(cfg_dict.fmp_crawler.end_year)
         self.api_key = cfg_dict.fmp_crawler.fmp_api_key
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.fmp_crawler)
         self.base_url = 'https://financialmodelingprep.com'
 
     def index_doc(self, document: Dict[str, Any]) -> bool:

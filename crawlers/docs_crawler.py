@@ -4,7 +4,8 @@ import logging
 from urllib.parse import urljoin, urlparse
 import re
 from collections import deque
-from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging
+from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging, \
+    configure_session_for_ssl
 from typing import Tuple, Set
 from core.indexer import Indexer
 import psutil
@@ -125,6 +126,7 @@ class DocsCrawler(Crawler):
         self.html_processing = self.cfg.docs_crawler.get('html_processing', {})
 
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.docs_crawler)
 
         source = self.cfg.docs_crawler.docs_system
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray

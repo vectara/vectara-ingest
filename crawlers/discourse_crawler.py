@@ -2,7 +2,7 @@ import logging
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import json
-from core.utils import create_session_with_retries, html_to_text
+from core.utils import create_session_with_retries, html_to_text, configure_session_for_ssl
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -19,6 +19,7 @@ class DiscourseCrawler(Crawler):
         self.discourse_base_url = self.cfg.discourse_crawler.base_url
         self.discourse_api_key = self.cfg.discourse_crawler.discourse_api_key
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.discourse_crawler)
 
     # function to fetch the topics from the Discourse API
     def get_topics(self) -> List[Dict[str, Any]]:

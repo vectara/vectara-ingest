@@ -3,7 +3,7 @@ import json
 from omegaconf import OmegaConf
 import logging
 from core.crawler import Crawler
-from core.utils import html_to_text, create_session_with_retries
+from core.utils import html_to_text, create_session_with_retries, configure_session_for_ssl
 import datetime
 from typing import List
 
@@ -17,6 +17,7 @@ class HackernewsCrawler(Crawler):
         self.indexer.reindex = True     # always reindex with hackernews, since it depends on comments
         self.db_url = 'https://hacker-news.firebaseio.com/v0/'
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.hackernews_crawler)
 
     def get_comments(self, story: dict) -> List[str]:
         comments = []

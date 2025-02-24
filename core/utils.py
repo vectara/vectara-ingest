@@ -22,6 +22,7 @@ import threading
 import logging
 
 from langdetect import detect
+from omegaconf import DictConfig
 
 try:
     from presidio_analyzer import AnalyzerEngine
@@ -153,6 +154,53 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
+
+def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
+    """
+    Configures an existing requests session with SSL settings.
+
+    This function applies SSL-related configurations to the provided `requests.Session`
+    object based on the `config` dictionary. It can set whether the session should
+    trust environment settings and specify a custom CA certificate for SSL verification.
+
+    Parameters:
+    -----------
+    session : requests.Session
+        The requests session to configure.
+
+    config : DictConfig
+        A dictionary containing SSL-related configurations.
+        - "ssl_trust_env" (bool, optional): Whether the session should trust the environment settings.
+        - "ssl_ca_cert" (str, optional): Path to the CA certificate file for SSL verification.
+
+    Returns:
+    --------
+    None
+        The session is modified in place with the provided SSL settings.
+
+    Example:
+    --------
+    ```python
+    import requests
+
+    session = requests.Session()
+    config = {
+        "ssl_trust_env": True,
+        "ssl_ca_cert": "/path/to/custom_ca.crt"
+    }
+
+    configure_session_for_ssl(session, config)
+
+    response = session.get("https://example.com")
+    print(response.status_code)
+    ```
+    """
+    trust_env = config.get("ssl_trust_env", None)
+    if trust_env:
+        session.trust_env = trust_env
+    ca_cert = config.get("ssl_ca_cert", None)
+    if ca_cert:
+        session.cert = ca_cert
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""

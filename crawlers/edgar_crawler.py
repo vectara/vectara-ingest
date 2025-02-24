@@ -11,7 +11,7 @@ from sec_downloader import Downloader
 from sec_downloader.types import RequestedFilings
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, RateLimiter, ensure_empty_folder
+from core.utils import create_session_with_retries, RateLimiter, ensure_empty_folder, configure_session_for_ssl
 
 from io import StringIO
 from typing import Dict, List
@@ -73,6 +73,7 @@ class EdgarCrawler(Crawler):
         # build mapping of ticker to cik
         url = 'https://www.sec.gov/include/ticker.txt'
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.edgar_crawler)
         response = self.session.get(url, headers=get_headers())
         response.raise_for_status()
         data = StringIO(response.text)
