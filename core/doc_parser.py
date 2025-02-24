@@ -434,15 +434,18 @@ class UnstructuredDocumentParser(DocumentParser):
         if self.summarize_images:
             for inx,e in enumerate(elements):
                 if isinstance(e, us.documents.elements.Image) and e.metadata.coordinates.system.width>100 and e.metadata.coordinates.system.height>100:
-                    if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                        image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
-                    else:
-                        image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
-                    if image_summary:
-                        images.append((image_summary, {'parser_element_type': 'image', 'page': e.metadata.page_number}))
-                        if self.verbose:
-                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
+                    try:
+                        if inx>0 and type(elements[inx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
+                            image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, elements[inx-1].text)
+                        else:
+                            image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
+                        if image_summary:
+                            images.append((image_summary, {'parser_element_type': 'image', 'page': e.metadata.page_number}))
+                            if self.verbose:
+                                self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                    except Exception as exc:
+                        self.logger.error(f"Error summarizing image ({e.metadata.image_path}): {exc}")
+                        continue
         # get tables
         if self.parse_tables:
             if self.enable_gmft and filename.endswith('.pdf'):

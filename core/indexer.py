@@ -827,7 +827,7 @@ class Indexer:
                                 self.logger.info(f"Image summary: {image_summary[:500]}...")
                             doc_id = slugify(url) + "_image_" + str(inx)
                             succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                            doc_metadata=metadata, doc_title=doc_title)
+                                                            doc_metadata=metadata, doc_title=doc_title, use_core_indexing=True)
                         else:
                             self.logger.info(f"Failed to retrieve image {image['src']}")
                             continue
@@ -995,7 +995,7 @@ class Indexer:
                         metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
                     succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
-                                                     doc_metadata=metadata, doc_title=title)
+                                                     doc_metadata=metadata, doc_title=title, use_core_indexing=True)
             return succeeded
 
         #
@@ -1101,7 +1101,7 @@ class Indexer:
                 metadata.update(ex_metadata)
             doc_id = slugify(uri) + "_image_" + str(inx)
             succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
-                                                doc_metadata=metadata, doc_title=title)
+                                             doc_metadata=metadata, doc_title=title, use_core_indexing=True)
 
         self.logger.info(f"For file {filename}, extracted text locally")
         return succeeded
