@@ -204,7 +204,7 @@ vectara:
   # Which whisper model to use for audio files (relevant for YT, S3 and folder crawlers)
   # Valid values: tiny, base, small, medium or large. Defaults to base.
   whisper_model: the model name for whisper
-  # Whether the session should trust the environment settings. When set to 
+  # Whether the session should trust the environment settings. When set to False SSL will not be verified. Do not use in production.
   ssl_trust_env: None
   # Path to the CA certificate file for SSL verification.
   ssl_ca_cert: None 
