@@ -212,7 +212,7 @@ class DoclingDocumentParser(DocumentParser):
             table_md = table.export_to_markdown()
             table_summary = self.table_summarizer.summarize_table_text(table_md)
             if table_summary:
-                metadata = {'parser_element_type': 'table', 'page': table.prov.page_no}
+                metadata = {'parser_element_type': 'table', 'page': table.prov[0].page_no}
                 if self.verbose:
                     self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
                 yield ([table.export_to_dataframe(), table_summary, '', metadata])
@@ -223,7 +223,7 @@ class DoclingDocumentParser(DocumentParser):
             try:
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 yield (table.export_to_dataframe(), table_summary, '', 
-                    {'parser_element_type': 'table', 'page': table.prov.page_no})
+                    {'parser_element_type': 'table', 'page': table.prov[0].page_no})
             except ValueError as err:
                 self.logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
@@ -271,13 +271,10 @@ class DoclingDocumentParser(DocumentParser):
 
         if self.chunking_strategy == 'hybrid' or self.chunking_strategy == 'hierarchical':
             chunker = HybridChunker() if self.chunking_strategy == 'hybrid' else HierarchicalChunker()
-            texts = ((chunker.serialize(chunk=chunk), {'parser_element_type': 'text', 'page': chunk.prov.page_no})
-                     for chunk in chunker.chunk(doc))
+            texts = [(chunker.serialize(chunk=chunk), {'parser_element_type': 'text', 'page': chunk.meta.doc_items[0].prov[0].page_no})
+                     for chunk in chunker.chunk(doc)]
         else:
-            texts = (
-                (e.text, {'parser_element_type': 'text', 'page': e.prov.page_no})
-                for e in doc.texts
-                )     # no chunking
+            texts = [(e.text, {'parser_element_type': 'text', 'page': e.prov[0].page_no}) for e in doc.texts]
 
         tables = []
         if self.parse_tables:
@@ -298,7 +295,7 @@ class DoclingDocumentParser(DocumentParser):
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
                         images.append((image_summary, 
-                                      {'parser_element_type': 'image', 'page': pic.prov.page_no}))
+                                      {'parser_element_type': 'image', 'page': pic.prov[0].page_no}))
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
