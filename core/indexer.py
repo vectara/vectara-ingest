@@ -551,7 +551,7 @@ class Indexer:
             res = response.json()
 
             # Extract URLs from documents
-            for doc in res['documents']:
+            for doc in res.get('documents', []):
                 url = doc['metadata']['url'] if 'url' in doc['metadata'] else None
                 docs.append({'id': doc['id'], 'url': url})
 
@@ -945,7 +945,6 @@ class Indexer:
             return False
         
         # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the parse_tables option, then we parse locally and index
-        size_limit = 50
         max_chars = 128000   # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
         filesize_mb = get_file_size_in_MB(filename)
@@ -1061,18 +1060,19 @@ class Indexer:
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunking_strategy=self.docling_config.get('chunking_stragety', 'none'), 
+                chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 do_ocr=self.do_ocr,
-                summarize_images=self.summarize_images
+                summarize_images=self.summarize_images,
+                image_scale=self.docling_config.get('image_scale', 2.0),
             )
         else:
             dp = UnstructuredDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunking_strategy=self.unstructured_config['chunking_strategy'],
-                chunk_size=self.unstructured_config['chunk_size'],
+                chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
+                chunk_size=self.unstructured_config.get('chunk_size',1024),
                 parse_tables=self.parse_tables, 
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 

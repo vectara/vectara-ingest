@@ -180,7 +180,8 @@ class DoclingDocumentParser(DocumentParser):
         parse_tables: bool = False,
         enable_gmft: bool = False,
         do_ocr: bool = False,
-        summarize_images: bool = False
+        summarize_images: bool = False,
+        image_scale: float = 1.0,
     ):
         super().__init__(
             verbose=verbose, 
@@ -192,6 +193,7 @@ class DoclingDocumentParser(DocumentParser):
             summarize_images=summarize_images
         )
         self.chunking_strategy = chunking_strategy
+        self.image_scale = image_scale
         if self.verbose:
             self.logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy}")
 
@@ -210,11 +212,21 @@ class DoclingDocumentParser(DocumentParser):
             table_md = table.export_to_markdown()
             table_summary = self.table_summarizer.summarize_table_text(table_md)
             if table_summary:
-                metadata = {'parser_element_type': 'table', 'page': table.prov.page_no}
+                metadata = {'parser_element_type': 'table', 'page': table.prov[0].page_no}
                 if self.verbose:
                     self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
                 yield ([table.export_to_dataframe(), table_summary, '', metadata])
 
+    def _get_tables(self, tables):
+        for table in tables:
+            table_md = table.export_to_markdown()
+            try:
+                table_summary = self.table_summarizer.summarize_table_text(table_md)
+                yield (table.export_to_dataframe(), table_summary, '', 
+                    {'parser_element_type': 'table', 'page': table.prov[0].page_no})
+            except ValueError as err:
+                self.logger.error(f"Error parsing Markdown table: {err}. Skipping...")
+                continue
 
     def parse(
             self,
@@ -243,7 +255,7 @@ class DoclingDocumentParser(DocumentParser):
 
         st = time.time()
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.images_scale = 2.0
+        pipeline_options.images_scale = self.image_scale
         pipeline_options.generate_picture_images = True
         if self.do_ocr:
             pipeline_options.do_ocr = True
@@ -258,47 +270,32 @@ class DoclingDocumentParser(DocumentParser):
         doc_title = doc.name
 
         if self.chunking_strategy == 'hybrid' or self.chunking_strategy == 'hierarchical':
-            texts = []
             chunker = HybridChunker() if self.chunking_strategy == 'hybrid' else HierarchicalChunker()
-            for chunk in chunker.chunk(doc):
-                texts.append((chunker.serialize(chunk=chunk), {'parser_element_type': 'text', 'page': chunk.prov.page_no}))
-            texts = [chunker.serialize(chunk=chunk) for chunk in chunker.chunk(doc)]
+            texts = [(chunker.serialize(chunk=chunk), {'parser_element_type': 'text', 'page': chunk.meta.doc_items[0].prov[0].page_no})
+                     for chunk in chunker.chunk(doc)]
         else:
-            texts = [
-                (e.text, {'parser_element_type': 'text', 'page': e.prov.page_no})
-                for e in doc.texts
-            ]     # no chunking
-        self.logger.info(f"DoclingParser: {len(texts)} text elements")
+            texts = [(e.text, {'parser_element_type': 'text', 'page': e.prov[0].page_no}) for e in doc.texts]
 
         tables = []
         if self.parse_tables:
             if self.enable_gmft and filename.endswith('.pdf'):
                 tables = self.get_tables_with_gmft(filename)
             else:
-                self.logger.info(f"DoclingParser: {len(doc.tables)} tables")
-                for table in doc.tables:
-                    table_md = table.export_to_markdown()
-                    table_summary = self.table_summarizer.summarize_table_text(table_md)
-                    if table_summary:
-                        if self.verbose:
-                            self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
-                        tables.append((table.export_to_dataframe(), table_summary, '', 
-                                    {'parser_element_type': 'table', 'page': table.prov.page_no}))
-
+                tables = self._get_tables(doc.tables)
 
         images = []
         if self.summarize_images:
             image_path = 'image.png'
             self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
             for pic in doc.pictures:
-                image = pic.get_image(res.document)
+                image = pic.get_image(doc)
                 if image:
                     with open(image_path, 'wb') as fp:
                         image.save(fp, 'PNG')
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
                         images.append((image_summary, 
-                                      {'parser_element_type': 'image', 'page': pic.prov.page_no}))
+                                      {'parser_element_type': 'image', 'page': pic.prov[0].page_no}))
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
