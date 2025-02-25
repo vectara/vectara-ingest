@@ -551,7 +551,7 @@ class Indexer:
             res = response.json()
 
             # Extract URLs from documents
-            for doc in res['documents']:
+            for doc in res.get('documents', []):
                 url = doc['metadata']['url'] if 'url' in doc['metadata'] else None
                 docs.append({'id': doc['id'], 'url': url})
 
@@ -1061,11 +1061,12 @@ class Indexer:
             dp = DoclingDocumentParser(
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
-                chunking_strategy=self.docling_config.get('chunking_stragety', 'none'), 
+                chunking_strategy=self.docling_config.get('chunking_stragety', 'none'),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 do_ocr=self.do_ocr,
-                summarize_images=self.summarize_images
+                summarize_images=self.summarize_images,
+                image_scale=self.docling_config.get('image_scale', 2.0),
             )
         else:
             dp = UnstructuredDocumentParser(
