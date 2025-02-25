@@ -170,7 +170,7 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
 
     config : DictConfig
         A dictionary containing SSL-related configurations.
-        - "ssl_trust_env" (bool, optional): Whether the session should trust the environment settings.
+        - "ssl_ignore_cert_errors" (bool, optional): Flag to disable ssl verification and ignore certificate errors. DO NOT RUN IN PRODUCTION.
         - "ssl_ca_cert" (str, optional): Path to the CA certificate file for SSL verification.
 
     Returns:
@@ -185,7 +185,7 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
 
     session = requests.Session()
     config = {
-        "ssl_trust_env": True,
+        "ssl_ignore_cert_errors": True,
         "ssl_ca_cert": "/path/to/custom_ca.crt"
     }
 
@@ -195,8 +195,8 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
     print(response.status_code)
     ```
     """
-    trust_env = config.get("ssl_trust_env", None)
-    if trust_env is False:
+    ssl_ignore_cert_errors = config.get("ssl_ignore_cert_errors", False)
+    if ssl_ignore_cert_errors:
         session.trust_env = False
     ca_cert = config.get("ssl_ca_cert", None)
     if ca_cert:
