@@ -98,6 +98,14 @@ For our example we would index the content of https://www.paulgraham.com website
       
    4. Change `rss_crawler.days_past` to `365`.
 
+6. If Vectara is installed in your datacenter, and you are using an internal certificate authority. 
+   1. Write the entire certificate chain to `ca.pem`.
+   2. Update your crawler config to include the following.
+      ```yaml
+      vectara:
+         ssl_verify: /home/vectara/env/ca.pem
+      ```
+
 ## Step 3: Run the crawler
 
 1. Ensure that Docker is running on your local machine.

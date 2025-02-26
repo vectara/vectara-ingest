@@ -117,6 +117,8 @@ venv.bak/
 
 # secrets file in TOML format
 secrets.toml
+# certificate authority file
+ca.pem
 
 # Any GDrive credentials file
 credentials.json
