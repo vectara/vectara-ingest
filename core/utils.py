@@ -177,12 +177,24 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
     """
     ssl_verify = config.get("ssl_verify", None)
 
-    if ssl_verify is False:
-        logging.warning("Disabling ssl verification for session.")
-        session.verify = False
-    elif ssl_verify:
-        logging.info(f"Setting session.verify to {ssl_verify}")
-        session.verify = ssl_verify
+    if isinstance(ssl_verify, bool):
+        if not ssl_verify:
+            logging.warning("Disabling ssl verification for session.")
+            session.verify = False
+        else:
+            logging.debug("SSL verify using default behavior")
+    elif isinstance(ssl_verify, str):
+        if "false" == ssl_verify.lower() or "0" == ssl_verify:
+            logging.warning("Disabling ssl verification for session.")
+            session.verify = False
+        elif "true" == ssl_verify.lower() or "1" == ssl_verify:
+            logging.debug("SSL verify using default behavior")
+        else:
+            logging.info(f"Configuring session.verify to {ssl_verify}")
+            if not os.path.exists(ssl_verify):
+                raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
+            session.verify = ssl_verify
+
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""
