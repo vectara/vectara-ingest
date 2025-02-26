@@ -205,9 +205,11 @@ vectara:
   # Valid values: tiny, base, small, medium or large. Defaults to base.
   whisper_model: the model name for whisper
   # Whether the session should trust the environment settings. When set to False SSL will not be verified. Do not use in production.
-  ssl_trust_env: None
-  # Path to the CA certificate file for SSL verification.
-  ssl_ca_cert: None 
+  ssl_verify: None  
+  # If `False`, SSL verification is disabled (not recommended for production). 
+  # If a string, it is treated as the path to a custom CA certificate file. 
+  # If `True` or not provided, default SSL verification is used.
+
 
 doc_processing:
 
