@@ -29,7 +29,7 @@ class ConfluencedatacenterCrawler(Crawler):
         return result
 
     def process_content(self, content: dict[str, any]) -> None:
-        # print(json.dumps(content, indent=4))
+        print(json.dumps(content, indent=4))
         id = content['id']
         type = content['type']
         doc_id = f"{type}-{id}"
@@ -37,6 +37,20 @@ class ConfluencedatacenterCrawler(Crawler):
             'type': type,
             'id': id
         }
+
+        if 'version' in content:
+            if 'when' in content['version']:
+                metadata['last_updates'] = content['version']['when']
+            if 'number' in content['version']:
+                metadata['version'] = content['version']['number']
+            if 'by' in content['version']:
+                metadata['updated_by'] = {
+                    'username': content['version']['by']['username'],
+                    'userKey':content['version']['by']['userKey']
+                }
+        if 'space' in content:
+            metadata['space'] = {}
+            metadata['space'].update({k: content['space'][k] for k in ('id', 'key', 'name') if k in content['space']})
 
         url_part = None
 
@@ -86,9 +100,8 @@ class ConfluencedatacenterCrawler(Crawler):
                     logging.error(f"Error indexing {doc_id} - {attachment_url}")
         else:
             if 'body' in content:
-                if 'storage' in content['body']:
-                    body = content['body']['storage']['value']
-                    title = content['title']
+                if self.body_view in content['body']:
+                    body = content['body'][self.body_view]['value']
                     with tempfile.NamedTemporaryFile(suffix=".html", mode='w', delete=False) as f:
                         logging.debug(f"Writing content for {doc_id} to {f.name}")
                         f.write("<html>")
@@ -119,12 +132,22 @@ class ConfluencedatacenterCrawler(Crawler):
             self.cfg.confluencedatacenter.confluence_datacenter_username,
             self.cfg.confluencedatacenter.confluence_datacenter_password
         )
+        self.body_view = self.cfg.confluencedatacenter.get('body_view', 'export_view')
         self.session = create_session_with_retries()
         limit = int(self.cfg.confluencedatacenter.get('limit', '25'))
         start = 0
         search_url = self.new_url('rest/api/content/search')
         search_url.args['cql'] = self.cfg.confluencedatacenter.confluence_cql
-        search_url.args['expand'] = "body.storage"
+        search_url.args['expand'] = ",".join(
+            [
+                f"body.{self.body_view}",
+                "content",
+                "space",
+                "version",
+                "metadata.labels",
+                "metadata.properties"
+            ]
+        )
         search_url.args['limit'] = limit
 
         logging.info(f"Searching Confluence {search_url.url}")
