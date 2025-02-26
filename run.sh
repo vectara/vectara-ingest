@@ -26,6 +26,7 @@ crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawlin
 # Mount secrets file and other files as needed into docker container
 mkdir -p ~/tmp/mount
 [ -f secrets.toml ] && cp secrets.toml ~/tmp/mount
+[ -f ca.pem ] && cp ca.pem ~/tmp/mount
 cp "$1" ~/tmp/mount/
 
 if [[ "$crawler_type" == "gdrive" ]]; then
