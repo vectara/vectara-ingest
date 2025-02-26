@@ -29,7 +29,6 @@ class ConfluencedatacenterCrawler(Crawler):
         return result
 
     def process_content(self, content: dict[str, any]) -> None:
-        print(json.dumps(content, indent=4))
         id = content['id']
         type = content['type']
         doc_id = f"{type}-{id}"
