@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 from mwviews.api import PageviewsClient
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, configure_session_for_ssl
+
 
 class MediawikiCrawler(Crawler):
 
@@ -15,6 +16,7 @@ class MediawikiCrawler(Crawler):
         project = self.cfg.mediawiki_crawler.project
         n_pages = self.cfg.mediawiki_crawler.n_pages
         session = create_session_with_retries()
+        configure_session_for_ssl(session, self.cfg.mediawiki_crawler)
         if n_pages > 1000:
             n_pages = 1000
             logging.info(f"n_pages is too large, setting to 1000")

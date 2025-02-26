@@ -1,7 +1,8 @@
 import logging
 from core.crawler import Crawler
 import arxiv
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, configure_session_for_ssl
+
 
 def validate_category(category: str) -> bool:
     valid_categories = [
@@ -63,6 +64,7 @@ class ArxivCrawler(Crawler):
 
         # setup requests session and mount adapter to retry requests
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.arxiv_crawler)
 
         # define query for arxiv: search for the query in the "computer science" (cs.*) category
         query = f"cat:{category}.* AND " + ' AND '.join([f'all:{q}' for q in query_terms])

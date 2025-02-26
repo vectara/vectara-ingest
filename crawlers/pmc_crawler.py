@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 import xmltodict
 from datetime import datetime, timedelta
 from typing import Set, List, Any
-from core.utils import html_to_text, create_session_with_retries, RateLimiter
+from core.utils import html_to_text, create_session_with_retries, RateLimiter, configure_session_for_ssl
 from core.crawler import Crawler
 
 from omegaconf import OmegaConf
@@ -37,6 +37,7 @@ class PmcCrawler(Crawler):
         self.crawled_pmc_ids: Set[str] = set()
         self.rate_limiter = RateLimiter(self.cfg.pmc_crawler.get("num_per_second", 3))
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.pmc_crawler)
 
     def index_papers_by_topic(self, topic: str, n_papers: int) -> None:
         """

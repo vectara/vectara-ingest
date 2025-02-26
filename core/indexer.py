@@ -31,7 +31,7 @@ from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_t
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
-    get_file_path_from_url, create_row_items
+    get_file_path_from_url, create_row_items, configure_session_for_ssl
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
@@ -231,6 +231,8 @@ class Indexer:
 
     def setup(self, use_playwright: bool = True) -> None:
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.vectara)
+
         # Create playwright browser so we can reuse it across all Indexer operations
         if use_playwright:
             self.p = sync_playwright().start()

@@ -1,7 +1,7 @@
 import logging
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, configure_session_for_ssl
 import os.path
 import json
 import tempfile
@@ -58,6 +58,7 @@ class ServicenowCrawler(Crawler):
             None: This method performs side effects (indexing) only and does not return a value.
         """
         self.session = create_session_with_retries()
+        configure_session_for_ssl(self.session, self.cfg.servicenow_crawler)
         self.base_url = furl(self.cfg.servicenow_crawler.servicenow_instance_url)
         self.servicenow_headers = {"Accept": "application/json"}
         self.servicenow_auth = (

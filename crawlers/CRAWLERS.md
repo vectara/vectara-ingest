@@ -59,6 +59,7 @@ The `html_processing` configuration defines a set of special instructions that c
 `ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
 
+
 ### Database crawler
 
 ```yaml
@@ -200,7 +201,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
 - `max_articles` specifies a limit to the number of stories crawled. 
 - `days_past` specifies the number of days backward to crawl, based on the top, new, ask, show and best story lists. For example with a value of 3 as in this example, the crawler will only index stories if the story or any comment in the story was published or updated in the last 3 days.
 - `days_past_comprehensive` if true, then the crawler performs a comprehensive search for ALL stories published within the last `days_past` days (which takes longer to run)
-
+- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
 ### Docs crawler
 
 ```yaml
@@ -237,7 +238,8 @@ If `crawl_report` is true then the list of URLs associated with the removed docu
 The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
 - `ids_to_remove` defines an (optional) list of HTML IDs that are ignored when extracting text from the page.
 - `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
-
+- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
+- 
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
 ### Discourse crawler
@@ -302,7 +304,8 @@ The JIRA crawler indexes issues and comments into Vectara.
 - `jira_base_url`: the Jira base_url
 - `jira_username`: the user name that the crawler should use (`JIRA_PASSWORD` should be separately defined in the `secrets.toml` file)
 - `jira_jql`: a Jira JQL condition on the issues identified; in this example it is configured to only include items from the last year.
-
+- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
+- 
 ### Confluence crawler
 
 ```yaml
@@ -314,6 +317,8 @@ The JIRA crawler indexes issues and comments into Vectara.
 
 This Python crawler is designed to pull content from a Confluence instance and index it into Vectara. It queries Confluence using a [CQL query](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/), 
 retrieves pages and blogposts (including attachments if configured), extracts relevant metadata (e.g., labels, authors, space information).  
+
+- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
 
 ### Twitter crawler
 
@@ -470,6 +475,7 @@ attachment API and index them in Vectara as well.
 - `servicenow_batch_size` (if present): The number of articles to fetch in each API call. Default: 100.
 - `servicenow_table` (if present):The ServiceNow table to query for articles. Default: `"kb_knowledge"`.
 - `servicenow_query` (if present): A query (e.g., `sysparm_query`) for filtering the knowledge-base articles returned by the ServiceNow API.
+- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
 
 - **[Table API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI)**  
   Contains details on the various endpoints, query parameters, and usage examples for retrieving data from ServiceNow tables.

@@ -22,6 +22,7 @@ import threading
 import logging
 
 from langdetect import detect
+from omegaconf import DictConfig
 
 try:
     from presidio_analyzer import AnalyzerEngine
@@ -153,6 +154,47 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
+
+def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
+    """
+    Configure SSL settings for a requests session.
+
+    This function updates the SSL verification settings of the provided `requests.Session`
+    based on the configuration provided. It allows disabling SSL verification for
+    debugging purposes or specifying a custom CA certificate.
+
+    Parameters:
+    -----------
+    session : requests.Session
+        The requests session to configure with SSL settings.
+
+    config : DictConfig
+        A dictionary-like object containing SSL-related configuration:
+        - "ssl_verify" (bool or str, optional):
+          - If `False`, SSL verification is disabled (not recommended for production).
+          - If a string, it is treated as the path to a custom CA certificate file.
+          - If `True` or not provided, default SSL verification is used.
+    """
+    ssl_verify = config.get("ssl_verify", None)
+
+    if isinstance(ssl_verify, bool):
+        if not ssl_verify:
+            logging.warning("Disabling ssl verification for session.")
+            session.verify = False
+        else:
+            logging.debug("SSL verify using default behavior")
+    elif isinstance(ssl_verify, str):
+        if "false" == ssl_verify.lower() or "0" == ssl_verify:
+            logging.warning("Disabling ssl verification for session.")
+            session.verify = False
+        elif "true" == ssl_verify.lower() or "1" == ssl_verify:
+            logging.debug("SSL verify using default behavior")
+        else:
+            logging.info(f"Configuring session.verify to {ssl_verify}")
+            if not os.path.exists(ssl_verify):
+                raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
+            session.verify = ssl_verify
+
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""
