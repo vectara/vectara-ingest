@@ -66,3 +66,4 @@ Pillow==10.4.0
 docling==2.24.0
 llama-parse==0.5.19
 gmft==0.4.0
+furl==2.1.3

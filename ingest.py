@@ -226,6 +226,10 @@ def main() -> None:
         if k.startswith('aws_'):
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
             continue
+        if k.startswith("CONFLUENCE_DATACENTER_"):
+            OmegaConf.update(cfg, f'confluencedatacenter.{k.lower()}', v)
+            continue
+
 
         # default (otherwise) - add to vectara config
         OmegaConf.update(cfg['vectara'], k, v)
