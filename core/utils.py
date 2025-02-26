@@ -157,50 +157,32 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
     """
-    Configures an existing requests session with SSL settings.
+    Configure SSL settings for a requests session.
 
-    This function applies SSL-related configurations to the provided `requests.Session`
-    object based on the `config` dictionary. It can set whether the session should
-    trust environment settings and specify a custom CA certificate for SSL verification.
+    This function updates the SSL verification settings of the provided `requests.Session`
+    based on the configuration provided. It allows disabling SSL verification for
+    debugging purposes or specifying a custom CA certificate.
 
     Parameters:
     -----------
     session : requests.Session
-        The requests session to configure.
+        The requests session to configure with SSL settings.
 
     config : DictConfig
-        A dictionary containing SSL-related configurations.
-        - "ssl_ignore_cert_errors" (bool, optional): Flag to disable ssl verification and ignore certificate errors. DO NOT RUN IN PRODUCTION.
-        - "ssl_ca_cert" (str, optional): Path to the CA certificate file for SSL verification.
-
-    Returns:
-    --------
-    None
-        The session is modified in place with the provided SSL settings.
-
-    Example:
-    --------
-    ```python
-    import requests
-
-    session = requests.Session()
-    config = {
-        "ssl_ignore_cert_errors": True,
-        "ssl_ca_cert": "/path/to/custom_ca.crt"
-    }
-
-    configure_session_for_ssl(session, config)
-
-    response = session.get("https://example.com")
-    print(response.status_code)
-    ```
+        A dictionary-like object containing SSL-related configuration:
+        - "ssl_verify" (bool or str, optional):
+          - If `False`, SSL verification is disabled (not recommended for production).
+          - If a string, it is treated as the path to a custom CA certificate file.
+          - If `True` or not provided, default SSL verification is used.
     """
-    ssl_ignore_cert_errors = config.get("ssl_ignore_cert_errors", False)
-    if ssl_ignore_cert_errors:
-        session.trust_env = False
-    ca_cert = config.get("ssl_ca_cert", None)
-    if ca_cert:
-        session.cert = ca_cert
+    ssl_verify = config.get("ssl_verify", None)
+
+    if ssl_verify is False:
+        logging.warning("Disabling ssl verification for session.")
+        session.verify = False
+    elif ssl_verify:
+        logging.info(f"Setting session.verify to {ssl_verify}")
+        session.verify = ssl_verify
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""
