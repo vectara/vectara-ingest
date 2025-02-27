@@ -174,6 +174,12 @@ Each configuration YAML file includes a set of standard variables, for example:
 
 ```yaml
 vectara:
+  # endpoint for Vectara platform
+  endpoint: api.vectara.io
+
+  # authentication URL for OAuth (when using create_corpus)
+  auth_url: auth.vectara.io
+
   # the corpus key for indexing
   corpus_key: my-corpus
   
