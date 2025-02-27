@@ -207,23 +207,13 @@ class DoclingDocumentParser(DocumentParser):
 
         return DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat, EasyOcrOptions
 
-    def _get_tables(self, doc):
-        for table in doc.tables:
-            table_md = table.export_to_markdown()
-            table_summary = self.table_summarizer.summarize_table_text(table_md)
-            if table_summary:
-                metadata = {'parser_element_type': 'table', 'page': table.prov[0].page_no}
-                if self.verbose:
-                    self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
-                yield ([table.export_to_dataframe(), table_summary, '', metadata])
-
     def _get_tables(self, tables):
         for table in tables:
             table_md = table.export_to_markdown()
             try:
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 yield (table.export_to_dataframe(), table_summary, '', 
-                    {'parser_element_type': 'table', 'page': table.prov[0].page_no})
+                       {'parser_element_type': 'table', 'page': table.prov[0].page_no})
             except ValueError as err:
                 self.logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
@@ -257,6 +247,7 @@ class DoclingDocumentParser(DocumentParser):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.images_scale = self.image_scale
         pipeline_options.generate_picture_images = True
+        pipeline_options.do_ocr = False
         if self.do_ocr:
             pipeline_options.do_ocr = True
             ocr_options = EasyOcrOptions(force_full_page_ocr=True)
