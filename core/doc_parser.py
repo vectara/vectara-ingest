@@ -4,6 +4,8 @@ import time
 import pandas as pd
 import os
 from io import StringIO
+import base64
+import requests
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
@@ -81,6 +83,113 @@ class DocumentParser():
             if self.verbose:
                 self.logger.info("GMFT: Finished processing PDF")
 
+
+class DocupandaDocumentParser(DocumentParser):
+
+    def __init__(
+        self,
+        verbose: bool = False,
+        model_name: str = None,
+        model_api_key: str = None,
+        docupanda_api_key: str = None,
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
+        summarize_images: bool = False
+    ):
+        super().__init__(
+            verbose=verbose, 
+            model_name=model_name, 
+            model_api_key=model_api_key, 
+            parse_tables=parse_tables, 
+            enable_gmft=enable_gmft, 
+            do_ocr=False,
+            summarize_images=summarize_images
+        )
+        self._api_key = docupanda_api_key
+        if not self._api_key:
+            raise ValueError("No Docupanda API key found, skipping Docupanda")
+
+    def parse(
+            self,
+            filename: str, 
+            source_url: str = "No URL"
+        ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
+        """
+        Parse a local file and return the title and text content.
+        Using DocuPanda
+        
+        Args:
+            filename (str): Name of the file to parse.
+
+        Returns:
+            Tuple with:
+            * doc_title
+            * list of Tuple[text,metadata]
+            * list of Tuple[table, table description, table title, table metadata]
+            * list of Tuple[image_summary, metadata]
+        """
+        st = time.time()
+        doc_title = ''
+        texts = []
+        images = []
+        tables = []
+        img_folder = '/images'
+        base_url = 'https://app.docupanda.io/document'
+        os.makedirs(img_folder, exist_ok=True)
+
+        # Phase 1: post document
+        payload = {"document": {"file": {
+            "contents": base64.b64encode(open(filename, 'rb').read()).decode(),
+                "filename": filename
+            }}}
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "X-API-Key": self._api_key
+        }
+        response = requests.post(base_url, json=payload, headers=headers)
+        if response.status_code != 200:
+            self.logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
+            return doc_title, texts, tables, images
+
+        # Phase 2: get document; poll until ready, but no longer than timeout
+        document_id = response.json()['documentId']
+        timeout = 60
+        start_time = time.time()
+        completed = False
+        while time.time() - start_time < timeout:
+            response = requests.get(f"{base_url}/{document_id}", headers=headers)
+            if response.json()['status'] == 'completed':
+                completed = True
+                break
+            time.sleep(1)
+
+        if not completed:
+            self.logger.error(f"Docupanda: document processing timed out after {timeout} seconds")
+            return doc_title, texts, tables, images
+
+        # Phase 3: get results
+        for page in response.json()['result']['pages']:
+            for section in page['sections']:
+                if section['type'] == 'text':
+                    texts.append((section['text'], {'parser_element_type': 'text', 'page': page['pageNum']}))
+                elif section['type'] == 'table':
+                    tableList = section['tableList']
+                    header = tableList[0]
+                    rows = tableList[1:]
+                    df = pd.DataFrame(rows, columns=header)
+                    table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
+                    tables.append([df, table_summary, '', {'parser_element_type': 'table', 'page': page['pageNum']}])
+                elif section['type'] == 'image':
+                    bbox = [round(x,2) for x in section['bbox']]
+                    self.logger.info(f"Docupanda: image with bounding box {bbox} on page {page['pageNum']} ignored...")
+                else:
+                    self.logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
+
+        self.logger.info(f"Docupanda: {len(tables)} tables, and {len(images)} images")
+        self.logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
+
+        return doc_title, texts, tables, images
 
 class LlamaParseDocumentParser(DocumentParser):
 
@@ -168,7 +277,6 @@ class LlamaParseDocumentParser(DocumentParser):
         self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
-
 class DoclingDocumentParser(DocumentParser):
 
     def __init__(

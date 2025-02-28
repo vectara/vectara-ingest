@@ -34,7 +34,7 @@ from core.utils import (
     get_file_path_from_url, create_row_items, configure_session_for_ssl
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, DocupandaDocumentParser
 from core.contextual import ContextualChunker
 from pypdf import PdfReader, PdfWriter
 import tempfile
@@ -1054,6 +1054,15 @@ class Indexer:
                 verbose=self.verbose,
                 model_name=self.model_name, model_api_key=self.model_api_key,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
+                summarize_images=self.summarize_images
+            )
+        elif self.doc_parser == "docupanda":
+            dp = DocupandaDocumentParser(
+                verbose=self.verbose,
+                model_name=self.model_name, model_api_key=self.model_api_key,
+                docupanda_api_key=self.cfg.get("docupanda_api_key", None),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
