@@ -824,7 +824,7 @@ class Indexer:
                         image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
                         if image_summary:
                             text = image_summary
-                            metadata = {'element_type': 'image'}
+                            metadata = {'element_type': 'image', 'url': url}
                             if ex_metadata:
                                 metadata.update(ex_metadata)
                             if self.verbose:
@@ -1134,6 +1134,7 @@ class Indexer:
         for inx,image in enumerate(images):
             image_summary = image[0]
             metadata = image[1]
+            metadata['url'] = uri
             if ex_metadata:
                 metadata.update(ex_metadata)
             doc_id = slugify(uri) + "_image_" + str(inx)
