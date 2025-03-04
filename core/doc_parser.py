@@ -7,6 +7,11 @@ from io import StringIO
 import base64
 import requests
 
+import pathlib
+from PIL import Image
+from typing import List
+from pdf2image import convert_from_bytes
+
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
 
@@ -169,6 +174,10 @@ class DocupandaDocumentParser(DocumentParser):
             return doc_title, texts, tables, images
 
         # Phase 3: get results
+        pdf_bytes = pathlib.Path(filename).read_bytes()
+        images = convert_from_bytes(pdf_bytes, dpi=300)
+        img_num = 0
+
         for page in response.json()['result']['pages']:
             for section in page['sections']:
                 if section['type'] == 'text':
@@ -182,6 +191,20 @@ class DocupandaDocumentParser(DocumentParser):
                     tables.append([df, table_summary, '', {'parser_element_type': 'table', 'page': page['pageNum']}])
                 elif section['type'] == 'image':
                     bbox = [round(x,2) for x in section['bbox']]
+                    img = images[img_num]
+                    image_dims = img.size
+                    bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
+                                   int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))
+                    img_cropped = img.crop(box=bbox_pixels)
+                    image_path = 'image.png'
+                    with open(image_path, 'wb') as fp:
+                        img_cropped.save(fp, 'PNG')
+                    image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
+                    if image_summary:
+                        images.append((image_summary, 
+                                      {'parser_element_type': 'image', 'page': page['pageNum']}))
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                     self.logger.info(f"Docupanda: image with bounding box {bbox} on page {page['pageNum']} ignored...")
                 else:
                     self.logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
@@ -269,7 +292,7 @@ class LlamaParseDocumentParser(DocumentParser):
                 for image in images:
                     image_summary = self.image_summarizer.summarize_image(image['path'], source_url, None)
                     if image_summary:
-                        images.append(image_summary, {'parser_element_type': 'image', 'page': page['page']})
+                        images.append((image_summary, {'parser_element_type': 'image', 'page': page['page']}))
                         if self.verbose:
                             self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
