@@ -201,7 +201,7 @@ vectara:
   # where XXX is a unique ID.
   store_docs: false
   
-  # timeout: sets the URL crawling timeout in seconds (optional)
+  # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)
   timeout: 90
 
   # post_load_timeout: sets additional timeout past full page load to wait for animations and AJAX
