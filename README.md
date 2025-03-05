@@ -202,6 +202,7 @@ vectara:
   store_docs: false
   
   # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)
+  # this applies to crawling web pages.
   timeout: 90
 
   # post_load_timeout: sets additional timeout past full page load to wait for animations and AJAX
