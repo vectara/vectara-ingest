@@ -5,6 +5,8 @@ from anthropic import Anthropic
 
 from omegaconf import OmegaConf
 
+from .utils import get_media_type_from_base64
+
 def get_api_key(provider: str, cfg: OmegaConf) -> str:
     if provider == 'openai':
         return cfg.vectara.get("openai_api_key", None)
@@ -113,6 +115,7 @@ def generate_image_summary(
     
     if provider == 'anthropic':
         client = Anthropic(api_key=model_api_key)
+        media_type = get_media_type_from_base64(image_content)
         messages = [
             {
                 "role": "user",
@@ -121,7 +124,7 @@ def generate_image_summary(
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": media_type,
                             "data": image_content,
                         },
                     },

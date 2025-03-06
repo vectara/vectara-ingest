@@ -11,6 +11,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 from slugify import slugify
+
+import base64
 import magic
 
 import shutil
@@ -579,3 +581,8 @@ def html_table_to_header_and_rows(html):
     header = matrix[0]
     rows = matrix[1:]
     return header, rows
+
+def get_media_type_from_base64(base64_data: str) -> str:
+    file_bytes = base64.b64decode(base64_data)
+    media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
+    return media_type

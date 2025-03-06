@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 from PIL import Image
 from io import BytesIO
 
-from core.models import generate, generate_image_summary, get_api_key
+from core.models import generate, generate_image_summary
 
 def _get_image_shape(content: str) -> tuple:
     """

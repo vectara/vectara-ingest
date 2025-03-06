@@ -217,7 +217,6 @@ class Indexer:
         else:
             self.model_config = self.cfg.doc_processing.get("model_config", {})
 
-        self.logger.info(f"DEBUG - model_config: {self.model_config}")
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
         if self.parse_tables and text_api_key is None:

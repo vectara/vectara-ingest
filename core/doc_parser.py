@@ -48,6 +48,7 @@ class DocumentParser():
         do_ocr: bool = False,
         summarize_images: bool = False,
     ):
+        self.logger = logging.getLogger()
         self.cfg = cfg
         self.model_config = model_config
         self.enable_gmft = enable_gmft
@@ -56,7 +57,6 @@ class DocumentParser():
         self.summarize_images = summarize_images
         self.table_summarizer = TableSummarizer(self.cfg, model_config.text) if self.parse_tables else None
         self.image_summarizer = ImageSummarizer(self.cfg, model_config.vision) if self.summarize_images else None
-        self.logger = logging.getLogger()
         self.verbose = verbose
 
     def get_tables_with_gmft(self, filename: str) -> Iterator[Tuple[pd.DataFrame, str, str]]:
@@ -271,8 +271,9 @@ class LlamaParseDocumentParser(DocumentParser):
         os.makedirs(img_folder, exist_ok=True)
 
         nest_asyncio.apply()
-        for page in self.parser.get_json_result(filename)[0]['pages']:
-            texts.append((page['text'], page['page']))
+        json_objs = self.parser.get_json_result(filename)
+        for page in json_objs[0]['pages']:
+            texts.append((page['text'], {'page': page['page']}))
 
             if self.parse_tables:
                 if self.enable_gmft and filename.endswith('.pdf'):
@@ -285,17 +286,17 @@ class LlamaParseDocumentParser(DocumentParser):
                         if table_summary:
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
-                            tables.append([markdown_to_df(table_md), table_summary, ''], {'parser_element_type': 'table', 'page': page['page']})
+                            tables.append([markdown_to_df(table_md), table_summary, '', {'parser_element_type': 'table', 'page': page['page']}])
 
-            # process images
-            if self.summarize_images:
-                images = self.parser.get_images(page, download_path=img_folder)
-                for image in images:
-                    image_summary = self.image_summarizer.summarize_image(image['path'], source_url, None)
-                    if image_summary:
-                        images.append((image_summary, {'parser_element_type': 'image', 'page': page['page']}))
-                        if self.verbose:
-                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+        # process images - does not support per page images
+        if self.summarize_images:
+            parsed_images = self.parser.get_images(json_objs, download_path=img_folder)
+            for image_dict in parsed_images:
+                image_summary = self.image_summarizer.summarize_image(image_dict['path'], source_url, None)
+                if image_summary:
+                    images.append((image_summary, {'parser_element_type': 'image', 'page': image_dict['page_number']}))
+                    if self.verbose:
+                        self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
         self.logger.info(f"LlamaParse: {len(tables)} tables, and {len(images)} images")
         self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
