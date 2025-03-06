@@ -580,6 +580,8 @@ class UnstructuredDocumentParser(DocumentParser):
                 tables = self.get_tables_with_gmft(filename)
             else:
                 tables = self._get_tables(elements)
+        else:
+            tables = []
 
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
