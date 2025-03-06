@@ -783,10 +783,10 @@ class Indexer:
 
                 if len(self.extract_metadata)>0:
                     ex_metadata = get_attributes_from_text(
+                        self.cfg,
                         text,
                         metadata_questions=self.extract_metadata,
-                        model_name=self.model_name,
-                        model_api_key=self.model_api_key
+                        model_config=self.model_config
                     )
                     metadata.update(ex_metadata)
                 else:
@@ -1005,9 +1005,10 @@ class Indexer:
             if len(self.extract_metadata)>0:
                 all_text = "\n".join([t[0] for t in texts])[:max_chars]
                 ex_metadata = get_attributes_from_text(
+                    self.cfg, 
                     all_text,
                     metadata_questions=self.extract_metadata,
-                    model_name=self.model_name, model_api_key=self.model_api_key,
+                    model_config=self.model_config
                 )
                 metadata.update(ex_metadata)
             else:
@@ -1133,9 +1134,10 @@ class Indexer:
         if len(self.extract_metadata)>0:
             all_text = "\n".join([t[0] for t in texts])[:max_chars]
             ex_metadata = get_attributes_from_text(
+                self.cfg,
                 all_text,
                 metadata_questions=self.extract_metadata,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.model_config
             )
             metadata.update(ex_metadata)
         else:
