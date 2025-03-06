@@ -223,6 +223,9 @@ def main() -> None:
         if k=='LLAMA_CLOUD_API_KEY':
             OmegaConf.update(cfg, 'llama_cloud_api_key', v)
             continue
+        if k=='DOCUPANDA_API_KEY':
+            OmegaConf.update(cfg, 'docupanda_api_key', v)
+            continue
         if k.startswith('aws_'):
             OmegaConf.update(cfg, f's3_crawler.{k.lower()}', v)
             continue

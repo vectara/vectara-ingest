@@ -4,6 +4,12 @@ import time
 import pandas as pd
 import os
 from io import StringIO
+import base64
+import requests
+
+import pathlib
+from typing import List
+from pdf2image import convert_from_bytes
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
@@ -13,6 +19,8 @@ from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.html import partition_html
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.docx import partition_docx
+
+from omegaconf import OmegaConf
 
 import nest_asyncio
 from llama_parse import LlamaParse
@@ -32,23 +40,23 @@ MAX_VERBOSE_LENGTH = 1000
 class DocumentParser():
     def __init__(
         self,
+        cfg: OmegaConf,
         verbose: bool = False,
-        model_name: str = None,
-        model_api_key: str = None,
+        model_config: dict = {},
         parse_tables: bool = False,
         enable_gmft: bool = False,
         do_ocr: bool = False,
         summarize_images: bool = False,
     ):
-        self.model_name = model_name
-        self.model_api_key = model_api_key
+        self.logger = logging.getLogger()
+        self.cfg = cfg
+        self.model_config = model_config
         self.enable_gmft = enable_gmft
         self.do_ocr = do_ocr
-        self.parse_tables = parse_tables and (model_api_key is not None)
-        self.summarize_images = summarize_images and model_api_key is not None
-        self.table_summarizer = TableSummarizer(model_name, model_api_key) if self.parse_tables else None
-        self.image_summarizer = ImageSummarizer(model_name, model_api_key) if self.summarize_images else None
-        self.logger = logging.getLogger()
+        self.parse_tables = parse_tables
+        self.summarize_images = summarize_images
+        self.table_summarizer = TableSummarizer(self.cfg, model_config.text) if self.parse_tables else None
+        self.image_summarizer = ImageSummarizer(self.cfg, model_config.vision) if self.summarize_images else None
         self.verbose = verbose
 
     def get_tables_with_gmft(self, filename: str) -> Iterator[Tuple[pd.DataFrame, str, str]]:
@@ -82,22 +90,147 @@ class DocumentParser():
                 self.logger.info("GMFT: Finished processing PDF")
 
 
-class LlamaParseDocumentParser(DocumentParser):
+class DocupandaDocumentParser(DocumentParser):
 
     def __init__(
         self,
+        cfg: OmegaConf,
         verbose: bool = False,
-        model_name: str = None,
-        model_api_key: str = None,
-        llama_parse_api_key: str = None,
+        model_config: dict = {},
+        docupanda_api_key: str = None,
         parse_tables: bool = False,
         enable_gmft: bool = False,
         summarize_images: bool = False
     ):
         super().__init__(
             verbose=verbose, 
-            model_name=model_name, 
-            model_api_key=model_api_key, 
+            cfg=cfg,
+            model_config=model_config,
+            parse_tables=parse_tables, 
+            enable_gmft=enable_gmft, 
+            do_ocr=False,
+            summarize_images=summarize_images
+        )
+        self._api_key = docupanda_api_key
+        if not self._api_key:
+            raise ValueError("No Docupanda API key found, skipping Docupanda")
+
+    def parse(
+            self,
+            filename: str, 
+            source_url: str = "No URL"
+        ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
+        """
+        Parse a local file and return the title and text content.
+        Using DocuPanda
+        
+        Args:
+            filename (str): Name of the file to parse.
+
+        Returns:
+            Tuple with:
+            * doc_title
+            * list of Tuple[text,metadata]
+            * list of Tuple[table, table description, table title, table metadata]
+            * list of Tuple[image_summary, metadata]
+        """
+        st = time.time()
+        doc_title = ''
+        texts = []
+        images = []
+        tables = []
+        img_folder = '/images'
+        base_url = 'https://app.docupanda.io/document'
+        os.makedirs(img_folder, exist_ok=True)
+
+        # Phase 1: post document
+        payload = {"document": {"file": {
+            "contents": base64.b64encode(open(filename, 'rb').read()).decode(),
+                "filename": filename
+            }}}
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "X-API-Key": self._api_key
+        }
+        response = requests.post(base_url, json=payload, headers=headers)
+        if response.status_code != 200:
+            self.logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
+            return doc_title, texts, tables, images
+
+        # Phase 2: get document; poll until ready, but no longer than timeout
+        document_id = response.json()['documentId']
+        timeout = 60
+        start_time = time.time()
+        completed = False
+        while time.time() - start_time < timeout:
+            response = requests.get(f"{base_url}/{document_id}", headers=headers)
+            if response.json()['status'] == 'completed':
+                completed = True
+                break
+            time.sleep(1)
+
+        if not completed:
+            self.logger.error(f"Docupanda: document processing timed out after {timeout} seconds")
+            return doc_title, texts, tables, images
+
+        # Phase 3: get results
+        pdf_bytes = pathlib.Path(filename).read_bytes()
+        extracted_images = convert_from_bytes(pdf_bytes, dpi=300)
+        img_num = 0
+
+        for page in response.json()['result']['pages']:
+            for section in page['sections']:
+                if section['type'] == 'text':
+                    texts.append((section['text'], {'parser_element_type': 'text', 'page': page['pageNum']}))
+                elif section['type'] == 'table':
+                    tableList = section['tableList']
+                    header = tableList[0]
+                    rows = tableList[1:]
+                    df = pd.DataFrame(rows, columns=header)
+                    table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
+                    tables.append([df, table_summary, '', {'parser_element_type': 'table', 'page': page['pageNum']}])
+                elif section['type'] == 'image':
+                    bbox = [round(x,2) for x in section['bbox']]
+                    img = extracted_images[img_num]
+                    image_dims = img.size
+                    bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
+                                   int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))
+                    img_cropped = img.crop(box=bbox_pixels)
+                    image_path = 'image.png'
+                    with open(image_path, 'wb') as fp:
+                        img_cropped.save(fp, 'PNG')
+                    image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
+                    if image_summary and len(image_summary)>10:
+                        images.append((image_summary, 
+                                      {'parser_element_type': 'image', 'page': page['pageNum']}))
+                        if self.verbose:
+                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                    self.logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page['pageNum']}")
+                else:
+                    self.logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
+
+        self.logger.info(f"Docupanda: {len(tables)} tables, and {len(images)} images")
+        self.logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
+
+        return doc_title, texts, tables, images
+
+class LlamaParseDocumentParser(DocumentParser):
+
+    def __init__(
+        self,
+        cfg: OmegaConf,
+        verbose: bool = False,
+        model_config: dict = {},
+        llama_parse_api_key: str = None,
+        parse_tables: bool = False,
+        enable_gmft: bool = False,
+        summarize_images: bool = False
+    ):
+        super().__init__(
+            cfg=cfg,
+            verbose=verbose, 
+            model_config=model_config,
             parse_tables=parse_tables, 
             enable_gmft=enable_gmft, 
             do_ocr=False,
@@ -138,8 +271,9 @@ class LlamaParseDocumentParser(DocumentParser):
         os.makedirs(img_folder, exist_ok=True)
 
         nest_asyncio.apply()
-        for page in self.parser.get_json_result(filename)[0]['pages']:
-            texts.append((page['text'], page['page']))
+        json_objs = self.parser.get_json_result(filename)
+        for page in json_objs[0]['pages']:
+            texts.append((page['text'], {'page': page['page']}))
 
             if self.parse_tables:
                 if self.enable_gmft and filename.endswith('.pdf'):
@@ -152,30 +286,29 @@ class LlamaParseDocumentParser(DocumentParser):
                         if table_summary:
                             if self.verbose:
                                 self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
-                            tables.append([markdown_to_df(table_md), table_summary, ''], {'parser_element_type': 'table', 'page': page['page']})
+                            tables.append([markdown_to_df(table_md), table_summary, '', {'parser_element_type': 'table', 'page': page['page']}])
 
-            # process images
-            if self.summarize_images:
-                images = self.parser.get_images(page, download_path=img_folder)
-                for image in images:
-                    image_summary = self.image_summarizer.summarize_image(image['path'], source_url, None)
-                    if image_summary:
-                        images.append(image_summary, {'parser_element_type': 'image', 'page': page['page']})
-                        if self.verbose:
-                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+        # process images - does not support per page images
+        if self.summarize_images:
+            parsed_images = self.parser.get_images(json_objs, download_path=img_folder)
+            for image_dict in parsed_images:
+                image_summary = self.image_summarizer.summarize_image(image_dict['path'], source_url, None)
+                if image_summary:
+                    images.append((image_summary, {'parser_element_type': 'image', 'page': image_dict['page_number']}))
+                    if self.verbose:
+                        self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
         self.logger.info(f"LlamaParse: {len(tables)} tables, and {len(images)} images")
         self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
-
 class DoclingDocumentParser(DocumentParser):
 
     def __init__(
         self,
+        cfg: OmegaConf,
         verbose: bool = False,
-        model_name: str = None,
-        model_api_key: str = None,
+        model_config: dict = {},
         chunking_strategy: str = 'hierarchical',
         parse_tables: bool = False,
         enable_gmft: bool = False,
@@ -184,9 +317,9 @@ class DoclingDocumentParser(DocumentParser):
         image_scale: float = 1.0,
     ):
         super().__init__(
+            cfg=cfg,
             verbose=verbose, 
-            model_name=model_name, 
-            model_api_key=model_api_key, 
+            model_config=model_config,
             parse_tables=parse_tables, 
             enable_gmft=enable_gmft, 
             do_ocr=do_ocr,
@@ -266,6 +399,7 @@ class DoclingDocumentParser(DocumentParser):
                      for chunk in chunker.chunk(doc)]
         else:
             texts = [(e.text, {'parser_element_type': 'text', 'page': e.prov[0].page_no}) for e in doc.texts]
+        self.logger.info(f"DoclingParser: {len(texts)} text segments")
 
         tables = []
         if self.parse_tables:
@@ -277,7 +411,6 @@ class DoclingDocumentParser(DocumentParser):
         images = []
         if self.summarize_images:
             image_path = 'image.png'
-            self.logger.info(f"DoclingParser: {len(doc.pictures)} images")
             for pic in doc.pictures:
                 image = pic.get_image(doc)
                 if image:
@@ -300,9 +433,9 @@ class DoclingDocumentParser(DocumentParser):
 class UnstructuredDocumentParser(DocumentParser):
     def __init__(
         self,
+        cfg: OmegaConf,
         verbose: bool = False,
-        model_name: str = None,
-        model_api_key: str = None,
+        model_config: dict = {},
         chunking_strategy: str = "by_title",
         chunk_size: int = 1024,
         parse_tables: bool = False,
@@ -310,9 +443,9 @@ class UnstructuredDocumentParser(DocumentParser):
         summarize_images: bool = False
     ):
         super().__init__(
+            cfg=cfg,
             verbose=verbose, 
-            model_name=model_name, 
-            model_api_key=model_api_key, 
+            model_config=model_config,
             parse_tables=parse_tables, 
             enable_gmft=enable_gmft, 
             do_ocr=False,
@@ -447,6 +580,8 @@ class UnstructuredDocumentParser(DocumentParser):
                 tables = self.get_tables_with_gmft(filename)
             else:
                 tables = self._get_tables(elements)
+        else:
+            tables = []
 
 
         self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")

@@ -2,13 +2,23 @@ from typing import Set
 import json
 import base64
 import logging
+from omegaconf import OmegaConf
 
 from PIL import Image
 from io import BytesIO
 
 from core.models import generate, generate_image_summary
 
-def get_attributes_from_text(text: str, metadata_questions: list[dict], model_name: str, model_api_key: str) -> Set[str]:
+def _get_image_shape(content: str) -> tuple:
+    """
+    Given a base64-encoded image content string, return the image shape as (width, height).
+    """
+    img_data = base64.b64decode(content)
+    img = Image.open(BytesIO(img_data))
+    return img.size  # (width, height)
+
+
+def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
@@ -23,30 +33,22 @@ def get_attributes_from_text(text: str, metadata_questions: list[dict], model_na
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
     prompt += "Your response should be as concise and accurate as possible. Prioritize 1-2 word responses."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
-    res = generate(system_prompt, prompt, model_name, model_api_key)
+    res = generate(cfg, system_prompt, prompt, model_config)
     if res.strip().startswith("```json"):
         res = res.strip().removeprefix("```json").removesuffix("```")
     return json.loads(res)
 
-def get_image_shape(content: str) -> tuple:
-    """
-    Given a base64-encoded image content string, return the image shape as (width, height).
-    """
-    img_data = base64.b64decode(content)
-    img = Image.open(BytesIO(img_data))
-    return img.size  # (width, height)
-
 class ImageSummarizer():
-    def __init__(self, model_name: str, model_api_key: str):
-        self.model_name = model_name
-        self.model_api_key = model_api_key
+    def __init__(self, cfg: OmegaConf, image_model_config: dict):
+        self.image_model_config = image_model_config
+        self.cfg = cfg
 
     def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
         content = None
         with open(image_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
         
-        width, height = get_image_shape(content)
+        width, height = _get_image_shape(content)
         if width<10 or height<10:
             logging.info(f"Image too small to summarize ({image_url})")
             return None
@@ -66,16 +68,16 @@ class ImageSummarizer():
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"
         try:
-            summary = generate_image_summary(prompt, content, self.model_name, self.model_api_key)
+            summary = generate_image_summary(self.cfg, prompt, content, self.image_model_config)
             return summary
         except Exception as e:
             logging.info(f"Failed to summarize image ({image_url}): {e}")
             return ""
 
 class TableSummarizer():
-    def __init__(self, model_name: str, model_api_key: str):
-        self.model_name = model_name
-        self.model_api_key = model_api_key
+    def __init__(self, cfg: OmegaConf, table_model_config: dict):
+        self.table_model_config = table_model_config
+        self.cfg = cfg
 
     def summarize_table_text(self, text: str):
         prompt = f"""
@@ -89,7 +91,7 @@ class TableSummarizer():
         """
         try:
             system_prompt = "You are a helpful assistant tasked with summarizing data tables. Each table is represented in markdown format."
-            summary = generate(system_prompt, prompt, self.model_name, self.model_api_key)
+            summary = generate(self.cfg, system_prompt, prompt, self.table_model_config)
             return summary
         except Exception as e:
             import traceback
