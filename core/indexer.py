@@ -216,9 +216,9 @@ class Indexer:
             }   # By default use the same model for text and image processing
         else:
             self.model_config = self.cfg.doc_processing.get("model_config", {})
-
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
+
         if self.parse_tables and text_api_key is None:
             self.parse_tables = False
             self.logger.info("Table summarization enabled but model API key not found, disabling table summarization")

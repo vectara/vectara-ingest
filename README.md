@@ -234,11 +234,14 @@ doc_processing:
 
   # which model to use for text processing (table summary, contextual chunking or data extraction), and for image processing.
   # - provider can be "openai" or "anthropic" or "private". default is "openai"
-  # - base_url is an optional URL pointing to a hosted URL for model serving
+  # - base_url is an optional URL pointing to a privately-hosted URL for model serving
+  #   If you host the private endpoint locally, note that you would need to provide access to it from within the Docker image
+  #   For example: "http://host.docker.internal:5000/v1"
   # - model_name is the model name to use for each type of processing (table, vision or contextual)
   #
   # For backwards compatibility, if you specify the "model" argument, then the same
-  # model is assumed for all processing types, ignoring anything else in model_config.
+  # model is assumed for both text and vision processing, and model_name is also respected, 
+  # ignoring anything else in model_config.
   #
   model: openai         # can be openai, or anthropic.
   model_name: 'gpt-4o'
