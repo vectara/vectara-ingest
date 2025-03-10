@@ -1,12 +1,18 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from omegaconf import OmegaConf
 
-from core.models import generate
+from core.models import generate, get_api_key
 
 class ContextualChunker():
-    def __init__(self, model_name: str, model_api_key: str, whole_document: str):
-        self.model_name = model_name
-        self.model_api_key = model_api_key
+    def __init__(
+            self, 
+            cfg: OmegaConf,
+            contextual_model_config: str, 
+            whole_document: str
+        ):
+        self.contextual_model_config = contextual_model_config
+        self.cfg = cfg
         self.whole_document = whole_document
 
     def transform(self, chunk: str) -> str:
@@ -24,7 +30,7 @@ class ContextualChunker():
             """
         system_prompt = "You are a helpful assistant tasked with contextualizing text in a larger document."
         try:
-            context = generate(system_prompt, prompt, self.model_name, self.model_api_key)
+            context = generate(self.cfg, system_prompt, prompt, self.contextual_model_config)
             return chunk + "\n" + context
         except Exception as e:
             logging.info(f"Failed to summarize table text: {e}")

@@ -28,13 +28,14 @@ from email.utils import parsedate_to_datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
+from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items, configure_session_for_ssl
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, DocupandaDocumentParser
 from core.contextual import ContextualChunker
 from pypdf import PdfReader, PdfWriter
 import tempfile
@@ -201,18 +202,39 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
-        self.model_name = self.cfg.doc_processing.get("model_name", "openai")
-        self.model_api_key = self.cfg.vectara.get("openai_api_key", None) if self.model_name=='openai' else \
-            self.cfg.vectara.get("anthropic_api_key", None)
+        if 'model' in self.cfg.doc_processing:
+            provider = self.cfg.doc_processing.get("model", "openai")
+            mcfg = {
+                'provider': provider,
+                'model_name': self.cfg.doc_processing.get("model_name", "gpt-4o"),
+                'base_url': self.cfg.doc_processing.get("base_url", "https://api.openai.com/v1") if provider=='openai' else \
+                            self.cfg.doc_processing.get("base_url", "https://api.anthropic.com/"),
+            }
+            self.model_config = {
+                'text': mcfg,
+                'vision': mcfg,
+            }   # By default use the same model for text and image processing
+        else:
+            self.model_config = self.cfg.doc_processing.get("model_config", {})
+        text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
+        vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
 
-        if self.model_api_key is None:
-            if self.parse_tables or self.summarize_images:
-                self.logger.info(f"Model ({self.model_name}) API key not found, disabling table/image summarization")
+        if self.parse_tables and text_api_key is None:
             self.parse_tables = False
-            self.summarize_images = False
-            self.extract_metadata = []
-            self.contextual_chunking = False
+            self.logger.info("Table summarization enabled but model API key not found, disabling table summarization")
 
+        if self.summarize_images and vision_api_key is None:
+            self.summarize_images = False
+            self.logger.info("Image summarization enabled but model API key not found, disabling image summarization")
+
+        if self.contextual_chunking and text_api_key is None:
+            self.contextual_chunking = False
+            self.logger.info("Contextual chunking enabled but model API key not found, disabling contextual chunking")
+
+        if self.extract_metadata and text_api_key is None:
+            self.extract_metadata = []
+            self.logger.info("Metadata extraction enabled but model API key not found, disabling metadata extraction")
+        
         self.setup()
 
     def normalize_text(self, text: str) -> str:
@@ -761,10 +783,10 @@ class Indexer:
 
                 if len(self.extract_metadata)>0:
                     ex_metadata = get_attributes_from_text(
+                        self.cfg,
                         text,
                         metadata_questions=self.extract_metadata,
-                        model_name=self.model_name,
-                        model_api_key=self.model_api_key
+                        model_config=self.model_config
                     )
                     metadata.update(ex_metadata)
                 else:
@@ -788,7 +810,10 @@ class Indexer:
 
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
-                    table_summarizer = TableSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
+                    table_summarizer = TableSummarizer(
+                        table_model_config=self.model_config.text, 
+                        model_api_key=self.model_api_key
+                    )
                     for table in res['tables']:
                         table_summary = table_summarizer.summarize_table_text(table)
                         if table_summary:
@@ -810,7 +835,10 @@ class Indexer:
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                     }
-                    image_summarizer = ImageSummarizer(model_name=self.model_name, model_api_key=self.model_api_key)
+                    image_summarizer = ImageSummarizer(
+                        image_model_config=self.model_config.vision, 
+                        model_api_key=self.model_api_key
+                    )
                     image_filename = 'image.png'
                     for inx,image in enumerate(res['images']):
                         image_url = image['src']
@@ -965,8 +993,9 @@ class Indexer:
             if len(self.extract_metadata)>0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
+                    cfg=self.cfg,
                     verbose=self.verbose,
-                    model_name=self.model_name, model_api_key=self.model_api_key,
+                    model_config=self.cfg.doc_processing.model_config,
                     parse_tables=False, enable_gmft=False,
                     summarize_images=self.summarize_images, 
                 )
@@ -976,9 +1005,10 @@ class Indexer:
             if len(self.extract_metadata)>0:
                 all_text = "\n".join([t[0] for t in texts])[:max_chars]
                 ex_metadata = get_attributes_from_text(
+                    self.cfg, 
                     all_text,
                     metadata_questions=self.extract_metadata,
-                    model_name=self.model_name, model_api_key=self.model_api_key,
+                    model_config=self.model_config
                 )
                 metadata.update(ex_metadata)
             else:
@@ -1041,8 +1071,9 @@ class Indexer:
         if self.contextual_chunking:
             self.logger.info(f"Applying contextual chunking for {filename}")
             dp = UnstructuredDocumentParser(
+                cfg=self.cfg,
                 verbose=self.verbose,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.cfg.doc_processing.model_config,
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 parse_tables=self.parse_tables, 
@@ -1051,17 +1082,29 @@ class Indexer:
             )
         elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
             dp = LlamaParseDocumentParser(
+                cfg=self.cfg,
                 verbose=self.verbose,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.cfg.doc_processing.model_config,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
+                parse_tables=self.parse_tables,
+                enable_gmft=self.enable_gmft,
+                summarize_images=self.summarize_images
+            )
+        elif self.doc_parser == "docupanda":
+            dp = DocupandaDocumentParser(
+                cfg=self.cfg,
+                verbose=self.verbose,
+                model_config=self.cfg.doc_processing.model_config,
+                docupanda_api_key=self.cfg.get("docupanda_api_key", None),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docling":
             dp = DoclingDocumentParser(
+                cfg=self.cfg,
                 verbose=self.verbose,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.cfg.doc_processing.model_config,
                 chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
@@ -1071,8 +1114,9 @@ class Indexer:
             )
         else:
             dp = UnstructuredDocumentParser(
+                cfg=self.cfg,
                 verbose=self.verbose,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.cfg.doc_processing.model_config,
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size',1024),
                 parse_tables=self.parse_tables, 
@@ -1090,9 +1134,10 @@ class Indexer:
         if len(self.extract_metadata)>0:
             all_text = "\n".join([t[0] for t in texts])[:max_chars]
             ex_metadata = get_attributes_from_text(
+                self.cfg,
                 all_text,
                 metadata_questions=self.extract_metadata,
-                model_name=self.model_name, model_api_key=self.model_api_key,
+                model_config=self.model_config
             )
             metadata.update(ex_metadata)
         else:
@@ -1112,7 +1157,11 @@ class Indexer:
         if self.contextual_chunking:
             chunks = [t[0] for t in texts]
             all_text = "\n".join(chunks)
-            cc = ContextualChunker(model_name=self.model_name, model_api_key=self.model_api_key, whole_document=all_text)
+            cc = ContextualChunker(
+                cfg = self.cfg,
+                contextual_model_config = self.model_config.text, 
+                whole_document=all_text
+            )
             contextual_chunks = cc.parallel_transform(chunks)
             succeeded = self.index_segments(
                 doc_id=slugify(uri), 
@@ -1173,6 +1222,4 @@ class Indexer:
         if metadata:
             doc['metadata'] = metadata
         self.index_document(doc)
-
-
 

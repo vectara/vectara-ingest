@@ -180,6 +180,12 @@ vectara:
   # authentication URL for OAuth (when using create_corpus)
   auth_url: auth.vectara.io
 
+  # Define SSL verification for Vectara Platform
+  # If `False`, SSL verification is disabled (not recommended for production). 
+  # If a string, it is treated as the path to a custom CA certificate file. 
+  # If `True` or not provided, default SSL verification is used.
+  ssl_verify: True
+
   # the corpus key for indexing
   corpus_key: my-corpus
   
@@ -191,9 +197,12 @@ vectara:
   create_corpus: false
   
   # flag: store a copy of all crawled data that is indexed into a local folder
+  # If enabled, data will be stored in this folder "~/tmp/mount/indexed_docs_XXX" in your local machine,
+  # where XXX is a unique ID.
   store_docs: false
   
-  # timeout: sets the URL crawling timeout in seconds (optional)
+  # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)
+  # this applies to crawling web pages.
   timeout: 90
 
   # post_load_timeout: sets additional timeout past full page load to wait for animations and AJAX
@@ -219,20 +228,37 @@ vectara:
   # Valid values: tiny, base, small, medium or large. Defaults to base.
   whisper_model: the model name for whisper
   # Whether the session should trust the environment settings. When set to False SSL will not be verified. Do not use in production.
-  ssl_verify: None  
-  # If `False`, SSL verification is disabled (not recommended for production). 
-  # If a string, it is treated as the path to a custom CA certificate file. 
-  # If `True` or not provided, default SSL verification is used.
 
 
 doc_processing:
 
-  # which model to use for table summary, image summary or contextual retrevial
-  # Options are "openai" or "anthropic". default is "openai"
-  model: openai
+  # which model to use for text processing (table summary, contextual chunking or data extraction), and for image processing.
+  # - provider can be "openai" or "anthropic" or "private". default is "openai"
+  # - base_url is an optional URL pointing to a privately-hosted URL for model serving
+  #   If you host the private endpoint locally, note that you would need to provide access to it from within the Docker image
+  #   For example: "http://host.docker.internal:5000/v1"
+  # - model_name is the model name to use for each type of processing (table, vision or contextual)
+  #
+  # For backwards compatibility, if you specify the "model" argument, then the same
+  # model is assumed for both text and vision processing, and model_name is also respected, 
+  # ignoring anything else in model_config.
+  #
+  model: openai         # can be openai, or anthropic.
+  model_name: 'gpt-4o'
 
-  # which document parser to use for local file parsing: unstructured, llama_parse or docling
-  # If using llama_parse you need to add LLAMA_CLOUD_API_KEY in your `secrets.toml` file.
+  model_config:
+    text:
+      provider: openai
+      base_url: https://api.openai.com/v1
+      model_name: "gpt-4o"
+    vision:
+      provider: private
+      base_url: https://vllm.mycompany.com/
+      model_name: "llama3.3-70B"
+
+  # which document parser to use for local file parsing: unstructured, llama_parse, docupanda or docling
+  # If using llama_parse, you need to add LLAMA_CLOUD_API_KEY in your `secrets.toml` file.
+  # If using docupanda, you need to add DOCUPANDA_API_KEY in your `secrets.toml` file
   doc_parser: docling
 
   # Whether or not to parse tables from documents and ingest into Vectara.
