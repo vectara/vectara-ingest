@@ -9,11 +9,14 @@ import tempfile
 
 from core.crawler import Crawler
 
-def print_download_progress(offset):
-    # type: (int) -> None
-    print("Downloaded '{0}' bytes...".format(offset))
-
 class SharepointCrawler(Crawler):
+    """
+    A crawler implementation for ingesting and indexing documents from SharePoint sites.
+
+    The SharepointCrawler class connects to SharePoint, authenticates using specified credentials,
+    recursively crawls specified folders, downloads supported document types, and indexes them
+    using the configured indexing service.
+    """
 
     def new_url(self, /, *paths) -> furl:
         """
@@ -31,17 +34,35 @@ class SharepointCrawler(Crawler):
         return result
 
     def download_url(self, file):
+        """
+        Generates a direct download URL for the given SharePoint file.
+
+        Args:
+            file: A SharePoint file object with a server-relative URL attribute.
+
+        Returns:
+            str: Direct URL to download the specified file.
+        """
         download_url = self.new_url("_layouts/15/download.aspx")
         download_url.args['SourceUrl'] = file.serverRelativeUrl
         return download_url.url
 
-    def configure_sharepoint_context(self)-> None:
+    def configure_sharepoint_context(self) -> None:
+        """
+        Configures and authenticates the SharePoint client context based on provided crawler configuration.
+
+        Supported authentication methods:
+            - User credentials (username/password)
+            - Client credentials (client_id/client_secret)
+            - Client certificates (client_id, thumbprint, certificate file, and optional passphrase)
+
+        Raises:
+            Exception: If an unsupported authentication type is specified in configuration.
+        """
         self.base_url = furl(self.cfg.sharepoint_crawler.team_site_url)
-
         self.team_site_url = self.cfg.sharepoint_crawler.team_site_url
-        logging.info(f"team_site_url = '{self.team_site_url}")
+        logging.info(f"team_site_url = '{self.team_site_url}'")
         auth_type = self.cfg.sharepoint_crawler.get('auth_type', 'user_credentials')
-
         context = ClientContext(self.team_site_url)
 
         match auth_type:
@@ -62,35 +83,49 @@ class SharepointCrawler(Crawler):
                     'cert_path': self.cfg.sharepoint_crawler.cert_path
                 }
                 if self.cfg.sharepoint_crawler.get('cert_passphrase'):
-                    cert_settings['passphrase'] = self.cfg.sharepoint_crawler.get('cert_passphrase')
-
-                self.sharepoint_context = context.with_client_certificate(self.cfg.sharepoint_crawler.tenant_id, **cert_settings)
+                    cert_settings['passphrase'] = self.cfg.sharepoint_crawler.cert_passphrase
+                self.sharepoint_context = context.with_client_certificate(
+                    self.cfg.sharepoint_crawler.tenant_id, **cert_settings
+                )
             case _:
-                raise Exception(f"Unknown auth_type of f{auth_type}")
+                raise Exception(f"Unknown auth_type '{auth_type}'")
 
     def crawl_folder(self) -> None:
+        """
+        Crawls a specified SharePoint folder to locate, download, and index files.
+
+        The method retrieves files from SharePoint and filters them based on supported extensions.
+        Supported file types include: .pdf, .md, .odt, .doc, .docx, .ppt, .pptx, .txt, .html, .htm, .lxml, .rtf, and .epub.
+
+        Files matching the supported types are downloaded temporarily, indexed, and then deleted.
+
+        Logging:
+            - Warns about skipped unsupported file types.
+            - Logs indexing errors.
+        """
         recursive = self.cfg.sharepoint_crawler.get('recursive', False)
         target_folder = self.cfg.sharepoint_crawler.target_folder
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
+
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_path(target_folder)
         files = root_folder.get_files(recursive=recursive).execute_query()
+
+        supported_extensions = {
+            ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
+            ".pptx", ".txt", ".html", ".htm", ".lxml",
+            ".rtf", ".epub"
+        }
+
         for file in files:
-            supported_extensions = {
-                ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
-                ".pptx", ".txt", ".html", ".htm", ".lxml",
-                ".rtf", ".epub"
-            }
             filename, file_extension = os.path.splitext(file.name)
-            if not file_extension in supported_extensions:
-                logging.warning(f"Skipping {file.serverRelativeUrl} because it's an unsupported file type.")
+            if file_extension.lower() not in supported_extensions:
+                logging.warning(f"Skipping {file.serverRelativeUrl} due to unsupported file type '{file_extension}'.")
                 continue
 
-            metadata = {
-                'url': self.download_url(file),
-            }
+            metadata = {'url': self.download_url(file)}
 
             with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                logging.debug(f"Writing content for {file.unique_id} to {f.name}")
+                logging.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
                 file.download_session(f).execute_query()
                 f.flush()
                 f.close()
@@ -104,25 +139,24 @@ class SharepointCrawler(Crawler):
                 if not succeeded:
                     logging.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
 
-
-
     def crawl(self) -> None:
         """
-        Execute the Confluence crawl process.
+        Initiates the crawling process based on the crawler configuration.
 
-        1. Configures the session and authentication.
-        2. Executes a Confluence CQL query to find pages/blogposts.
-        3. Fetches their content and processes attachments (if enabled).
-        4. Passes all content to the indexer for indexing.
+        Steps performed:
+            1. Configures SharePoint client context.
+            2. Executes crawling operation based on the configured mode:
+                - 'folder': Initiates crawling of a SharePoint folder.
 
-        This method loops over paginated search results until exhausted.
+        Raises:
+            Exception: If the specified crawl mode is unknown or unsupported.
         """
         self.configure_sharepoint_context()
-
         mode = self.cfg.sharepoint_crawler.mode
-        logging.info(f"mode = {mode}")
+        logging.info(f"mode = '{mode}'")
+
         match mode:
             case 'folder':
                 self.crawl_folder()
             case _:
-                raise Exception(f"Unknown mode of f{mode}")
+                raise Exception(f"Unknown mode '{mode}'")
