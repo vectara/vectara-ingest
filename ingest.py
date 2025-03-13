@@ -232,6 +232,9 @@ def main() -> None:
         if k.startswith("CONFLUENCE_DATACENTER_"):
             OmegaConf.update(cfg, f'confluencedatacenter.{k.lower()}', v)
             continue
+        if k.startswith("SHAREPOINT_"):
+            OmegaConf.update(cfg, f"sharepoint_crawler.{k.removeprefix('SHAREPOINT_').lower()}", v)
+            continue
 
 
         # default (otherwise) - add to vectara config
