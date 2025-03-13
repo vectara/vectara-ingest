@@ -482,6 +482,39 @@ attachment API and index them in Vectara as well.
 - **[Attachment API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_AttachmentAPI)**  
   Covers how to list and download attachments from ServiceNow records.
 
+### Sharepoint Crawler
+
+```yaml
+sharepoint_crawler:
+  team_site_url: "https://yoursharepointdomain.sharepoint.com/sites/YourTeamSite"
+  target_folder: "Shared Documents/TargetFolder"
+  recursive: true
+  mode: "folder" # Currently supports 'folder' mode only.
+  auth_type: "user_credentials" # Options: 'user_credentials', 'client_credentials', 'client_certificate'
+  username: "your.username@example.com"
+  password: "your_password"
+  client_id: "<your_client_id>"
+  client_secret: "<your_client_secret>"
+  tenant_id: "<your_tenant_id>"
+  cert_thumbprint: "<certificate_thumbprint>"
+  cert_path: "/path/to/certificate.pem"
+  cert_passphrase: "<certificate_passphrase>" # optional
+```
+
+This Python crawler ingests documents from a SharePoint site and indexes them into Vectara. It authenticates to SharePoint using either user credentials, client credentials, or a client certificate. The crawler recursively scans folders, downloads supported file types (.pdf, .md, .odt, .doc, .docx, .ppt, .pptx, .txt, .html, .htm, .lxml, .rtf, .epub), and submits these files for indexing along with associated metadata.
+-	`team_site_url`: The URL of your SharePoint site.
+-	`target_folder`: The path to the SharePoint folder you wish to crawl.
+-	`recursive`: Set to true if subfolders should be crawled recursively.
+-	`mode`: Determines crawling behavior; currently supports "folder" only.
+-	`auth_type`: Authentication method for SharePoint (user_credentials, client_credentials, or client_certificate).
+-	For user_credentials: provide username and password.
+-	For client_credentials: provide client_id, client_secret.
+-	For client_certificate: provide client_id, tenant_id, cert_thumbprint, cert_path, and optionally cert_passphrase.
+
+Ensure that sensitive information such as credentials and certificates are stored securely, and avoid disabling SSL verification in production environments.
+
+
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
