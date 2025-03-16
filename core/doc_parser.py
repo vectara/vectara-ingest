@@ -513,7 +513,7 @@ class UnstructuredDocumentParser(DocumentParser):
                     html_table = e.metadata.text_as_html
                     df = pd.read_html(StringIO(html_table))[0]
                     yield [df, table_summary, '', {'parser_element_type': 'table', 'page': e.metadata.page_number}]
-                except ValueError as err:
+                except Exception as err:
                     self.logger.error(f"Error parsing HTML table: {err}. Skipping...")
                     continue
 
