@@ -617,6 +617,7 @@ class Indexer:
         }
         if self.parse_tables and filename.lower().endswith('.pdf'):
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+        
         response = self.session.request("POST", url, headers=post_headers, files=files)
 
         if response.status_code == 409:
@@ -1073,7 +1074,7 @@ class Indexer:
             dp = UnstructuredDocumentParser(
                 cfg=self.cfg,
                 verbose=self.verbose,
-                model_config=self.cfg.doc_processing.model_config,
+                model_config=self.model_config,
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 parse_tables=self.parse_tables, 
@@ -1084,7 +1085,7 @@ class Indexer:
             dp = LlamaParseDocumentParser(
                 cfg=self.cfg,
                 verbose=self.verbose,
-                model_config=self.cfg.doc_processing.model_config,
+                model_config=self.model_config,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
@@ -1094,7 +1095,7 @@ class Indexer:
             dp = DocupandaDocumentParser(
                 cfg=self.cfg,
                 verbose=self.verbose,
-                model_config=self.cfg.doc_processing.model_config,
+                model_config=self.model_config,
                 docupanda_api_key=self.cfg.get("docupanda_api_key", None),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
@@ -1104,7 +1105,7 @@ class Indexer:
             dp = DoclingDocumentParser(
                 cfg=self.cfg,
                 verbose=self.verbose,
-                model_config=self.cfg.doc_processing.model_config,
+                model_config=self.model_config,
                 chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
@@ -1126,8 +1127,7 @@ class Indexer:
 
         try:
             title, texts, tables, images = dp.parse(filename, uri)
-        except Exception as e:
-            self.logger.info(f"Failed to parse {filename} with error {e}")
+        except Exception:
             return False
             
         # Get metadata attribute values from text content (if defined)
