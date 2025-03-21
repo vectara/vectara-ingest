@@ -406,6 +406,7 @@ class DoclingDocumentParser(DocumentParser):
                     md['page'] = chunk.meta.doc_items[0].prov[0].page_no
                 return md
 
+            # we use serialize to provide "context" to each chunk.
             texts = [(chunker.serialize(chunk=chunk), _get_metadata(chunk))
                      for chunk in chunker.chunk(doc)]
         else:

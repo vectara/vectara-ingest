@@ -1127,7 +1127,8 @@ class Indexer:
 
         try:
             title, texts, tables, images = dp.parse(filename, uri)
-        except Exception:
+        except Exception as e:
+            self.logger.info(f"Failed to parse {filename} with error {e}")
             return False
             
         # Get metadata attribute values from text content (if defined)
