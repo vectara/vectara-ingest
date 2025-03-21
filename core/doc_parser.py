@@ -341,12 +341,17 @@ class DoclingDocumentParser(DocumentParser):
         return DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, PdfFormatOption, InputFormat, EasyOcrOptions
 
     def _get_tables(self, tables):
+        def _get_metadata(table):
+            md = {'parser_element_type': 'table'}
+            if table.prov:
+                md['page'] = table.prov[0].page_no
+            return md
         for table in tables:
-            table_md = table.export_to_markdown()
             try:
+                table_df = table.export_to_dataframe()
+                table_md = table_df.to_markdown()
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
-                yield (table.export_to_dataframe(), table_summary, '', 
-                       {'parser_element_type': 'table', 'page': table.prov[0].page_no})
+                yield (table_df, table_summary, '', _get_metadata(table))
             except ValueError as err:
                 self.logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
@@ -395,7 +400,14 @@ class DoclingDocumentParser(DocumentParser):
 
         if self.chunking_strategy == 'hybrid' or self.chunking_strategy == 'hierarchical':
             chunker = HybridChunker() if self.chunking_strategy == 'hybrid' else HierarchicalChunker()
-            texts = [(chunker.serialize(chunk=chunk), {'parser_element_type': 'text', 'page': chunk.meta.doc_items[0].prov[0].page_no})
+            def _get_metadata(chunk):
+                md = {'parser_element_type': 'text'}
+                if chunk.meta.doc_items and chunk.meta.doc_items[0].prov:
+                    md['page'] = chunk.meta.doc_items[0].prov[0].page_no
+                return md
+
+            # we use serialize to provide "context" to each chunk.
+            texts = [(chunker.serialize(chunk=chunk), _get_metadata(chunk))
                      for chunk in chunker.chunk(doc)]
         else:
             texts = [(e.text, {'parser_element_type': 'text', 'page': e.prov[0].page_no}) for e in doc.texts]
@@ -513,7 +525,7 @@ class UnstructuredDocumentParser(DocumentParser):
                     html_table = e.metadata.text_as_html
                     df = pd.read_html(StringIO(html_table))[0]
                     yield [df, table_summary, '', {'parser_element_type': 'table', 'page': e.metadata.page_number}]
-                except ValueError as err:
+                except Exception as err:
                     self.logger.error(f"Error parsing HTML table: {err}. Skipping...")
                     continue
 
