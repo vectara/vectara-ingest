@@ -24,13 +24,14 @@ fi
 crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
 
 # Mount secrets file and other files as needed into docker container
-mkdir -p ~/tmp/mount
-[ -f secrets.toml ] && cp secrets.toml ~/tmp/mount
-[ -f ca.pem ] && cp ca.pem ~/tmp/mount
-cp "$1" ~/tmp/mount/
+CONFIG_TEMP=~/tmp/mount
+mkdir -p $CONFIG_TEMP
+[ -f secrets.toml ] && cp secrets.toml $CONFIG_TEMP
+[ -f ca.pem ] && cp ca.pem $CONFIG_TEMP
+cp "$1" $CONFIG_TEMP/
 
 if [[ "$crawler_type" == "gdrive" ]]; then
-  [ -f credentials.json ] && cp credentials.json ~/tmp/mount
+  [ -f credentials.json ] && cp credentials.json $CONFIG_TEMP
 fi
 
 # Build docker container
@@ -74,6 +75,12 @@ fi
 # remove old container if it exists
 docker container inspect vingest &>/dev/null && docker rm -f vingest
 
+ADDITIONAL_DOCKER_FLAGS=""
+
+if [[ -n "${LOGGING_LEVEL}" ]]; then
+  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -e LOGGING_LEVEL=${LOGGING_LEVEL}"
+fi
+
 # Run docker container
 config_file_name="${1##*/}"
 if [[ "${crawler_type}" == "folder" ]]; then
@@ -82,8 +89,9 @@ if [[ "${crawler_type}" == "folder" ]]; then
     if [ ! -d "$folder" ]; then
         echo "Error: Folder '$folder' does not exist."
         exit 6
-    fi    
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$folder:/home/vectara/data" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+    fi
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$folder:/home/vectara/data\" -e CONFIG=/home/vectara/env/$config_file_name"
+
 elif [[ "$crawler_type" == "csv" ]]; then
     # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
     file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['file_path'])"`
@@ -91,18 +99,23 @@ elif [[ "$crawler_type" == "csv" ]]; then
         echo "Error: CSV file '$file_path' does not exist."
         exit 5
     fi
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$file_path:/home/vectara/data/file" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$file_path:/home/vectara/data/file\" -e CONFIG=/home/vectara/env/$config_file_name"
+
 elif [[ "$crawler_type" == "bulkupload" ]]; then
     # special handling of "bulkupload crawler" where we need to mount the JSON file under /home/vectara/data
     json_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])"`
     if [ ! -f "$file_path" ]; then
         echo "Error: CSV file '$json_path' does not exist."
         exit 5
-    fi    
-    docker run -d -v ~/tmp/mount:/home/vectara/env -v "$json_path:/home/vectara/data/file.json" -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+    fi
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$json_path:/home/vectara/data/file.json\" -e CONFIG=/home/vectara/env/$config_file_name"
 else
-    docker run -d -v ~/tmp/mount:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name -e PROFILE=$2 --name vingest $tag
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name"
 fi
+
+echo "TMP=$CONFIG_TEMP"
+echo Running docker: docker run -d ${ADDITIONAL_DOCKER_FLAGS} -e PROFILE=$2 --name vingest $tag
+docker run -d ${ADDITIONAL_DOCKER_FLAGS} -e PROFILE=$2 --name vingest $tag
 
 if [ $? -eq 0 ]; then
   echo "Success! Ingest job is running."

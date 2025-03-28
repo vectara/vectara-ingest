@@ -162,15 +162,15 @@ class Indexer:
     """
     Vectara API class.
     Args:
-        endpoint (str): Endpoint for the Vectara API.
+        api_url (str): Url for the Vectara API.
         corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
-    def __init__(self, cfg: OmegaConf, endpoint: str,
+    def __init__(self, cfg: OmegaConf, api_url: str,
                  corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
         self.browser_use_limit = 100
-        self.endpoint = endpoint
+        self.api_url = api_url
         self.corpus_key = corpus_key
         self.api_key = api_key
         self.reindex = cfg.vectara.get("reindex", False)
@@ -234,7 +234,9 @@ class Indexer:
         if self.extract_metadata and text_api_key is None:
             self.extract_metadata = []
             self.logger.info("Metadata extraction enabled but model API key not found, disabling metadata extraction")
-        
+
+        logging.info(f"Vectara API Url = '{self.api_url}'")
+
         self.setup()
 
     def normalize_text(self, text: str) -> str:
@@ -517,8 +519,8 @@ class Indexer:
             'X-Source': self.x_source
         }
         response = self.session.get(
-            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
-            verify=True, headers=post_headers)
+            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            headers=post_headers)
         return response.status_code == 200
 
     # delete document; returns True if successful, False otherwise
@@ -537,9 +539,10 @@ class Indexer:
             'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
+
         response = self.session.delete(
-            f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
-            verify=True, headers=post_headers)
+            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            headers=post_headers)
 
         if response.status_code != 204:
             self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
@@ -567,8 +570,8 @@ class Indexer:
                 'X-Source': self.x_source
             }
             response = self.session.get(
-                f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents",
-                verify=True, headers=post_headers, params=params)
+                f"{self.api_url}/v2/corpora/{self.corpus_key}/documents",
+                headers=post_headers, params=params)
             if response.status_code != 200:
                 self.logger.error(f"Error listing documents with status code {response.status_code}")
                 return []
@@ -607,7 +610,7 @@ class Indexer:
             'Accept': 'application/json',
             'x-api-key': self.api_key,
         }
-        url = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/upload_file"
+        url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
 
@@ -659,7 +662,7 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
-        api_endpoint = f"https://{self.endpoint}/v2/corpora/{self.corpus_key}/documents"
+        api_endpoint = f"{self.api_url}/v2/corpora/{self.corpus_key}/documents"
         doc_exists = self._does_doc_exist(document['id'])
         if doc_exists:
             if self.reindex:
@@ -685,7 +688,7 @@ class Indexer:
             return False
 
         try:
-            response = self.session.post(api_endpoint, data=data, verify=True, headers=post_headers)
+            response = self.session.post(api_endpoint, data=data, headers=post_headers)
         except Exception as e:
             self.logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
