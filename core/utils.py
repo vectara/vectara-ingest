@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import requests
+from requests.adapters import HTTPAdapter
+from requests.models import Response, PreparedRequest
 from typing import List, Set, Any, Dict
 
 from urllib3.util.retry import Retry
@@ -40,10 +42,14 @@ archive_extensions = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
 binary_extensions = archive_extensions + img_extensions + doc_extensions
 
 def setup_logging():
+    log_level_str = os.getenv("LOGGING_LEVEL", "INFO").upper()
+
+    # Map string to logging level, fallback to INFO if invalid
+    log_level = getattr(logging, log_level_str, logging.INFO)
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(log_level)
     handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
+    handler.setLevel(log_level)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     root.addHandler(handler)
@@ -144,6 +150,29 @@ def safe_remove_file(file_path: str):
     except Exception as e:
         logging.info(f"Failed to remove file: {file_path} due to {e}")
 
+
+class LoggingAdapter(HTTPAdapter):
+    def send(self, request: PreparedRequest, **kwargs) -> Response:
+        response = super().send(request, **kwargs)
+
+        log_message = f"""
+=== HTTP Request & Response ===
+> {request.method} {request.url}
+> Headers:
+{request.headers}
+> Body:
+{request.body if request.body else '<empty>'}
+
+< Status: {response.status_code}
+< Headers:
+{response.headers}
+< Body (truncated to 500 chars):
+{response.text[:500]}
+===============================
+"""
+        logging.debug(log_message)
+        return response
+
 def create_session_with_retries(retries: int = 5) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
@@ -155,6 +184,8 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
     adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
+    session.mount("http://", LoggingAdapter())
+    session.mount("https://", LoggingAdapter())
     return session
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:

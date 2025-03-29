@@ -4,7 +4,7 @@ import sys
 import os
 from typing import Any
 import importlib
-
+from urllib.parse import urlparse
 import requests
 import toml     # type: ignore
 
@@ -52,7 +52,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
         appclient_secret (str): Secret key for the Vectara app client.
         corpus_key (str): Corpus key of the Vectara corpus to index to.
     """
-    url = f"https://{endpoint}/v2/corpora/{corpus_key}/reset"
+    url = f"{endpoint}/v2/corpora/{corpus_key}/reset"
     token = get_jwt_token(auth_url, auth_id, auth_secret)
     headers = {
         'Content-Type': 'application/json',
@@ -75,7 +75,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         appclient_secret (str): Secret key for the Vectara app client.
         corpus_key (str): Corpus key of the Vectara corpus to index to.
     """
-    url = f"https://{endpoint}/v2/corpora/{corpus_key}/reset"
+    url = f"{endpoint}/v2/corpora/{corpus_key}/reset"
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -97,7 +97,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
         appclient_secret (str): Secret key for the Vectara app client.
         corpus_key (str): Corpus key of the Vectara corpus to create
     """
-    url = f"https://{endpoint}/v2/corpora"
+    url = f"{endpoint}/v2/corpora"
     token = get_jwt_token(auth_url, auth_id, auth_secret)
     headers = {
         'Content-Type': 'application/json',
@@ -124,7 +124,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         corpus_key (str): Corpus key of the Vectara corpus to index to.
         api_key (str): personal API key to create the corpus
     """
-    url = f"https://{endpoint}/v2/corpora"
+    url = f"{endpoint}/v2/corpora"
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -140,6 +140,13 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         logging.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+
+def is_valid_url(url: str) -> bool:
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ("http", "https"), result.netloc])
+    except ValueError:
+        return False
 
 def main() -> None:
     """
@@ -241,8 +248,21 @@ def main() -> None:
         OmegaConf.update(cfg['vectara'], k, v)
 
     logging.info("Configuration loaded...")
-    endpoint = cfg.vectara.get("endpoint", "api.vectara.io")
-    auth_url = cfg.vectara.get("auth_url", "auth.vectara.io")
+    api_url = cfg.vectara.get("endpoint", "https://api.vectara.io")
+
+    if not api_url.startswith(("http://", "https://")):
+        logging.warning(f"Correcting endpoint {api_url} to https://{api_url}. This will error in a future release.")
+        api_url = f"https://{api_url}"
+    if not is_valid_url(api_url):
+        raise Exception(f"endpoint '{api_url}' could not be parsed to a valid URL.")
+
+    auth_url = cfg.vectara.get("auth_url", "https://auth.vectara.io")
+    if not auth_url.startswith(("http://", "https://")):
+        logging.warning(f"Correcting auth_url {auth_url} to https://{auth_url}. This will error in a future release.")
+        auth_url = f"https://{auth_url}"
+    if not is_valid_url(auth_url):
+        raise Exception(f"endpoint '{auth_url}' could not be parsed to a valid URL.")
+
     create_corpus_flag = cfg.vectara.get("create_corpus", False)
     corpus_key = cfg.vectara.corpus_key
     api_key = cfg.vectara.api_key
@@ -251,7 +271,7 @@ def main() -> None:
     # instantiate the crawler
     crawler = instantiate_crawler(
         Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler',
-        cfg, endpoint, corpus_key, api_key
+        cfg, api_url, corpus_key, api_key
     )
 
     logging.info("Crawling instantiated...")
@@ -260,9 +280,9 @@ def main() -> None:
     if create_corpus_flag:
         logging.info("Creating corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
-            create_corpus_oauth(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+            create_corpus_oauth(api_url, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         else:
-            create_corpus_apikey(endpoint, corpus_key, api_key)
+            create_corpus_apikey(api_url, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow create_corpus enough time to complete on the backend
 
     # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
@@ -272,9 +292,9 @@ def main() -> None:
     if reset_corpus_flag:
         logging.info("Resetting corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
-            reset_corpus_oauth(endpoint, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
+            reset_corpus_oauth(api_url, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         else:
-            reset_corpus_apikey(endpoint, corpus_key, api_key)
+            reset_corpus_apikey(api_url, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logging.info(f"Starting crawl of type {crawler_type}...")
