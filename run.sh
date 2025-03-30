@@ -90,7 +90,7 @@ if [[ "${crawler_type}" == "folder" ]]; then
         echo "Error: Folder '$folder' does not exist."
         exit 6
     fi
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$folder:/home/vectara/data\" -e CONFIG=/home/vectara/env/$config_file_name"
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v $folder:/home/vectara/data -e CONFIG=/home/vectara/env/$config_file_name"
 
 elif [[ "$crawler_type" == "csv" ]]; then
     # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
@@ -99,7 +99,7 @@ elif [[ "$crawler_type" == "csv" ]]; then
         echo "Error: CSV file '$file_path' does not exist."
         exit 5
     fi
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$file_path:/home/vectara/data/file\" -e CONFIG=/home/vectara/env/$config_file_name"
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v $file_path:/home/vectara/data/file -e CONFIG=/home/vectara/env/$config_file_name"
 
 elif [[ "$crawler_type" == "bulkupload" ]]; then
     # special handling of "bulkupload crawler" where we need to mount the JSON file under /home/vectara/data
@@ -108,7 +108,7 @@ elif [[ "$crawler_type" == "bulkupload" ]]; then
         echo "Error: CSV file '$json_path' does not exist."
         exit 5
     fi
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v \"$json_path:/home/vectara/data/file.json\" -e CONFIG=/home/vectara/env/$config_file_name"
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -v $json_path:/home/vectara/data/file.json -e CONFIG=/home/vectara/env/$config_file_name"
 else
     ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $CONFIG_TEMP:/home/vectara/env -e CONFIG=/home/vectara/env/$config_file_name"
 fi
