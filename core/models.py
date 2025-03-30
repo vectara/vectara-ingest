@@ -15,7 +15,7 @@ def get_api_key(provider: str, cfg: OmegaConf) -> str:
     elif provider == 'private':
         return cfg.vectara.get("private_api_key", None)
     else:
-        logging.info(f"Unsupported provider: {provider}")
+        logging.info(f"Unsupported LLM provider: {provider}")
         return None
 
 def generate(
@@ -145,6 +145,6 @@ def generate_image_summary(
         summary = str(response.content[0].text)
         return summary
     
-    logging.info(f"Unsupported provider: {provider}")
+    logging.info(f"Unsupported vision LLM provider: {provider}")
 
 

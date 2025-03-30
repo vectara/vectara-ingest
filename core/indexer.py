@@ -219,7 +219,7 @@ class Indexer:
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
 
-        if self.parse_tables and text_api_key is None:
+        if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
             self.logger.info("Table summarization enabled but model API key not found, disabling table summarization")
 
@@ -620,9 +620,8 @@ class Indexer:
         }
         if self.parse_tables and filename.lower().endswith('.pdf'):
            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
-        
-        response = self.session.request("POST", url, headers=post_headers, files=files)
 
+        response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
             if self.reindex:
                 match = re.search(r"document id '([^']+)'", response.text)
@@ -632,7 +631,11 @@ class Indexer:
                     self.logger.error(f"Failed to extract document id from error message: {response.text}")
                     return False
                 self.delete_doc(doc_id)
-                response = self.session.request("POST", url, headers=post_headers, files=files)
+                new_files = {
+                    'file': (upload_filename, open(filename, 'rb')),
+                    'metadata': (None, json.dumps(metadata), 'application/json'),
+                }
+                response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
