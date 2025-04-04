@@ -636,7 +636,7 @@ class Indexer:
                     'metadata': (None, json.dumps(metadata), 'application/json'),
                 }
                 if self.parse_tables and filename.lower().endswith('.pdf'):
-                    files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
