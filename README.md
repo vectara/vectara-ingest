@@ -98,8 +98,8 @@ For our example we would index the content of https://www.paulgraham.com website
       
    4. Change `rss_crawler.days_past` to `365`.
 
-6. If Vectara is installed in your datacenter, and you are using an internal certificate authority. 
-   1. Write the entire certificate chain to `ca.pem`.
+6. If Vectara is installed in your datacenter, and you are using an internal certificate authority:
+   1. Write the entire certificate chain to `ca.pem` in the main `vectara-ingest` folder.
    2. Update your crawler config to include the following.
       ```yaml
       vectara:
@@ -235,8 +235,10 @@ doc_processing:
   # which model to use for text processing (table summary, contextual chunking or data extraction), and for image processing.
   # - provider can be "openai" or "anthropic" or "private". default is "openai"
   # - base_url is an optional URL pointing to a privately-hosted URL for model serving
-  #   If you host the private endpoint locally, note that you would need to provide access to it from within the Docker image
-  #   For example: "http://host.docker.internal:5000/v1"
+  #   1) If you host the private endpoint locally (on your laptop), note that you would need to provide access 
+  #      to it from within the Docker image. For example: "http://host.docker.internal:5000/v1"
+  #   2) If your private API requires an api_key (recommended) then include PRIVATE_API_KEY in your secrets.toml
+  #      file under the `general` profile (same place you would include your `OPENAI_API_KEY`)
   # - model_name is the model name to use for each type of processing (table, vision or contextual)
   #
   # For backwards compatibility, if you specify the "model" argument, then the same
@@ -325,6 +327,7 @@ We use a `secrets.toml` file to hold secret keys and parameters. You need to cre
 [general]
 OPENAI_API_KEY="sk-..."
 ANTHROPIC_API_KEY="sk-..."
+PRIVATE_API_KEY="YOUR-PRIVATE-API_KEY"
 
 [profile1]
 api_key="<VECTAR-API-KEY-1>"
