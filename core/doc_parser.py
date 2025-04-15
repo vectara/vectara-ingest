@@ -410,7 +410,12 @@ class DoclingDocumentParser(DocumentParser):
             texts = [(chunker.serialize(chunk=chunk), _get_metadata(chunk))
                      for chunk in chunker.chunk(doc)]
         else:
-            texts = [(e.text, {'parser_element_type': 'text', 'page': e.prov[0].page_no}) for e in doc.texts]
+            def _get_metadata(element):
+                md = {'parser_element_type': 'text'}
+                if element.prov:
+                    md['page'] = element.prov[0].page_no
+                return md
+            texts = [(e.text, _get_metadata(e)) for e in doc.texts]
         self.logger.info(f"DoclingParser: {len(texts)} text segments")
 
         tables = []

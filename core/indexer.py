@@ -1085,7 +1085,7 @@ class Indexer:
                 model_config=self.model_config,
                 chunking_strategy='by_title',
                 chunk_size=1024,
-                parse_tables=self.parse_tables, 
+                parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
                 summarize_images=self.summarize_images, 
             )
