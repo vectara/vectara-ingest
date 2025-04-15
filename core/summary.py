@@ -46,8 +46,9 @@ class ImageSummarizer():
         self.cfg = cfg
 
     def get_image_content_for_summarization(self, image_path: str):
-        #Convert svg to png (if necessary)
-        if image_path.lower().endswith(".svg"):
+        
+        orig_image_path = image_path
+        if orig_image_path.lower().endswith(".svg"):
             logging.info(f"Converting svg image ({image_path}) to png for summarization")
             new_image_path = image_path.replace(".svg", ".png")
             cairosvg.svg2png(url=image_path, write_to=new_image_path, dpi=300)
@@ -57,12 +58,11 @@ class ImageSummarizer():
         with open(image_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
 
-        #Delete the temporarily created png file, pointed to by the updated image_path variable (if necessary)
-        if image_path.lower().endswith(".svg"):
+        if orig_image_path.lower().endswith(".svg"):
             try:
-                os.remove(image_path)
+                os.remove(orig_image_path)
             except FileNotFoundError:
-                logging.warning(f"File '{image_path}' not found.")
+                logging.warning(f"File '{orig_image_path}' not found.")
             except Exception as e:
                 logging.warning(f"An error occurred: {e}")
 
