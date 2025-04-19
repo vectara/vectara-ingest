@@ -88,9 +88,13 @@ class MediawikiCrawler(Crawler):
             return None
 
         page_url = page.get('fullurl')
-        revision = page['revisions'][0]
-        last_editor = revision.get('user', 'unknown')
-        last_edited_at = revision['timestamp']
+        if 'revisions' not in page or not page['revisions']:  
+            revision = page['revisions'][0]
+            last_editor = revision.get('user', 'unknown')
+            last_edited_at = revision['timestamp']
+        else:
+            last_editor = 'unknown'
+            last_edited_at = page.get('touched', datetime.now().isoformat())
 
         doc = {
             'id': title,
