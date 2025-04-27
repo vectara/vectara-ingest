@@ -238,6 +238,7 @@ If `crawl_report` is true then the list of URLs associated with the removed docu
 The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
 - `ids_to_remove` defines an (optional) list of HTML IDs that are ignored when extracting text from the page.
 - `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
+- `classes_to_remove` defines an (optional) list of CSS class names that are ignored when extracting text from the page.
 - `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
 - 
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.

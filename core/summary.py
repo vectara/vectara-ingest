@@ -15,10 +15,13 @@ def _get_image_shape(content: str) -> tuple:
     """
     Given a base64-encoded image content string, return the image shape as (width, height).
     """
-    img_data = base64.b64decode(content)
-    img = Image.open(BytesIO(img_data))
-    return img.size  # (width, height)
-
+    try:
+        img_data = base64.b64decode(content)
+        img = Image.open(BytesIO(img_data))
+        return img.size  # (width, height)
+    except (IOError, OSError, ValueError) as e:
+        logging.info(f"Skipping summarization: not a valid image ({e})")
+        return None
 
 def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
     """
@@ -70,7 +73,11 @@ class ImageSummarizer():
 
     def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
         content = self.get_image_content_for_summarization(image_path)        
-        width, height = _get_image_shape(content)
+        shape = _get_image_shape(content)
+        if not shape:
+             logging.info(f"Image too small to summarize ({image_url})")
+             return None
+        width, height = shape
         if width<10 or height<10:
             logging.info(f"Image too small to summarize ({image_url})")
             return None
