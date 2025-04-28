@@ -300,6 +300,7 @@ class Indexer:
             extract_tables: bool = False,
             extract_images: bool = False,
             remove_code: bool = False,
+            html_processing: dict = None,
             debug: bool = False
         ) -> dict:
         '''
@@ -309,6 +310,10 @@ class Indexer:
             extract_tables (bool): Whether to extract tables from the page.
             extract_images (bool): Whether to extract images from the page.
             remove_code (bool): Whether to remove code from the HTML content.
+            html_processing (dict): Dict with optional lists:
+                - 'ids_to_remove': list of element IDs to remove
+                - 'classes_to_remove': list of class names to remove
+                - 'tags_to_remove': list of tag names to remove
             debug (bool): Whether to enable playwright debug logging.
         Returns:
             dict with
@@ -328,6 +333,13 @@ class Indexer:
         out_url = url
         images = []
         tables = []
+
+        if html_processing is None:
+            html_processing = {}
+        ids_to_remove     = list(html_processing.get('ids_to_remove', []))
+        classes_to_remove = list(html_processing.get('classes_to_remove', []))
+        tags_to_remove    = list(html_processing.get('tags_to_remove', []))
+
         try:
             context = self.browser.new_context()
             page = context.new_page()
@@ -346,6 +358,27 @@ class Indexer:
 
             title = page.title()
             out_url = page.url
+
+            # Remove specified elements in-page before extraction
+            removal_script = """
+                (function(ids, classes, tags) {
+                    ids.forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) el.remove();
+                    });
+                    classes.forEach(function(cls) {
+                        document.querySelectorAll('.' + cls).forEach(function(el) { el.remove(); });
+                    });
+                    tags.forEach(function(tag) {
+                        document.querySelectorAll(tag).forEach(function(el) { el.remove(); });
+                    });
+                })(%s, %s, %s);
+            """ % (
+                json.dumps(ids_to_remove),
+                json.dumps(classes_to_remove),
+                json.dumps(tags_to_remove)
+            )
+            page.evaluate(removal_script)
 
             text = page.evaluate(f"""() => {{
                 let content = Array.from(document.body.childNodes)
@@ -461,6 +494,7 @@ class Indexer:
                     }
                 """)
 
+
         except PlaywrightTimeoutError:
             self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
         except Exception as e:
@@ -478,6 +512,8 @@ class Indexer:
                 self.browser = self.p.firefox.launch(headless=True)
                 self.browser_use_count = 0
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
+
+        self.logger.info(f"For page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
 
         return {
             'text': text,
@@ -772,6 +808,7 @@ class Indexer:
                     extract_tables=self.parse_tables,
                     extract_images=self.summarize_images,
                     remove_code=self.remove_code,
+                    html_processing=html_processing,
                 )
                 html = res['html']
                 text = res['text']
@@ -780,8 +817,8 @@ class Indexer:
                     return False
 
                 # Extract the last modified date from the HTML content.
-                res = extract_last_modified(url, html)
-                last_modified = res.get('last_modified', None)
+                ext_res = extract_last_modified(url, html)
+                last_modified = ext_res.get('last_modified', None)
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
@@ -819,9 +856,11 @@ class Indexer:
 
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
+                    if self.verbose:
+                        self.logger.info(f"Found {len(res['tables'])} tables in {url}")
                     table_summarizer = TableSummarizer(
-                        table_model_config=self.model_config.text, 
-                        model_api_key=self.model_api_key
+                        cfg=self.cfg,
+                        table_model_config=self.model_config.text,
                     )
                     for table in res['tables']:
                         table_summary = table_summarizer.summarize_table_text(table)
@@ -845,33 +884,36 @@ class Indexer:
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                     }
                     image_summarizer = ImageSummarizer(
-                        image_model_config=self.model_config.vision, 
-                        model_api_key=self.model_api_key
+                        cfg=self.cfg,
+                        image_model_config=self.model_config.vision
                     )
                     image_filename = 'image.png'
-                    for inx,image in enumerate(res['images']):
-                        image_url = image['src']
-                        response = requests.get(image_url, headers=headers, stream=True)
-                        if response.status_code != 200:
-                            self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
-                            continue
-                        with open(image_filename, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-                        image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
-                        if image_summary:
-                            text = image_summary
-                            metadata = {'element_type': 'image', 'url': url}
-                            if ex_metadata:
-                                metadata.update(ex_metadata)
-                            if self.verbose:
-                                self.logger.info(f"Image summary: {image_summary[:500]}...")
-                            doc_id = slugify(url) + "_image_" + str(inx)
-                            succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                            doc_metadata=metadata, doc_title=doc_title, use_core_indexing=True)
-                        else:
-                            self.logger.info(f"Failed to retrieve image {image['src']}")
-                            continue
+                    if 'images' in res:
+                        if self.verbose:
+                            self.logger.info(f"Found {len(res['images'])} images in {url}")
+                        for inx,image in enumerate(res['images']):
+                            image_url = image['src']
+                            response = requests.get(image_url, headers=headers, stream=True)
+                            if response.status_code != 200:
+                                self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                                continue
+                            with open(image_filename, 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                            image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
+                            if image_summary:
+                                text = image_summary
+                                metadata = {'element_type': 'image', 'url': url}
+                                if ex_metadata:
+                                    metadata.update(ex_metadata)
+                                if self.verbose:
+                                    self.logger.info(f"Image summary: {image_summary[:500]}...")
+                                doc_id = slugify(url) + "_image_" + str(inx)
+                                succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
+                                                                doc_metadata=metadata, doc_title=doc_title, use_core_indexing=True)
+                            else:
+                                self.logger.info(f"Failed to retrieve image {image['src']}")
+                                continue
 
                 self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
             except Exception as e:
@@ -926,7 +968,9 @@ class Indexer:
                     'title': table.get('title', ''),
                     'data': {
                         'headers': [
-                            create_row_items(h) for h in table['headers']
+                            [
+                                {'text_value': str(h)} for h in table['headers']
+                            ]
                         ],
                         'rows': [
                             create_row_items(row) for row in table['rows']

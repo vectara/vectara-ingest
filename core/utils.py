@@ -114,6 +114,7 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
 
     # Remove code blocks if specified
     if remove_code:
+        logging.info("Removing code blocks from HTML")
         html = remove_code_from_html(html)
 
     # Initialize BeautifulSoup
