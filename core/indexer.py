@@ -969,8 +969,9 @@ class Indexer:
                     'data': {
                         'headers': [
                             [
-                                {'text_value': str(h)} for h in table['headers']
-                            ]
+                                {'text_value': str(col)} 
+                                for col in header
+                            ] for header in table['headers']
                         ],
                         'rows': [
                             create_row_items(row) for row in table['rows']

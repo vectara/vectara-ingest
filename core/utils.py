@@ -608,6 +608,7 @@ def html_table_to_header_and_rows(html):
     # First row is the "header"
     header = matrix[0]
     rows = matrix[1:]
+
     return header, rows
 
 def get_media_type_from_base64(base64_data: str) -> str:
