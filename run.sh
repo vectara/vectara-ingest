@@ -2,11 +2,25 @@
 
 # args[1] = config file
 # args[2] = secrets profile
-# example: sh run.sh <config>news-bbc.yaml dev
+# additional options:
+#   --use-host-certs: import certificates from host system
+# example: sh run.sh <config>news-bbc.yaml dev --use-host-certs
+
+USE_HOST_CERTS=false
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --use-host-certs)
+      USE_HOST_CERTS=true
+      shift
+      ;;
+  esac
+done
 
 if [ $# -lt 2 ]; then
   echo "Missing arguments."
-  echo "Usage: $0 <config-file> <secrets-profile>"
+  echo "Usage: $0 <config-file> <secrets-profile> [--use-host-certs]"
   exit 1
 fi
 
@@ -79,6 +93,19 @@ ADDITIONAL_DOCKER_FLAGS=""
 
 if [[ -n "${LOGGING_LEVEL}" ]]; then
   ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -e LOGGING_LEVEL=${LOGGING_LEVEL}"
+fi
+
+# Handle host certificates if flag is set
+if [[ "${USE_HOST_CERTS}" == "true" ]]; then
+  # Mount host's certificate store for common Linux distributions
+  if [[ -d "/etc/ssl/certs" ]]; then
+    echo "Mounting host's certificate store from /etc/ssl/certs"
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v /etc/ssl/certs:/etc/ssl/certs:ro"
+  fi
+  if [[ -f "/etc/ssl/certs/ca-certificates.crt" ]]; then
+    echo "Mounting host's CA certificates bundle"
+    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
+  fi
 fi
 
 # Run docker container
