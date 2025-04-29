@@ -504,7 +504,7 @@ def markdown_to_df(markdown_table):
 
 def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
     res = []
-    for inx,item in enumerate(items):
+    for item in items:
         if isinstance(item, tuple):   # Tuple of (colname, colspan)
             val = '' if pd.isnull(item[0]) else item[0]
             extra_colspan = item[1] - 1

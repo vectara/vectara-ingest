@@ -1247,7 +1247,7 @@ class Indexer:
                                                doc_metadata=metadata, doc_title=title, use_core_indexing=True)
                 image_success.append(img_okay)                
             except Exception as e:
-                self.logger.info(f"Failed to index image {image[1]['src']} with error {e}")
+                self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
         self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
