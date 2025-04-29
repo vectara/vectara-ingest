@@ -504,19 +504,13 @@ def markdown_to_df(markdown_table):
 
 def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
     res = []
-    for item in items:
-        if isinstance(item, str):
-            res.append({'text_value': item})
-        elif isinstance(item, int):
-            res.append({'int_value': item})
-        elif isinstance(item, float):
-            res.append({'float_value': item})
-        elif isinstance(item, bool):
-            res.append({'bool_value': item})
-        elif isinstance(item, tuple):   # Tuple of (colname, colspan)
+    for inx,item in enumerate(items):
+        if isinstance(item, tuple):   # Tuple of (colname, colspan)
             val = '' if pd.isnull(item[0]) else item[0]
             extra_colspan = item[1] - 1
             res.extend([{'text_value': val}] + [{'text_value':''} for _ in range(extra_colspan)])
+        elif isinstance(item, str) or isinstance(item, int) or isinstance(item, float) or isinstance(item, bool):
+            res.append({'text_value': str(item)})
         else:
             logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
     return res
