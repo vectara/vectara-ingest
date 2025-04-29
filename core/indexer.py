@@ -969,8 +969,9 @@ class Indexer:
                     'data': {
                         'headers': [
                             [
-                                {'text_value': str(h)} for h in table['headers']
-                            ]
+                                {'text_value': str(col)} 
+                                for col in header
+                            ] for header in table['headers']
                         ],
                         'rows': [
                             create_row_items(row) for row in table['rows']
@@ -1233,6 +1234,7 @@ class Indexer:
             )            
 
         # index the images - one per document
+        image_success = []
         for inx,image in enumerate(images):
             image_summary = image[0]
             metadata = image[1]
@@ -1240,10 +1242,14 @@ class Indexer:
             if ex_metadata:
                 metadata.update(ex_metadata)
             doc_id = slugify(uri) + "_image_" + str(inx)
-            succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
-                                             doc_metadata=metadata, doc_title=title, use_core_indexing=True)
-
-        self.logger.info(f"For file {filename}, extracted text locally")
+            try:
+                img_okay = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
+                                               doc_metadata=metadata, doc_title=title, use_core_indexing=True)
+                image_success.append(img_okay)                
+            except Exception as e:
+                self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
+                image_success.append(False)
+        self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
 
 
