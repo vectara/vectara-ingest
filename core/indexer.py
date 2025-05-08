@@ -224,13 +224,7 @@ class Indexer:
                 'text': pcfg,
                 'vision': pcfg,
             }  # By default use the same model for text and image processing
-
             OmegaConf.update(self.cfg, "doc_processing.model_config", mcfg, merge=False)
-            # self.model_config = {
-            #     'text': mcfg,
-            #     'vision': mcfg,
-            # }   # By default use the same model for text and image processing
-        # else:
         self.model_config = self.cfg.doc_processing.get("model_config", {})
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
