@@ -38,6 +38,7 @@ def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
     prompt += "Your response should be as concise and accurate as possible. Prioritize 1-2 word responses."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
+    logging.info(f"get_attributes_from_text() - Calling generate")
     res = generate(cfg, system_prompt, prompt, model_config)
     if res.strip().startswith("```json"):
         res = res.strip().removeprefix("```json").removesuffix("```")

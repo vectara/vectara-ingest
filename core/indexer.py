@@ -16,7 +16,7 @@ import requests
 from slugify import slugify
 
 from omegaconf import OmegaConf
-from nbconvert import HTMLExporter      # type: ignore
+from nbconvert import HTMLExporter  # type: ignore
 import nbformat
 import markdown
 import whisper
@@ -35,7 +35,8 @@ from core.utils import (
     get_file_path_from_url, create_row_items, configure_session_for_ssl
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, DocupandaDocumentParser
+from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
+    DocupandaDocumentParser
 from core.contextual import ContextualChunker
 from pypdf import PdfReader, PdfWriter
 import tempfile
@@ -51,6 +52,7 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
 
 def extract_last_modified(url: str, html: str) -> dict:
     """
@@ -76,7 +78,7 @@ def extract_last_modified(url: str, html: str) -> dict:
     """
     result = {'url': url, 'detection_method': None}
     soup = BeautifulSoup(html, 'html.parser')
-    
+
     # 1. Try meta tags with http-equiv="last-modified" or name="last-modified"
     for attr in ['http-equiv', 'name']:
         meta_tag = soup.find('meta', attrs={attr: lambda v: v and v.lower() == 'last-modified'})
@@ -138,6 +140,7 @@ def extract_last_modified(url: str, html: str) -> dict:
     result['detection_method'] = 'hash'
     return result
 
+
 def extract_last_modified_from_html(html: str) -> Optional[str]:
     """
     Extract the last modified date from HTML meta tags.
@@ -158,6 +161,7 @@ def extract_last_modified_from_html(html: str) -> Optional[str]:
     match = pattern.search(html)
     return match.group(1) if match else None
 
+
 class Indexer:
     """
     Vectara API class.
@@ -166,6 +170,7 @@ class Indexer:
         corpus_key (str): Key of the Vectara corpus to index to.
         api_key (str): API key for the Vectara API.
     """
+
     def __init__(self, cfg: OmegaConf, api_url: str,
                  corpus_key: str, api_key: str) -> None:
         self.cfg = cfg
@@ -189,7 +194,8 @@ class Indexer:
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
-        self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables", False)) # backward compatibility
+        self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables",
+                                                                                          False))  # backward compatibility
         self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.do_ocr = cfg.doc_processing.get("do_ocr", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
@@ -203,44 +209,50 @@ class Indexer:
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
         if 'model' in self.cfg.doc_processing:
+            logging.warning(
+                "doc_processing.model will no longer be supported in a future release. Use doc_processing.model_config instead.")
+
             provider = self.cfg.doc_processing.get("model", "openai")
-            mcfg = {
+            pcfg = {
                 'provider': provider,
                 'model_name': self.cfg.doc_processing.get("model_name", "gpt-4o"),
-                'base_url': self.cfg.doc_processing.get("base_url", "https://api.openai.com/v1") if provider=='openai' else \
-                            self.cfg.doc_processing.get("base_url", "https://api.anthropic.com/"),
+                'base_url': self.cfg.doc_processing.get("base_url",
+                                                        "https://api.openai.com/v1") if provider == 'openai' else \
+                    self.cfg.doc_processing.get("base_url", "https://api.anthropic.com/"),
             }
-            self.model_config = {
-                'text': mcfg,
-                'vision': mcfg,
-            }   # By default use the same model for text and image processing
-        else:
-            self.model_config = self.cfg.doc_processing.get("model_config", {})
+            mcfg = {
+                'text': pcfg,
+                'vision': pcfg,
+            }  # By default use the same model for text and image processing
+            OmegaConf.update(self.cfg, "doc_processing.model_config", mcfg, merge=False)
+        self.model_config = self.cfg.doc_processing.get("model_config", {})
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)
 
         if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
-            self.logger.info("Table summarization enabled but model API key not found, disabling table summarization")
+            self.logger.warn("Table summarization enabled but model API key not found, disabling table summarization")
 
         if self.summarize_images and vision_api_key is None:
             self.summarize_images = False
-            self.logger.info("Image summarization enabled but model API key not found, disabling image summarization")
+            self.logger.warn(
+                "Image summarization (doc_processing.summarize_images) enabled but model API key not found, disabling image summarization")
 
         if self.contextual_chunking and text_api_key is None:
             self.contextual_chunking = False
-            self.logger.info("Contextual chunking enabled but model API key not found, disabling contextual chunking")
+            self.logger.warn("Contextual chunking enabled but model API key not found, disabling contextual chunking")
 
         if self.extract_metadata and text_api_key is None:
             self.extract_metadata = []
-            self.logger.info("Metadata extraction enabled but model API key not found, disabling metadata extraction")
+            self.logger.warn(
+                "Metadata extraction (doc_processing.extract_metadata) enabled but model API key not found, disabling metadata extraction")
 
         logging.info(f"Vectara API Url = '{self.api_url}'")
 
         self.setup()
 
     def normalize_text(self, text: str) -> str:
-        if pd.isnull(text) or len(text)==0:
+        if pd.isnull(text) or len(text) == 0:
             return text
         if self.cfg.vectara.get("mask_pii", False):
             text = mask_pii(text)
@@ -302,7 +314,7 @@ class Indexer:
             remove_code: bool = False,
             html_processing: dict = None,
             debug: bool = False
-        ) -> dict:
+    ) -> dict:
         '''
         Fetch content from a URL with a timeout, including content from the Shadow DOM.
         Args:
@@ -336,23 +348,23 @@ class Indexer:
 
         if html_processing is None:
             html_processing = {}
-        ids_to_remove     = list(html_processing.get('ids_to_remove', []))
+        ids_to_remove = list(html_processing.get('ids_to_remove', []))
         classes_to_remove = list(html_processing.get('classes_to_remove', []))
-        tags_to_remove    = list(html_processing.get('tags_to_remove', []))
+        tags_to_remove = list(html_processing.get('tags_to_remove', []))
 
         try:
             context = self.browser.new_context()
             page = context.new_page()
             page.set_extra_http_headers(get_headers)
             page.route("**/*", lambda route: route.abort()
-                if route.request.resource_type == "image"
-                else route.continue_()
-            )
+            if route.request.resource_type == "image"
+            else route.continue_()
+                       )
             if debug:
                 page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
 
-            page.goto(url, timeout=self.timeout*1000, wait_until="domcontentloaded")
-            page.wait_for_timeout(self.post_load_timeout*1000)  # Wait additional time to handle AJAX
+            page.goto(url, timeout=self.timeout * 1000, wait_until="domcontentloaded")
+            page.wait_for_timeout(self.post_load_timeout * 1000)  # Wait additional time to handle AJAX
             self._scroll_to_bottom(page)
             html_content = page.content()
 
@@ -581,7 +593,8 @@ class Indexer:
             headers=post_headers)
 
         if response.status_code != 204:
-            self.logger.error(f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
+            self.logger.error(
+                f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
 
@@ -655,7 +668,7 @@ class Indexer:
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
         if self.parse_tables and filename.lower().endswith('.pdf'):
-           files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
 
         response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
@@ -672,14 +685,16 @@ class Indexer:
                     'metadata': (None, json.dumps(metadata), 'application/json'),
                 }
                 if self.parse_tables and filename.lower().endswith('.pdf'):
-                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}),
+                                                            'application/json')
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
                     return True
                 else:
-                    self.logger.info(f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
+                    self.logger.info(
+                        f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             else:
                 self.logger.info(f"document {uri} already indexed, skipping")
@@ -718,14 +733,14 @@ class Indexer:
         else:
             document['type'] = 'structured'
 
-        post_headers = { 
+        post_headers = {
             'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
         try:
             data = json.dumps(document)
         except Exception as e:
-            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")   
+            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
         try:
@@ -736,17 +751,16 @@ class Indexer:
 
         if response.status_code != 201:
             self.logger.error("REST upload failed with code %d, reason %s, text %s",
-                          response.status_code,
-                          response.reason,
-                          response.text)
+                              response.status_code,
+                              response.reason,
+                              response.text)
             return False
 
         if self.store_docs:
             with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                 json.dump(document, f)
         return True
-        
-    
+
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
@@ -762,7 +776,7 @@ class Indexer:
         if html_processing is None:
             html_processing = {}
         st = time.time()
-        url = url.split("#")[0]     # remove fragment, if exists
+        url = url.split("#")[0]  # remove fragment, if exists
 
         # if file is going to download, then handle it as local file
         if self.url_triggers_download(url):
@@ -775,12 +789,12 @@ class Indexer:
             response = self.session.get(url, headers=get_headers, stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192): 
+                    for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 self.logger.info(f"File downloaded successfully and saved as {file_path}")
                 res = self.index_file(file_path, url, metadata)
                 safe_remove_file(file_path)
-                return res            
+                return res
             else:
                 self.logger.info(f"Failed to download file. Status code: {response.status_code}")
                 return False
@@ -796,7 +810,7 @@ class Indexer:
                 nb = nbformat.reads(dl_content, as_version=4)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            doc_title = url.split('/')[-1]      # no title in these files, so using file name
+            doc_title = url.split('/')[-1]  # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
             parts = [text]
 
@@ -813,7 +827,7 @@ class Indexer:
                 html = res['html']
                 text = res['text']
                 doc_title = res['title']
-                if text is None or len(text)<3:
+                if text is None or len(text) < 3:
                     return False
 
                 # Extract the last modified date from the HTML content.
@@ -827,12 +841,12 @@ class Indexer:
                     self.detected_language = detect_language(text)
                     self.logger.info(f"The detected language is {self.detected_language}")
 
-                if len(self.extract_metadata)>0:
+                if len(self.extract_metadata) > 0:
                     ex_metadata = get_attributes_from_text(
                         self.cfg,
                         text,
                         metadata_questions=self.extract_metadata,
-                        model_config=self.model_config
+                        model_config=self.model_config.text
                     )
                     metadata.update(ex_metadata)
                 else:
@@ -846,7 +860,8 @@ class Indexer:
                 if self.remove_boilerplate:
                     url = res['url']
                     if self.verbose:
-                        self.logger.info(f"Removing boilerplate from content of {url}, and extracting important text only")
+                        self.logger.info(
+                            f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
                 else:
                     text = html_to_text(html, self.remove_code, html_processing)
@@ -891,7 +906,7 @@ class Indexer:
                     if 'images' in res:
                         if self.verbose:
                             self.logger.info(f"Found {len(res['images'])} images in {url}")
-                        for inx,image in enumerate(res['images']):
+                        for inx, image in enumerate(res['images']):
                             image_url = image['src']
                             response = requests.get(image_url, headers=headers, stream=True)
                             if response.status_code != 200:
@@ -909,22 +924,26 @@ class Indexer:
                                 if self.verbose:
                                     self.logger.info(f"Image summary: {image_summary[:500]}...")
                                 doc_id = slugify(url) + "_image_" + str(inx)
-                                succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=metadatas,
-                                                                doc_metadata=metadata, doc_title=doc_title, use_core_indexing=True)
+                                succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary],
+                                                                metadatas=metadatas,
+                                                                doc_metadata=metadata, doc_title=doc_title,
+                                                                use_core_indexing=True)
                             else:
                                 self.logger.info(f"Failed to retrieve image {image['src']}")
                                 continue
 
-                self.logger.info(f"retrieving content took {time.time()-st:.2f} seconds")
+                self.logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
-                self.logger.info(f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
+                self.logger.info(
+                    f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
-        
+
         return succeeded
 
-    def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None, metadatas: Optional[List[Dict[str, Any]]] = None,
-                       doc_metadata: Dict[str, Any] = None, doc_title: str = "", 
+    def index_segments(self, doc_id: str, texts: List[str], titles: Optional[List[str]] = None,
+                       metadatas: Optional[List[Dict[str, Any]]] = None,
+                       doc_metadata: Dict[str, Any] = None, doc_title: str = "",
                        tables: Optional[Sequence[Dict[str, Any]]] = None,
                        use_core_indexing: bool = False) -> bool:
         """
@@ -946,7 +965,7 @@ class Indexer:
         if ''.join(texts).strip() == '':
             self.logger.info(f"Document {doc_id} has no content, skipping")
             return False
-        
+
         if titles is None:
             titles = ["" for _ in range(len(texts))]
         if doc_metadata is None:
@@ -954,7 +973,7 @@ class Indexer:
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
         else:
-            metadatas = [{k:self.normalize_value(v) for k,v in md.items()} for md in metadatas]
+            metadatas = [{k: self.normalize_value(v) for k, v in md.items()} for md in metadatas]
 
         document = {}
         document["id"] = doc_id
@@ -962,14 +981,14 @@ class Indexer:
         # Create tables structure
         tables_array = []
         if tables:
-            for inx,table in enumerate(tables):
+            for inx, table in enumerate(tables):
                 table_dict = {
                     'id': 'table_' + str(inx),
                     'title': table.get('title', ''),
                     'data': {
                         'headers': [
                             [
-                                {'text_value': str(col)} 
+                                {'text_value': str(col)}
                                 for col in header
                             ] for header in table['headers']
                         ],
@@ -982,23 +1001,23 @@ class Indexer:
                 tables_array.append(table_dict)
 
         if not use_core_indexing:
-            if doc_title is not None and len(doc_title)>0:
+            if doc_title is not None and len(doc_title) > 0:
                 document["title"] = self.normalize_text(doc_title)
             document["sections"] = [
-                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md} 
-                for text,title,md in zip(texts,titles,metadatas)
+                {"text": self.normalize_text(text), "title": self.normalize_text(title), "metadata": md}
+                for text, title, md in zip(texts, titles, metadatas)
             ]
             if tables:
                 document["sections"].append(
                     {"text": '', "title": '', "metadata": {}, "tables": tables_array}
                 )
         else:
-            if any((len(text)>16384 for text in texts)):
+            if any((len(text) > 16384 for text in texts)):
                 self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["document_parts"] = [
-                {"text": self.normalize_text(text), "metadata": md} 
-                for text,md in zip(texts,metadatas)
+                {"text": self.normalize_text(text), "metadata": md}
+                for text, md in zip(texts, metadatas)
             ]
             if tables:
                 document["tables"] = tables_array
@@ -1027,14 +1046,14 @@ class Indexer:
         if not os.path.exists(filename):
             self.logger.error(f"File {filename} does not exist")
             return False
-        
+
         # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the parse_tables option, then we parse locally and index
-        max_chars = 128000   # all_text is limited to 128,000 characters
+        max_chars = 128000  # all_text is limited to 128,000 characters
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
         filesize_mb = get_file_size_in_MB(filename)
 
         if (any(uri.endswith(extension) for extension in large_file_extensions) and
-            (self.contextual_chunking or self.summarize_images or self.enable_gmft)
+                (self.contextual_chunking or self.summarize_images or self.enable_gmft)
         ):
             self.process_locally = True
 
@@ -1042,27 +1061,28 @@ class Indexer:
         # Case A: using the file-upload API
         # Used when we don't need to process the file locally, and we don't need to parse tables from non-PDF files
         #
-        if not self.process_locally and ((self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
+        if not self.process_locally and (
+                (self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
             self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
-            if len(self.extract_metadata)>0 or self.summarize_images:
+            if len(self.extract_metadata) > 0 or self.summarize_images:
                 self.logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
                     cfg=self.cfg,
                     verbose=self.verbose,
                     model_config=self.cfg.doc_processing.model_config,
                     parse_tables=False, enable_gmft=False,
-                    summarize_images=self.summarize_images, 
+                    summarize_images=self.summarize_images,
                 )
                 title, texts, _, images = dp.parse(filename, uri)
 
             # Get metadata attribute values from text content (if defined)
-            if len(self.extract_metadata)>0:
+            if len(self.extract_metadata) > 0:
                 all_text = "\n".join([t[0] for t in texts])[:max_chars]
                 ex_metadata = get_attributes_from_text(
-                    self.cfg, 
+                    self.cfg,
                     all_text,
                     metadata_questions=self.extract_metadata,
-                    model_config=self.model_config
+                    model_config=self.model_config.text
                 )
                 metadata.update(ex_metadata)
             else:
@@ -1076,7 +1096,8 @@ class Indexer:
             if filesize_mb > max_pdf_size:
                 pdf_reader = PdfReader(filename)
                 total_pages = len(pdf_reader.pages)
-                logging.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
+                logging.info(
+                    f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
                 error_count = 0
                 for i in range(0, total_pages, pages_per_pdf):
                     pdf_writer = PdfWriter()
@@ -1096,19 +1117,19 @@ class Indexer:
                         try:
                             part_success = self._index_file(f.name, uri, pdf_part_metadata, pdf_part_id)
                             if not part_success:
-                                error_count+=1
+                                error_count += 1
                         finally:
                             if os.path.exists(f.name):
                                 os.remove(f.name)
-                    succeeded = error_count==0
+                    succeeded = error_count == 0
             else:
                 # index the file within Vectara (use FILE UPLOAD API)
                 succeeded = self._index_file(filename, uri, metadata, id)
-            
+
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and images:
                 self.logger.info(f"Extracted {len(images)} images from {uri}")
-                for inx,image in enumerate(images):
+                for inx, image in enumerate(images):
                     image_summary = image[0]
                     metadata = image[1]
                     if ex_metadata:
@@ -1132,7 +1153,7 @@ class Indexer:
                 chunk_size=1024,
                 parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images, 
+                summarize_images=self.summarize_images,
             )
         elif self.doc_parser == "llama_parse" or self.doc_parser == "llama" or self.doc_parser == "llama-parse":
             dp = LlamaParseDocumentParser(
@@ -1172,10 +1193,10 @@ class Indexer:
                 verbose=self.verbose,
                 model_config=self.cfg.doc_processing.model_config,
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
-                chunk_size=self.unstructured_config.get('chunk_size',1024),
-                parse_tables=self.parse_tables, 
+                chunk_size=self.unstructured_config.get('chunk_size', 1024),
+                parse_tables=self.parse_tables,
                 enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images, 
+                summarize_images=self.summarize_images,
             )
 
         try:
@@ -1183,15 +1204,15 @@ class Indexer:
         except Exception as e:
             self.logger.info(f"Failed to parse {filename} with error {e}")
             return False
-            
+
         # Get metadata attribute values from text content (if defined)
-        if len(self.extract_metadata)>0:
+        if len(self.extract_metadata) > 0:
             all_text = "\n".join([t[0] for t in texts])[:max_chars]
             ex_metadata = get_attributes_from_text(
                 self.cfg,
                 all_text,
                 metadata_questions=self.extract_metadata,
-                model_config=self.model_config
+                model_config=self.model_config.text
             )
             metadata.update(ex_metadata)
         else:
@@ -1204,7 +1225,8 @@ class Indexer:
                 rows = df.fillna('').values.tolist()
                 del df
                 if len(rows) > 0 and len(cols) > 0:
-                    yield {'headers': cols, 'rows': rows, 'summary': summary, 'title': table_title, 'metadata': table_metadata}
+                    yield {'headers': cols, 'rows': rows, 'summary': summary, 'title': table_title,
+                           'metadata': table_metadata}
 
         # Index text portions
         # Apply contextual chunking if indicated, otherwise just the text directly.
@@ -1212,13 +1234,13 @@ class Indexer:
             chunks = [t[0] for t in texts]
             all_text = "\n".join(chunks)
             cc = ContextualChunker(
-                cfg = self.cfg,
-                contextual_model_config = self.model_config.text, 
+                cfg=self.cfg,
+                contextual_model_config=self.model_config.text,
                 whole_document=all_text
             )
             contextual_chunks = cc.parallel_transform(chunks)
             succeeded = self.index_segments(
-                doc_id=slugify(uri), 
+                doc_id=slugify(uri),
                 texts=contextual_chunks, metadatas=[t[1] for t in texts],
                 tables=generate_vec_tables(tables),
                 doc_metadata=metadata, doc_title=title,
@@ -1226,32 +1248,32 @@ class Indexer:
             )
         else:
             succeeded = self.index_segments(
-                doc_id=slugify(uri), 
-                texts=[t[0] for t in texts], metadatas=[t[1] for t in texts], 
+                doc_id=slugify(uri),
+                texts=[t[0] for t in texts], metadatas=[t[1] for t in texts],
                 tables=generate_vec_tables(tables),
                 doc_metadata=metadata, doc_title=title,
                 use_core_indexing=self.use_core_indexing
-            )            
+            )
 
-        # index the images - one per document
+            # index the images - one per document
         image_success = []
-        for inx,image in enumerate(images):
+        for inx, image in enumerate(images):
             image_summary = image[0]
-            metadata = image[1]
-            metadata['url'] = uri
+            image_metadata = image[1]
+            image_metadata.update(metadata)
+            image_metadata['url'] = uri
             if ex_metadata:
-                metadata.update(ex_metadata)
+                image_metadata.update(ex_metadata)
             doc_id = slugify(uri) + "_image_" + str(inx)
             try:
-                img_okay = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
-                                               doc_metadata=metadata, doc_title=title, use_core_indexing=True)
-                image_success.append(img_okay)                
+                img_okay = self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[image_metadata],
+                                               doc_metadata=image_metadata, doc_title=title, use_core_indexing=True)
+                image_success.append(img_okay)
             except Exception as e:
                 self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
         self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
-
 
     def index_media_file(self, file_path, metadata=None):
         """
@@ -1264,7 +1286,8 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False
         """
-        logging.info(f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
+        logging.info(
+            f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
         if self.whisper_model is None:
             self.whisper_model = whisper.load_model(self.whisper_model, device="cpu")
         result = self.whisper_model.transcribe(file_path, temperature=0, verbose=False)
@@ -1273,7 +1296,7 @@ class Indexer:
             'id': slugify(file_path),
             'title': file_path,
             'sections': [
-                { 
+                {
                     'text': t['text'],
                 } for t in text
             ]
@@ -1281,4 +1304,3 @@ class Indexer:
         if metadata:
             doc['metadata'] = metadata
         self.index_document(doc)
-

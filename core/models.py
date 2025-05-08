@@ -28,6 +28,9 @@ def generate(
     """
     Given a prompt, generate text using the specified model.
     """
+    logging.debug(f"generate() - model_config: {model_config}")
+    logging.debug(f"generate() - system_prompt: {system_prompt}")
+    logging.debug(f"generate() - user_prompt: {user_prompt}")
     provider = model_config.get('provider', 'openai')
     model_api_key = get_api_key(provider, cfg)
     if provider == 'openai' or provider=='private':
