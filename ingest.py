@@ -1,21 +1,22 @@
 import logging
 import time
 import sys
-
-from typing import Any
+import os
+import re
 import importlib
-from urllib.parse import urlparse
 import requests
 import toml     # type: ignore
+import typer
 
+from typing import Any, Optional
+from urllib.parse import urlparse
 from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
 from core.utils import setup_logging
 
-import re
-import os
+app = typer.Typer()
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     """
@@ -249,49 +250,59 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         update_omega_conf(cfg.vectara, reason, k.lower(), v)
 
 
-def main() -> None:
+def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = None, reset_corpus: bool = False) -> None:
     """
-    Main function that runs the web crawler based on environment variables.
-    
-    Reads the necessary environment variables and sets up the web crawler
-    accordingly. Starts the crawl loop and logs the progress and errors.
+    Core ingest functionality that can be called from both Docker and CLI.
     """
-    if len(sys.argv) != 3:
-        logging.info("Usage: python ingest.py <config_file> <secrets-profile>")
-        return
-    
-    logging.info("Starting the Crawler...")
-    config_name = sys.argv[1]
-    profile_name = sys.argv[2]
+    setup_logging()
+    logger = logging.getLogger()
 
     default_config: DictConfig = create_default_config()
 
     # process arguments
-    logging.info(f"Loading config {config_name}")
+    logging.info(f"Loading config {config_file}")
     try:
-        job_config: DictConfig = DictConfig(OmegaConf.load(config_name))
+        job_config: DictConfig = DictConfig(OmegaConf.load(config_file))
+        cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
-        logging.error(f"Error loading config file ({config_name}): {e}")
+        logging.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
 
     cfg: DictConfig = OmegaConf.merge(default_config, job_config)
 
-    secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
+    # Determine secrets.toml path
+    if secrets_path is None:
+        # First check environment variable
+        env_secrets_path = os.environ.get('VECTARA_SECRETS_PATH')
+        if env_secrets_path and os.path.exists(env_secrets_path):
+            secrets_path = env_secrets_path
+        else:
+            # Then try Docker path
+            docker_path = '/home/vectara/env/secrets.toml'
+            if os.path.exists(docker_path):
+                secrets_path = docker_path
+            else:
+                # Fallback to repository path
+                secrets_path = 'secrets.toml'
+                if not os.path.exists(secrets_path):
+                    logger.error('secrets.toml not found in repository root')
+                    raise typer.Exit(1)
+    
     # add .env params, by profile
     logging.info(f"Loading {secrets_path}")
     with open(secrets_path, "r") as f:
         env_dict = toml.load(f)
-    if profile_name not in env_dict:
-        logging.error(f'Profile "{profile_name}" not found in secrets.toml')
+    if profile not in env_dict:
+        logging.error(f'Profile "{profile}" not found in secrets.toml')
         exit(1)
-    logging.info(f'Using profile "{profile_name}" from secrets.toml')
+    logging.info(f'Using profile "{profile}" from secrets.toml')
     
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
     update_environment(cfg, f"{secrets_path}:general", general_dict)
 
     # Add all supported special secrets from the specified profile to the specific crawler config
-    env_dict = env_dict[profile_name]
+    env_dict = env_dict[profile]
     update_environment(cfg, secrets_path, env_dict)
     update_environment(cfg, 'os.environ', dict(os.environ))
 
@@ -311,7 +322,8 @@ def main() -> None:
     if not is_valid_url(auth_url):
         raise Exception(f"endpoint '{auth_url}' could not be parsed to a valid URL.")
 
-    create_corpus_flag = cfg.vectara.get("create_corpus", False)
+    create_corpus_flag = cfg.vectara.get("create_corpus", False)  # Default to False
+    print(f"create_corpus_flag: {create_corpus_flag}")
     corpus_key = cfg.vectara.corpus_key
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
@@ -322,9 +334,9 @@ def main() -> None:
         cfg, api_url, corpus_key, api_key
     )
 
-    logging.info("Crawling instantiated...")
-    # It is sometimes useful to create a new corpus.
-    # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
+    logging.info("Crawler instantiated...")
+    
+    # Create corpus if needed
     if create_corpus_flag:
         logging.info("Creating corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
@@ -333,11 +345,8 @@ def main() -> None:
             create_corpus_apikey(api_url, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow create_corpus enough time to complete on the backend
 
-    # When debugging a crawler, it is sometimes useful to reset the corpus (remove all documents)
-    # To do that you would have to set this to True and also include <auth_id> in the secrets.toml file
-    # NOTE: use with caution; this will delete all documents in the corpus and is irreversible
-    reset_corpus_flag = False
-    if reset_corpus_flag:
+    # Reset corpus if requested
+    if reset_corpus:
         logging.info("Resetting corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
             reset_corpus_oauth(api_url, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
@@ -349,6 +358,30 @@ def main() -> None:
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")
 
+@app.command()
+def main(
+    config_file: str = typer.Argument(..., help="Path to the configuration file"),
+    profile: str = typer.Argument(..., help="Profile name in secrets.toml"),
+    secrets_path: Optional[str] = typer.Option(
+        None,
+        help="Path to secrets.toml file. Defaults to /home/vectara/env/secrets.toml in Docker or ./secrets.toml locally"
+    ),
+    reset_corpus: bool = typer.Option(
+        False,
+        help="Reset the corpus before indexing"
+    )
+) -> None:
+    """
+    Main entry point for the vectara-ingest tool.
+    Supports both Docker-style arguments and Typer CLI.
+    """
+    run_ingest(config_file, profile, secrets_path, reset_corpus)
+
 if __name__ == '__main__':
-    setup_logging()
-    main()
+    # Check if arguments are provided in Docker style
+    if len(sys.argv) == 3 and not sys.argv[1].startswith('--'):
+        # Docker-style arguments
+        run_ingest(sys.argv[1], sys.argv[2])
+    else:
+        # Typer CLI
+        app()
