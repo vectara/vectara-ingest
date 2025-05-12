@@ -873,23 +873,23 @@ class Indexer:
                 if self.parse_tables and 'tables' in res:
                     if 'text' not in self.model_config:
                         self.logger.warning("Table summarization is enabled but no text model is configured, skipping")
-                        return False
-                    if self.verbose:
-                        self.logger.info(f"Found {len(res['tables'])} tables in {url}")
-                    table_summarizer = TableSummarizer(
-                        cfg=self.cfg,
-                        table_model_config=self.model_config.text,
-                    )
-                    for table in res['tables']:
-                        table_summary = table_summarizer.summarize_table_text(table)
-                        if table_summary:
-                            if self.verbose:
-                                self.logger.info(f"Table summary: {table_summary[:500]}...")
-                            cols, rows = html_table_to_header_and_rows(table)
-                            cols_not_empty = any(col for col in cols)
-                            rows_not_empty = any(any(cell for cell in row) for row in rows)
-                            if cols_not_empty or rows_not_empty:
-                                vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
+                    else:
+                        if self.verbose:
+                            self.logger.info(f"Found {len(res['tables'])} tables in {url}")
+                        table_summarizer = TableSummarizer(
+                            cfg=self.cfg,
+                            table_model_config=self.model_config.text,
+                        )
+                        for table in res['tables']:
+                            table_summary = table_summarizer.summarize_table_text(table)
+                            if table_summary:
+                                if self.verbose:
+                                    self.logger.info(f"Table summary: {table_summary[:500]}...")
+                                cols, rows = html_table_to_header_and_rows(table)
+                                cols_not_empty = any(col for col in cols)
+                                rows_not_empty = any(any(cell for cell in row) for row in rows)
+                                if cols_not_empty or rows_not_empty:
+                                    vec_tables.append({'headers': cols, 'rows': rows, 'summary': table_summary})
 
                 # index text and tables
                 doc_id = slugify(url)
@@ -1079,20 +1079,19 @@ class Indexer:
                 title, texts, _, images = dp.parse(filename, uri)
 
             # Get metadata attribute values from text content (if defined)
+            ex_metadata = {}
             if len(self.extract_metadata) > 0:
                 if 'text' not in self.model_config:
                     self.logger.warning("Metadata field extraction is enabled but no text model is configured, skipping")
-                    return False
-                all_text = "\n".join([t[0] for t in texts])[:max_chars]
-                ex_metadata = get_attributes_from_text(
-                    self.cfg,
-                    all_text,
-                    metadata_questions=self.extract_metadata,
-                    model_config=self.model_config.text
-                )
-                metadata.update(ex_metadata)
-            else:
-                ex_metadata = {}
+                else:
+                    all_text = "\n".join([t[0] for t in texts])[:max_chars]
+                    ex_metadata = get_attributes_from_text(
+                        self.cfg,
+                        all_text,
+                        metadata_questions=self.extract_metadata,
+                        model_config=self.model_config.text
+                    )
+                    metadata.update(ex_metadata)
             metadata.update(ex_metadata)
             metadata['file_name'] = filename.split('/')[-1]
 
