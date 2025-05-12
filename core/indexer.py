@@ -231,20 +231,20 @@ class Indexer:
 
         if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
-            self.logger.warn("Table summarization enabled but model API key not found, disabling table summarization")
+            self.logger.warning("Table summarization enabled but model API key not found, disabling table summarization")
 
         if self.summarize_images and vision_api_key is None:
             self.summarize_images = False
-            self.logger.warn(
+            self.logger.warning(
                 "Image summarization (doc_processing.summarize_images) enabled but model API key not found, disabling image summarization")
 
         if self.contextual_chunking and text_api_key is None:
             self.contextual_chunking = False
-            self.logger.warn("Contextual chunking enabled but model API key not found, disabling contextual chunking")
+            self.logger.warning("Contextual chunking enabled but model API key not found, disabling contextual chunking")
 
         if self.extract_metadata and text_api_key is None:
             self.extract_metadata = []
-            self.logger.warn(
+            self.logger.warning(
                 "Metadata extraction (doc_processing.extract_metadata) enabled but model API key not found, disabling metadata extraction")
 
         logging.info(f"Vectara API Url = '{self.api_url}'")
@@ -872,7 +872,7 @@ class Indexer:
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
                     if 'text' not in self.model_config:
-                        self.logger.info("Table summarization is enabled but no text model is configured, skipping")
+                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping")
                         return False
                     if self.verbose:
                         self.logger.info(f"Found {len(res['tables'])} tables in {url}")
@@ -1081,7 +1081,7 @@ class Indexer:
             # Get metadata attribute values from text content (if defined)
             if len(self.extract_metadata) > 0:
                 if 'text' not in self.model_config:
-                    self.logger.info("Metadata field extraction is enabled but no text model is configured, skipping")
+                    self.logger.warning("Metadata field extraction is enabled but no text model is configured, skipping")
                     return False
                 all_text = "\n".join([t[0] for t in texts])[:max_chars]
                 ex_metadata = get_attributes_from_text(
