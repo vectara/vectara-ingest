@@ -871,6 +871,9 @@ class Indexer:
 
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
+                    if 'text' not in self.model_config:
+                        self.logger.info("Table summarization is enabled but no text model is configured, skipping")
+                        return False
                     if self.verbose:
                         self.logger.info(f"Found {len(res['tables'])} tables in {url}")
                     table_summarizer = TableSummarizer(
@@ -1077,6 +1080,9 @@ class Indexer:
 
             # Get metadata attribute values from text content (if defined)
             if len(self.extract_metadata) > 0:
+                if 'text' not in self.model_config:
+                    self.logger.info("Metadata field extraction is enabled but no text model is configured, skipping")
+                    return False
                 all_text = "\n".join([t[0] for t in texts])[:max_chars]
                 ex_metadata = get_attributes_from_text(
                     self.cfg,
