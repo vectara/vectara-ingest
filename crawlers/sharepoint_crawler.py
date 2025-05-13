@@ -6,7 +6,6 @@ from office365.sharepoint.files.file import File
 from furl import furl
 import os
 import tempfile
-
 from core.crawler import Crawler
 
 class SharepointCrawler(Crawler):
@@ -67,9 +66,11 @@ class SharepointCrawler(Crawler):
 
         match auth_type:
             case 'user_credentials':
+                allow_ntlm = bool(self.cfg.sharepoint_crawler.get('allow_ntlm', 'True'))
                 self.sharepoint_context = context.with_user_credentials(
                     self.cfg.sharepoint_crawler.username,
-                    self.cfg.sharepoint_crawler.password
+                    self.cfg.sharepoint_crawler.password,
+                    allow_ntlm
                 )
             case 'client_credentials':
                 self.sharepoint_context = context.with_client_credentials(
@@ -147,6 +148,7 @@ class SharepointCrawler(Crawler):
             1. Configures SharePoint client context.
             2. Executes crawling operation based on the configured mode:
                 - 'folder': Initiates crawling of a SharePoint folder.
+                - 'list': Initiates crawling of a SharePoint list and its attachments.
 
         Raises:
             Exception: If the specified crawl mode is unknown or unsupported.
@@ -158,5 +160,41 @@ class SharepointCrawler(Crawler):
         match mode:
             case 'folder':
                 self.crawl_folder()
+            case 'list':
+                self.crawl_list()
             case _:
                 raise Exception(f"Unknown mode '{mode}'")
+
+
+    def crawl_list(self) -> None:
+        list_name = self.cfg.sharepoint_crawler.target_list
+        target_list = self.sharepoint_context.web.lists.get_by_title(list_name)
+        self.sharepoint_context.load(target_list, ['Id'])
+        items = target_list.items.get().execute_query()
+
+        allowed_fields = self.cfg.sharepoint_crawler.get("list_item_metadata_fields", [])
+        for item in items:
+            metadata = {k: v for k, v in item.properties.items() if k in allowed_fields}
+            item_id = item.properties["ID"]
+            metadata["list_id"] = str(target_list.id)
+            metadata["list_item_id"] = str(item_id)
+            attachment_files = target_list.get_item_by_id(item_id).attachment_files.get().execute_query()
+            for attachment in attachment_files:
+                filename = os.path.basename(attachment.server_relative_url)
+                extension = os.path.splitext(filename)[1]
+                doc_id = f"{target_list.id}-{item_id}-{filename}"
+                attachment_url = f"{self.team_site_url}{attachment.server_relative_url}"
+                metadata["url"] = attachment_url
+
+
+
+                with tempfile.NamedTemporaryFile(suffix=extension, mode="wb", delete=False) as f:
+                    self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
+                    try:
+                        succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
+                    finally:
+                        if os.path.exists(f.name):
+                            os.remove(f.name)
+
+                    if not succeeded:
+                        logging.error(f"Error indexing attachment {filename} for list item {item_id}")
