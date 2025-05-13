@@ -180,6 +180,8 @@ class SharepointCrawler(Crawler):
 
 
     def crawl_list(self) -> None:
+        from urllib.parse import quote
+
         list_name = self.cfg.sharepoint_crawler.target_list
         target_list = self.sharepoint_context.web.lists.get_by_title(list_name)
         self.sharepoint_context.load(target_list, ['Id'])
@@ -205,7 +207,8 @@ class SharepointCrawler(Crawler):
                 filename = os.path.basename(attachment.server_relative_url)
                 extension = os.path.splitext(filename)[1]
                 doc_id = f"{target_list.id}-{item_id}-{filename}"
-                attachment_url = f"{self.team_site_url}{attachment.server_relative_url}"
+                source_url = quote(attachment.server_relative_url)
+                attachment_url = f"{self.team_site_url}/_layouts/15/download.aspx?SourceUrl={source_url}"
                 metadata["url"] = attachment_url
 
                 with tempfile.NamedTemporaryFile(suffix=extension, mode="wb", delete=False) as f:
