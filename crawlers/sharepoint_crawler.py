@@ -1,3 +1,4 @@
+import zipfile
 import logging
 from importlib.resources import contents
 import time
@@ -103,7 +104,7 @@ class SharepointCrawler(Crawler):
         delay = self.cfg.sharepoint_crawler.get("retry_delay", 5)
         for attempt in range(retries):
             try:
-                return func()
+                return func.execute_query()
             except Exception as e:
                 if attempt == retries - 1:
                     raise
@@ -134,26 +135,28 @@ class SharepointCrawler(Crawler):
 
         for file in files:
             filename, file_extension = os.path.splitext(file.name)
-            if file_extension.lower() not in supported_extensions:
+            if file_extension.lower() == ".zip":
+                metadata = {'url': self.download_url(file)}
+                self.extract_and_upload_zip(file.server_relative_url, metadata, file.unique_id)
+            elif file_extension.lower() not in supported_extensions:
                 logging.warning(f"Skipping {file.server_relative_url} due to unsupported file type '{file_extension}'.")
-                continue
+            else:
+                metadata = {'url': self.download_url(file)}
 
-            metadata = {'url': self.download_url(file)}
+                with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
+                    logging.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
+                    file.download_session(f).execute_query()
+                    f.flush()
+                    f.close()
 
-            with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                logging.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
-                file.download_session(f).execute_query()
-                f.flush()
-                f.close()
+                    try:
+                        succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
+                    finally:
+                        if os.path.exists(f.name):
+                            os.remove(f.name)
 
-                try:
-                    succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
-                finally:
-                    if os.path.exists(f.name):
-                        os.remove(f.name)
-
-                if not succeeded:
-                    logging.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
+                    if not succeeded:
+                        logging.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
 
     def crawl(self) -> None:
         """
@@ -208,21 +211,61 @@ class SharepointCrawler(Crawler):
             for attachment in attachment_files:
                 filename = os.path.basename(attachment.server_relative_url)
                 filename, file_extension = os.path.splitext(filename)
-                if file_extension.lower() not in supported_extensions:
+                if file_extension.lower() == ".zip":
+                    doc_id = f"{target_list.id}-{item_id}-{filename}{file_extension}"
+                    self.extract_and_upload_zip(attachment.server_relative_url, metadata, doc_id)
+                elif file_extension.lower() not in supported_extensions:
                     logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
-                    continue
-                doc_id = f"{target_list.id}-{item_id}-{filename}"
-                source_url = quote(attachment.server_relative_url)
-                attachment_url = f"{self.team_site_url}/_layouts/15/download.aspx?SourceUrl={source_url}"
-                metadata["url"] = attachment_url
+                else:
+                    doc_id = f"{target_list.id}-{item_id}-{filename}"
+                    source_url = quote(attachment.server_relative_url)
+                    attachment_url = f"{self.team_site_url}/_layouts/15/download.aspx?SourceUrl={source_url}"
+                    metadata["url"] = attachment_url
 
-                with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                    self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
-                    try:
-                        succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
-                    finally:
-                        if os.path.exists(f.name):
-                            os.remove(f.name)
+                    with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
+                        self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
+                        try:
+                            succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
+                        finally:
+                            if os.path.exists(f.name):
+                                os.remove(f.name)
 
-                    if not succeeded:
-                        logging.error(f"Error indexing attachment {filename} for list item {item_id}")
+                        if not succeeded:
+                            logging.error(f"Error indexing attachment {filename} for list item {item_id}")
+
+    def extract_and_upload_zip(self, zip_url: str, metadata: dict, doc_id_prefix: str) -> None:
+        if not zip_url:
+            logging.warning("No ZIP URL provided for extraction.")
+            return
+
+        tmp_zip_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".zip", mode="wb", delete=False) as tmp_zip:
+                logging.info(f"Downloading ZIP file from {zip_url}")
+                file_obj = self.sharepoint_context.web.get_file_by_server_relative_url(zip_url).download(tmp_zip)
+                self.execute_with_retry(file_obj)
+                tmp_zip_path = tmp_zip.name
+
+            with tempfile.TemporaryDirectory() as extract_dir:
+                with zipfile.ZipFile(tmp_zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_dir)
+
+                for root, _, files in os.walk(extract_dir):
+                    for name in files:
+                        file_path = os.path.join(root, name)
+                        _, ext = os.path.splitext(name)
+                        if ext.lower() not in supported_extensions:
+                            logging.debug(f"Skipping {name} inside ZIP due to unsupported extension '{ext}'.")
+                            continue
+
+                        relative_path = os.path.relpath(file_path, extract_dir)
+                        file_doc_id = f"{doc_id_prefix}/{relative_path}"
+                        try:
+                            succeeded = self.indexer.index_file(file_path, zip_url, metadata, file_doc_id)
+                            if not succeeded:
+                                logging.error(f"Failed to index extracted file: {relative_path}")
+                        except Exception as e:
+                            logging.error(f"Error indexing file {relative_path} from ZIP: {e}")
+        finally:
+            if tmp_zip_path and os.path.exists(tmp_zip_path):
+                os.remove(tmp_zip_path)
