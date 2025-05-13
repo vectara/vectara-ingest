@@ -183,10 +183,9 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
         backoff_factor=1,
         raise_on_status=False,
         respect_retry_after_header=True,
-        allowed_method=["HEAD", "GET", "OPTIONS", "POST"],
+        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
     )
-    retry_adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
-    logging_adapter = LoggingAdapter(adapter=retry_adapter)
+    logging_adapter = LoggingAdapter(max_retries=retry_strategy)
     session.mount('http://', logging_adapter)
     session.mount('https://', logging_adapter)
     return session
