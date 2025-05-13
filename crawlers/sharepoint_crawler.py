@@ -1,5 +1,6 @@
 import logging
 from importlib.resources import contents
+import time
 
 from office365.sharepoint.client_context import ClientContext
 from office365.sharepoint.files.file import File
@@ -90,6 +91,18 @@ class SharepointCrawler(Crawler):
                 )
             case _:
                 raise Exception(f"Unknown auth_type '{auth_type}'")
+
+    def execute_with_retry(self, func):
+        retries = self.cfg.sharepoint_crawler.get("retry_attempts", 3)
+        delay = self.cfg.sharepoint_crawler.get("retry_delay", 5)
+        for attempt in range(retries):
+            try:
+                return func()
+            except Exception as e:
+                if attempt == retries - 1:
+                    raise
+                logging.warning(f"Attempt {attempt + 1} failed with error: {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
 
     def crawl_folder(self) -> None:
         """
@@ -185,8 +198,6 @@ class SharepointCrawler(Crawler):
                 doc_id = f"{target_list.id}-{item_id}-{filename}"
                 attachment_url = f"{self.team_site_url}{attachment.server_relative_url}"
                 metadata["url"] = attachment_url
-
-
 
                 with tempfile.NamedTemporaryFile(suffix=extension, mode="wb", delete=False) as f:
                     self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
