@@ -9,6 +9,12 @@ import os
 import tempfile
 from core.crawler import Crawler
 
+supported_extensions = {
+    ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
+    ".pptx", ".txt", ".html", ".htm", ".lxml",
+    ".rtf", ".epub"
+}
+
 class SharepointCrawler(Crawler):
     """
     A crawler implementation for ingesting and indexing documents from SharePoint sites.
@@ -124,16 +130,12 @@ class SharepointCrawler(Crawler):
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_path(target_folder)
         files = root_folder.get_files(recursive=recursive).execute_query()
 
-        supported_extensions = {
-            ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
-            ".pptx", ".txt", ".html", ".htm", ".lxml",
-            ".rtf", ".epub"
-        }
+
 
         for file in files:
             filename, file_extension = os.path.splitext(file.name)
             if file_extension.lower() not in supported_extensions:
-                logging.warning(f"Skipping {file.serverRelativeUrl} due to unsupported file type '{file_extension}'.")
+                logging.warning(f"Skipping {file.server_relative_url} due to unsupported file type '{file_extension}'.")
                 continue
 
             metadata = {'url': self.download_url(file)}
@@ -205,13 +207,16 @@ class SharepointCrawler(Crawler):
             attachment_files = target_list.get_item_by_id(item_id).attachment_files.get().execute_query()
             for attachment in attachment_files:
                 filename = os.path.basename(attachment.server_relative_url)
-                extension = os.path.splitext(filename)[1]
+                filename, file_extension = os.path.splitext(filename)
+                if file_extension.lower() not in supported_extensions:
+                    logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
+                    continue
                 doc_id = f"{target_list.id}-{item_id}-{filename}"
                 source_url = quote(attachment.server_relative_url)
                 attachment_url = f"{self.team_site_url}/_layouts/15/download.aspx?SourceUrl={source_url}"
                 metadata["url"] = attachment_url
 
-                with tempfile.NamedTemporaryFile(suffix=extension, mode="wb", delete=False) as f:
+                with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
                     self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
                     try:
                         succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
