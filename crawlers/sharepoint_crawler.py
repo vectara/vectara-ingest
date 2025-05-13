@@ -185,7 +185,7 @@ class SharepointCrawler(Crawler):
         self.sharepoint_context.load(target_list, ['Id'])
         items = target_list.items.get().execute_query()
 
-        allowed_fields = self.cfg.sharepoint_crawler.get("list_item_metadata_fields", [])
+        allowed_fields = self.cfg.sharepoint_crawler.get("list_item_metadata_properties", [])
         for item in items:
             metadata = {k: v for k, v in item.properties.items() if k in allowed_fields}
             item_id = item.properties["ID"]
