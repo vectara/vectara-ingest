@@ -182,13 +182,13 @@ def create_session_with_retries(retries: int = 5) -> requests.Session:
         status_forcelist=[429, 430, 443, 500, 502, 503, 504],  # A set of integer HTTP status codes that we should force a retry on.
         backoff_factor=1,
         raise_on_status=False,
-        respect_retry_after_header=True
+        respect_retry_after_header=True,
+        allowed_method=["HEAD", "GET", "OPTIONS", "POST"],
     )
-    adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    session.mount("http://", LoggingAdapter())
-    session.mount("https://", LoggingAdapter())
+    retry_adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+    logging_adapter = LoggingAdapter(adapter=retry_adapter)
+    session.mount('http://', logging_adapter)
+    session.mount('https://', logging_adapter)
     return session
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
