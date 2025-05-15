@@ -208,7 +208,8 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
-        if 'model' in self.cfg.doc_processing:
+        if ('model' in self.cfg.doc_processing or 
+            ('model_config' not in self.cfg.doc_processing and 'model' not in self.cfg.doc_processing)):
             logging.warning(
                 "doc_processing.model will no longer be supported in a future release. Use doc_processing.model_config instead.")
 
@@ -225,6 +226,7 @@ class Indexer:
                 'vision': pcfg,
             }  # By default use the same model for text and image processing
             OmegaConf.update(self.cfg, "doc_processing.model_config", mcfg, merge=False)
+
         self.model_config = self.cfg.doc_processing.get("model_config", {})
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), cfg)

@@ -59,6 +59,9 @@ class DocsCrawler(Crawler):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
         response = self.session.get(url, headers=headers)
+        if response.status_code == 429:
+            logging.info(f"Rate limit exceeded for {url}, after retries. skipping...")
+            return None, None
         if response.status_code != 200:
             logging.info(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None
