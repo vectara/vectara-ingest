@@ -192,6 +192,15 @@ class SharepointCrawler(Crawler):
         self.sharepoint_context.load(target_list, ['Id'])
         items = target_list.items.get().execute_query()
 
+        load_properties = ["Attachments", "ID"]
+        allowed_properties = self.cfg.sharepoint_crawler.get("list_item_metadata_properties", [])
+        for p in allowed_properties:
+            load_properties.append(p)
+
+        logging.debug(f"Loading properties: {', '.join(load_properties)}")
+        self.sharepoint_context.load(items, load_properties)
+        self.sharepoint_context.execute_query()
+
         allowed_properties = self.cfg.sharepoint_crawler.get("list_item_metadata_properties", [])
         all_properties = None
         for item in items:
@@ -207,32 +216,35 @@ class SharepointCrawler(Crawler):
             item_id = item.properties["ID"]
             metadata["list_id"] = str(target_list.id)
             metadata["list_item_id"] = str(item_id)
-            attachment_files = target_list.get_item_by_id(item_id).attachment_files.get().execute_query()
-            for attachment in attachment_files:
-                filename = os.path.basename(attachment.server_relative_url)
-                filename, file_extension = os.path.splitext(filename)
-                if file_extension.lower() == ".zip":
-                    doc_id = f"{target_list.id}-{item_id}-{filename}{file_extension}"
-                    self.extract_and_upload_zip(attachment.server_relative_url, metadata, doc_id)
-                elif file_extension.lower() not in supported_extensions:
-                    logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
-                else:
-                    doc_id = f"{target_list.id}-{item_id}-{filename}"
-                    source_url = quote(attachment.server_relative_url)
-                    attachment_url = f"{self.team_site_url}/_layouts/15/download.aspx?SourceUrl={source_url}"
-                    metadata["url"] = attachment_url
+            if 'Attachments' in item.properties:
+                attachment_files = item.attachment_files
+                self.sharepoint_context.load(attachment_files)
+                self.sharepoint_context.execute_query()
+                for attachment in attachment_files:
+                    filename = os.path.basename(attachment.server_relative_url)
+                    filename, file_extension = os.path.splitext(filename)
+                    if file_extension.lower() == ".zip":
+                        doc_id = f"{target_list.id}-{item_id}-{filename}{file_extension}"
+                        self.extract_and_upload_zip(attachment.server_relative_url, metadata, doc_id)
+                    elif file_extension.lower() not in supported_extensions:
+                        logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
+                    else:
+                        doc_id = f"{target_list.id}-{item_id}-{filename}"
+                        # source_url = quote(attachment.server_relative_url)
+                        attachment_url = attachment.resource_url
+                        metadata["url"] = attachment_url
 
-                    with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                        logging.info(f"Item Id {item_id}: Downloading {attachment.server_relative_url}")
-                        self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url).download(f).execute_query()
-                        try:
-                            succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
-                        finally:
-                            if os.path.exists(f.name):
-                                os.remove(f.name)
+                        with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
+                            logging.info(f"Item Id {item_id}: Downloading {attachment_url}")
+                            attachment.download(f).execute_query()
+                            try:
+                                succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
+                            finally:
+                                if os.path.exists(f.name):
+                                    os.remove(f.name)
 
-                        if not succeeded:
-                            logging.error(f"Error indexing attachment {filename} for list item {item_id}")
+                            if not succeeded:
+                                logging.error(f"Error indexing attachment {filename} for list item {item_id}")
 
     def extract_and_upload_zip(self, zip_url: str, metadata: dict, doc_id_prefix: str) -> None:
         if not zip_url:
