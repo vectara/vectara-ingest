@@ -80,13 +80,8 @@ COPY *.py $HOME/
 COPY core/*.py $HOME/core/
 COPY crawlers/ $HOME/crawlers/
 
-
-# Set entrypoint and command
-ENTRYPOINT ["/bin/bash", "-l", "-c"]
-CMD ["python3 ingest.py $CONFIG $PROFILE"]
-
-COPY bin/entrypoint.sh /bin/entrypoint.sh
-RUN chmod +x /bin/entrypoint.sh
+COPY bin/docker-entrypoint.sh /bin/docker-entrypoint.sh
+RUN chmod +x /bin/docker-entrypoint.sh
 
 # Use the script as the entrypoint
-ENTRYPOINT ["/bin/entrypoint.sh"]
+ENTRYPOINT ["/bin/docker-entrypoint.sh"]
