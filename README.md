@@ -348,6 +348,15 @@ If you are using the table summarization, image summarization or contextual retr
 you have to provide your own LLM key (either OPENAI_API_KEY or ANTHROPIC_API_KEY). 
 In this case, you would need to put that key under the `[general]` profile. This is a special profile name reserved for this purpose.
 
+### Adding Custom CA Certificates
+
+This container supports adding custom CA certificates at runtime. When using `./run.sh` if a ssl directory exists, 
+it will be mounted to the container as `./ssl:/ssl:ro`. Within the container
+if a `/ssl` directory exists and contains `.crt` files, the container will:
+
+1. Copy them into the system certificate store at `/usr/local/share/ca-certificates/`
+2. Run `update-ca-certificates` to install them
+
 ### Indexer Class
 
 The `Indexer` class provides useful functionality to index documents into Vectara.
