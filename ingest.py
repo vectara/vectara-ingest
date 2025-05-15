@@ -360,8 +360,8 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
 
 @app.command()
 def main(
-    config_file: str = typer.Argument(..., help="Path to the configuration file"),
-    profile: str = typer.Argument(..., help="Profile name in secrets.toml"),
+    config_file: str = typer.Option(..., help="Path to the configuration file"),
+    profile: str = typer.Option(..., help="Profile name in secrets.toml"),
     secrets_path: Optional[str] = typer.Option(
         None,
         help="Path to secrets.toml file. Defaults to /home/vectara/env/secrets.toml in Docker or ./secrets.toml locally"
