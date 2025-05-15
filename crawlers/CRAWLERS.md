@@ -24,7 +24,8 @@ website_crawler:
     neg_regex: []
     num_per_second: 10
     pages_source: crawl
-    max_depth: 3      # only needed if pages_source is set to 'crawl'
+    crawl_method: internal  # "internal" (default) or "scrapy"
+    max_depth: 3            # only needed if pages_source is set to 'crawl'
     html_processing:
       ids_to_remove: [td-123]
       tags_to_remove: [nav]

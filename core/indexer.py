@@ -113,24 +113,33 @@ def extract_last_modified(url: str, html: str) -> dict:
         result['detection_method'] = 'time'
         return result
 
-    # 3. Use regex to search for ISO-like date strings in the visible text
+    # 3. Use regex to search for ISO-like and human-readable dates in the visible text
     text = soup.get_text(" ", strip=True)
-    # A simple pattern to match YYYY-MM-DD optionally with time info.
-    iso_pattern = r'\b(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)\b'
-    found_dates = re.findall(iso_pattern, text)
+    patterns = [
+        # ISO-8601: 2025-05-14 or 2025-05-14 12:34:56
+        r'\b(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)\b',
+        # Month Day, Year: January 5, 2025
+        r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b'
+    ]
     date_candidates = []
-    for dt_str in found_dates:
-        try:
-            dt = parsedate_to_datetime(dt_str)
-            date_candidates.append(dt)
-        except Exception:
+    for pattern in patterns:
+        for match in re.findall(pattern, text):
+            # For the month-name pattern, match is the month only,
+            # so pull the full span instead:
+            dt_str = match if '-' in match else match
             try:
-                dt = datetime.fromisoformat(dt_str)
-                date_candidates.append(dt)
+                # Try the robust parser first (handles ISO)
+                dt = parsedate_to_datetime(dt_str)
             except Exception:
-                continue
+                try:
+                    # Fall back to strict Month Day, Year
+                    dt = datetime.strptime(dt_str, '%B %d, %Y')
+                except Exception:
+                    continue
+            date_candidates.append(dt)
+
     if date_candidates:
-        result['last_modified'] = max(date_candidates)
+        result['last_modified']    = max(date_candidates)
         result['detection_method'] = 'regex'
         return result
 
@@ -525,7 +534,7 @@ class Indexer:
                 self.browser_use_count = 0
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
 
-        self.logger.info(f"For page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
+        self.logger.info(f"For crawled page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
 
         return {
             'text': text,
@@ -669,6 +678,12 @@ class Indexer:
         }
         if self.parse_tables and filename.lower().endswith('.pdf'):
             files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+        if self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
+            chunk_size = self.cfg.vectara.get("chunk_size", 512)
+            new_files["chunking_strategy"] = {
+                "type": "max_chars_chunking_strategy",
+                "max_chars_per_chunk": chunk_size
+            }
 
         response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
@@ -687,6 +702,13 @@ class Indexer:
                 if self.parse_tables and filename.lower().endswith('.pdf'):
                     new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}),
                                                             'application/json')
+                if self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
+                    chunk_size = self.cfg.vectara.get("chunk_size", 512)
+                    new_files["chunking_strategy"] = {
+                        "type": "max_chars_chunking_strategy",
+                        "max_chars_per_chunk": chunk_size
+                    }
+
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
@@ -732,6 +754,13 @@ class Indexer:
             document['type'] = 'core'
         else:
             document['type'] = 'structured'
+
+        if (not self.use_core_indexing) and self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
+            chunk_size = self.cfg.vectara.get("chunk_size", 512)
+            document["chunking_strategy"] = {
+                "type": "max_chars_chunking_strategy",
+                "max_chars_per_chunk": chunk_size
+            }
 
         post_headers = {
             'x-api-key': self.api_key,
@@ -872,7 +901,7 @@ class Indexer:
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
                     if 'text' not in self.model_config:
-                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping")
+                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping table summarization")
                     else:
                         if self.verbose:
                             self.logger.info(f"Found {len(res['tables'])} tables in {url}")
