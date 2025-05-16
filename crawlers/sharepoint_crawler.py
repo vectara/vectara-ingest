@@ -3,6 +3,8 @@ import logging
 from importlib.resources import contents
 import time
 
+from office365.runtime.client_request_exception import ClientRequestException
+
 from office365.sharepoint.client_context import ClientContext
 from office365.sharepoint.files.file import File
 from furl import furl
@@ -130,15 +132,13 @@ class SharepointCrawler(Crawler):
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_path(target_folder)
         files = root_folder.get_files(recursive=recursive).execute_query()
 
-
-
         for file in files:
             filename, file_extension = os.path.splitext(file.name)
             if file_extension.lower() == ".zip":
                 metadata = {'url': self.download_url(file)}
                 self.extract_and_upload_zip(file.server_relative_url, metadata, file.unique_id)
             elif file_extension.lower() not in supported_extensions:
-                logging.warning(f"Skipping {file.server_relative_url} due to unsupported file type '{file_extension}'.")
+                logging.warning(f"Skipping {file} due to unsupported file type '{file_extension}'.")
             else:
                 metadata = {'url': self.download_url(file)}
 
@@ -238,9 +238,13 @@ class SharepointCrawler(Crawler):
                             logging.debug(f"Item Id {item_id}: Calling sharepoint_context.web.get_file_by_server_relative_url('{attachment.server_relative_url}')")
                             attachment_file = self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url)
                             logging.debug(f"attachment_file = {attachment_file}. Calling download...")
-                            attachment_file.download(f).execute_query()
+
                             try:
+                                attachment_file.download(f).execute_query()
                                 succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
+                            except ClientRequestException as e:
+                                logging.error(f"ClientRequestException when downloading {attachment.server_relative_url}: {e}")
+                                continue
                             finally:
                                 if os.path.exists(f.name):
                                     os.remove(f.name)
