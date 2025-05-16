@@ -214,6 +214,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     num_per_second: 10
     extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
+    crawl_method: internal  # "internal" (default) or "scrapy"
     remove_code: true
     html_processing:
       ids_to_remove: []

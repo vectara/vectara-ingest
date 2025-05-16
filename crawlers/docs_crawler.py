@@ -108,8 +108,8 @@ class DocsCrawler(Crawler):
                         abs_url = self.concat_url_and_href(url, href)
                         if (abs_url.startswith(("http://", "https://")) and len(urlparse(abs_url).fragment) == 0 and
                             not any(abs_url.endswith(ext) for ext in self.extensions_to_ignore) and 
-                            any(r.search(abs_url) for r in self.pos_regex) and                 # match any of the positive regexes
-                            not any([r.search(abs_url) for r in self.neg_regex])):               # don't match any of the negative regexes
+                            any(r.search(abs_url) for r in self.pos_regex) and             # match any of the positive regexes
+                            not any([r.search(abs_url) for r in self.neg_regex])):         # don't match any of the negative regexes
                             if abs_url not in self.crawled_urls and abs_url not in new_urls:
                                 new_urls.append(abs_url)
                         else:
