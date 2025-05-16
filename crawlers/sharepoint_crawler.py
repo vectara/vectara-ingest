@@ -70,15 +70,14 @@ class SharepointCrawler(Crawler):
         self.team_site_url = self.cfg.sharepoint_crawler.team_site_url
         logging.info(f"team_site_url = '{self.team_site_url}'")
         auth_type = self.cfg.sharepoint_crawler.get('auth_type', 'user_credentials')
-        context = ClientContext(self.team_site_url)
+        allow_ntlm = bool(self.cfg.sharepoint_crawler.get('allow_ntlm', 'True'))
+        context = ClientContext(self.team_site_url, allow_ntlm=allow_ntlm)
 
         match auth_type:
             case 'user_credentials':
-                allow_ntlm = bool(self.cfg.sharepoint_crawler.get('allow_ntlm', 'True'))
                 self.sharepoint_context = context.with_user_credentials(
                     self.cfg.sharepoint_crawler.username,
-                    self.cfg.sharepoint_crawler.password,
-                    allow_ntlm
+                    self.cfg.sharepoint_crawler.password
                 )
             case 'client_credentials':
                 self.sharepoint_context = context.with_client_credentials(
