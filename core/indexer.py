@@ -53,123 +53,73 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-
 def extract_last_modified(url: str, html: str) -> dict:
     """
     Extracts the last modified date from HTML content.
-
-    Tries the following strategies in order:
-      1. Look for a meta tag with http-equiv="last-modified" or name="last-modified".
-      2. Search for <time> elements with a datetime attribute.
-      3. Use a regex to find ISO-like date strings in the page text.
-      4. If no date is found, returns an MD5 hash of the content as a fingerprint.
-
-    Args:
-        url (str): The URL of the resource.
-        html (str): The HTML content of the resource.
-
-    Returns:
-        dict: A dictionary containing:
-              - 'url': the input URL.
-              - 'last_modified': a datetime object if a date was found,
-                                 or omitted if not.
-              - 'content_hash': MD5 hash string if no date was found.
-              - 'detection_method': one of 'meta', 'time', 'regex', or 'hash'.
+    Strategies, in order:
+      1. <meta http-equiv="last-modified" | name="last-modified">
+      2. <time datetime="…">
+      3. Regex search for ISO or "Month Day, Year"
+      4. Fallback to MD5 hash of the HTML
     """
     result = {'url': url, 'detection_method': None}
     soup = BeautifulSoup(html, 'html.parser')
 
-    # 1. Try meta tags with http-equiv="last-modified" or name="last-modified"
-    for attr in ['http-equiv', 'name']:
-        meta_tag = soup.find('meta', attrs={attr: lambda v: v and v.lower() == 'last-modified'})
-        if meta_tag and meta_tag.get('content'):
+    # 1) META tags
+    for attr in ('http-equiv', 'name'):
+        tag = soup.find('meta', attrs={attr: lambda v: v and v.lower()=='last-modified'})
+        if tag and tag.get('content'):
             try:
-                dt = parsedate_to_datetime(meta_tag['content'])
-                result['last_modified'] = dt
-                result['detection_method'] = 'meta'
-                return result
-            except Exception:
-                pass  # Fall through to next method if parsing fails
-
-    # 2. Look for <time> elements with a datetime attribute
-    time_elements = soup.find_all('time', attrs={'datetime': True})
-    dates = []
-    for time_elem in time_elements:
-        dt_str = time_elem.get('datetime', '').strip()
-        if not dt_str:
-            continue
-        try:
-            # Try using parsedate_to_datetime first
-            dt = parsedate_to_datetime(dt_str)
-        except Exception:
-            try:
-                # If that fails, try fromisoformat (Python 3.7+)
-                dt = datetime.fromisoformat(dt_str)
+                dt = parsedate_to_datetime(tag['content'])
             except Exception:
                 continue
-        dates.append(dt)
-    if dates:
-        result['last_modified'] = max(dates)
-        result['detection_method'] = 'time'
+            result.update(last_modified=dt, detection_method='meta')
+            return result
+
+    # 2) <time datetime="…">
+    times = []
+    for time_tag in soup.find_all('time', datetime=True):
+        dt_str = time_tag['datetime'].strip()
+        for parser in (parsedate_to_datetime, datetime.fromisoformat):
+            try:
+                dt = parser(dt_str)
+                times.append(dt)
+                break
+            except Exception:
+                continue
+    if times:
+        result.update(last_modified=max(times), detection_method='time')
         return result
 
-    # 3. Use regex to search for ISO-like and human-readable dates in the visible text
+    # 3) Regex search
     text = soup.get_text(" ", strip=True)
     patterns = [
-        # ISO-8601: 2025-05-14 or 2025-05-14 12:34:56
-        r'\b(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)\b',
-        # Month Day, Year: January 5, 2025
-        r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b'
+        # ISO-8601, no capture group so findall → full match
+        r'\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?\b',
+        # Month Day, Year using a non-capturing group for the month
+        r'\b(?:January|February|March|April|May|June|July|'
+        r'August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b',
     ]
-    date_candidates = []
-    for pattern in patterns:
-        for match in re.findall(pattern, text):
-            # For the month-name pattern, match is the month only,
-            # so pull the full span instead:
-            dt_str = match if '-' in match else match
-            try:
-                # Try the robust parser first (handles ISO)
-                dt = parsedate_to_datetime(dt_str)
-            except Exception:
+    candidates = []
+    for pat in patterns:
+        for m in re.finditer(pat, text):
+            dt_str = m.group(0)
+            for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%B %d, %Y"):
                 try:
-                    # Fall back to strict Month Day, Year
-                    dt = datetime.strptime(dt_str, '%B %d, %Y')
+                    dt = parsedate_to_datetime(dt_str) if 'T' in dt_str or '-' in dt_str else datetime.strptime(dt_str, fmt)
+                    candidates.append(dt)
+                    break
                 except Exception:
                     continue
-            date_candidates.append(dt)
 
-    if date_candidates:
-        result['last_modified']    = max(date_candidates)
-        result['detection_method'] = 'regex'
+    if candidates:
+        result.update(last_modified=max(candidates), detection_method='regex')
         return result
 
-    # 4. Fallback: use a hash of the content as a fingerprint.
-    content_hash = hashlib.md5(html.encode('utf-8')).hexdigest()
-    result['content_hash'] = content_hash
-    result['detection_method'] = 'hash'
+    # 4) Fallback to hash
+    result.update(content_hash=hashlib.md5(html.encode('utf-8')).hexdigest(),
+                  detection_method='hash')
     return result
-
-
-def extract_last_modified_from_html(html: str) -> Optional[str]:
-    """
-    Extract the last modified date from HTML meta tags.
-    Looks for meta tags with property "article:modified_time" or name "last-modified".
-    
-    Args:
-        html (str): HTML content of the page.
-        
-    Returns:
-        Optional[str]: The extracted date string or None if not found.
-    """
-    # Define regex patterns to match meta tags
-    pattern = re.compile(
-        r'<meta\s+(?=[^>]*(?:property|name)\s*=\s*["\'](?:article:modified_time|last-modified)["\'])'
-        r'[^>]*content\s*=\s*["\']([^"\']+)["\']',
-        re.IGNORECASE | re.DOTALL
-    )
-    match = pattern.search(html)
-    return match.group(1) if match else None
-
 
 class Indexer:
     """
