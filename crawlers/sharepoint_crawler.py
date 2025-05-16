@@ -235,7 +235,10 @@ class SharepointCrawler(Crawler):
 
                         with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
                             logging.info(f"Item Id {item_id}: Downloading {attachment_url}")
-                            attachment.download(f).execute_query()
+                            logging.debug(f"Item Id {item_id}: Calling sharepoint_context.web.get_file_by_server_relative_url('{attachment.server_relative_url}')")
+                            attachment_file = self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url)
+                            logging.debug(f"attachment_file = {attachment_file}. Calling download...")
+                            attachment_file.download(f).execute_query()
                             try:
                                 succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
                             finally:
