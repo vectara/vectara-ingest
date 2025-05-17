@@ -87,7 +87,7 @@ class DocsCrawler(Crawler):
         while len(new_urls):
             n_urls = len(self.crawled_urls)
             if n_urls>0 and n_urls%100==0:
-                logging.info(f"Currently have {n_urls}  urls identified")
+                logging.info(f"Currently have {n_urls} urls identified")
             
             # pop the left-most URL from new_urls
             url = new_urls.popleft()

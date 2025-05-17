@@ -53,7 +53,23 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
-def extract_last_modified(url: str, html: str) -> dict:
+# helper function to add table_extraction and chunking_strategy to payload
+def _add_extra_params(
+        payload: Dict[str, Any],
+        parse_tables: bool,
+        cfg: OmegaConf,
+    ) -> None:
+    if parse_tables:
+        payload['table_extraction'] = {'extract_tables': True}
+    if cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
+        chunk_size = cfg.vectara.get("chunk_size", 512)
+        payload['chunking_strategy'] = {
+            "type": "max_chars_chunking_strategy",
+            "max_chars_per_chunk": chunk_size
+        }
+
+
+def _extract_last_modified(url: str, html: str) -> dict:
     """
     Extracts the last modified date from HTML content.
     Strategies, in order:
@@ -621,19 +637,16 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
-
+        
         files = {
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        if self.parse_tables and filename.lower().endswith('.pdf'):
-            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
-        if self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
-            chunk_size = self.cfg.vectara.get("chunk_size", 512)
-            new_files["chunking_strategy"] = {
-                "type": "max_chars_chunking_strategy",
-                "max_chars_per_chunk": chunk_size
-            }
+        _add_extra_params(
+            payload=files, 
+            parse_table=self.parse_tables and filename.endswith('.pdf'), 
+            cfg=self.cfg
+        )
 
         response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
@@ -649,15 +662,11 @@ class Indexer:
                     'file': (upload_filename, open(filename, 'rb')),
                     'metadata': (None, json.dumps(metadata), 'application/json'),
                 }
-                if self.parse_tables and filename.lower().endswith('.pdf'):
-                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}),
-                                                            'application/json')
-                if self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
-                    chunk_size = self.cfg.vectara.get("chunk_size", 512)
-                    new_files["chunking_strategy"] = {
-                        "type": "max_chars_chunking_strategy",
-                        "max_chars_per_chunk": chunk_size
-                    }
+                _add_extra_params(
+                    payload=new_files, 
+                    parse_table=self.parse_tables and filename.endswith('.pdf'), 
+                    cfg=self.cfg
+                )
 
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
@@ -705,12 +714,12 @@ class Indexer:
         else:
             document['type'] = 'structured'
 
-        if (not self.use_core_indexing) and self.cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
-            chunk_size = self.cfg.vectara.get("chunk_size", 512)
-            document["chunking_strategy"] = {
-                "type": "max_chars_chunking_strategy",
-                "max_chars_per_chunk": chunk_size
-            }
+        if not self.use_core_indexing:
+            _add_extra_params(
+                payload=document, 
+                parse_tables=False,     # the parse_tables only for file_upload
+                cfg=self.cfg
+            )
 
         post_headers = {
             'x-api-key': self.api_key,
@@ -810,7 +819,7 @@ class Indexer:
                     return False
 
                 # Extract the last modified date from the HTML content.
-                ext_res = extract_last_modified(url, html)
+                ext_res = _extract_last_modified(url, html)
                 last_modified = ext_res.get('last_modified', None)
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
