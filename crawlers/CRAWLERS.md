@@ -24,7 +24,8 @@ website_crawler:
     neg_regex: []
     num_per_second: 10
     pages_source: crawl
-    max_depth: 3      # only needed if pages_source is set to 'crawl'
+    crawl_method: internal  # "internal" (default) or "scrapy"
+    max_depth: 3            # only needed if pages_source is set to 'crawl'
     html_processing:
       ids_to_remove: [td-123]
       tags_to_remove: [nav]
@@ -213,6 +214,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     num_per_second: 10
     extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
+    crawl_method: internal  # "internal" (default) or "scrapy"
     remove_code: true
     html_processing:
       ids_to_remove: []

@@ -53,114 +53,85 @@ get_headers = {
     "Connection": "keep-alive",
 }
 
+# helper function to add table_extraction and chunking_strategy to payload
+def _get_chunking_config(
+        cfg: OmegaConf,
+    ) -> Optional[Dict]:
+    if cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
+        chunk_size = cfg.vectara.get("chunk_size", 512)
+        return {
+            "type": "max_chars_chunking_strategy",
+            "max_chars_per_chunk": chunk_size
+        }
+    return None
 
-def extract_last_modified(url: str, html: str) -> dict:
+def _extract_last_modified(url: str, html: str) -> dict:
     """
     Extracts the last modified date from HTML content.
-
-    Tries the following strategies in order:
-      1. Look for a meta tag with http-equiv="last-modified" or name="last-modified".
-      2. Search for <time> elements with a datetime attribute.
-      3. Use a regex to find ISO-like date strings in the page text.
-      4. If no date is found, returns an MD5 hash of the content as a fingerprint.
-
-    Args:
-        url (str): The URL of the resource.
-        html (str): The HTML content of the resource.
-
-    Returns:
-        dict: A dictionary containing:
-              - 'url': the input URL.
-              - 'last_modified': a datetime object if a date was found,
-                                 or omitted if not.
-              - 'content_hash': MD5 hash string if no date was found.
-              - 'detection_method': one of 'meta', 'time', 'regex', or 'hash'.
+    Strategies, in order:
+      1. <meta http-equiv="last-modified" | name="last-modified">
+      2. <time datetime="…">
+      3. Regex search for ISO or "Month Day, Year"
+      4. Fallback to MD5 hash of the HTML
     """
     result = {'url': url, 'detection_method': None}
     soup = BeautifulSoup(html, 'html.parser')
 
-    # 1. Try meta tags with http-equiv="last-modified" or name="last-modified"
-    for attr in ['http-equiv', 'name']:
-        meta_tag = soup.find('meta', attrs={attr: lambda v: v and v.lower() == 'last-modified'})
-        if meta_tag and meta_tag.get('content'):
+    # 1) META tags
+    for attr in ('http-equiv', 'name'):
+        tag = soup.find('meta', attrs={attr: lambda v: v and v.lower()=='last-modified'})
+        if tag and tag.get('content'):
             try:
-                dt = parsedate_to_datetime(meta_tag['content'])
-                result['last_modified'] = dt
-                result['detection_method'] = 'meta'
-                return result
-            except Exception:
-                pass  # Fall through to next method if parsing fails
-
-    # 2. Look for <time> elements with a datetime attribute
-    time_elements = soup.find_all('time', attrs={'datetime': True})
-    dates = []
-    for time_elem in time_elements:
-        dt_str = time_elem.get('datetime', '').strip()
-        if not dt_str:
-            continue
-        try:
-            # Try using parsedate_to_datetime first
-            dt = parsedate_to_datetime(dt_str)
-        except Exception:
-            try:
-                # If that fails, try fromisoformat (Python 3.7+)
-                dt = datetime.fromisoformat(dt_str)
+                dt = parsedate_to_datetime(tag['content'])
             except Exception:
                 continue
-        dates.append(dt)
-    if dates:
-        result['last_modified'] = max(dates)
-        result['detection_method'] = 'time'
+            result.update(last_modified=dt, detection_method='meta')
+            return result
+
+    # 2) <time datetime="…">
+    times = []
+    for time_tag in soup.find_all('time', datetime=True):
+        dt_str = time_tag['datetime'].strip()
+        for parser in (parsedate_to_datetime, datetime.fromisoformat):
+            try:
+                dt = parser(dt_str)
+                times.append(dt)
+                break
+            except Exception:
+                continue
+    if times:
+        result.update(last_modified=max(times), detection_method='time')
         return result
 
-    # 3. Use regex to search for ISO-like date strings in the visible text
+    # 3) Regex search
     text = soup.get_text(" ", strip=True)
-    # A simple pattern to match YYYY-MM-DD optionally with time info.
-    iso_pattern = r'\b(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)\b'
-    found_dates = re.findall(iso_pattern, text)
-    date_candidates = []
-    for dt_str in found_dates:
-        try:
-            dt = parsedate_to_datetime(dt_str)
-            date_candidates.append(dt)
-        except Exception:
-            try:
-                dt = datetime.fromisoformat(dt_str)
-                date_candidates.append(dt)
-            except Exception:
-                continue
-    if date_candidates:
-        result['last_modified'] = max(date_candidates)
-        result['detection_method'] = 'regex'
+    patterns = [
+        # ISO-8601, no capture group so findall → full match
+        r'\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?\b',
+        # Month Day, Year using a non-capturing group for the month
+        r'\b(?:January|February|March|April|May|June|July|'
+        r'August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b',
+    ]
+    candidates = []
+    for pat in patterns:
+        for m in re.finditer(pat, text):
+            dt_str = m.group(0)
+            for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%B %d, %Y"):
+                try:
+                    dt = parsedate_to_datetime(dt_str) if 'T' in dt_str or '-' in dt_str else datetime.strptime(dt_str, fmt)
+                    candidates.append(dt)
+                    break
+                except Exception:
+                    continue
+
+    if candidates:
+        result.update(last_modified=max(candidates), detection_method='regex')
         return result
 
-    # 4. Fallback: use a hash of the content as a fingerprint.
-    content_hash = hashlib.md5(html.encode('utf-8')).hexdigest()
-    result['content_hash'] = content_hash
-    result['detection_method'] = 'hash'
+    # 4) Fallback to hash
+    result.update(content_hash=hashlib.md5(html.encode('utf-8')).hexdigest(),
+                  detection_method='hash')
     return result
-
-
-def extract_last_modified_from_html(html: str) -> Optional[str]:
-    """
-    Extract the last modified date from HTML meta tags.
-    Looks for meta tags with property "article:modified_time" or name "last-modified".
-    
-    Args:
-        html (str): HTML content of the page.
-        
-    Returns:
-        Optional[str]: The extracted date string or None if not found.
-    """
-    # Define regex patterns to match meta tags
-    pattern = re.compile(
-        r'<meta\s+(?=[^>]*(?:property|name)\s*=\s*["\'](?:article:modified_time|last-modified)["\'])'
-        r'[^>]*content\s*=\s*["\']([^"\']+)["\']',
-        re.IGNORECASE | re.DOTALL
-    )
-    match = pattern.search(html)
-    return match.group(1) if match else None
-
 
 class Indexer:
     """
@@ -527,7 +498,7 @@ class Indexer:
                 self.browser_use_count = 0
                 self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
 
-        self.logger.info(f"For page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
+        self.logger.info(f"For crawled page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
 
         return {
             'text': text,
@@ -664,13 +635,17 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
-
+        
         files = {
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        if self.parse_tables and filename.lower().endswith('.pdf'):
+
+        if self.parse_tables and filename.endswith('.pdf'):
             files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+        chunking_config = _get_chunking_config(self.cfg)
+        if chunking_config:
+            files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
 
         response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
@@ -686,9 +661,12 @@ class Indexer:
                     'file': (upload_filename, open(filename, 'rb')),
                     'metadata': (None, json.dumps(metadata), 'application/json'),
                 }
-                if self.parse_tables and filename.lower().endswith('.pdf'):
-                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}),
-                                                            'application/json')
+                if self.parse_tables and filename.endswith('.pdf'):
+                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+                chunking_config = _get_chunking_config(self.cfg)
+                if chunking_config:
+                    new_files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
+
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     self.logger.info(f"REST upload for {uri} successful (reindex)")
@@ -734,6 +712,11 @@ class Indexer:
             document['type'] = 'core'
         else:
             document['type'] = 'structured'
+
+        if not self.use_core_indexing:
+            chunking_config = _get_chunking_config(self.cfg)
+            if chunking_config:
+                document['chunking_strategy'] = chunking_config
 
         post_headers = {
             'x-api-key': self.api_key,
@@ -833,7 +816,7 @@ class Indexer:
                     return False
 
                 # Extract the last modified date from the HTML content.
-                ext_res = extract_last_modified(url, html)
+                ext_res = _extract_last_modified(url, html)
                 last_modified = ext_res.get('last_modified', None)
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
@@ -874,7 +857,7 @@ class Indexer:
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
                     if 'text' not in self.model_config:
-                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping")
+                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping table summarization")
                     else:
                         if self.verbose:
                             self.logger.info(f"Found {len(res['tables'])} tables in {url}")
