@@ -54,20 +54,16 @@ get_headers = {
 }
 
 # helper function to add table_extraction and chunking_strategy to payload
-def _add_extra_params(
-        payload: Dict[str, Any],
-        parse_tables: bool,
+def _get_chunking_config(
         cfg: OmegaConf,
-    ) -> None:
-    if parse_tables:
-        payload['table_extraction'] = {'extract_tables': True}
+    ) -> Optional[Dict]:
     if cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
         chunk_size = cfg.vectara.get("chunk_size", 512)
-        payload['chunking_strategy'] = {
+        return {
             "type": "max_chars_chunking_strategy",
             "max_chars_per_chunk": chunk_size
         }
-
+    return None
 
 def _extract_last_modified(url: str, html: str) -> dict:
     """
@@ -642,11 +638,12 @@ class Indexer:
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
         }
-        _add_extra_params(
-            payload=files, 
-            parse_table=self.parse_tables and filename.endswith('.pdf'), 
-            cfg=self.cfg
-        )
+
+        if self.parse_tables and filename.endswith('.pdf'):
+            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+        chunking_config = _get_chunking_config(self.cfg)
+        if chunking_config:
+            files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
 
         response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
@@ -662,11 +659,11 @@ class Indexer:
                     'file': (upload_filename, open(filename, 'rb')),
                     'metadata': (None, json.dumps(metadata), 'application/json'),
                 }
-                _add_extra_params(
-                    payload=new_files, 
-                    parse_table=self.parse_tables and filename.endswith('.pdf'), 
-                    cfg=self.cfg
-                )
+                if self.parse_tables and filename.endswith('.pdf'):
+                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+                chunking_config = _get_chunking_config(self.cfg)
+                if chunking_config:
+                    new_files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
 
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
@@ -715,11 +712,9 @@ class Indexer:
             document['type'] = 'structured'
 
         if not self.use_core_indexing:
-            _add_extra_params(
-                payload=document, 
-                parse_tables=False,     # the parse_tables only for file_upload
-                cfg=self.cfg
-            )
+            chunking_config = _get_chunking_config(self.cfg)
+            if chunking_config:
+                document['chunking_strategy'] = chunking_config
 
         post_headers = {
             'x-api-key': self.api_key,
