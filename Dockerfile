@@ -80,7 +80,7 @@ COPY *.py $HOME/
 COPY core/*.py $HOME/core/
 COPY crawlers/ $HOME/crawlers/
 
-COPY bin/docker-entrypoint.sh /bin/docker-entrypoint.sh
+COPY docker/bin/docker-entrypoint.sh /bin/docker-entrypoint.sh
 RUN chmod +x /bin/docker-entrypoint.sh
 
 # Use the script as the entrypoint
