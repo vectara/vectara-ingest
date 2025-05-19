@@ -135,19 +135,21 @@ class DocsCrawler(Crawler):
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
 
-        for base_url in self.cfg.docs_crawler.base_urls:
-            if self.cfg.docs_crawler.get("crawl_method", "internal") == "scrapy":
-                logging.info("Using Scrapy to crawl the website")
-                all_urls = run_link_spider_isolated(
-                    start_urls = [base_url],
-                    positive_regexes = self.cfg.docs_crawler.get("pos_regex", []),
-                    negative_regexes = self.cfg.docs_crawler.get("neg_regex", []),
-                    max_depth = self.cfg.docs_crawler.get("max_depth", 3),
-                )
-                all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
-            else:
+        if self.cfg.docs_crawler.get("crawl_method", "internal") == "scrapy":
+            logging.info("Using Scrapy to crawl the website")
+            all_urls = run_link_spider_isolated(
+                start_urls = self.cfg.docs_crawler.base_urls,
+                positive_regexes = self.cfg.docs_crawler.get("pos_regex", []),
+                negative_regexes = self.cfg.docs_crawler.get("neg_regex", []),
+                max_depth = self.cfg.docs_crawler.get("max_depth", 3),
+            )
+            all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
+        else:
+            all_urls = []
+            for base_url in self.cfg.docs_crawler.base_urls:
                 self.collect_urls(base_url, num_per_second=num_per_second)
-                all_urls = list(self.crawled_urls)
+                all_urls += list(self.crawled_urls)
+            all_urls = list(set(all_urls))
 
         logging.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
