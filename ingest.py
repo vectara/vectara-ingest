@@ -1,13 +1,12 @@
 import logging
 import time
 import sys
-import os
+
 from typing import Any
 import importlib
 from urllib.parse import urlparse
 import requests
 import toml     # type: ignore
-from mypy.reachability import assert_will_always_fail
 
 from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
