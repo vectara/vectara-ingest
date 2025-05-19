@@ -129,7 +129,7 @@ class SharepointCrawler(Crawler):
         target_folder = self.cfg.sharepoint_crawler.target_folder
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
-        root_folder = self.sharepoint_context.web.get_folder_by_server_relative_path(target_folder)
+        root_folder = self.sharepoint_context.web.folders.get_by_path(target_folder)
         files = root_folder.get_files(recursive=recursive).execute_query()
 
         for file in files:
@@ -141,7 +141,7 @@ class SharepointCrawler(Crawler):
                 logging.warning(f"Skipping {file} due to unsupported file type '{file_extension}'.")
             else:
                 metadata = {'url': self.download_url(file)}
-
+                logging.info(f"Downloading {file}")
                 with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
                     logging.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
                     file.download_session(f).execute_query()
