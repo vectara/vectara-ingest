@@ -1,11 +1,13 @@
+import re
 import logging
-from core.crawler import Crawler, recursive_crawl
+import psutil
+
+from core.crawler import Crawler
 from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
 from core.indexer import Indexer
-import re
+from core.spider import run_link_spider_isolated, recursive_crawl
 
 import ray
-import psutil
 
 
 class PageCrawlWorker(object):
@@ -39,34 +41,48 @@ class PageCrawlWorker(object):
 class WebsiteCrawler(Crawler):
     def crawl(self) -> None:
         base_urls = self.cfg.website_crawler.urls
-        self.pos_regex = [re.compile(r) for r in self.cfg.website_crawler.get("pos_regex", [])]
-        self.neg_regex = [re.compile(r) for r in self.cfg.website_crawler.get("neg_regex", [])]
+        self.pos_regex = self.cfg.website_crawler.get("pos_regex", [])
+        self.pos_patterns = [re.compile(r) for r in self.pos_regex]
+        self.neg_regex = self.cfg.website_crawler.get("neg_regex", [])
+        self.neg_patterns = [re.compile(r) for r in self.neg_regex]
         keep_query_params = self.cfg.website_crawler.get('keep_query_params', False)
         self.html_processing = self.cfg.website_crawler.get('html_processing', {})
+        max_depth = self.cfg.website_crawler.get("max_depth", 3)
 
-        # grab all URLs to crawl from all base_urls
-        all_urls = []
-        for homepage in base_urls:
-            if self.cfg.website_crawler.pages_source == "sitemap":
-                urls = get_urls_from_sitemap(homepage)
-            elif self.cfg.website_crawler.pages_source == "crawl":
-                max_depth = self.cfg.website_crawler.get("max_depth", 3)
-                urls_set = recursive_crawl(homepage, max_depth, 
-                                           pos_regex=self.pos_regex, neg_regex=self.neg_regex, 
-                                           indexer=self.indexer, visited=set(), verbose=self.indexer.verbose)
-                urls = clean_urls(urls_set, keep_query_params)
-            else:
-                logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
-                return
-            logging.info(f"Found {len(urls)} URLs on {homepage}")
-            all_urls += urls
+
+        if self.cfg.website_crawler.get("crawl_method", "internal") == "scrapy":
+            logging.info("Using Scrapy to crawl the website")
+            all_urls = run_link_spider_isolated(
+                start_urls = base_urls,
+                positive_regexes = self.pos_regex,
+                negative_regexes = self.neg_regex,
+                max_depth = max_depth,
+            )
+        else:
+            logging.info("Using internal Vectara-ingest method to crawl the website")
+            all_urls = []
+            for homepage in base_urls:
+                if self.cfg.website_crawler.pages_source == "sitemap":
+                    urls = get_urls_from_sitemap(homepage)
+                elif self.cfg.website_crawler.pages_source == "crawl":
+                    urls_set = recursive_crawl(
+                        homepage, max_depth, 
+                        pos_patterns=self.pos_patterns, neg_patterns=self.neg_patterns,
+                        indexer=self.indexer, visited=set(), verbose=self.indexer.verbose
+                    )
+                    urls = clean_urls(urls_set, keep_query_params)
+                else:
+                    logging.info(f"Unknown pages_source: {self.cfg.website_crawler.pages_source}")
+                    return
+                logging.info(f"Found {len(urls)} URLs on {homepage}")
+                all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
         urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
         if self.pos_regex and len(self.pos_regex)>0:
-            urls = [u for u in all_urls if any([r.match(u) for r in self.pos_regex])]
+            urls = [u for u in all_urls if any([r.match(u) for r in self.pos_patterns])]
         if self.neg_regex and len(self.neg_regex)>0:
-            urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_regex])]
+            urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_patterns])]
         urls = list(set(urls))
 
         # Store URLS in crawl_report if needed

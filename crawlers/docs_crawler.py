@@ -1,14 +1,17 @@
-from core.crawler import Crawler
 from bs4 import BeautifulSoup
+import psutil
 import logging
-from urllib.parse import urljoin, urlparse
 import re
+from typing import Tuple, Set
 from collections import deque
+from urllib.parse import urljoin, urlparse
+
+from core.crawler import Crawler
 from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging, \
     configure_session_for_ssl
-from typing import Tuple, Set
+from core.spider import run_link_spider_isolated
 from core.indexer import Indexer
-import psutil
+
 import ray
 
 class UrlCrawlWorker(object):
@@ -87,7 +90,7 @@ class DocsCrawler(Crawler):
         while len(new_urls):
             n_urls = len(self.crawled_urls)
             if n_urls>0 and n_urls%100==0:
-                logging.info(f"Currently have {n_urls} crawled urls identified")
+                logging.info(f"Currently have {n_urls} urls identified")
             
             # pop the left-most URL from new_urls
             url = new_urls.popleft()
@@ -106,10 +109,10 @@ class DocsCrawler(Crawler):
                         if href is None:
                             continue
                         abs_url = self.concat_url_and_href(url, href)
-                        if (abs_url.startswith("http") and len(urlparse(abs_url).fragment) == 0 and
-                            not any([abs_url.endswith(ext) for ext in self.extensions_to_ignore]) and 
-                            any([r.match(url) for r in self.pos_regex]) and                 # match any of the positive regexes
-                            not any([r.match(url) for r in self.neg_regex])):               # don't match any of the negative regexes
+                        if (abs_url.startswith(("http://", "https://")) and len(urlparse(abs_url).fragment) == 0 and
+                            not any(abs_url.endswith(ext) for ext in self.extensions_to_ignore) and 
+                            any(r.search(abs_url) for r in self.pos_regex) and             # match any of the positive regexes
+                            not any([r.search(abs_url) for r in self.neg_regex])):         # don't match any of the negative regexes
                             if abs_url not in self.crawled_urls and abs_url not in new_urls:
                                 new_urls.append(abs_url)
                         else:
@@ -135,17 +138,31 @@ class DocsCrawler(Crawler):
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
 
-        for base_url in self.cfg.docs_crawler.base_urls:
-            self.collect_urls(base_url, num_per_second=num_per_second)
+        if self.cfg.docs_crawler.get("crawl_method", "internal") == "scrapy":
+            logging.info("Using Scrapy for crawling the docs")
+            all_urls = run_link_spider_isolated(
+                start_urls = self.cfg.docs_crawler.base_urls,
+                positive_regexes = self.cfg.docs_crawler.get("pos_regex", []),
+                negative_regexes = self.cfg.docs_crawler.get("neg_regex", []),
+                max_depth = self.cfg.docs_crawler.get("max_depth", 3),
+            )
+            all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
+        else:
+            logging.info("Using internal mechanism for crawling the docs")
+            all_urls = []
+            for base_url in self.cfg.docs_crawler.base_urls:
+                self.collect_urls(base_url, num_per_second=num_per_second)
+            all_urls = list(self.crawled_urls)
+        all_urls = list(set(all_urls))      # final deduplication
 
-        logging.info(f"Found {len(self.crawled_urls)} urls in {self.cfg.docs_crawler.base_urls}")
+        logging.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
-            logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
+            logging.info(f"Collected {len(all_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
             with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
-                for url in sorted(list(self.crawled_urls)):
+                for url in sorted(list(all_urls)):
                     f.write(url + '\n')
         else:
-            logging.info(f"Collected {len(self.crawled_urls)} URLs to crawl and index.")
+            logging.info(f"Collected {len(all_urls)} URLs to crawl and index.")
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -157,20 +174,20 @@ class DocsCrawler(Crawler):
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), self.crawled_urls))
+            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), all_urls))
                 
         else:
             crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
-            for inx, url in enumerate(self.crawled_urls):
+            for inx, url in enumerate(all_urls):
                 if inx % 100 == 0:
-                    logging.info(f"Crawling URL number {inx+1} out of {len(self.crawled_urls)}")
+                    logging.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
                 crawl_worker.process(url, source=source)
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list
         if self.cfg.docs_crawler.get("remove_old_content", False):
             existing_docs = self.indexer._list_docs()
-            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in self.crawled_urls]
+            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in all_urls]
             for doc in docs_to_remove:
                 if doc['url']:
                     self.indexer.delete_doc(doc['id'])
