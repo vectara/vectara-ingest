@@ -136,7 +136,7 @@ class DocsCrawler(Crawler):
         num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
 
         if self.cfg.docs_crawler.get("crawl_method", "internal") == "scrapy":
-            logging.info("Using Scrapy to crawl the website")
+            logging.info("Using Scrapy for crawling the docs")
             all_urls = run_link_spider_isolated(
                 start_urls = self.cfg.docs_crawler.base_urls,
                 positive_regexes = self.cfg.docs_crawler.get("pos_regex", []),
@@ -145,11 +145,12 @@ class DocsCrawler(Crawler):
             )
             all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
         else:
+            logging.info("Using internal mechanism for crawling the docs")
             all_urls = []
             for base_url in self.cfg.docs_crawler.base_urls:
                 self.collect_urls(base_url, num_per_second=num_per_second)
-                all_urls += list(self.crawled_urls)
-            all_urls = list(set(all_urls))
+            all_urls = list(self.crawled_urls)
+        all_urls = list(set(all_urls))      # final deduplication
 
         logging.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
