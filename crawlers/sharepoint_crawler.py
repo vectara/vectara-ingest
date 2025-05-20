@@ -130,9 +130,12 @@ class SharepointCrawler(Crawler):
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_url(target_folder)
+        logging.info(f"Listing files in {root_folder}")
         files = root_folder.get_files(recursive=recursive).execute_query()
+        cleanup_temp_files = self.cfg.sharepoint_crawler.get("cleanup_temp_files", True)
 
         for file in files:
+            logging.info(f"Processing {file}")
             filename, file_extension = os.path.splitext(file.name)
             if file_extension.lower() == ".zip":
                 metadata = {'url': self.download_url(file)}
@@ -148,11 +151,18 @@ class SharepointCrawler(Crawler):
                     f.flush()
                     f.close()
 
+                    #TODO: Change to debug
+                    logging.info(f"Wrote {os.path.getsize(f.name)} to {f.name}")
+
                     try:
                         succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
                     finally:
-                        if os.path.exists(f.name):
-                            os.remove(f.name)
+                        if cleanup_temp_files:
+                            logging.info(f"Cleaning up temp file: {f.name}")
+                            if os.path.exists(f.name):
+                                os.remove(f.name)
+                        else:
+                            logging.warn(f"Skipping clean up of temp file: {f.name}")
 
                     if not succeeded:
                         logging.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
