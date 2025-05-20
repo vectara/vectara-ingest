@@ -614,3 +614,33 @@ def get_media_type_from_base64(base64_data: str) -> str:
     file_bytes = base64.b64decode(base64_data)
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
+
+def get_temp_file_path(filename: str) -> str:
+    """
+    Get a temporary file path for storing crawler output files.
+    Creates a temp directory if it doesn't exist.
+    
+    Args:
+        filename: The name of the file to create in the temp directory
+        
+    Returns:
+        str: The full path to the temporary file
+    """
+    # Check if running in Docker by looking for the Docker environment
+    is_docker = os.path.exists('/.dockerenv')
+    
+    # Special handling for credentials.json in CLI mode
+    if not is_docker and filename == 'credentials.json':
+        credentials = os.path.join(os.getcwd(), 'credentials.json')
+        if os.path.exists(credentials):
+            return credentials
+    
+    if is_docker:
+        # Use the Docker path
+        temp_dir = '/home/vectara/env'
+    else:
+        # Use temp directory inside the project folder
+        temp_dir = os.path.join(os.getcwd(), 'temp')
+    
+    os.makedirs(temp_dir, exist_ok=True)
+    return os.path.join(temp_dir, filename)
