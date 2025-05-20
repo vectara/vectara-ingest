@@ -249,7 +249,7 @@ class Indexer:
             self.browser = self.p.firefox.launch(headless=True)
             self.browser_use_count = 0
         if self.store_docs:
-            self.store_docs_folder = get_temp_file_path('indexed_docs_' + str(uuid.uuid4()))
+            self.store_docs_folder = get_temp_file_path(str(uuid.uuid4()), folder='indexed_docs')
             if os.path.exists(self.store_docs_folder):
                 shutil.rmtree(self.store_docs_folder)
             os.makedirs(self.store_docs_folder)

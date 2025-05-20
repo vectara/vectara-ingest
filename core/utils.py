@@ -615,13 +615,14 @@ def get_media_type_from_base64(base64_data: str) -> str:
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
 
-def get_temp_file_path(filename: str) -> str:
+def get_temp_file_path(filename: str, folder: str = None) -> str:
     """
     Get a temporary file path for storing crawler output files.
     Creates a temp directory if it doesn't exist.
     
     Args:
         filename: The name of the file to create in the temp directory
+        folder: Optional subfolder name to create inside the temp directory
         
     Returns:
         str: The full path to the temporary file
@@ -643,4 +644,11 @@ def get_temp_file_path(filename: str) -> str:
         temp_dir = os.path.join(os.getcwd(), 'temp')
     
     os.makedirs(temp_dir, exist_ok=True)
+    
+    # If a folder is specified, create it inside the temp directory
+    if folder:
+        folder_path = os.path.join(temp_dir, folder)
+        os.makedirs(folder_path, exist_ok=True)
+        return os.path.join(folder_path, filename)
+    
     return os.path.join(temp_dir, filename)
