@@ -127,13 +127,14 @@ class SharepointCrawler(Crawler):
         """
         recursive = self.cfg.sharepoint_crawler.get('recursive', False)
         target_folder = self.cfg.sharepoint_crawler.target_folder
+        cleanup_temp_files = self.cfg.sharepoint_crawler.get("cleanup_temp_files", True)
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_url(target_folder)
-        logging.info(f"Listing files in {root_folder}")
+        logging.info(f"Listing files in {root_folder.name}. Large Directory Structures can take a while...")
         files = root_folder.get_files(recursive=recursive).execute_query()
-        cleanup_temp_files = self.cfg.sharepoint_crawler.get("cleanup_temp_files", True)
-
+        count = len(files)
+        logging.info(f"Found {count} files in {root_folder.name}.")
         for file in files:
             logging.info(f"Processing {file}")
             filename, file_extension = os.path.splitext(file.name)
@@ -150,9 +151,7 @@ class SharepointCrawler(Crawler):
                     file.download_session(f).execute_query()
                     f.flush()
                     f.close()
-
-                    #TODO: Change to debug
-                    logging.info(f"Wrote {os.path.getsize(f.name)} to {f.name}")
+                    logging.debug(f"Wrote {os.path.getsize(f.name)} to {f.name}")
 
                     try:
                         succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
