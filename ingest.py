@@ -323,7 +323,6 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         raise Exception(f"endpoint '{auth_url}' could not be parsed to a valid URL.")
 
     create_corpus_flag = cfg.vectara.get("create_corpus", False)  # Default to False
-    print(f"create_corpus_flag: {create_corpus_flag}")
     corpus_key = cfg.vectara.corpus_key
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
