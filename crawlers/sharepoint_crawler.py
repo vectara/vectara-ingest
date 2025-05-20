@@ -129,7 +129,7 @@ class SharepointCrawler(Crawler):
         target_folder = self.cfg.sharepoint_crawler.target_folder
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
-        root_folder = self.sharepoint_context.web.folders.get_by_path(target_folder)
+        root_folder = self.sharepoint_context.web.get_folder_by_server_relative_url(target_folder)
         files = root_folder.get_files(recursive=recursive).execute_query()
 
         for file in files:
