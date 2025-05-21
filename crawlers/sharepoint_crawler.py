@@ -1,12 +1,10 @@
 import zipfile
 import logging
-from importlib.resources import contents
 import time
 
 from office365.runtime.client_request_exception import ClientRequestException
 
 from office365.sharepoint.client_context import ClientContext
-from office365.sharepoint.files.file import File
 from furl import furl
 import os
 import tempfile
@@ -193,8 +191,6 @@ class SharepointCrawler(Crawler):
 
 
     def crawl_list(self) -> None:
-        from urllib.parse import quote
-
         list_name = self.cfg.sharepoint_crawler.target_list
         target_list = self.sharepoint_context.web.lists.get_by_title(list_name)
         self.sharepoint_context.load(target_list, ['Id'])
@@ -238,7 +234,6 @@ class SharepointCrawler(Crawler):
                         logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
                     else:
                         doc_id = f"{target_list.id}-{item_id}-{filename}"
-                        # source_url = quote(attachment.server_relative_url)
                         attachment_url = attachment.resource_url
                         metadata["url"] = attachment_url
 
