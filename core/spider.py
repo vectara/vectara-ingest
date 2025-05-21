@@ -10,7 +10,6 @@ from scrapy import signals
 from scrapy.signalmanager import dispatcher
 from scrapy.downloadermiddlewares.redirect import RedirectMiddleware
 from scrapy.exceptions import IgnoreRequest
-from scrapy.utils.python import global_object_name # To get the correct module path
 
 from core.indexer import Indexer
 from core.utils import img_extensions, doc_extensions, archive_extensions
