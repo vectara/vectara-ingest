@@ -157,7 +157,7 @@ class SharepointCrawler(Crawler):
                         succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
                     finally:
                         if cleanup_temp_files:
-                            logging.info(f"Cleaning up temp file: {f.name}")
+                            logging.debug(f"Cleaning up temp file: {f.name}")
                             if os.path.exists(f.name):
                                 os.remove(f.name)
                         else:
