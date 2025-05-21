@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 import psutil
+import time
 import logging
 import re
 from typing import Tuple, Set
@@ -63,8 +64,11 @@ class DocsCrawler(Crawler):
         }
         response = self.session.get(url, headers=headers)
         if response.status_code == 429:
-            logging.info(f"Rate limit exceeded for {url}, after retries. skipping...")
-            return None, None
+            retry_after = response.headers.get("Retry-After")
+            wait = int(retry_after) if retry_after and retry_after.isdigit() else 60
+            logging.warning(f"429 on {url}, sleeping for {wait}s")
+            time.sleep(wait)
+            response = self.session.get(url, headers=self.headers)
         if response.status_code != 200:
             logging.info(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None

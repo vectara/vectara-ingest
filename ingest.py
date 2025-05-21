@@ -227,7 +227,7 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
                 update_omega_conf(cfg, reason, f'{section}.{key.lower()}', v)
                 break
 
-        update_omega_conf(cfg.vectara, reason, k, v)
+        update_omega_conf(cfg.vectara, reason, k.lower(), v)
 
 
 def main() -> None:
