@@ -227,7 +227,7 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
                 update_omega_conf(cfg, reason, f'{section}.{key.lower()}', v)
                 break
 
-        update_omega_conf(cfg['vectara'], reason, k, v)
+        update_omega_conf(cfg.vectara, reason, k, v)
 
 
 def main() -> None:
@@ -253,6 +253,13 @@ def main() -> None:
         logging.error(f"Error loading config file ({config_name}): {e}")
         exit(1)
 
+    if not cfg.get('vectara', None):
+        vectara_defaults = {
+            "endpoint": "https://api.vectara.io",
+            "auth_url": "https://auth.vectara.io"
+        }
+        OmegaConf.update(cfg, 'vectara', vectara_defaults)
+
     secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
     # add .env params, by profile
     logging.info(f"Loading {secrets_path}")
@@ -265,7 +272,7 @@ def main() -> None:
     
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
-    update_environment(cfg['vectara'], f"{secrets_path}:general", general_dict)
+    update_environment(cfg, f"{secrets_path}:general", general_dict)
 
     # Add all supported special secrets from the specified profile to the specific crawler config
     env_dict = env_dict[profile_name]
