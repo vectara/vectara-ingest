@@ -189,6 +189,10 @@ vectara:
   # the corpus key for indexing
   corpus_key: my-corpus
   
+  # Chunking strategy
+  chunking_strategy: sentence   # sentence or fixed
+  chunk_size: 512               # only applies for "fixed" strategy
+
   # flag: should vectara-ingest reindex if document already exists (optional)
   reindex: false
 
