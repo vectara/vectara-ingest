@@ -356,19 +356,14 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     logging.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()
     logging.info(f"Finished crawl of type {crawler_type}...")
+    
 
 @app.command()
 def main(
     config_file: str = typer.Option(..., help="Path to the configuration file"),
     profile: str = typer.Option(..., help="Profile name in secrets.toml"),
-    secrets_path: Optional[str] = typer.Option(
-        None,
-        help="Path to secrets.toml file. Defaults to /home/vectara/env/secrets.toml in Docker or ./secrets.toml locally"
-    ),
-    reset_corpus: bool = typer.Option(
-        False,
-        help="Reset the corpus before indexing"
-    )
+    secrets_path: Optional[str] = typer.Option(..., help="Path to secrets.toml file"),
+    reset_corpus: bool = typer.Option(False, help="Reset the corpus before indexing")
 ) -> None:
     """
     Main entry point for the vectara-ingest tool.
