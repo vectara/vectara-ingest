@@ -1,0 +1,72 @@
+{% set name = "vectara-ingest" %}
+{% set version = "0.1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: .  # Use local path for the source
+
+build:
+  number: 0
+  script: |
+    # Just install the package code without dependencies - we'll install these later
+    $PYTHON -m pip install . --no-deps -vv
+    
+    # Copy requirements files and post-link script
+    mkdir -p $PREFIX/share/vectara-ingest
+    cp $SRC_DIR/requirements.txt $PREFIX/share/vectara-ingest/
+    cp $SRC_DIR/requirements-extra.txt $PREFIX/share/vectara-ingest/
+    
+    # Create conda-meta directory for post-link script
+    mkdir -p $PREFIX/conda-meta
+    cp $SRC_DIR/post-link.sh $PREFIX/conda-meta/vectara-ingest-$PKG_VERSION-$PKG_BUILDNUM.post-link.sh
+    chmod +x $PREFIX/conda-meta/vectara-ingest-$PKG_VERSION-$PKG_BUILDNUM.post-link.sh
+  entry_points:
+    - vectara-ingest = ingest:app
+  noarch: python
+
+requirements:
+  host:
+    - python 3.11.*
+    - pip
+    - setuptools
+
+  run:
+    - python 3.11.*
+    - pip
+    
+    # System dependencies with conda-forge channel specified
+    - conda-forge::firefox
+    - conda-forge::poppler
+    - conda-forge::tesseract
+    - conda-forge::libjpeg-turbo
+    - conda-forge::libmagic
+    - conda-forge::fontconfig
+
+test:
+  imports:
+    - core
+    - crawlers
+  commands:
+    - echo "Testing if vectara-ingest command is available"
+    - which vectara-ingest
+
+about:
+  home: https://github.com/vectara/vectara-ingest
+  license: Apache-2.0
+  license_family: Apache
+  license_file: LICENSE
+  summary: 'A tool for ingesting content into Vectara from various sources'
+  description: |
+    Vectara-ingest is an open source Python project that demonstrates how to crawl datasets
+    and ingest them into Vectara. It provides a step-by-step guide on building your own crawler
+    and some pre-built crawlers for ingesting data from sources such as websites, RSS feeds,
+    Jira tickets, Notion notes, Docusaurus documentation sites, Slack, and many others.
+  doc_url: https://github.com/vectara/vectara-ingest
+  dev_url: https://github.com/vectara/vectara-ingest
+
+extra:
+  recipe-maintainers:
+    - vectara 
