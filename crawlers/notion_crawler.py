@@ -138,9 +138,10 @@ class NotionCrawler(Crawler):
         # report pages crawled if specified
         if self.cfg.notion_crawler.get("crawl_report", False):
             logging.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
-            with open(get_temp_file_path('pages_indexed.txt'), 'w') as f:
-                for page in sorted(list(self.crawled_pages)):
-                    f.write(page + '\n')
+            output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
+            with open(get_temp_file_path('pages_indexed.txt', output_dir=output_dir), 'w') as f:
+                for page in sorted(pages, key=lambda x: x['id']):
+                    f.write(f"{page['id']}: {page['url']}\n")
 
 
         # If remove_old_content is set to true:
@@ -153,7 +154,8 @@ class NotionCrawler(Crawler):
             for doc in docs_to_remove:
                 self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
-                with open(get_temp_file_path('pages_removed.txt'), 'w') as f:
+                output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
+                with open(get_temp_file_path('pages_removed.txt', output_dir=output_dir), 'w') as f:
                     for doc in docs_to_remove:
                         f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
 
