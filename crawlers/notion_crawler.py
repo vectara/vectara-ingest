@@ -154,7 +154,7 @@ class NotionCrawler(Crawler):
             for doc in docs_to_remove:
                 self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
-                output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
+                output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
                 with open(get_temp_file_path('pages_removed.txt', output_dir=output_dir), 'w') as f:
                     for doc in docs_to_remove:
                         f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
