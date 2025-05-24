@@ -262,8 +262,7 @@ class GdriveCrawler(Crawler):
         logging.info("Google Drive Crawler initialized")
 
         self.delegated_users = cfg.gdrive_crawler.delegated_users
-        output_dir = cfg.gdrive_crawler.get("output_dir", "vectara_ingest_output")
-        self.service_account_file = get_temp_file_path('credentials.json', output_dir=output_dir)
+        self.service_account_file = get_temp_file_path('credentials.json')
 
     def crawl(self) -> None:
         N = self.cfg.gdrive_crawler.get("days_back", 7)
