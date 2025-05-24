@@ -153,6 +153,7 @@ class Indexer:
         self.create_corpus = cfg.vectara.get("create_corpus", False)
         self.verbose = cfg.vectara.get("verbose", False)
         self.store_docs = cfg.vectara.get("store_docs", False)
+        self.output_dir = cfg.vectara.get("output_dir", "vectara_ingest_output")
         self.remove_code = cfg.vectara.get("remove_code", True)
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
         self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
@@ -249,7 +250,7 @@ class Indexer:
             self.browser = self.p.firefox.launch(headless=True)
             self.browser_use_count = 0
         if self.store_docs:
-            self.store_docs_folder = get_temp_file_path(str(uuid.uuid4()), folder='indexed_docs')
+            self.store_docs_folder = get_temp_file_path(str(uuid.uuid4()), output_dir=self.output_dir + '/indexed_docs')
             if os.path.exists(self.store_docs_folder):
                 shutil.rmtree(self.store_docs_folder)
             os.makedirs(self.store_docs_folder)

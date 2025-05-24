@@ -88,7 +88,8 @@ class WebsiteCrawler(Crawler):
         # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):
             logging.info(f"Collected {len(urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
-            with open(get_temp_file_path('urls_indexed.txt'), 'w') as f:
+            output_dir = self.cfg.website_crawler.get("output_dir", "vectara_ingest_output")
+            with open(get_temp_file_path('urls_indexed.txt', output_dir=output_dir), 'w') as f:
                 for url in sorted(urls):
                     f.write(url + '\n')
         else:
@@ -133,7 +134,8 @@ class WebsiteCrawler(Crawler):
                     self.indexer.delete_doc(doc['id'])
             logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.website_crawler.get("crawl_report", False):
-                with open(get_temp_file_path('urls_removed.txt'), 'w') as f:
+                output_dir = self.cfg.website_crawler.get("output_dir", "vectara_ingest_output")
+                with open(get_temp_file_path('urls_removed.txt', output_dir=output_dir), 'w') as f:
                     for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
                         f.write(url + '\n')
 

@@ -615,20 +615,45 @@ def get_media_type_from_base64(base64_data: str) -> str:
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
 
-def get_temp_file_path(filename: str, folder: str = None) -> str:
+def is_running_in_docker() -> bool:
+    """
+    Check if the current process is running inside a Docker container.
+    
+    Returns:
+        bool: True if running in Docker, False otherwise
+    """
+    # Method 1: Check for the .dockerenv file
+    if os.path.exists('/.dockerenv'):
+        return True
+    
+    # Method 2: Check for docker in cgroup
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
+            return any('docker' in line for line in f)
+    except (IOError, FileNotFoundError):
+        # File doesn't exist or can't be read (e.g., on macOS or Windows)
+        pass
+    
+    # Method 3: Check for docker-specific environment variables
+    if os.environ.get('DOCKER_CONTAINER', False):
+        return True
+    
+    # Not in Docker
+    return False
+
+def get_temp_file_path(filename: str, output_dir: str = "vectara_ingest_output") -> str:
     """
     Get a temporary file path for storing crawler output files.
     Creates a temp directory if it doesn't exist.
     
     Args:
         filename: The name of the file to create in the temp directory
-        folder: Optional subfolder name to create inside the temp directory
+        output_dir: Name of the output directory (defaults to 'vectara_ingest_output')
         
     Returns:
         str: The full path to the temporary file
     """
-    # Check if running in Docker by looking for the Docker environment
-    is_docker = os.path.exists('/.dockerenv')
+    is_docker = is_running_in_docker()
     
     # Special handling for credentials.json in CLI mode
     if not is_docker and filename == 'credentials.json':
@@ -640,15 +665,9 @@ def get_temp_file_path(filename: str, folder: str = None) -> str:
         # Use the Docker path
         temp_dir = '/home/vectara/env'
     else:
-        # Use temp directory inside the project folder
-        temp_dir = os.path.join(os.getcwd(), 'temp')
+        # Use output directory inside the project folder
+        temp_dir = os.path.join(os.getcwd(), output_dir)
     
     os.makedirs(temp_dir, exist_ok=True)
-    
-    # If a folder is specified, create it inside the temp directory
-    if folder:
-        folder_path = os.path.join(temp_dir, folder)
-        os.makedirs(folder_path, exist_ok=True)
-        return os.path.join(folder_path, filename)
     
     return os.path.join(temp_dir, filename)

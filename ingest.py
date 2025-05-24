@@ -7,6 +7,7 @@ import importlib
 import requests
 import toml     # type: ignore
 import typer
+from pathlib import Path
 
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -14,7 +15,7 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging
+from core.utils import setup_logging, is_running_in_docker
 
 app = typer.Typer()
 
@@ -276,17 +277,20 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         env_secrets_path = os.environ.get('VECTARA_SECRETS_PATH')
         if env_secrets_path and os.path.exists(env_secrets_path):
             secrets_path = env_secrets_path
-        else:
-            # Then try Docker path
+        elif is_running_in_docker():
+            # Use Docker path if running in a container
             docker_path = '/home/vectara/env/secrets.toml'
             if os.path.exists(docker_path):
                 secrets_path = docker_path
             else:
-                # Fallback to repository path
-                secrets_path = 'secrets.toml'
-                if not os.path.exists(secrets_path):
-                    logger.error('secrets.toml not found in repository root')
-                    raise typer.Exit(1)
+                logger.error(f'secrets.toml not found at Docker path {docker_path}')
+                raise typer.Exit(1)
+        else:
+            # Fallback to repository path for local execution
+            secrets_path = 'secrets.toml'
+            if not os.path.exists(secrets_path):
+                logger.error('secrets.toml not found in repository root')
+                raise typer.Exit(1)
     
     # add .env params, by profile
     logging.info(f"Loading {secrets_path}")
@@ -367,15 +371,27 @@ def main(
 ) -> None:
     """
     Main entry point for the vectara-ingest tool.
-    Supports both Docker-style arguments and Typer CLI.
+    
+    This tool can be run in two ways:
+    
+    1. Docker style: vectara-ingest CONFIG_FILE PROFILE
+    2. CLI style: vectara-ingest --config-file CONFIG_FILE --profile PROFILE [OPTIONS]
+    
+    The tool automatically detects if it's running in a Docker container and adjusts behavior accordingly.
     """
     run_ingest(config_file, profile, secrets_path, reset_corpus)
 
 if __name__ == '__main__':
-    # Check if arguments are provided in Docker style
-    if len(sys.argv) == 3 and not sys.argv[1].startswith('--'):
-        # Docker-style arguments
-        run_ingest(sys.argv[1], sys.argv[2])
+    # Check if we're running in Docker
+    in_docker = is_running_in_docker()
+    
+    if in_docker:
+        if len(sys.argv) != 3:
+            logging.info("Usage: python ingest.py <config_file> <secrets-profile>")
+            exit(1)
+    
+        config_file = sys.argv[1]
+        profile = sys.argv[2]
+        run_ingest(config_file, profile)
     else:
-        # Typer CLI
         app()

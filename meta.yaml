@@ -29,12 +29,12 @@ build:
 
 requirements:
   host:
-    - python 3.11.*
+    - python >=3.10
     - pip
     - setuptools
 
   run:
-    - python 3.11.*
+    - python >=3.10
     - pip
     
     # System dependencies with conda-forge channel specified
