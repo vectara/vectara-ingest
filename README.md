@@ -72,6 +72,37 @@ git clone https://github.com/vectara/vectara-ingest.git
 Note: make sure you execute step #4 above only within your Linux environment and not in the windows environment. 
 You may need to choose a username for your Ubuntu environment as part of the setup process.
 
+### Native Windows Setup (No WSL, No Docker)
+
+If you want to run vectara-ingest natively on Windows (without WSL or Docker), follow these steps:
+
+1. Open PowerShell as Administrator.
+2. Clone the repository:
+   ```powershell
+   git clone https://github.com/vectara/vectara-ingest.git
+   cd vectara-ingest
+   ```
+3. If you haven't already, allow script execution (one-time):
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   ```
+4. Run the setup script:
+   ```powershell
+   .\win-setup.ps1
+   ```
+5. Activate the conda environment:
+   ```powershell
+   conda activate vectara-ingest
+   ```
+6. Run the crawler:
+   ```powershell
+   conda run -n vectara-ingest python ingest.py --config-file config/vectara-docs.yaml --profile default
+   ```
+
+**Note:**
+- This method does not require Docker or WSL.
+- All dependencies and system libraries will be installed in a conda environment.
+
 ## Step 2: Configure the crawler
 For our example we would index the content of https://www.paulgraham.com website to Vectara. Since this website does not provide a sitemap, but does provide an [RSS feed](http://www.paulgraham.com/rss.html), we will use the vectara-ingest `RSS crawler` instead.
 
@@ -205,6 +236,9 @@ vectara:
   # where XXX is a unique ID.
   store_docs: false
   
+  # Directory path where vectara-ingest will store all output files, including reports, temporary files, credentials, and other artifacts. When running locally, this path is relative to the current working directory. When running in Docker, files are inside the container at `/home/vectara/env/`. Default value is `vectara_ingest_output`.
+  output_dir: vectara_ingest_output
+
   # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)
   # this applies to crawling web pages.
   timeout: 90
