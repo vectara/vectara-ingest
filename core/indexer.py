@@ -966,7 +966,7 @@ class Indexer:
         document = {}
         document["id"] = (
             doc_id if len(doc_id) < 128 
-            else doc_id[:128] + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
+            else doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
         )
 
         # Create tables structure
