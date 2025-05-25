@@ -964,7 +964,10 @@ class Indexer:
             metadatas = [{k: self.normalize_value(v) for k, v in md.items()} for md in metadatas]
 
         document = {}
-        document["id"] = doc_id
+        document["id"] = (
+            doc_id if len(doc_id) < 128 
+            else doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
+        )
 
         # Create tables structure
         tables_array = []
