@@ -18,7 +18,7 @@ This document outlines how to build and use the vectara-ingest conda package.
 
 2. Build the conda package:
    ```bash
-   conda build .
+   conda build . --channel conda-forge
    ```
 
 3. Choose one of the following installation methods:
