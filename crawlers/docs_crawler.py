@@ -8,8 +8,10 @@ from collections import deque
 from urllib.parse import urljoin, urlparse
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging, \
+from core.utils import (
+    create_session_with_retries, binary_extensions, RateLimiter, setup_logging,
     configure_session_for_ssl, get_temp_file_path
+)
 from core.spider import run_link_spider_isolated
 from typing import Tuple, Set
 from core.indexer import Indexer
