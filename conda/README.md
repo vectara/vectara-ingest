@@ -3,7 +3,7 @@
 This document outlines how to build and use the vectara-ingest conda package.
 
 ## Prerequisites
-
+- Python 3.11
 - Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/download/)
 - Install conda-build: `conda install conda-build conda-verify`
 
@@ -16,22 +16,28 @@ This document outlines how to build and use the vectara-ingest conda package.
    switch to branch `add-cli-option`
    ```
 
-2. Build the conda package:
+2. Activate the conda base environment 
    ```bash
+   conda activate base
+   ```
+
+3. Build the conda package:
+   ```bash
+   cd conda 
    conda build . --channel conda-forge
    ```
 
-3. Choose one of the following installation methods:
+4. Choose one of the following installation methods:
 
    **Option A: Install directly in your base environment**
    ```bash
-   conda install --use-local vectara-ingest
+   conda install -c conda-forge -c local vectara-ingest
    ```
 
    **Option B: Install in a dedicated environment (recommended)**
    ```bash
    # Create a new conda environment
-   conda create -n vectara-ingest
+   conda create -n vectara-ingest python=3.11
    
    # Activate the conda environment
    conda activate vectara-ingest

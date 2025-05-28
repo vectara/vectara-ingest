@@ -366,7 +366,7 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
 def main(
     config_file: str = typer.Option(..., help="Path to the configuration file"),
     profile: str = typer.Option(..., help="Profile name in secrets.toml"),
-    secrets_path: Optional[str] = typer.Option(..., help="Path to secrets.toml file"),
+    secrets_path: Optional[str] = typer.Option(None, help="Path to secrets.toml file (defaults to secrets.toml in current directory)"),
     reset_corpus: bool = typer.Option(False, help="Reset the corpus before indexing")
 ) -> None:
     """
@@ -379,6 +379,7 @@ def main(
     
     The tool automatically detects if it's running in a Docker container and adjusts behavior accordingly.
     """
+    logging.info(f"Starting vectara-ingest")
     run_ingest(config_file, profile, secrets_path, reset_corpus)
 
 if __name__ == '__main__':

@@ -72,37 +72,6 @@ git clone https://github.com/vectara/vectara-ingest.git
 Note: make sure you execute step #4 above only within your Linux environment and not in the windows environment. 
 You may need to choose a username for your Ubuntu environment as part of the setup process.
 
-### Native Windows Setup (No WSL, No Docker)
-
-If you want to run vectara-ingest natively on Windows (without WSL or Docker), follow these steps:
-
-1. Open PowerShell as Administrator.
-2. Clone the repository:
-   ```powershell
-   git clone https://github.com/vectara/vectara-ingest.git
-   cd vectara-ingest
-   ```
-3. If you haven't already, allow script execution (one-time):
-   ```powershell
-   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-   ```
-4. Run the setup script:
-   ```powershell
-   .\win-setup.ps1
-   ```
-5. Activate the conda environment:
-   ```powershell
-   conda activate vectara-ingest
-   ```
-6. Run the crawler:
-   ```powershell
-   conda run -n vectara-ingest python ingest.py --config-file config/vectara-docs.yaml --profile default
-   ```
-
-**Note:**
-- This method does not require Docker or WSL.
-- All dependencies and system libraries will be installed in a conda environment.
-
 ## Step 2: Configure the crawler
 For our example we would index the content of https://www.paulgraham.com website to Vectara. Since this website does not provide a sitemap, but does provide an [RSS feed](http://www.paulgraham.com/rss.html), we will use the vectara-ingest `RSS crawler` instead.
 
