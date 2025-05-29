@@ -129,6 +129,12 @@ class SharepointCrawler(Crawler):
         logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_url(target_folder)
+        self.sharepoint_context.load(root_folder, ['Exists', 'Name'])
+        root_folder.execute_query()
+        if not root_folder.exists:
+            raise Exception(f"Folder {target_folder} was not found")
+
+        logging.info(f"{root_folder.exists}")
         logging.info(f"Listing files in {root_folder.name}. Large Directory Structures can take a while...")
         files = root_folder.get_files(recursive=recursive).execute_query()
         count = len(files)
