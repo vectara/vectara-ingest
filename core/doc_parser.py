@@ -388,7 +388,26 @@ class DoclingDocumentParser(DocumentParser):
         pipeline_options.do_ocr = False
         if self.do_ocr:
             pipeline_options.do_ocr = True
-            ocr_options = EasyOcrOptions(force_full_page_ocr=True)
+            easy_ocr_config = self.cfg.doc_processing.easy_ocr_config
+            ocr_options = EasyOcrOptions()
+            ocr_options.force_full_page_ocr = easy_ocr_config.force_full_page_ocr
+            mapping = {
+                "bitmap_area_threshold": lambda val: setattr(ocr_options, "bitmap_area_threshold", val),
+                "confidence_threshold": lambda val: setattr(ocr_options, "confidence_threshold", val),
+                "download_enabled": lambda val: setattr(ocr_options, "download_enabled", val),
+                "force_full_page_ocr": lambda val: setattr(ocr_options, "force_full_page_ocr", val),
+                "kind": lambda val: setattr(ocr_options, "kind", val),
+                "lang": lambda val: setattr(ocr_options, "lang", val),
+                "model_config": lambda val: setattr(ocr_options, "model_config", val),
+                "model_storage_directory": lambda val: setattr(ocr_options, "model_storage_directory", val),
+                "recog_network": lambda val: setattr(ocr_options, "recog_network", val),
+                "use_gpu": lambda val: setattr(ocr_options, "use_gpu", val),
+            }
+
+            for key, func in mapping.items():
+                value = getattr(easy_ocr_config, key, None)
+                if value is not None:
+                    func(value)
             pipeline_options.ocr_options = ocr_options
         res = DocumentConverter(
             format_options={
