@@ -20,6 +20,9 @@ if [ ! -f secrets.toml ]; then
   exit 3
 fi
 
+RED='\033[0;31m'
+NC='\033[0m'
+
 # retrieve the crawler type from the config file
 crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
 
@@ -159,7 +162,7 @@ docker run -d ${ADDITIONAL_DOCKER_FLAGS} -e PROFILE=$2 --name "${CONTAINER_NAME}
 
 if [ $? -eq 0 ]; then
   echo "Success! Ingest job is running."
-  echo "You can try 'docker logs -f ${CONTAINER_NAME}' to see the progress."
+  echo -e "You can try ${RED}'docker logs -f ${CONTAINER_NAME}'${NC} to see the progress."
 else
   echo "Ingest container failed to start. Please check the messages above."
 fi
