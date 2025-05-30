@@ -4,6 +4,8 @@ import os
 from typing import List, Tuple
 import logging
 
+logger = logging.getLogger(__name__)
+
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging
@@ -29,7 +31,7 @@ class FileCrawlWorker(object):
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
         metadata = {"source": source, "url": s3_file}
-        logging.info(f"Crawling and indexing {s3_file}")
+        logger.info(f"Crawling and indexing {s3_file}")
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
@@ -40,18 +42,18 @@ class FileCrawlWorker(object):
                     'url': url
                 }
                 if s3_file in metadata:
-                    metadata.update(metadata.get(s3_file, {}))    
+                    metadata.update(metadata.get(s3_file, {}))
                 if extension in ['.mp3', '.mp4']:
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
             if not succeeded:
-                logging.info(f"Indexing failed for {url}")
+                logger.info(f"Indexing failed for {url}")
             else:
-                logging.info(f"Indexing {url} was successful")
+                logger.warning(f"Indexing {url} was successful")
         except Exception as e:
             import traceback
-            logging.error(
+            logger.error(
                 f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
@@ -133,7 +135,7 @@ class S3Crawler(Crawler):
             ray_workers = psutil.cpu_count(logical=True)
 
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket) for _ in range(ray_workers)]
@@ -145,5 +147,5 @@ class S3Crawler(Crawler):
             crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket)
             for inx, url in enumerate(files_to_process):
                 if inx % 100 == 0:
-                    logging.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
+                    logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
                 crawl_worker.process(url, source=source)

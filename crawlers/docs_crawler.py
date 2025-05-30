@@ -15,6 +15,8 @@ from core.indexer import Indexer
 
 import ray
 
+logger = logging.getLogger(__name__)
+
 class UrlCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
         self.indexer = indexer
@@ -27,20 +29,20 @@ class UrlCrawlWorker(object):
 
     def process(self, url: str, source: str):
         if url is None:
-            logging.info("URL is None, skipping")
+            logger.info("URL is None, skipping")
             return -1
         metadata = {"source": source, "url": url}
-        logging.info(f"Crawling and indexing {url}")
+        logger.info(f"Crawling and indexing {url}")
         try:
             with self.rate_limiter:
                 succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
             if not succeeded:
-                logging.info(f"Indexing failed for {url}")
+                logger.info(f"Indexing failed for {url}")
             else:
-                logging.info(f"Indexing {url} was successful")
+                logger.info(f"Indexing {url} was successful")
         except Exception as e:
             import traceback
-            logging.error(
+            logger.error(
                 f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
@@ -66,14 +68,14 @@ class DocsCrawler(Crawler):
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
             wait = int(retry_after) if retry_after and retry_after.isdigit() else 60
-            logging.warning(f"429 on {url}, sleeping for {wait}s")
+            logger.warning(f"429 on {url}, sleeping for {wait}s")
             time.sleep(wait)
             response = self.session.get(url, headers=self.headers)
         if response.status_code != 200:
-            logging.info(f"Failed to crawl {url}, response code is {response.status_code}")
+            logger.info(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None
 
-        # check for refresh redirect        
+        # check for refresh redirect
         soup = BeautifulSoup(response.content, 'html.parser')
         meta_refresh = soup.find('meta', attrs={'http-equiv': 'refresh'})
         if meta_refresh:
@@ -81,7 +83,7 @@ class DocsCrawler(Crawler):
             url = self.concat_url_and_href(url, href)
             response = self.session.get(url, headers=headers)
             if response.status_code != 200:
-                logging.info(f"Failed to crawl redirect {url}, response code is {response.status_code}")
+                logger.info(f"Failed to crawl redirect {url}, response code is {response.status_code}")
                 return None, None
 
         page_content = BeautifulSoup(response.content, 'lxml')
@@ -94,8 +96,8 @@ class DocsCrawler(Crawler):
         while len(new_urls):
             n_urls = len(self.crawled_urls)
             if n_urls>0 and n_urls%100==0:
-                logging.info(f"Currently have {n_urls} urls identified")
-            
+                logger.info(f"Currently have {n_urls} urls identified")
+
             # pop the left-most URL from new_urls
             url = new_urls.popleft()
 
@@ -114,7 +116,7 @@ class DocsCrawler(Crawler):
                             continue
                         abs_url = self.concat_url_and_href(url, href)
                         if (abs_url.startswith(("http://", "https://")) and len(urlparse(abs_url).fragment) == 0 and
-                            not any(abs_url.endswith(ext) for ext in self.extensions_to_ignore) and 
+                            not any(abs_url.endswith(ext) for ext in self.extensions_to_ignore) and
                             any(r.search(abs_url) for r in self.pos_regex) and             # match any of the positive regexes
                             not any([r.search(abs_url) for r in self.neg_regex])):         # don't match any of the negative regexes
                             if abs_url not in self.crawled_urls and abs_url not in new_urls:
@@ -124,7 +126,7 @@ class DocsCrawler(Crawler):
 
             except Exception as e:
                 import traceback
-                logging.info(f"Error crawling {url}: {e}, traceback={traceback.format_exc()}")
+                logger.info(f"Error crawling {url}: {e}, traceback={traceback.format_exc()}")
                 continue
 
     def crawl(self) -> None:
@@ -143,7 +145,7 @@ class DocsCrawler(Crawler):
         num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
 
         if self.cfg.docs_crawler.get("crawl_method", "internal") == "scrapy":
-            logging.info("Using Scrapy for crawling the docs")
+            logger.info("Using Scrapy for crawling the docs")
             all_urls = run_link_spider_isolated(
                 start_urls = self.cfg.docs_crawler.base_urls,
                 positive_regexes = self.cfg.docs_crawler.get("pos_regex", []),
@@ -152,26 +154,26 @@ class DocsCrawler(Crawler):
             )
             all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
         else:
-            logging.info("Using internal mechanism for crawling the docs")
+            logger.info("Using internal mechanism for crawling the docs")
             all_urls = []
             for base_url in self.cfg.docs_crawler.base_urls:
                 self.collect_urls(base_url, num_per_second=num_per_second)
             all_urls = list(self.crawled_urls)
         all_urls = list(set(all_urls))      # final deduplication
 
-        logging.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
+        logger.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
-            logging.info(f"Collected {len(all_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
+            logger.info(f"Collected {len(all_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
             with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
                 for url in sorted(list(all_urls)):
                     f.write(url + '\n')
         else:
-            logging.info(f"Collected {len(all_urls)} URLs to crawl and index.")
+            logger.info(f"Collected {len(all_urls)} URLs to crawl and index.")
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(UrlCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
@@ -179,12 +181,12 @@ class DocsCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), all_urls))
-                
+
         else:
             crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
             for inx, url in enumerate(all_urls):
                 if inx % 100 == 0:
-                    logging.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
+                    logger.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
                 crawl_worker.process(url, source=source)
 
         # If remove_old_content is set to true:
@@ -195,10 +197,8 @@ class DocsCrawler(Crawler):
             for doc in docs_to_remove:
                 if doc['url']:
                     self.indexer.delete_doc(doc['id'])
-            logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.docs_crawler.get("crawl_report", False):
                 with open('/home/vectara/env/urls_removed.txt', 'w') as f:
                     for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
                         f.write(url + '\n')
-
-

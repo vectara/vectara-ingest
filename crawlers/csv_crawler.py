@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import pandas as pd
 import unicodedata
@@ -10,11 +11,11 @@ from core.indexer import Indexer
 from core.utils import setup_logging
 
 class DFIndexer(object):
-    def __init__(self, 
+    def __init__(self,
                  indexer: Indexer,
-                 crawler: Crawler, 
-                 title_column: str, 
-                 text_columns: list[str], 
+                 crawler: Crawler,
+                 title_column: str,
+                 text_columns: list[str],
                  metadata_columns: list[str],
                  source: str,
         ):
@@ -42,7 +43,7 @@ class DFIndexer(object):
             md = {column: row[column] for column in self.metadata_columns if pd.notnull(row[column])}
             metadatas.append(md)
         if len(df)>1:
-            logging.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
+            logger.info(f"Indexing df for '{doc_id}' with {len(df)} rows")
         if len(titles)==0:
             titles = None
         doc_metadata = {'source': self.source}
@@ -50,11 +51,11 @@ class DFIndexer(object):
             if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
                 doc_metadata[column] = df[column].iloc[0]
         title = titles[0] if titles else doc_id
-        self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
+        self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas,
                                     doc_title=title, doc_metadata = doc_metadata)
         self.count += 1
         if self.count % 100==0:
-            logging.info(f"Indexed {self.count} documents in actor {ray.get_runtime_context().get_actor_id()}")
+            logger.info(f"Indexed {self.count} documents in actor {ray.get_runtime_context().get_actor_id()}")
         gc.collect()
 
 class CsvCrawler(Crawler):
@@ -76,7 +77,7 @@ class CsvCrawler(Crawler):
                 name = f'rows {inx}-{inx+rows_per_chunk-1}'
                 yield (name, sub_df)
 
-    def index_dataframe(self, df: pd.DataFrame, 
+    def index_dataframe(self, df: pd.DataFrame,
                         text_columns, title_column, metadata_columns, doc_id_columns,
                         rows_per_chunk: int = 500,
                         source: str = 'csv',
@@ -85,19 +86,19 @@ class CsvCrawler(Crawler):
         all_columns = text_columns + metadata_columns
         if title_column:
             all_columns.append(title_column)
-        
+
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(DFIndexer).remote(self.indexer, self, title_column, text_columns, metadata_columns, source) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1]), 
+            _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1]),
                               self.generate_dfs_to_index(df, doc_id_columns, rows_per_chunk)))
         else:
             crawl_worker = DFIndexer(self.indexer, self, title_column, text_columns, metadata_columns, source)
@@ -118,20 +119,20 @@ class CsvCrawler(Crawler):
         file_path = '/home/vectara/data/file'
         try:
             if orig_file_path.endswith('.csv'):
-                dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
+                dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str')
                           for column in all_columns}
                 sep = self.cfg.csv_crawler.get("separator", ",")
                 df = pd.read_csv(file_path, usecols=all_columns, sep=sep, dtype=dtypes)
                 df = df.astype(object)   # convert to native types
             elif orig_file_path.endswith('.xlsx'):
                 sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
-                logging.info(f"Reading Sheet {sheet_name} from XLSX file")
+                logger.info(f"Reading Sheet {sheet_name} from XLSX file")
                 df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
             else:
-                logging.info(f"Unknown file extension for the file {orig_file_path}")
+                logger.info(f"Unknown file extension for the file {orig_file_path}")
                 return
         except Exception as e:
-            logging.warning(f"Exception ({e}) occurred while loading file")
+            logger.warning(f"Exception ({e}) occurred while loading file")
             return
 
         # make sure all ID columns are a string type
@@ -141,11 +142,11 @@ class CsvCrawler(Crawler):
         select_condition = self.cfg.csv_crawler.get("select_condition", None)
         if select_condition:
             df = df.query(select_condition)
-            logging.info(f"Selected {len(df)} rows out of {orig_size} rows using the select condition")
+            logger.info(f"Selected {len(df)} rows out of {orig_size} rows using the select condition")
 
         # index the dataframe
         rows_per_chunk = int(self.cfg.csv_crawler.get("rows_per_chunk", 500) if 'csv_crawler' in self.cfg else 500)
         ray_workers = self.cfg.csv_crawler.get("ray_workers", 0)
 
-        logging.info(f"indexing {len(df)} rows from the file {file_path}")
+        logger.info(f"indexing {len(df)} rows from the file {file_path}")
         self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk, source='csv', ray_workers=ray_workers)

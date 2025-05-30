@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import os
 import json
 from bs4 import BeautifulSoup
@@ -46,16 +47,16 @@ class PmcCrawler(Crawler):
         email = "crawler@vectara.com"
         papers = list(set(get_top_n_papers(topic, n_papers, email)))
         if len(papers) > 0:
-            logging.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
+            logger.info(f"Found {len(papers)} papers for topic {topic}, now indexing...")
         else:
-            logging.info(f"Found no papers for topic {topic}")
+            logger.warning(f"Found no papers for topic {topic}")
             return
 
         # index the papers
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
         for i, pmc_id in enumerate(papers):
             if i%100 == 0:
-                logging.info(f"Indexed {i} papers so far for topic {topic}")
+                logger.info(f"Indexed {i} papers so far for topic {topic}")
             if pmc_id in self.crawled_pmc_ids:
                 continue
 
@@ -64,10 +65,10 @@ class PmcCrawler(Crawler):
                 with self.rate_limiter:
                     response = self.session.get(base_url, params=params)
             except Exception as e:
-                logging.info(f"Failed to download paper {pmc_id} due to error {e}, skipping")
+                logger.error(f"Failed to download paper {pmc_id} due to error {e}, skipping")
                 continue
             if response.status_code != 200:
-                logging.info(f"Failed to download paper {pmc_id}, skipping")
+                logger.info(f"Failed to download paper {pmc_id}, skipping")
                 continue
 
             soup = BeautifulSoup(response.text, "xml")
@@ -78,7 +79,7 @@ class PmcCrawler(Crawler):
                 title = title_element.get_text(strip=True)
             else:
                 title = "Title not found"
-    
+
             # Extract the publication date
             pub_date_soup = soup.find("pub-date")
             if pub_date_soup is not None:
@@ -104,11 +105,11 @@ class PmcCrawler(Crawler):
                     pub_date = 'unknown'
             else:
                 pub_date = "Publication date not found"
-            
+
             self.crawled_pmc_ids.add(pmc_id)
-            logging.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
+            logger.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
             pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
-            
+
             self.indexer.index_url(pdf_url, metadata={'url': pdf_url, 'source': 'pmc', 'title': title, "publicationDate": pub_date})
 
     def _get_xml_dict(self) -> Any:
@@ -122,10 +123,10 @@ class PmcCrawler(Crawler):
                 break
             days_back += 1
         if days_back == max_days:
-            logging.info(f"Could not find medline plus topics after checkint last {max_days} days")
+            logger.info(f"Could not find medline plus topics after checkint last {max_days} days")
             return {}
 
-        logging.info(f"Using MedlinePlus topics from {xml_date}")        
+        logger.info(f"Using MedlinePlus topics from {xml_date}")
         url = f'https://medlineplus.gov/xml/mplus_topics_{xml_date}.xml'
         response = self.session.get(url)
         response.raise_for_status()
@@ -134,7 +135,7 @@ class PmcCrawler(Crawler):
 
     def index_medline_plus(self, topics: List[str]) -> None:
         xml_dict = self._get_xml_dict()
-        logging.info(f"Indexing {xml_dict['health-topics']['@total']} health topics from MedlinePlus")    
+        logger.info(f"Indexing {xml_dict['health-topics']['@total']} health topics from MedlinePlus")
 
         for ht in xml_dict['health-topics']['health-topic']:
             title = ht['@title']
@@ -146,7 +147,7 @@ class PmcCrawler(Crawler):
                 else:
                     all_names += [synonyms.lower()]
             if not any([t.lower() in all_names for t in topics]):
-                logging.info(f"Skipping {title} because it is not in our list of topics to crawl")
+                logger.info(f"Skipping {title} because it is not in our list of topics to crawl")
                 continue
 
             medline_id = ht['@id']
@@ -172,10 +173,10 @@ class PmcCrawler(Crawler):
                     }
                 ]
             }
-            logging.info(f"Indexing data about {title}")
+            logger.info(f"Indexing data about {title}")
             succeeded = self.indexer.index_document(document)
             if not succeeded:
-                logging.info(f"Failed to index document with title {title}")
+                logger.info(f"Failed to index document with title {title}")
                 continue
             for site in ht['site']:
                 site_title = site['@title']
