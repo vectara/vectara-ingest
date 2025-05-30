@@ -152,6 +152,25 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
+def create_default_config() -> DictConfig:
+    """
+    Used to simplify managing default settings.
+    :return: DictConfig with default settings.
+    """
+    config = {
+        'doc_processing':{
+            'easy_ocr_config': {
+                "force_full_page_ocr": True,
+                "model_storage_directory": os.path.expanduser("~/.EasyOCR/")
+            }
+        },
+        'vectara': {
+            "endpoint": "https://api.vectara.io",
+            "auth_url": "https://auth.vectara.io"
+        }
+    }
+    return OmegaConf.create(config)
+
 
 def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     """
@@ -245,20 +264,17 @@ def main() -> None:
     config_name = sys.argv[1]
     profile_name = sys.argv[2]
 
+    default_config: DictConfig = create_default_config()
+
     # process arguments
     logging.info(f"Loading config {config_name}")
     try:
-        cfg: DictConfig = DictConfig(OmegaConf.load(config_name))
+        job_config: DictConfig = DictConfig(OmegaConf.load(config_name))
     except Exception as e:
         logging.error(f"Error loading config file ({config_name}): {e}")
         exit(1)
 
-    if not cfg.get('vectara', None):
-        vectara_defaults = {
-            "endpoint": "https://api.vectara.io",
-            "auth_url": "https://auth.vectara.io"
-        }
-        OmegaConf.update(cfg, 'vectara', vectara_defaults)
+    cfg: DictConfig = OmegaConf.merge(default_config, job_config)
 
     secrets_path = os.environ.get('VECTARA_SECRETS_PATH', '/home/vectara/env/secrets.toml')
     # add .env params, by profile

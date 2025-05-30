@@ -1,3 +1,4 @@
+logger = logging.getLogger(__name__)
 import logging
 from typing import List, Tuple, Iterator
 import time
@@ -48,7 +49,6 @@ class DocumentParser():
         do_ocr: bool = False,
         summarize_images: bool = False,
     ):
-        self.logger = logging.getLogger()
         self.cfg = cfg
         self.model_config = model_config
         self.enable_gmft = enable_gmft
@@ -61,9 +61,9 @@ class DocumentParser():
 
     def get_tables_with_gmft(self, filename: str) -> Iterator[Tuple[pd.DataFrame, str, str]]:
         if not filename.endswith('.pdf'):
-            self.logger.warning(f"GMFT: only PDF files are supported, skipping {filename}")
+            logger.warning(f"GMFT: only PDF files are supported, skipping {filename}")
             return None
-        
+
         detector = TableDetector()
         config = AutoFormatConfig()
         config.semantic_spanning_cells = True   # [Experimental] better spanning cells
@@ -74,7 +74,7 @@ class DocumentParser():
         try:
             for inx,page in enumerate(doc):
                 if inx % 100 == 0:
-                    print(f"GMFT: processing page {inx+1}")
+                    logger.info(f"GMFT: processing page {inx+1}")
                 for table in detector.extract(page):
                     try:
                         ft = formatter.extract(table)
@@ -82,12 +82,12 @@ class DocumentParser():
                         table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
                         yield (df, table_summary, " ".join(ft.captions()), {'parser_element_type': 'table', 'page': inx+1})
                     except Exception as e:
-                        self.logger.error(f"Error processing table (with GMFT) on page {inx+1}: {e}")
+                        logger.error(f"Error processing table (with GMFT) on page {inx+1}: {e}")
                         continue
         finally:
             doc.close()
             if self.verbose:
-                self.logger.info("GMFT: Finished processing PDF")
+                logger.info("GMFT: Finished processing PDF")
 
 
 class DocupandaDocumentParser(DocumentParser):
@@ -103,11 +103,11 @@ class DocupandaDocumentParser(DocumentParser):
         summarize_images: bool = False
     ):
         super().__init__(
-            verbose=verbose, 
+            verbose=verbose,
             cfg=cfg,
             model_config=model_config,
-            parse_tables=parse_tables, 
-            enable_gmft=enable_gmft, 
+            parse_tables=parse_tables,
+            enable_gmft=enable_gmft,
             do_ocr=False,
             summarize_images=summarize_images
         )
@@ -117,13 +117,13 @@ class DocupandaDocumentParser(DocumentParser):
 
     def parse(
             self,
-            filename: str, 
+            filename: str,
             source_url: str = "No URL"
         ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
         """
         Parse a local file and return the title and text content.
         Using DocuPanda
-        
+
         Args:
             filename (str): Name of the file to parse.
 
@@ -155,7 +155,7 @@ class DocupandaDocumentParser(DocumentParser):
         }
         response = requests.post(base_url, json=payload, headers=headers)
         if response.status_code != 200:
-            self.logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
+            logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
             return doc_title, texts, tables, images
 
         # Phase 2: get document; poll until ready, but no longer than timeout
@@ -171,7 +171,7 @@ class DocupandaDocumentParser(DocumentParser):
             time.sleep(1)
 
         if not completed:
-            self.logger.error(f"Docupanda: document processing timed out after {timeout} seconds")
+            logger.error(f"Docupanda: document processing timed out after {timeout} seconds")
             return doc_title, texts, tables, images
 
         # Phase 3: get results
@@ -202,16 +202,16 @@ class DocupandaDocumentParser(DocumentParser):
                         img_cropped.save(fp, 'PNG')
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary and len(image_summary)>10:
-                        images.append((image_summary, 
+                        images.append((image_summary,
                                       {'parser_element_type': 'image', 'page': page['pageNum']}))
                         if self.verbose:
-                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-                    self.logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page['pageNum']}")
+                            logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                    logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page['pageNum']}")
                 else:
-                    self.logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
+                    logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
 
-        self.logger.info(f"Docupanda: {len(tables)} tables, and {len(images)} images")
-        self.logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
+        logger.info(f"Docupanda: {len(tables)} tables, and {len(images)} images")
+        logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
 
@@ -229,29 +229,29 @@ class LlamaParseDocumentParser(DocumentParser):
     ):
         super().__init__(
             cfg=cfg,
-            verbose=verbose, 
+            verbose=verbose,
             model_config=model_config,
-            parse_tables=parse_tables, 
-            enable_gmft=enable_gmft, 
+            parse_tables=parse_tables,
+            enable_gmft=enable_gmft,
             do_ocr=False,
             summarize_images=summarize_images
         )
         if llama_parse_api_key:
             self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
             if self.verbose:
-                self.logger.info("Using LlamaParse, premium mode")
+                logger.info("Using LlamaParse, premium mode")
         else:
             raise ValueError("No LlamaParse API key found, skipping LlamaParse")
 
     def parse(
             self,
-            filename: str, 
+            filename: str,
             source_url: str = "No URL"
         ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
         """
         Parse a local file and return the title and text content.
         Using LlamaPase
-        
+
         Args:
             filename (str): Name of the file to parse.
 
@@ -285,7 +285,7 @@ class LlamaParseDocumentParser(DocumentParser):
                         table_summary = self.table_summarizer.summarize_table_text(table_md)
                         if table_summary:
                             if self.verbose:
-                                self.logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
+                                logger.info(f"Table summary: {table_summary[:MAX_VERBOSE_LENGTH]}...")
                             tables.append([markdown_to_df(table_md), table_summary, '', {'parser_element_type': 'table', 'page': page['page']}])
 
         # process images - does not support per page images
@@ -296,10 +296,10 @@ class LlamaParseDocumentParser(DocumentParser):
                 if image_summary:
                     images.append((image_summary, {'parser_element_type': 'image', 'page': image_dict['page_number']}))
                     if self.verbose:
-                        self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                        logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
-        self.logger.info(f"LlamaParse: {len(tables)} tables, and {len(images)} images")
-        self.logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
+        logger.info(f"LlamaParse: {len(tables)} tables, and {len(images)} images")
+        logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
 class DoclingDocumentParser(DocumentParser):
@@ -318,17 +318,17 @@ class DoclingDocumentParser(DocumentParser):
     ):
         super().__init__(
             cfg=cfg,
-            verbose=verbose, 
+            verbose=verbose,
             model_config=model_config,
-            parse_tables=parse_tables, 
-            enable_gmft=enable_gmft, 
+            parse_tables=parse_tables,
+            enable_gmft=enable_gmft,
             do_ocr=do_ocr,
             summarize_images=summarize_images
         )
         self.chunking_strategy = chunking_strategy
         self.image_scale = image_scale
         if self.verbose:
-            self.logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy}")
+            logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy}")
 
     @staticmethod
     def _lazy_load_docling():
@@ -353,18 +353,18 @@ class DoclingDocumentParser(DocumentParser):
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 yield (table_df, table_summary, '', _get_metadata(table))
             except ValueError as err:
-                self.logger.error(f"Error parsing Markdown table: {err}. Skipping...")
+                logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
 
     def parse(
             self,
-            filename: str, 
+            filename: str,
             source_url: str = "No URL"
         ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
         """
         Parse a local file and return the title and text content.
         Using Docling
-        
+
         Args:
             filename (str): Name of the file to parse.
 
@@ -377,7 +377,7 @@ class DoclingDocumentParser(DocumentParser):
         """
         # Process using Docling
         (
-            DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions, 
+            DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
             PdfFormatOption, InputFormat, EasyOcrOptions
         ) = self._lazy_load_docling()
 
@@ -388,7 +388,25 @@ class DoclingDocumentParser(DocumentParser):
         pipeline_options.do_ocr = False
         if self.do_ocr:
             pipeline_options.do_ocr = True
-            ocr_options = EasyOcrOptions(force_full_page_ocr=True)
+            easy_ocr_config = self.cfg.doc_processing.easy_ocr_config
+            ocr_options = EasyOcrOptions()
+            mapping = {
+                "bitmap_area_threshold": lambda val: setattr(ocr_options, "bitmap_area_threshold", val),
+                "confidence_threshold": lambda val: setattr(ocr_options, "confidence_threshold", val),
+                "download_enabled": lambda val: setattr(ocr_options, "download_enabled", val),
+                "force_full_page_ocr": lambda val: setattr(ocr_options, "force_full_page_ocr", val),
+                "kind": lambda val: setattr(ocr_options, "kind", val),
+                "lang": lambda val: setattr(ocr_options, "lang", val),
+                "model_config": lambda val: setattr(ocr_options, "model_config", val),
+                "model_storage_directory": lambda val: setattr(ocr_options, "model_storage_directory", val),
+                "recog_network": lambda val: setattr(ocr_options, "recog_network", val),
+                "use_gpu": lambda val: setattr(ocr_options, "use_gpu", val),
+            }
+
+            for key, func in mapping.items():
+                value = getattr(easy_ocr_config, key, None)
+                if value is not None:
+                    func(value)
             pipeline_options.ocr_options = ocr_options
         res = DocumentConverter(
             format_options={
@@ -416,7 +434,7 @@ class DoclingDocumentParser(DocumentParser):
                     md['page'] = element.prov[0].page_no
                 return md
             texts = [(e.text, _get_metadata(e)) for e in doc.texts]
-        self.logger.info(f"DoclingParser: {len(texts)} text segments")
+        logger.info(f"DoclingParser: {len(texts)} text segments")
 
         tables = []
         if self.parse_tables:
@@ -435,15 +453,15 @@ class DoclingDocumentParser(DocumentParser):
                         image.save(fp, 'PNG')
                     image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
                     if image_summary:
-                        images.append((image_summary, 
+                        images.append((image_summary,
                                       {'parser_element_type': 'image', 'page': pic.prov[0].page_no}))
                         if self.verbose:
-                            self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                            logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
-                    self.logger.info(f"Failed to retrieve image {pic}")
+                    logger.info(f"Failed to retrieve image {pic}")
                     continue
 
-        self.logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
+        logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
         return doc_title, texts, tables, images
 
 
@@ -461,21 +479,21 @@ class UnstructuredDocumentParser(DocumentParser):
     ):
         super().__init__(
             cfg=cfg,
-            verbose=verbose, 
+            verbose=verbose,
             model_config=model_config,
-            parse_tables=parse_tables, 
-            enable_gmft=enable_gmft, 
+            parse_tables=parse_tables,
+            enable_gmft=enable_gmft,
             do_ocr=False,
             summarize_images=summarize_images
         )
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         if self.verbose:
-            self.logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
+            logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
 
     def _get_elements(
         self,
-        filename: str, 
+        filename: str,
         mode: str = "text",
     ) -> List[us.documents.elements.Element]:
         '''
@@ -500,7 +518,7 @@ class UnstructuredDocumentParser(DocumentParser):
                 partition_kwargs.update({
                     'extract_images_in_pdf': True,
                     'extract_image_block_types': ["Image", "Table"],
-                    'strategy': "hi_res", 
+                    'strategy': "hi_res",
                     'hi_res_model_name': "yolox",
                 })
 
@@ -513,13 +531,13 @@ class UnstructuredDocumentParser(DocumentParser):
         elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
             partition_func = partition_pptx
         else:
-            self.logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
+            logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
             return []
 
         elements = partition_func(
             filename=filename,
             **partition_kwargs
-        )    
+        )
         return elements
 
     def _get_tables(self, elements):
@@ -531,17 +549,17 @@ class UnstructuredDocumentParser(DocumentParser):
                     df = pd.read_html(StringIO(html_table))[0]
                     yield [df, table_summary, '', {'parser_element_type': 'table', 'page': e.metadata.page_number}]
                 except Exception as err:
-                    self.logger.error(f"Error parsing HTML table: {err}. Skipping...")
+                    logger.error(f"Error parsing HTML table: {err}. Skipping...")
                     continue
 
     def parse(
             self,
-            filename: str, 
+            filename: str,
             source_url: str = "No URL",
         ) -> Tuple[str, List[Tuple], List[Tuple], list[Tuple]]:
         """
         Parse a local file and return the title and text content.
-        
+
         Args:
             filename (str): Name of the file to parse.
 
@@ -554,16 +572,16 @@ class UnstructuredDocumentParser(DocumentParser):
         """
         # Process using unstructured partitioning functionality
         st = time.time()
-        
+
         # Pass 1: process text
         if self.verbose:
-            self.logger.info(f"Unstructured pass 1: extracting text from {filename}")
+            logger.info(f"Unstructured pass 1: extracting text from {filename}")
         elements = self._get_elements(filename, mode='text')
         texts = [
             (str(e), {'parser_element_type': 'text', 'page': e.metadata.page_number})
             for e in elements
         ]
-        self.logger.info(f"UnstructuredParser: {len(texts)} text elements")
+        logger.info(f"UnstructuredParser: {len(texts)} text elements")
 
         # No chunking strategy may result in title elements; if so - use the first one as doc_title
         titles = [str(x) for x in elements if type(x)==us.documents.elements.Title and len(str(x))>10]
@@ -571,7 +589,7 @@ class UnstructuredDocumentParser(DocumentParser):
 
         # Pass 2: extract tables and images; here we never use unstructured chunking, and ignore any text
         if self.verbose:
-            self.logger.info(f"Unstructured pass 2: extracting tables and images from {filename}")
+            logger.info(f"Unstructured pass 2: extracting tables and images from {filename}")
         elements = self._get_elements(filename, mode='images')
 
         # get image summaries
@@ -587,9 +605,9 @@ class UnstructuredDocumentParser(DocumentParser):
                         if image_summary:
                             images.append((image_summary, {'parser_element_type': 'image', 'page': e.metadata.page_number}))
                             if self.verbose:
-                                self.logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                                logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                     except Exception as exc:
-                        self.logger.error(f"Error summarizing image ({e.metadata.image_path}): {exc}")
+                        logger.error(f"Error summarizing image ({e.metadata.image_path}): {exc}")
                         continue
         # get tables
         if self.parse_tables:
@@ -601,5 +619,5 @@ class UnstructuredDocumentParser(DocumentParser):
             tables = []
 
 
-        self.logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
+        logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
         return doc_title, texts, tables, images
