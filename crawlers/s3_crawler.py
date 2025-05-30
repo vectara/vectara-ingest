@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter
 
 from slugify import slugify
 import pandas as pd
@@ -24,7 +24,6 @@ class FileCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, s3_file: str, metadata: dict, source: str):
         s3 = boto3.client('s3')

@@ -12,7 +12,6 @@ from http.client import IncompleteRead
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import setup_logging
 
 
 def get_timestamp(days_past):
@@ -410,7 +409,6 @@ class SlackMsgIndexer(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, channel, msg, users_info):
         replace_ampersand(msg)

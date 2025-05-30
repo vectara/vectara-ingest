@@ -3,7 +3,7 @@ import logging
 import psutil
 
 from core.crawler import Crawler
-from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap
+from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, get_urls_from_sitemap
 from core.indexer import Indexer
 from core.spider import run_link_spider_isolated, recursive_crawl
 
@@ -20,7 +20,6 @@ class PageCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, url: str, source: str):
         metadata = {"source": source, "url": url}

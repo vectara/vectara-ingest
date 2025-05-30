@@ -7,7 +7,6 @@ import ray
 import gc
 
 from core.indexer import Indexer
-from core.utils import setup_logging
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -16,7 +15,6 @@ class RowIndexer(object):
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
-        setup_logging()
 
     def process(self, inx: int, row: dict,
                 id_column: str,

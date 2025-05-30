@@ -8,8 +8,7 @@ from collections import deque
 from urllib.parse import urljoin, urlparse
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging, \
-    configure_session_for_ssl
+from core.utils import create_session_with_retries, binary_extensions, RateLimiter, configure_session_for_ssl
 from core.spider import run_link_spider_isolated
 from core.indexer import Indexer
 
@@ -25,7 +24,6 @@ class UrlCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, url: str, source: str):
         if url is None:

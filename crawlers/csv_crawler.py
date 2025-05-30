@@ -8,7 +8,6 @@ import psutil
 import ray
 
 from core.indexer import Indexer
-from core.utils import setup_logging
 
 class DFIndexer(object):
     def __init__(self,
@@ -29,7 +28,6 @@ class DFIndexer(object):
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
-        setup_logging()
 
     def process(self, doc_id: str, df: pd.DataFrame) -> None:
         texts = []

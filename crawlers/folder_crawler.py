@@ -12,7 +12,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter
 
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
@@ -22,7 +22,6 @@ class FileCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix

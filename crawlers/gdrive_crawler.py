@@ -19,7 +19,7 @@ from typing import List, Optional
 import ray
 
 from core.indexer import Indexer
-from core.utils import setup_logging, safe_remove_file
+from core.utils import safe_remove_file
 
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
@@ -78,7 +78,6 @@ class UserWorker(object):
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
-        setup_logging()
 
     def list_files(self, service: Resource, date_threshold: Optional[str] = None) -> List[dict]:
         results = []
