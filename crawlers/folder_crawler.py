@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import os
 import pathlib
 import time
@@ -11,7 +12,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter
 
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
@@ -21,7 +22,6 @@ class FileCrawlWorker(object):
 
     def setup(self):
         self.indexer.setup()
-        setup_logging()
 
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix
@@ -32,7 +32,7 @@ class FileCrawlWorker(object):
                 self.indexer.index_file(filename=file_path, uri=file_name, metadata=metadata)
         except Exception as e:
             import traceback
-            logging.error(
+            logger.error(
                 f"Error while indexing {file_path}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
@@ -56,7 +56,7 @@ class FolderCrawler(Crawler):
         self.model = None
 
         # Walk the directory and upload files with the specified extension to Vectara
-        logging.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")
+        logger.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")
         files_to_process = []
         for root, _, files in os.walk(folder):
             for file in files:
@@ -81,7 +81,7 @@ class FolderCrawler(Crawler):
             ray_workers = psutil.cpu_count(logical=True)
 
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
@@ -93,6 +93,6 @@ class FolderCrawler(Crawler):
             crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second)
             for inx, tup in enumerate(files_to_process):
                 if inx % 100 == 0:
-                    logging.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
+                    logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
                 file_path, file_name, file_metadata = tup
                 crawl_worker.process(file_path, file_name, file_metadata)

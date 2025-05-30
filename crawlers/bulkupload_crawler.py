@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import json
 
@@ -15,13 +16,13 @@ class JACrawler(Crawler):
         if not isinstance(json_array, list):
             raise Exception("JSON file must contain an array of JSON objects")
 
-        logging.info(f"indexing {len(json_array)} JSON documents from JSON file")
+        logger.info(f"indexing {len(json_array)} JSON documents from JSON file")
         count = 0
         for json_object in json_array:
             if count % 100 == 0:
-                logging.info(f"finished {count} documents so far")
+                logger.info(f"finished {count} documents so far")
             if is_valid(json_object):
                 self.indexer.index_document(json_object)
                 count += 1
             else:
-                logging.info(f"invalid JSON object: {json_object}")
+                logger.warning(f"invalid JSON object: {json_object}")

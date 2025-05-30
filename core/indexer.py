@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import json
 import re
 import os
@@ -159,7 +161,6 @@ class Indexer:
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
-        self.logger = logging.getLogger()
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
 
@@ -179,9 +180,9 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
-        if ('model' in self.cfg.doc_processing or 
+        if ('model' in self.cfg.doc_processing or
             ('model_config' not in self.cfg.doc_processing and 'model' not in self.cfg.doc_processing)):
-            logging.warning(
+            logger.warning(
                 "doc_processing.model will no longer be supported in a future release. Use doc_processing.model_config instead.")
 
             provider = self.cfg.doc_processing.get("model", "openai")
@@ -204,23 +205,23 @@ class Indexer:
 
         if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
-            self.logger.warning("Table summarization enabled but model API key not found, disabling table summarization")
+            logger.warning("Table summarization enabled but model API key not found, disabling table summarization")
 
         if self.summarize_images and vision_api_key is None:
             self.summarize_images = False
-            self.logger.warning(
+            logger.warning(
                 "Image summarization (doc_processing.summarize_images) enabled but model API key not found, disabling image summarization")
 
         if self.contextual_chunking and text_api_key is None:
             self.contextual_chunking = False
-            self.logger.warning("Contextual chunking enabled but model API key not found, disabling contextual chunking")
+            logger.warning("Contextual chunking enabled but model API key not found, disabling contextual chunking")
 
         if self.extract_metadata and text_api_key is None:
             self.extract_metadata = []
-            self.logger.warning(
+            logger.warning(
                 "Metadata extraction (doc_processing.extract_metadata) enabled but model API key not found, disabling metadata extraction")
 
-        logging.info(f"Vectara API Url = '{self.api_url}'")
+        logger.info(f"Vectara API Url = '{self.api_url}'")
 
         self.setup()
 
@@ -635,7 +636,7 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
-        
+
         files = {
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
@@ -694,7 +695,7 @@ class Indexer:
         Args:
             document (dict): Document to index.
             use_core_indexing (bool): Whether to use the core indexing API.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -725,13 +726,13 @@ class Indexer:
         try:
             data = json.dumps(document)
         except Exception as e:
-            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")
+            logger.error(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
         except Exception as e:
-            self.logger.info(f"Exception {e} while indexing document {document['id']}")
+            logger.error(f"Exception {e} while indexing document {document['id']}")
             return False
 
         if response.status_code != 201:
@@ -749,11 +750,11 @@ class Indexer:
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
-        
+
         Args:
-            url (str): URL for where the document originated. 
+            url (str): URL for where the document originated.
             metadata (dict): Metadata for the document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -768,7 +769,7 @@ class Indexer:
             os.makedirs("/tmp", exist_ok=True)
             url_file_path = get_file_path_from_url(url)
             if not url_file_path:
-                self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
+                logger.warning(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
             response = self.session.get(url, headers=get_headers, stream=True)
@@ -776,12 +777,12 @@ class Indexer:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
-                self.logger.info(f"File downloaded successfully and saved as {file_path}")
+                logger.info(f"File downloaded successfully and saved as {file_path}")
                 res = self.index_file(file_path, url, metadata)
                 safe_remove_file(file_path)
                 return res
             else:
-                self.logger.info(f"Failed to download file. Status code: {response.status_code}")
+                logger.error(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
@@ -923,7 +924,7 @@ class Indexer:
                 self.logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
-                self.logger.info(
+                logger.error(
                     f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
@@ -965,7 +966,7 @@ class Indexer:
 
         document = {}
         document["id"] = (
-            doc_id if len(doc_id) < 128 
+            doc_id if len(doc_id) < 128
             else doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
         )
 
@@ -1024,13 +1025,13 @@ class Indexer:
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
-        
+
         Args:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
             id (str, optional): Document id for the uploaded document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -1195,7 +1196,7 @@ class Indexer:
         try:
             title, texts, tables, images = dp.parse(filename, uri)
         except Exception as e:
-            self.logger.info(f"Failed to parse {filename} with error {e}")
+            logger.error(f"Failed to parse {filename} with error {e}")
             return False
 
         # Get metadata attribute values from text content (if defined)
@@ -1263,7 +1264,7 @@ class Indexer:
                                                doc_metadata=image_metadata, doc_title=title, use_core_indexing=True)
                 image_success.append(img_okay)
             except Exception as e:
-                self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
+                logger.error(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
         self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
