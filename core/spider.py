@@ -63,14 +63,14 @@ def recursive_crawl(url: str, depth: int,
         visited.update(new_urls)
 
         if len(new_urls) > 0:
-            logger.info(f"collected {len(visited)} URLs so far")
+            logger.debug(f"collected {len(visited)} URLs so far")
             if verbose:
-                logger.info(f"URLs so far: {visited}")
+                logger.debug(f"URLs so far: {visited}")
 
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, pos_patterns, neg_patterns, indexer, visited, verbose)
     except Exception as e:
-        logger.error(f"Error {e} in recursive_crawl for {url}")
+        logger.warning(f"Error {e} in recursive_crawl for {url}")
         pass
 
     return set(visited)
@@ -131,13 +131,13 @@ class LinkSpider(scrapy.Spider):
         except re.error as e:
             logger.error(f"Invalid regex pattern provided: {e.pattern} - {e.msg}")
             raise ValueError(f"Invalid regex pattern: {e.pattern} - {e.msg}") from e
-    
+
     def is_valid_by_regex(self, url: str) -> bool:
         if any(p.match(url) for p in self.negative_patterns):
             return False
-        
+
         if not self.positive_patterns:  # If no positive patterns are defined
-            return True                
+            return True
 
         return any(p.match(url) for p in self.positive_patterns)
 
@@ -159,11 +159,11 @@ class LinkSpider(scrapy.Spider):
 
         if any([response_path_lower.endswith(ext) for ext in (archive_extensions + img_extensions)]):
             return
-        
+
         # For document files, yield the URL but do not attempt to extract links.
         if any([response_path_lower.endswith(ext) for ext in doc_extensions]):
             extract_links = False
-            
+
         # 1) If this URL itself is valid, yield it
         if self.is_valid_by_regex(response.url):
             yield {'url': response.url}
@@ -203,7 +203,7 @@ def run_link_spider(
 
     try:
         dispatcher.connect(_item_scraped_callback, signal=signals.item_scraped)
-    
+
         middleware_path = f"{FilterRedirectsByTypeMiddleware.__module__}.{FilterRedirectsByTypeMiddleware.__name__}"
 
         # These settings should be respected by the CrawlerProcess
@@ -245,12 +245,12 @@ def run_link_spider(
         process.start() # This is a blocking call
 
     except Exception as e:
-        logger.warning(f"WORKER ERROR: An exception occurred during run_link_spider: {e}")
+        logger.error(f"WORKER ERROR: An exception occurred during run_link_spider: {e}")
     finally:
         try:
             dispatcher.disconnect(_item_scraped_callback, signal=signals.item_scraped)
         except Exception as e:
-            logger.warning(f"WORKER WARNING: Failed to disconnect signal handler: {e}")
+            logger.error(f"WORKER WARNING: Failed to disconnect signal handler: {e}")
 
     results = list(set(results))
     logger.info(f"LinkSpider finished. Found {len(results)} unique URLs.")
@@ -267,7 +267,7 @@ def run_link_spider_isolated(
     """
     Launches run_link_spider(...) in a fresh Python process so that
     Scrapy's reactor.run() and logging never collide with the main loop.
-    """    
+    """
     def _worker(queue):
         import logging
         logging.getLogger('scrapy').setLevel(logging.WARNING)
@@ -286,7 +286,7 @@ def run_link_spider_isolated(
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            logger.debug(f"WORKER: Exception in run_link_spider: {e}\n{error_details}")
+            logger.error(f"WORKER: Exception in run_link_spider: {e}\n{error_details}")
             queue.put((None, e))
 
     queue = multiprocessing.Queue()

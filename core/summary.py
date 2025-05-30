@@ -3,6 +3,7 @@ import os
 import json
 import base64
 import logging
+logger = logging.getLogger(__name__)
 from omegaconf import OmegaConf
 
 from PIL import Image
@@ -20,7 +21,7 @@ def _get_image_shape(content: str) -> tuple:
         img = Image.open(BytesIO(img_data))
         return img.size  # (width, height)
     except (IOError, OSError, ValueError) as e:
-        logging.info(f"Skipping summarization: not a valid image ({e})")
+        logger.warning(f"Skipping summarization: not a valid image ({e})")
         return None
 
 def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
@@ -38,7 +39,7 @@ def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
     prompt += "Your response should be as concise and accurate as possible. Prioritize 1-2 word responses."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
-    logging.info(f"get_attributes_from_text() - Calling generate")
+    logger.debug(f"get_attributes_from_text() - Calling generate")
     res = generate(cfg, system_prompt, prompt, model_config)
     if res.strip().startswith("```json"):
         res = res.strip().removeprefix("```json").removesuffix("```")
@@ -50,10 +51,10 @@ class ImageSummarizer():
         self.cfg = cfg
 
     def get_image_content_for_summarization(self, image_path: str):
-        
+
         orig_image_path = image_path
         if orig_image_path.lower().endswith(".svg"):
-            logging.info(f"Converting svg image ({image_path}) to png for summarization")
+            logger.info(f"Converting svg image ({image_path}) to png for summarization")
             new_image_path = image_path.replace(".svg", ".png")
             cairosvg.svg2png(url=image_path, write_to=new_image_path, dpi=300)
             image_path = new_image_path
@@ -66,21 +67,21 @@ class ImageSummarizer():
             try:
                 os.remove(orig_image_path)
             except FileNotFoundError:
-                logging.warning(f"File '{orig_image_path}' not found.")
+                logger.warning(f"File '{orig_image_path}' not found.")
             except Exception as e:
-                logging.warning(f"An error occurred: {e}")
+                logger.warning(f"An error occurred: {e}")
 
         return content
 
     def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
-        content = self.get_image_content_for_summarization(image_path)        
+        content = self.get_image_content_for_summarization(image_path)
         shape = _get_image_shape(content)
         if not shape:
-             logging.info(f"Image too small to summarize ({image_url})")
-             return None
+            logger.info(f"Image too small to summarize ({image_url})")
+            return None
         width, height = shape
         if width<10 or height<10:
-            logging.info(f"Image too small to summarize ({image_url})")
+            logger.info(f"Image too small to summarize ({image_url})")
             return None
 
         prompt = """
@@ -101,7 +102,7 @@ class ImageSummarizer():
             summary = generate_image_summary(self.cfg, prompt, content, self.image_model_config)
             return summary
         except Exception as e:
-            logging.info(f"Failed to summarize image ({image_url}): {e}")
+            logger.warning(f"Failed to summarize image ({image_url}): {e}")
             return ""
 
 class TableSummarizer():
@@ -126,5 +127,5 @@ class TableSummarizer():
             return summary
         except Exception as e:
             import traceback
-            logging.info(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
+            logger.warning(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
             return None
