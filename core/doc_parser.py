@@ -390,7 +390,6 @@ class DoclingDocumentParser(DocumentParser):
             pipeline_options.do_ocr = True
             easy_ocr_config = self.cfg.doc_processing.easy_ocr_config
             ocr_options = EasyOcrOptions()
-            ocr_options.force_full_page_ocr = easy_ocr_config.force_full_page_ocr
             mapping = {
                 "bitmap_area_threshold": lambda val: setattr(ocr_options, "bitmap_area_threshold", val),
                 "confidence_threshold": lambda val: setattr(ocr_options, "confidence_threshold", val),
