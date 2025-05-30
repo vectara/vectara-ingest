@@ -75,7 +75,7 @@ RUN playwright install --with-deps firefox \
 # Set working directory
 WORKDIR ${HOME}
 
-ADD docker/bin/download-easyocr-models.py /bin/
+COPY docker/bin/download-easyocr-models.py /bin/
 
 ARG DOWNLOAD_EASYOCR_MODELS=false
 
