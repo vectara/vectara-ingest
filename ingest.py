@@ -154,25 +154,6 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
-def create_default_config() -> DictConfig:
-    """
-    Used to simplify managing default settings.
-    :return: DictConfig with default settings.
-    """
-    config = {
-        'doc_processing':{
-            'easy_ocr_config': {
-                "force_full_page_ocr": True,
-                "model_storage_directory": os.path.expanduser("~/.EasyOCR/")
-            }
-        },
-        'vectara': {
-            "endpoint": "https://api.vectara.io",
-            "auth_url": "https://auth.vectara.io"
-        }
-    }
-    return OmegaConf.create(config)
-
 
 def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     """
@@ -258,18 +239,31 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     setup_logging()
     logger = logging.getLogger()
 
-    default_config: DictConfig = create_default_config()
-
     # process arguments
     logging.info(f"Loading config {config_file}")
     try:
-        job_config: DictConfig = DictConfig(OmegaConf.load(config_file))
         cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
         logging.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
 
-    cfg: DictConfig = OmegaConf.merge(default_config, job_config)
+    if not cfg.get('vectara', None):
+        vectara_defaults = {
+            "endpoint": "https://api.vectara.io",
+            "auth_url": "https://auth.vectara.io"
+        }
+        OmegaConf.update(cfg, 'vectara', vectara_defaults)
+
+    # Certificate auto-detection only in CLI mode (Docker has its own mechanism)
+    if not is_running_in_docker():
+        # If ssl_verify is not set, check for ca.pem or ssl/ directory
+        if not cfg.vectara.get("ssl_verify", None):
+            if os.path.exists("ca.pem"):
+                logging.info("Found ca.pem in current directory, using it for SSL verification")
+                OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
+            elif os.path.isdir("ssl"):
+                logging.info("Found ssl/ directory in current directory, using it for certificates")
+                OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ssl"))
 
     # Determine secrets.toml path
     if secrets_path is None:

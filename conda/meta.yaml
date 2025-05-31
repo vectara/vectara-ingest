@@ -9,24 +9,16 @@ source:
   path: ..  # Use parent directory as the source
 
 build:
-  noarch: python
   number: 0
-  binary_relocation: False
-  ignore_run_exports_from:
-    - libpdfium
-    - python
-    - pip
   skip_compile_pyc:
     - "*.py"
-  # Disable binary relocation completely
+  binary_relocation: False
   script: |
     echo "--- PIP Environment Variables Before Changes ---"
-    env | grep PIP
     echo "Attempting to unset PIP_NO_INDEX and PIP_NO_DEPENDENCIES..."
     unset PIP_NO_INDEX
     unset PIP_NO_DEPENDENCIES
     echo "--- PIP Environment Variables After Changes ---"
-    env | grep PIP
 
     echo "--- Starting pip install of local package and its Python dependencies ---"
     "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .[all]
