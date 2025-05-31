@@ -18,12 +18,15 @@ from core.crawler import Crawler
 from core.utils import setup_logging, is_running_in_docker
 
 app = typer.Typer()
+setup_logging()
+
+logger = logging.getLogger()
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     """
     Dynamically import a module and instantiate a crawler class.
     """
-    logging.info('inside instantiate crawler')
+    logger.info('inside instantiate crawler')
     sys.path.insert(0, os.path.abspath(folder_name))
 
     crawler_name = class_name.split('Crawler')[0]
@@ -37,7 +40,7 @@ def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **
         raise TypeError(f"{class_name} is not a subclass of {base_class.__name__}")
 
     # Instantiate the class and return the instance
-    logging.info('end of instantiate crawler')
+    logger.info('end of instantiate crawler')
     return class_(*args, **kwargs)
 
 def get_jwt_token(auth_url: str, auth_id: str, auth_secret: str) -> Any:
@@ -66,7 +69,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
     }
     response = requests.request("POST", url, headers=headers)
     if response.status_code == 200:
-        logging.info(f"Reset corpus {corpus_key}")
+        logger.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
@@ -88,7 +91,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     }
     response = requests.request("POST", url, headers=headers)
     if response.status_code == 200:
-        logging.info(f"Reset corpus {corpus_key}")
+        logger.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
@@ -116,7 +119,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
 
     response = requests.request("POST", url, headers=headers, json=payload)
     if response.status_code == 201:
-        logging.info(f"Reset corpus {corpus_key}")
+        logger.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error creating corpus: {response.status_code} {response.text}")
 
@@ -142,7 +145,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
 
     response = requests.request("POST", url, headers=headers, json=payload)
     if response.status_code == 201:
-        logging.info(f"Reset corpus {corpus_key}")
+        logger.info(f"Reset corpus {corpus_key}")
     else:
         logging.error(f"Error creating corpus: {response.status_code} {response.text}")
 
@@ -236,11 +239,10 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     """
     Core ingest functionality that can be called from both Docker and CLI.
     """
-    setup_logging()
     logger = logging.getLogger()
 
     # process arguments
-    logging.info(f"Loading config {config_file}")
+    logger.info(f"Loading config {config_file}")
     try:
         cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
@@ -259,10 +261,10 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         # If ssl_verify is not set, check for ca.pem or ssl/ directory
         if not cfg.vectara.get("ssl_verify", None):
             if os.path.exists("ca.pem"):
-                logging.info("Found ca.pem in current directory, using it for SSL verification")
+                logger.info("Found ca.pem in current directory, using it for SSL verification")
                 OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
             elif os.path.isdir("ssl"):
-                logging.info("Found ssl/ directory in current directory, using it for certificates")
+                logger.info("Found ssl/ directory in current directory, using it for certificates")
                 OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ssl"))
 
     # Determine secrets.toml path
@@ -287,13 +289,13 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
                 raise typer.Exit(1)
     
     # add .env params, by profile
-    logging.info(f"Loading {secrets_path}")
+    logger.info(f"Loading {secrets_path}")
     with open(secrets_path, "r") as f:
         env_dict = toml.load(f)
     if profile not in env_dict:
         logging.error(f'Profile "{profile}" not found in secrets.toml')
         exit(1)
-    logging.info(f'Using profile "{profile}" from secrets.toml')
+    logger.info(f'Using profile "{profile}" from secrets.toml')
     
     # Add all keys from "general" section to the vectara config
     general_dict = env_dict.get('general', {})
@@ -304,18 +306,18 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     update_environment(cfg, secrets_path, env_dict)
     update_environment(cfg, 'os.environ', dict(os.environ))
 
-    logging.info("Configuration loaded...")
+    logger.info("Configuration loaded...")
     api_url = cfg.vectara.get("endpoint", "https://api.vectara.io")
 
     if not api_url.startswith(("http://", "https://")):
-        logging.warning(f"Correcting endpoint {api_url} to https://{api_url}. This will error in a future release.")
+        logger.warning(f"Correcting endpoint {api_url} to https://{api_url}. This will error in a future release.")
         api_url = f"https://{api_url}"
     if not is_valid_url(api_url):
         raise Exception(f"endpoint '{api_url}' could not be parsed to a valid URL.")
 
     auth_url = cfg.vectara.get("auth_url", "https://auth.vectara.io")
     if not auth_url.startswith(("http://", "https://")):
-        logging.warning(f"Correcting auth_url {auth_url} to https://{auth_url}. This will error in a future release.")
+        logger.warning(f"Correcting auth_url {auth_url} to https://{auth_url}. This will error in a future release.")
         auth_url = f"https://{auth_url}"
     if not is_valid_url(auth_url):
         raise Exception(f"endpoint '{auth_url}' could not be parsed to a valid URL.")
@@ -331,11 +333,11 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         cfg, api_url, corpus_key, api_key
     )
 
-    logging.info("Crawler instantiated...")
+    logger.info("Crawler instantiated...")
     
     # Create corpus if needed
     if create_corpus_flag:
-        logging.info("Creating corpus")
+        logger.info("Creating corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
             create_corpus_oauth(api_url, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         else:
@@ -344,16 +346,16 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
 
     # Reset corpus if requested
     if reset_corpus:
-        logging.info("Resetting corpus")
+        logger.info("Resetting corpus")
         if 'auth_id' in cfg.vectara and 'auth_secret' in cfg.vectara:
             reset_corpus_oauth(api_url, corpus_key, auth_url, cfg.vectara.auth_id, cfg.vectara.auth_secret)
         else:
             reset_corpus_apikey(api_url, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
-    logging.info(f"Starting crawl of type {crawler_type}...")
+    logger.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()
-    logging.info(f"Finished crawl of type {crawler_type}...")
+    logger.info(f"Finished crawl of type {crawler_type}...")
     
 
 @app.command()
@@ -373,16 +375,16 @@ def main(
     
     The tool automatically detects if it's running in a Docker container and adjusts behavior accordingly.
     """
-    logging.info(f"Starting vectara-ingest")
+
+    logger.info(f"Starting vectara-ingest")
     run_ingest(config_file, profile, secrets_path, reset_corpus)
 
 if __name__ == '__main__':
     # Check if we're running in Docker
     in_docker = is_running_in_docker()
-    
     if in_docker:
         if len(sys.argv) != 3:
-            logging.info("Usage: python ingest.py <config_file> <secrets-profile>")
+            logger.info("Usage: python ingest.py <config_file> <secrets-profile>")
             exit(1)
     
         config_file = sys.argv[1]

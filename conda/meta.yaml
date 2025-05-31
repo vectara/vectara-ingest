@@ -1,4 +1,4 @@
-{% set name = "v-ingest" %}
+{% set name = "vectara-ingest" %}
 {% set version = "0.1.0" %}
 
 package:
@@ -20,11 +20,12 @@ build:
     unset PIP_NO_DEPENDENCIES
     echo "--- PIP Environment Variables After Changes ---"
 
+
     echo "--- Starting pip install of local package and its Python dependencies ---"
     "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .[all]
     echo "--- Pip install command finished. ---"
   entry_points:
-    - v-ingest = ingest:app
+    - vectara-ingest = ingest:app
 
 requirements:
   host:
@@ -50,7 +51,7 @@ test:
     - crawlers
   commands:
     - echo "Testing if vectara-ingest command is available"
-    - which v-ingest
+    - which vectara-ingest
 
 about:
   home: https://github.com/vectara/vectara-ingest
