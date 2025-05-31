@@ -24,6 +24,7 @@ from io import StringIO
 import time
 import threading
 import logging
+import glob
 
 from langdetect import detect
 from omegaconf import DictConfig
@@ -207,28 +208,56 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         A dictionary-like object containing SSL-related configuration:
         - "ssl_verify" (bool or str, optional):
           - If `False`, SSL verification is disabled (not recommended for production).
-          - If a string, it is treated as the path to a custom CA certificate file.
+          - If a string, it is treated as the path to a custom CA certificate file or directory (in CLI mode).
           - If `True` or not provided, default SSL verification is used.
     """
     ssl_verify = config.get("ssl_verify", None)
-
-    if isinstance(ssl_verify, bool):
-        if not ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        else:
-            logging.debug("SSL verify using default behavior")
-    elif isinstance(ssl_verify, str):
-        if "false" == ssl_verify.lower() or "0" == ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        elif "true" == ssl_verify.lower() or "1" == ssl_verify:
-            logging.debug("SSL verify using default behavior")
-        else:
-            logging.info(f"Configuring session.verify to {ssl_verify}")
+    
+    if ssl_verify is False or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("false", "0")):
+        logging.warning("Disabling ssl verification for session.")
+        session.verify = False
+        return
+    
+    if ssl_verify is True or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("true", "1")):
+        logging.debug("SSL verify using default system certificates")
+        return
+    
+    if isinstance(ssl_verify, str):
+        in_docker = is_running_in_docker()
+        
+        if in_docker:
+            logging.info(f"Docker mode: Using CA certificate at {ssl_verify}")
             if not os.path.exists(ssl_verify):
                 raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
             session.verify = ssl_verify
+        else:
+            ca_path = os.path.expanduser(ssl_verify)
+            logging.info(f"Processing certificate path: {ca_path}")
+            
+            if not os.path.exists(ca_path):
+                raise FileNotFoundError(f"Certificate path '{ca_path}' could not be found.")
+            
+            # Handle directory of certificates
+            if os.path.isdir(ca_path):
+                logging.info(f"SSL path is a directory: {ca_path}")
+                # Look for .crt, .pem files in the directory
+                cert_files = []
+                for ext in ['.crt', '.pem']:
+                    cert_files.extend(glob.glob(os.path.join(ca_path, f'*{ext}')))
+                
+                if not cert_files:
+                    logging.warning(f"No certificate files found in {ca_path}")
+                    # Fall back to system certificates
+                    return
+                
+                # Use the first certificate file found
+                cert_file = cert_files[0]
+                logging.info(f"Using certificate file: {cert_file}")
+                session.verify = cert_file
+            else:
+                # It's a single certificate file
+                logging.info(f"Using certificate file: {ca_path}")
+                session.verify = ca_path
 
 
 def remove_anchor(url: str) -> str:
@@ -614,3 +643,60 @@ def get_media_type_from_base64(base64_data: str) -> str:
     file_bytes = base64.b64decode(base64_data)
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
+
+def is_running_in_docker() -> bool:
+    """
+    Check if the current process is running inside a Docker container.
+    
+    Returns:
+        bool: True if running in Docker, False otherwise
+    """
+    # Method 1: Check for the .dockerenv file
+    if os.path.exists('/.dockerenv'):
+        return True
+    
+    # Method 2: Check for docker in cgroup
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
+            return any('docker' in line for line in f)
+    except (IOError, FileNotFoundError):
+        # File doesn't exist or can't be read (e.g., on macOS or Windows)
+        pass
+    
+    # Method 3: Check for docker-specific environment variables
+    if os.environ.get('DOCKER_CONTAINER', False):
+        return True
+    
+    # Not in Docker
+    return False
+
+def get_temp_file_path(filename: str, output_dir: str = "vectara_ingest_output") -> str:
+    """
+    Get a temporary file path for storing crawler output files.
+    Creates a temp directory if it doesn't exist.
+    
+    Args:
+        filename: The name of the file to create in the temp directory
+        output_dir: Name of the output directory (defaults to 'vectara_ingest_output')
+        
+    Returns:
+        str: The full path to the temporary file
+    """
+    is_docker = is_running_in_docker()
+    
+    # Special handling for credentials.json in CLI mode
+    if not is_docker and filename == 'credentials.json':
+        credentials = os.path.join(os.getcwd(), 'credentials.json')
+        if os.path.exists(credentials):
+            return credentials
+    
+    if is_docker:
+        # Use the Docker path
+        temp_dir = '/home/vectara/env'
+    else:
+        # Use output directory inside the project folder
+        temp_dir = os.path.join(os.getcwd(), output_dir)
+    
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    return os.path.join(temp_dir, filename)

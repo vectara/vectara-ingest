@@ -32,7 +32,7 @@ from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
-    get_file_path_from_url, create_row_items, configure_session_for_ssl
+    get_file_path_from_url, create_row_items, configure_session_for_ssl, setup_logging, get_temp_file_path
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
@@ -153,6 +153,7 @@ class Indexer:
         self.create_corpus = cfg.vectara.get("create_corpus", False)
         self.verbose = cfg.vectara.get("verbose", False)
         self.store_docs = cfg.vectara.get("store_docs", False)
+        self.output_dir = cfg.vectara.get("output_dir", "vectara_ingest_output")
         self.remove_code = cfg.vectara.get("remove_code", True)
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
         self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
@@ -248,7 +249,7 @@ class Indexer:
             self.browser = self.p.firefox.launch(headless=True)
             self.browser_use_count = 0
         if self.store_docs:
-            self.store_docs_folder = '/home/vectara/env/indexed_docs_' + str(uuid.uuid4())
+            self.store_docs_folder = get_temp_file_path(str(uuid.uuid4()), output_dir=self.output_dir + '/indexed_docs')
             if os.path.exists(self.store_docs_folder):
                 shutil.rmtree(self.store_docs_folder)
             os.makedirs(self.store_docs_folder)
