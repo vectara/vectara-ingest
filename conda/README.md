@@ -29,20 +29,44 @@ This document outlines how use the vectara-ingest conda package.
 
 ## Using the Package
 
-After installing vectara-ingest, you can run it using the command-line interface:
+### Command-Line Interface
 
-### Basic Usage
+After installing vectara-ingest, you can run it using the command-line interface:
 
 ```bash
 vectara-ingest --config-file your_config.yaml --profile default --secrets-path path/to/secrets.toml
 ```
 
+### As an Importable Python Package
+
+You can use vectara-ingest as a Python package in your own code.
+
+```python
+from vectara_ingest import run_ingest
+
+# Configure your ingestion parameters
+config_file = "config.yaml"
+profile = "profile to use form secrets.toml"
+secrets_path = "~/vectara/secrets.toml"
+reset_corpus = False # Set to True to delete all documents in the corpus before indexing
+
+# Call the run_ingest function directly
+run_ingest(
+    config_file=config_file,
+    profile=profile,
+    secrets_path=secrets_path,
+    reset_corpus=reset_corpus
+)
+```
+
+This allows you to integrate vectara-ingest into your own Python applications or workflows.
+
 ### Parameter Explanation
 
-- `--config-file`: Path to your YAML configuration file (required)
-- `--profile`: Profile name in your secrets.toml file (required)
-- `--secrets-path`: Path to your secrets.toml file (optional, defaults to looking for secrets.toml in current directory)
-- `--reset-corpus`: Flag to reset the corpus before indexing (optional)
+- `config_file`: Path to your YAML configuration file (required)
+- `profile`: Profile name in your secrets.toml file (required)
+- `secrets_path`: Path to your secrets.toml file (optional, defaults to looking for secrets.toml in current directory)
+- `reset_corpus`: Flag to reset the corpus before indexing (optional, defaults to False)
 
 ## SSL Certificate Handling
 
