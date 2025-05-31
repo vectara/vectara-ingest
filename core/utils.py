@@ -24,6 +24,7 @@ from io import StringIO
 import time
 import threading
 import logging
+import glob
 
 from langdetect import detect
 from omegaconf import DictConfig
@@ -207,28 +208,56 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         A dictionary-like object containing SSL-related configuration:
         - "ssl_verify" (bool or str, optional):
           - If `False`, SSL verification is disabled (not recommended for production).
-          - If a string, it is treated as the path to a custom CA certificate file.
+          - If a string, it is treated as the path to a custom CA certificate file or directory (in CLI mode).
           - If `True` or not provided, default SSL verification is used.
     """
     ssl_verify = config.get("ssl_verify", None)
-
-    if isinstance(ssl_verify, bool):
-        if not ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        else:
-            logging.debug("SSL verify using default behavior")
-    elif isinstance(ssl_verify, str):
-        if "false" == ssl_verify.lower() or "0" == ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        elif "true" == ssl_verify.lower() or "1" == ssl_verify:
-            logging.debug("SSL verify using default behavior")
-        else:
-            logging.info(f"Configuring session.verify to {ssl_verify}")
+    
+    if ssl_verify is False or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("false", "0")):
+        logging.warning("Disabling ssl verification for session.")
+        session.verify = False
+        return
+    
+    if ssl_verify is True or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("true", "1")):
+        logging.debug("SSL verify using default system certificates")
+        return
+    
+    if isinstance(ssl_verify, str):
+        in_docker = is_running_in_docker()
+        
+        if in_docker:
+            logging.info(f"Docker mode: Using CA certificate at {ssl_verify}")
             if not os.path.exists(ssl_verify):
                 raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
             session.verify = ssl_verify
+        else:
+            ca_path = os.path.expanduser(ssl_verify)
+            logging.info(f"Processing certificate path: {ca_path}")
+            
+            if not os.path.exists(ca_path):
+                raise FileNotFoundError(f"Certificate path '{ca_path}' could not be found.")
+            
+            # Handle directory of certificates
+            if os.path.isdir(ca_path):
+                logging.info(f"SSL path is a directory: {ca_path}")
+                # Look for .crt, .pem files in the directory
+                cert_files = []
+                for ext in ['.crt', '.pem']:
+                    cert_files.extend(glob.glob(os.path.join(ca_path, f'*{ext}')))
+                
+                if not cert_files:
+                    logging.warning(f"No certificate files found in {ca_path}")
+                    # Fall back to system certificates
+                    return
+                
+                # Use the first certificate file found
+                cert_file = cert_files[0]
+                logging.info(f"Using certificate file: {cert_file}")
+                session.verify = cert_file
+            else:
+                # It's a single certificate file
+                logging.info(f"Using certificate file: {ca_path}")
+                session.verify = ca_path
 
 
 def remove_anchor(url: str) -> str:

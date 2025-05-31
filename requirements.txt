@@ -141,6 +141,8 @@ biopython==1.84
     # via -r requirements.in
 bleach==6.2.0
     # via nbconvert
+blis==0.7.11
+    # via thinc
 boto3==1.26.116
     # via -r requirements.in
 botocore==1.29.165
@@ -154,6 +156,11 @@ cairocffi==1.7.1
 >>>>>>> 41ff11c (generated the requirement.txt using pip-compile)
 cairosvg==2.7.1
     # via -r requirements.in
+catalogue==2.0.10
+    # via
+    #   spacy
+    #   srsly
+    #   thinc
 certifi==2025.4.26
     # via
     #   -r requirements.in
@@ -172,27 +179,38 @@ charset-normalizer==3.4.2
     # via
     #   pdfminer-six
     #   requests
-click==8.2.1
+click==8.1.8
     # via
+    #   -r requirements.in
+    #   docling
     #   llama-cloud-services
     #   nltk
     #   python-oxmsg
     #   ray
     #   typer
+cloudpathlib==0.21.1
+    # via weasel
 colorama==0.4.6
     # via griffe
 coloredlogs==15.0.1
     # via onnxruntime
+confection==0.1.5
+    # via
+    #   thinc
+    #   weasel
 constantly==23.10.4
     # via twisted
 contourpy==1.3.2
-    # via matplotlib
+    # via
+    #   -r requirements.in
+    #   matplotlib
 cryptography==44.0.0
     # via
     #   -r requirements.in
     #   authlib
     #   msal
     #   pdfminer-six
+    #   presidio-anonymizer
     #   pyjwt
     #   pyopenssl
     #   scrapy
@@ -207,6 +225,11 @@ cssselect2==0.8.0
     # via cairosvg
 cycler==0.12.1
     # via matplotlib
+cymem==2.0.11
+    # via
+    #   preshed
+    #   spacy
+    #   thinc
 dataclasses-json==0.6.7
     # via
     #   llama-index-core
@@ -236,7 +259,7 @@ distro==1.9.0
     # via
     #   anthropic
     #   openai
-docling==2.31.0
+docling==2.34.0
     # via -r requirements.in
 docling-core[chunking]==2.32.0
     # via
@@ -342,6 +365,8 @@ grpcio-status==1.62.3
     # via google-api-core
 h11==0.16.0
     # via httpcore
+h5py==3.12.1
+    # via -r requirements.in
 hf-xet==1.1.2
     # via huggingface-hub
 html5lib==1.1
@@ -400,6 +425,7 @@ jinja2==3.1.6
     # via
     #   banks
     #   nbconvert
+    #   spacy
     #   torch
 jiter==0.10.0
     # via
@@ -441,11 +467,15 @@ justext==3.0.1
     # via -r requirements.in
 kiwisolver==1.4.8
     # via matplotlib
+langcodes==3.5.0
+    # via spacy
 langdetect==1.0.9
     # via
     #   -r requirements.in
     #   goose3
     #   unstructured
+language-data==1.3.0
+    # via langcodes
 latex2mathml==3.78.0
     # via docling-core
 lazy-loader==0.4
@@ -475,8 +505,12 @@ lxml[html-clean]==5.2.1
     #   unstructured
 lxml-html-clean==0.4.2
     # via lxml
+marisa-trie==1.2.1
+    # via language-data
 markdown==3.5.2
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   unstructured
 markdown-it-py==3.0.0
     # via rich
 marko==2.1.3
@@ -517,6 +551,11 @@ multiprocess==0.70.16
     # via
     #   datasets
     #   mpire
+murmurhash==1.0.13
+    # via
+    #   preshed
+    #   spacy
+    #   thinc
 mwapi==0.6.1
     # via mwviews
 mwcli==0.0.3
@@ -554,6 +593,7 @@ networkx==3.4.2
     #   llama-index-core
     #   scikit-image
     #   torch
+    #   unstructured
 ninja==1.11.1.4
     # via easyocr
 nltk==3.9.1
@@ -569,10 +609,12 @@ numpy==1.26.4
     #   -r requirements.in
     #   accelerate
     #   biopython
+    #   blis
     #   contourpy
     #   datasets
     #   docling-ibm-models
     #   easyocr
+    #   h5py
     #   imageio
     #   llama-index-core
     #   matplotlib
@@ -588,6 +630,8 @@ numpy==1.26.4
     #   scikit-image
     #   scipy
     #   shapely
+    #   spacy
+    #   thinc
     #   tifffile
     #   torchvision
     #   transformers
@@ -627,6 +671,7 @@ openpyxl==3.1.5
     # via
     #   -r requirements.in
     #   docling
+    #   unstructured
 opentelemetry-api==1.21.0
     # via
     #   opentelemetry-exporter-otlp-proto-http
@@ -664,8 +709,11 @@ packaging==25.0
     #   ray
     #   scikit-image
     #   scrapy
+    #   spacy
+    #   thinc
     #   transformers
     #   unstructured-pytesseract
+    #   weasel
 pandas==2.2.2
     # via
     #   -r requirements.in
@@ -673,6 +721,7 @@ pandas==2.2.2
     #   docling
     #   docling-core
     #   gmft
+    #   unstructured
     #   unstructured-inference
 pandocfilters==1.5.1
     # via nbconvert
@@ -694,10 +743,14 @@ pdfminer-six==20250506
     #   unstructured-inference
 pg8000==1.29.8
     # via -r requirements.in
+phonenumbers==8.13.55
+    # via presidio-analyzer
 pi-heif==0.22.0
     # via unstructured
 pikepdf==9.8.1
-    # via unstructured
+    # via
+    #   -r requirements.in
+    #   unstructured
 pillow==10.4.0
     # via
     #   -r requirements.in
@@ -729,6 +782,14 @@ playwright==1.41.2
     # via -r requirements.in
 pluggy==1.6.0
     # via docling
+preshed==3.0.10
+    # via
+    #   spacy
+    #   thinc
+presidio-analyzer==2.2.358
+    # via -r requirements.in
+presidio-anonymizer==2.2.358
+    # via -r requirements.in
 propcache==0.3.1
     # via
     #   aiohttp
@@ -780,6 +841,7 @@ pydantic==2.11.5
     # via
     #   anthropic
     #   banks
+    #   confection
     #   docling
     #   docling-core
     #   docling-ibm-models
@@ -789,7 +851,10 @@ pydantic==2.11.5
     #   llama-index-core
     #   openai
     #   pydantic-settings
+    #   spacy
+    #   thinc
     #   unstructured-client
+    #   weasel
 pydantic-core==2.33.2
     # via pydantic
 pydantic-settings==2.9.1
@@ -815,6 +880,8 @@ pymysql==1.1.1
     # via -r requirements.in
 pyopenssl==25.1.0
     # via scrapy
+pypandoc==1.15
+    # via unstructured
 pyparsing==3.2.3
     # via
     #   httplib2
@@ -850,6 +917,7 @@ python-docx==1.1.2
     # via
     #   -r requirements.in
     #   docling
+    #   unstructured
 python-dotenv==1.0.1
     # via
     #   -r requirements.in
@@ -869,6 +937,7 @@ python-pptx==1.0.2
     # via
     #   -r requirements.in
     #   docling
+    #   unstructured
 python-slugify==8.0.1
     # via -r requirements.in
 pytube==15.0.0
@@ -887,6 +956,7 @@ pyyaml==6.0.2
     #   huggingface-hub
     #   llama-index-core
     #   omegaconf
+    #   presidio-analyzer
     #   ray
     #   timm
     #   transformers
@@ -907,6 +977,7 @@ referencing==0.36.2
 regex==2024.11.6
     # via
     #   nltk
+    #   presidio-analyzer
     #   tiktoken
     #   transformers
 requests==2.32.3
@@ -928,12 +999,14 @@ requests==2.32.3
     #   requests-oauthlib
     #   requests-toolbelt
     #   sec-edgar-downloader
+    #   spacy
     #   synapseclient
     #   tiktoken
     #   tldextract
     #   transformers
     #   tweepy
     #   unstructured
+    #   weasel
     #   youtube-transcript-api
 requests-file==2.1.0
     # via tldextract
@@ -999,6 +1072,8 @@ six==1.17.0
     #   python-dateutil
 slack-sdk==3.27.1
     # via -r requirements.in
+smart-open==7.1.0
+    # via weasel
 sniffio==1.3.1
     # via
     #   anthropic
@@ -1006,10 +1081,24 @@ sniffio==1.3.1
     #   openai
 soupsieve==2.7
     # via beautifulsoup4
+spacy==3.7.5
+    # via
+    #   -r requirements.in
+    #   presidio-analyzer
+spacy-legacy==3.0.12
+    # via spacy
+spacy-loggers==1.0.5
+    # via spacy
 sqlalchemy[asyncio]==2.0.14
     # via
     #   -r requirements.in
     #   llama-index-core
+srsly==2.5.1
+    # via
+    #   confection
+    #   spacy
+    #   thinc
+    #   weasel
 sympy==1.14.0
     # via
     #   onnxruntime
@@ -1026,6 +1115,8 @@ tenacity==9.1.2
     # via llama-index-core
 text-unidecode==1.3
     # via python-slugify
+thinc==8.2.5
+    # via spacy
 tifffile==2025.5.26
     # via scikit-image
 tiktoken==0.9.0
@@ -1042,7 +1133,9 @@ tinycss2==1.4.0
     #   cssselect2
     #   nbconvert
 tldextract==5.3.0
-    # via scrapy
+    # via
+    #   presidio-analyzer
+    #   scrapy
 tokenizers==0.21.1
     # via transformers
 toml==0.10.2
@@ -1063,6 +1156,7 @@ torch==2.4.1
     #   unstructured-inference
 torchvision==0.19.1
     # via
+    #   -r requirements.in
     #   docling-ibm-models
     #   easyocr
     #   effdet
@@ -1081,6 +1175,7 @@ tqdm==4.67.1
     #   openai
     #   openai-whisper
     #   semchunk
+    #   spacy
     #   transformers
     #   unstructured
 traitlets==5.14.3
@@ -1106,6 +1201,8 @@ typer==0.15.3
     #   -r requirements.in
     #   docling
     #   docling-core
+    #   spacy
+    #   weasel
 typing-extensions==4.13.2
     # via
     #   aiosqlite
@@ -1144,7 +1241,7 @@ typing-inspection==0.4.1
     #   pydantic-settings
 tzdata==2025.2
     # via pandas
-unstructured[pdf]==0.17.2
+unstructured[all-docs]==0.17.2
     # via -r requirements.in
 unstructured-client==0.35.0
     # via unstructured
@@ -1165,6 +1262,13 @@ w3lib==2.3.1
     # via
     #   parsel
     #   scrapy
+wasabi==1.1.3
+    # via
+    #   spacy
+    #   thinc
+    #   weasel
+weasel==0.4.1
+    # via spacy
 webencodings==0.5.1
     # via
     #   bleach
@@ -1175,7 +1279,10 @@ wrapt==1.17.2
     # via
     #   deprecated
     #   llama-index-core
+    #   smart-open
     #   unstructured
+xlrd==2.0.1
+    # via unstructured
 xlsxwriter==3.2.3
     # via python-pptx
 xmltodict==0.13.0
