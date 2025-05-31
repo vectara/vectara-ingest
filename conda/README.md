@@ -62,3 +62,38 @@ vectara-ingest --config-file your_config.yaml --profile default --secrets-path p
 - `--profile`: Profile name in your secrets.toml file (required)
 - `--secrets-path`: Path to your secrets.toml file (optional, defaults to looking for secrets.toml in current directory)
 - `--reset-corpus`: Flag to reset the corpus before indexing (optional)
+
+## SSL Certificate Handling
+
+If your Vectara instance uses custom SSL certificates, the CLI package supports several ways to configure certificate verification:
+
+### Configuration in YAML
+
+In your configuration YAML file, add the `ssl_verify` parameter under the `vectara` section:
+
+```yaml
+vectara:
+  # Other Vectara settings...
+  ssl_verify: /path/to/certificate.pem
+```
+
+### SSL Certificate Options
+
+   - You can use absolute paths: `/etc/ssl/certs/mycert.pem`
+   - You can use home directory paths: `~/certs/mycert.pem`
+   - You can use directory of certificates: `/path/to/certificates/`
+
+### Auto-Detection
+
+If you don't specify `ssl_verify` in your configuration, the package will automatically look for:
+
+1. A file named `ca.pem` in the current working directory
+2. A directory named `ssl` in the current working directory
+
+If found, these will be used for SSL verification.
+
+### Environment-Specific Notes
+
+- In CLI mode, certificate paths are resolved relative to your local filesystem
+- Absolute paths must exist on your local system
+- Paths with `~` are expanded to your home directory

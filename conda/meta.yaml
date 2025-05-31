@@ -1,4 +1,4 @@
-{% set name = "vectara-ingest" %}
+{% set name = "v-ingest" %}
 {% set version = "0.1.0" %}
 
 package:
@@ -9,34 +9,39 @@ source:
   path: ..  # Use parent directory as the source
 
 build:
-  number: 0
-  script: |
-    # Just install the package code without dependencies - we'll install these later
-    $PYTHON -m pip install . --no-deps -vv
-    
-    # Create dependency directory
-    mkdir -p $PREFIX/share/{{ name|lower }}
-    
-    # Copy lock files
-    cp $SRC_DIR/requirements.txt $PREFIX/share/{{ name|lower }}/requirements.txt
-    cp $SRC_DIR/requirements-extra.txt $PREFIX/share/{{ name|lower }}/requirements-extra.txt
-    
-    # Copy post-link script
-    mkdir -p $PREFIX/info/scripts
-    cp $SRC_DIR/post-link.sh $PREFIX/info/scripts/post-link.sh
-    chmod +x $PREFIX/info/scripts/post-link.sh
-  entry_points:
-    - vectara-ingest = ingest:app
   noarch: python
+  number: 0
+  binary_relocation: False
+  ignore_run_exports_from:
+    - libpdfium
+    - python
+    - pip
+  skip_compile_pyc:
+    - "*.py"
+  # Disable binary relocation completely
+  script: |
+    echo "--- PIP Environment Variables Before Changes ---"
+    env | grep PIP
+    echo "Attempting to unset PIP_NO_INDEX and PIP_NO_DEPENDENCIES..."
+    unset PIP_NO_INDEX
+    unset PIP_NO_DEPENDENCIES
+    echo "--- PIP Environment Variables After Changes ---"
+    env | grep PIP
+
+    echo "--- Starting pip install of local package and its Python dependencies ---"
+    "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .[all]
+    echo "--- Pip install command finished. ---"
+  entry_points:
+    - v-ingest = ingest:app
 
 requirements:
   host:
-    - python >=3.11.*
+    - python >=3.11,<3.12
     - pip
     - setuptools
 
   run:
-    - python >=3.11.*
+    - python >=3.11,<3.12
     - pip
     
     # System dependencies with conda-forge channel specified
@@ -53,9 +58,7 @@ test:
     - crawlers
   commands:
     - echo "Testing if vectara-ingest command is available"
-    - which vectara-ingest
-    - test -f $PREFIX/share/{{ name|lower }}/requirements.txt
-    - test -f $PREFIX/share/{{ name|lower }}/requirements-extra.txt
+    - which v-ingest
 
 about:
   home: https://github.com/vectara/vectara-ingest
