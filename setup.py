@@ -31,7 +31,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "v-ingest=ingest:app",
+            "vectara-ingest=ingest:app",
         ],
     },
 ) 
