@@ -66,14 +66,17 @@ class FolderCrawler(Crawler):
                 if file_extension in extensions or "*" in extensions:
                     file_path = os.path.join(root, file)
                     file_name = os.path.relpath(file_path, folder)
+                    rel_under_container = os.path.relpath(root, folder)
+                    full_folder_path = os.path.normpath(os.path.join(self.cfg.folder_crawler.path, rel_under_container))
+                    parent = os.path.basename(full_folder_path)
                     file_metadata = {
                         'created_at': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getctime(file_path))),
                         'last_updated': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getmtime(file_path))),
                         'file_size': os.path.getsize(file_path),
                         'source': source,
                         'title': file_name,
-                        'parent_folder': os.path.dirname(file_path).split(os.sep)[-1],
-                        'folder_path': os.path.dirname(file_path),
+                        'parent_folder': parent,
+                        'folder_path': full_folder_path,
                     }
                     if file_name in metadata:
                         file_metadata.update(metadata.get(file_name, {}))
