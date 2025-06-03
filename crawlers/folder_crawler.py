@@ -71,7 +71,9 @@ class FolderCrawler(Crawler):
                         'last_updated': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(os.path.getmtime(file_path))),
                         'file_size': os.path.getsize(file_path),
                         'source': source,
-                        'title': file_name
+                        'title': file_name,
+                        'parent_folder': os.path.dirname(file_path).split(os.sep)[-1],
+                        'folder_path': os.path.dirname(file_path),
                     }
                     if file_name in metadata:
                         file_metadata.update(metadata.get(file_name, {}))
