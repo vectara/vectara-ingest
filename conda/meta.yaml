@@ -36,6 +36,10 @@ requirements:
   run:
     - python >=3.11,<3.12
     - pip
+    - cairo  # [linux]
+    - libxrender  # [linux]
+    - libstdcxx-ng  # [linux]
+    - libgcc-ng  # [linux]
     
     # System dependencies with conda-forge channel specified
     - conda-forge::firefox

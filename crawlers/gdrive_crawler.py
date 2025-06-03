@@ -37,7 +37,7 @@ class SharedCache:
 
 def get_credentials(delegated_user: str) -> service_account.Credentials:
     credentials = service_account.Credentials.from_service_account_file(
-        get_temp_file_path('credentials.json'), scopes=SCOPES)
+        get_temp_file_path(filename='credentials.json'), scopes=SCOPES)
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
 

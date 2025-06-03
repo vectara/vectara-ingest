@@ -7,7 +7,7 @@ import psutil
 import ray
 
 from core.indexer import Indexer
-from core.utils import setup_logging
+from core.utils import setup_logging, get_temp_file_path
 
 class DFIndexer(object):
     def __init__(self, 
@@ -115,7 +115,7 @@ class CsvCrawler(Crawler):
             all_columns.append(title_column)
 
         orig_file_path = self.cfg.csv_crawler.file_path
-        file_path = '/home/vectara/data/file'
+        file_path = get_temp_file_path(filename='file', folder='data')
         try:
             if orig_file_path.endswith('.csv'):
                 dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 

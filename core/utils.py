@@ -237,27 +237,8 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
             if not os.path.exists(ca_path):
                 raise FileNotFoundError(f"Certificate path '{ca_path}' could not be found.")
             
-            # Handle directory of certificates
-            if os.path.isdir(ca_path):
-                logging.info(f"SSL path is a directory: {ca_path}")
-                # Look for .crt, .pem files in the directory
-                cert_files = []
-                for ext in ['.crt', '.pem']:
-                    cert_files.extend(glob.glob(os.path.join(ca_path, f'*{ext}')))
-                
-                if not cert_files:
-                    logging.warning(f"No certificate files found in {ca_path}")
-                    # Fall back to system certificates
-                    return
-                
-                # Use the first certificate file found
-                cert_file = cert_files[0]
-                logging.info(f"Using certificate file: {cert_file}")
-                session.verify = cert_file
-            else:
-                # It's a single certificate file
-                logging.info(f"Using certificate file: {ca_path}")
-                session.verify = ca_path
+            logging.info(f"Using certificate file: {ca_path}")
+            session.verify = ca_path
 
 
 def remove_anchor(url: str) -> str:
@@ -670,17 +651,18 @@ def is_running_in_docker() -> bool:
     # Not in Docker
     return False
 
-def get_temp_file_path(filename: str, output_dir: str = "vectara_ingest_output") -> str:
+def get_temp_file_path(filename: str = None, folder: str = None, output_dir: str = "vectara_ingest_output") -> str:
     """
     Get a temporary file path for storing crawler output files.
     Creates a temp directory if it doesn't exist.
     
     Args:
-        filename: The name of the file to create in the temp directory
+        filename: The name of the file to create in the temp directory. If None, returns just the directory path.
+        folder: Optional subfolder to place the file in (e.g., 'data')
         output_dir: Name of the output directory (defaults to 'vectara_ingest_output')
         
     Returns:
-        str: The full path to the temporary file
+        str: The full path to the file or directory
     """
     is_docker = is_running_in_docker()
     
@@ -691,12 +673,23 @@ def get_temp_file_path(filename: str, output_dir: str = "vectara_ingest_output")
             return credentials
     
     if is_docker:
-        # Use the Docker path
-        temp_dir = '/home/vectara/env'
+        if folder == 'data':
+            # Special case for data folder which is mounted at /home/vectara/data
+            temp_dir = '/home/vectara/data'
+        else:
+            # Default Docker environment path
+            temp_dir = '/home/vectara/env'
+            if folder:
+                temp_dir = os.path.join(temp_dir, folder)
     else:
         # Use output directory inside the project folder
         temp_dir = os.path.join(os.getcwd(), output_dir)
+        if folder:
+            temp_dir = os.path.join(temp_dir, folder)
     
     os.makedirs(temp_dir, exist_ok=True)
     
+    # If filename is None, just return the directory path
+    if filename is None:
+        return temp_dir
     return os.path.join(temp_dir, filename)

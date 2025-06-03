@@ -263,9 +263,6 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             if os.path.exists("ca.pem"):
                 logger.info("Found ca.pem in current directory, using it for SSL verification")
                 OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
-            elif os.path.isdir("ssl"):
-                logger.info("Found ssl/ directory in current directory, using it for certificates")
-                OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ssl"))
 
     # Determine secrets.toml path
     if secrets_path is None:

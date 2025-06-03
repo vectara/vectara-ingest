@@ -11,7 +11,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter, setup_logging, get_temp_file_path
 
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
@@ -41,7 +41,7 @@ class FileCrawlWorker(object):
 class FolderCrawler(Crawler):
 
     def crawl(self) -> None:
-        folder = "/home/vectara/data"
+        folder = get_temp_file_path(folder='data')
         extensions = self.cfg.folder_crawler.get("extensions", ["*"])
         metadata_file = self.cfg.folder_crawler.get("metadata_file", None)
         ray_workers = self.cfg.folder_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
