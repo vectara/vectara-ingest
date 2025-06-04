@@ -46,6 +46,19 @@ else
   echo "Building for $ARCH"
 fi
 
+BUILD_ARGS=""
+
+if [[ -n "${http_proxy}" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg HTTP_PROXY=\"${http_proxy}\""
+fi
+if [[ -n "${https_proxy}" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg HTTPS_PROXY=\"${https_proxy}\""
+fi
+if [[ -n "${no_proxy}" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg NO_PROXY=\"${no_proxy}\""
+fi
+
+
 sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_tables', ''))" | tr '[:upper:]' '[:lower:]'`
 sum_images=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_images', ''))" | tr '[:upper:]' '[:lower:]'`
 mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
@@ -53,10 +66,12 @@ mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].g
 if [[ "$sum_tables" == "true" || $"sum_images" == "true" || "$mask_pii" == "true" ]]; then
     echo "Building with extra features"
     tag="vectara-ingest-full"
-    docker $BUILD_CMD --build-arg INSTALL_EXTRA="true" --platform linux/$ARCH . --tag="$tag:latest"
+    echo "docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA=\"true\" --platform linux/$ARCH . --tag=\"$tag:latest\""
+    docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA="true" --platform linux/$ARCH . --tag="$tag:latest"
 else
   tag="vectara-ingest"
-  docker $BUILD_CMD --build-arg INSTALL_EXTRA="false" --platform linux/$ARCH . --tag="$tag:latest"
+  echo "docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA=\"false\" --platform linux/$ARCH . --tag=\"$tag:latest\""
+  docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA="false" --platform linux/$ARCH . --tag="$tag:latest"
 fi
 
 if [ $? -eq 0 ]; then

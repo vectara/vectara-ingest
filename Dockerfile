@@ -1,6 +1,14 @@
 # Stage 1: Build stage
 FROM python:3.11-slim AS builder
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+ENV http_proxy=$HTTP_PROXY
+ENV https_proxy=$HTTPS_PROXY
+ENV no_proxy=$NO_PROXY
+
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/vectara \
     XDG_RUNTIME_DIR=/tmp \
