@@ -2,7 +2,7 @@ import logging
 from core.crawler import Crawler
 import json
 import os
-from core.utils import get_temp_file_path
+from core.utils import get_docker_or_local_path
 
 def is_valid(json_object):
     return 'id' in json_object and 'sections' in json_object
@@ -10,7 +10,14 @@ def is_valid(json_object):
 class JACrawler(Crawler):
 
     def crawl(self) -> None:
-        json_file = get_temp_file_path('file.json', folder='data')
+        docker_path = '/home/vectara/data/file.json'
+        config_path = self.cfg.bulkupload_crawler.json_path
+        
+        json_file = get_docker_or_local_path(
+            docker_path=docker_path,
+            config_path=config_path
+        )
+        
         with open(json_file, 'r') as file:
             data = file.read()
         json_array = json.loads(data)

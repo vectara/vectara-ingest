@@ -5,9 +5,10 @@ import unicodedata
 import gc
 import psutil
 import ray
+import os
 
 from core.indexer import Indexer
-from core.utils import setup_logging, get_temp_file_path
+from core.utils import setup_logging, get_docker_or_local_path
 
 class DFIndexer(object):
     def __init__(self, 
@@ -115,20 +116,26 @@ class CsvCrawler(Crawler):
             all_columns.append(title_column)
 
         orig_file_path = self.cfg.csv_crawler.file_path
-        file_path = get_temp_file_path(filename='file', folder='data')
+        docker_path = '/home/vectara/data/file'
+        
+        file_path = get_docker_or_local_path(
+            docker_path=docker_path,
+            config_path=orig_file_path
+        )
+        
         try:
-            if orig_file_path.endswith('.csv'):
+            if file_path.endswith('.csv'):
                 dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
                           for column in all_columns}
                 sep = self.cfg.csv_crawler.get("separator", ",")
                 df = pd.read_csv(file_path, usecols=all_columns, sep=sep, dtype=dtypes)
                 df = df.astype(object)   # convert to native types
-            elif orig_file_path.endswith('.xlsx'):
+            elif file_path.endswith('.xlsx'):
                 sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
                 logging.info(f"Reading Sheet {sheet_name} from XLSX file")
                 df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
             else:
-                logging.info(f"Unknown file extension for the file {orig_file_path}")
+                logging.info(f"Unknown file extension for the file {file_path}")
                 return
         except Exception as e:
             logging.warning(f"Exception ({e}) occurred while loading file")

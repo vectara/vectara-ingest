@@ -79,23 +79,29 @@ In your configuration YAML file, add the `ssl_verify` parameter under the `vecta
 ```yaml
 vectara:
   # Other Vectara settings...
-  ssl_verify: /path/to/certificate.pem
+  ssl_verify: /path/to/ca.pem
 ```
 
 ### SSL Certificate Options
 
-   - You can use absolute paths: `/etc/ssl/certs/mycert.pem`
-   - You can use home directory paths: `~/certs/mycert.pem`
-   - You can use directory of certificates: `/path/to/certificates/`
+- You can use absolute paths: `/etc/ssl/certs/mycert.pem`
+- You can use home directory paths: `~/certs/mycert.pem`
+
+### Certificate Path Resolution
+
+The package uses the following approach to find certificate files:
+
+1. First tries the direct path as specified (works with absolute paths)
+2. Then tries the expanded path (resolves `~` to home directory)
+3. Raises an error if the certificate cannot be found at either location
 
 ### Auto-Detection
 
 If you don't specify `ssl_verify` in your configuration, the package will automatically look for:
 
 1. A file named `ca.pem` in the current working directory
-2. A directory named `ssl` in the current working directory
 
-If found, these will be used for SSL verification.
+If found, this will be used for SSL verification.
 
 ### Environment-Specific Notes
 

@@ -375,6 +375,8 @@ The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.githu
     delegated_users:
       - ofer@vectara.com
       - jana@vectara.com
+    credentials_file: /path/to/credential.json # In CLI version make sure that path points to credetianls.json
+
 ```
 
 The gdrive crawler indexes content of your Google Drive folder

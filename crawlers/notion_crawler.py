@@ -3,8 +3,9 @@ from core.crawler import Crawler
 from omegaconf import OmegaConf
 from notion_client import Client
 from typing import Any
+import os
 
-from core.utils import get_temp_file_path
+from core.utils import get_docker_or_local_path
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -139,7 +140,17 @@ class NotionCrawler(Crawler):
         if self.cfg.notion_crawler.get("crawl_report", False):
             logging.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
             output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
-            with open(get_temp_file_path(filename='pages_indexed.txt', output_dir=output_dir), 'w') as f:
+            docker_path = '/home/vectara/env/pages_indexed.txt'
+            filename = os.path.basename(docker_path)  # Extract just the filename
+            file_path = get_docker_or_local_path(
+                docker_path=docker_path,
+                output_dir=output_dir
+            )
+            
+            if not file_path.endswith(filename):
+                file_path = os.path.join(file_path, filename)
+                
+            with open(file_path, 'w') as f:
                 for page in sorted(pages, key=lambda x: x['id']):
                     f.write(f"{page['id']}: {page['url']}\n")
 
@@ -155,7 +166,17 @@ class NotionCrawler(Crawler):
                 self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-                with open(get_temp_file_path(filename='pages_removed.txt', output_dir=output_dir), 'w') as f:
+                docker_path = '/home/vectara/env/pages_removed.txt'
+                filename = os.path.basename(docker_path)  # Extract just the filename
+                file_path = get_docker_or_local_path(
+                    docker_path=docker_path,
+                    output_dir=output_dir
+                )
+                
+                if not file_path.endswith(filename):
+                    file_path = os.path.join(file_path, filename)
+                    
+                with open(file_path, 'w') as f:
                     for doc in docs_to_remove:
                         f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
 

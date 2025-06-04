@@ -208,7 +208,7 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         A dictionary-like object containing SSL-related configuration:
         - "ssl_verify" (bool or str, optional):
           - If `False`, SSL verification is disabled (not recommended for production).
-          - If a string, it is treated as the path to a custom CA certificate file or directory (in CLI mode).
+          - If a string, it is treated as the path to a custom CA certificate file or directory.
           - If `True` or not provided, default SSL verification is used.
     """
     ssl_verify = config.get("ssl_verify", None)
@@ -223,23 +223,27 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         return
     
     if isinstance(ssl_verify, str):
-        in_docker = is_running_in_docker()
+        try:
+            # First try direct path (works in Docker and absolute paths)
+            if os.path.exists(ssl_verify):
+                logging.info(f"Using certificate path: {ssl_verify}")
+                session.verify = ssl_verify
+                return
+        except Exception as e:
+            logging.debug(f"Direct path check failed: {e}")
         
-        if in_docker:
-            logging.info(f"Docker mode: Using CA certificate at {ssl_verify}")
-            if not os.path.exists(ssl_verify):
-                raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
-            session.verify = ssl_verify
-        else:
+        try:
+            # Then try expanded path (works with ~)
             ca_path = os.path.expanduser(ssl_verify)
-            logging.info(f"Processing certificate path: {ca_path}")
+            if os.path.exists(ca_path):
+                logging.info(f"Using expanded certificate path: {ca_path}")
+                session.verify = ca_path
+                return
+        except Exception as e:
+            logging.debug(f"Expanded path check failed: {e}")
             
-            if not os.path.exists(ca_path):
-                raise FileNotFoundError(f"Certificate path '{ca_path}' could not be found.")
-            
-            logging.info(f"Using certificate file: {ca_path}")
-            session.verify = ca_path
-
+        # If we get here, neither path worked
+        raise FileNotFoundError(f"Certificate path '{ssl_verify}' could not be found or accessed.")
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""
@@ -625,71 +629,45 @@ def get_media_type_from_base64(base64_data: str) -> str:
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
 
-def is_running_in_docker() -> bool:
-    """
-    Check if the current process is running inside a Docker container.
-    
-    Returns:
-        bool: True if running in Docker, False otherwise
-    """
-    # Method 1: Check for the .dockerenv file
-    if os.path.exists('/.dockerenv'):
-        return True
-    
-    # Method 2: Check for docker in cgroup
-    try:
-        with open('/proc/1/cgroup', 'r') as f:
-            return any('docker' in line for line in f)
-    except (IOError, FileNotFoundError):
-        # File doesn't exist or can't be read (e.g., on macOS or Windows)
-        pass
-    
-    # Method 3: Check for docker-specific environment variables
-    if os.environ.get('DOCKER_CONTAINER', False):
-        return True
-    
-    # Not in Docker
-    return False
 
-def get_temp_file_path(filename: str = None, folder: str = None, output_dir: str = "vectara_ingest_output") -> str:
+def get_docker_or_local_path(docker_path: str, output_dir: str, should_delete_existing: bool = False, config_path: str = None) -> str:
     """
-    Get a temporary file path for storing crawler output files.
-    Creates a temp directory if it doesn't exist.
+    Get appropriate path for storing files or reading data, checking Docker path first and falling back to local paths.
     
     Args:
-        filename: The name of the file to create in the temp directory. If None, returns just the directory path.
-        folder: Optional subfolder to place the file in (e.g., 'data')
-        output_dir: Name of the output directory (defaults to 'vectara_ingest_output')
+        docker_path: The Docker path to check first
+        output_dir: Output directory name for local path (can include subdirectories)
+        should_delete_existing: Whether to delete existing directory if it exists
+        config_path: Optional config path to try if docker path not found
         
     Returns:
-        str: The full path to the file or directory
+        str: The resolved path (Docker, config, or local)
+        
+    Raises:
+        FileNotFoundError: If config_path is provided but doesn't exist
     """
-    is_docker = is_running_in_docker()
-    
-    # Special handling for credentials.json in CLI mode
-    if not is_docker and filename == 'credentials.json':
-        credentials = os.path.join(os.getcwd(), 'credentials.json')
-        if os.path.exists(credentials):
-            return credentials
-    
-    if is_docker:
-        if folder == 'data':
-            # Special case for data folder which is mounted at /home/vectara/data
-            temp_dir = '/home/vectara/data'
+    # Try Docker path first
+    if os.path.exists(docker_path):
+        logging.info(f"Using Docker path: {docker_path}")
+        return docker_path
+        
+    # Try config path if provided
+    if config_path:
+        if os.path.exists(config_path):
+            logging.info(f"Using config path: {config_path}")
+            return config_path
         else:
-            # Default Docker environment path
-            temp_dir = '/home/vectara/env'
-            if folder:
-                temp_dir = os.path.join(temp_dir, folder)
-    else:
-        # Use output directory inside the project folder
-        temp_dir = os.path.join(os.getcwd(), output_dir)
-        if folder:
-            temp_dir = os.path.join(temp_dir, folder)
+            raise FileNotFoundError(f"Config path '{config_path}' was specified but could not be found.")
+        
+    # Fall back to local path
+    local_path = os.path.join(os.getcwd(), output_dir)
     
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    # If filename is None, just return the directory path
-    if filename is None:
-        return temp_dir
-    return os.path.join(temp_dir, filename)
+    # Delete existing directory if requested
+    if should_delete_existing and os.path.exists(local_path):
+        shutil.rmtree(local_path)
+            
+    # Create directory (and parent directories) if it doesn't exist
+    os.makedirs(local_path, exist_ok=True)
+            
+    logging.info(f"Using local path: {local_path}")
+    return local_path

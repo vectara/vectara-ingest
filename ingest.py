@@ -15,7 +15,7 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging, is_running_in_docker
+from core.utils import setup_logging
 
 app = typer.Typer()
 setup_logging()
@@ -256,34 +256,37 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         }
         OmegaConf.update(cfg, 'vectara', vectara_defaults)
 
-    # Certificate auto-detection only in CLI mode (Docker has its own mechanism)
-    if not is_running_in_docker():
-        # If ssl_verify is not set, check for ca.pem or ssl/ directory
-        if not cfg.vectara.get("ssl_verify", None):
-            if os.path.exists("ca.pem"):
-                logger.info("Found ca.pem in current directory, using it for SSL verification")
-                OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
+    # If ssl_verify is not set, check for ca.pem
+    if not cfg.vectara.get("ssl_verify", None):
+        if os.path.exists("ca.pem"):
+            logger.info("Found ca.pem in current directory, using it for SSL verification")
+            OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
 
-    # Determine secrets.toml path
+    # Determine secrets.toml path with more robust prioritization
     if secrets_path is None:
-        # First check environment variable
+        # Check environment variable first
         env_secrets_path = os.environ.get('VECTARA_SECRETS_PATH')
         if env_secrets_path and os.path.exists(env_secrets_path):
             secrets_path = env_secrets_path
-        elif is_running_in_docker():
-            # Use Docker path if running in a container
-            docker_path = '/home/vectara/env/secrets.toml'
-            if os.path.exists(docker_path):
-                secrets_path = docker_path
-            else:
-                logger.error(f'secrets.toml not found at Docker path {docker_path}')
-                raise typer.Exit(1)
+            logger.info(f"Using secrets from environment variable: {secrets_path}")
+        elif os.path.exists('/home/vectara/env/secrets.toml'):
+            secrets_path = '/home/vectara/env/secrets.toml'
+            logger.info(f"Using Docker secrets path: {secrets_path}")
         else:
-            # Fallback to repository path for local execution
-            secrets_path = 'secrets.toml'
-            if not os.path.exists(secrets_path):
+            # Fallback to directory for CLI mode
+            local_path = 'secrets.toml'
+            if os.path.exists(local_path):
+                secrets_path = local_path
+                logger.info(f"Using local secrets path: {secrets_path}")
+            else:
                 logger.error('secrets.toml not found in repository root')
                 raise typer.Exit(1)
+    else:
+        # If explicitly provided, verify it exists
+        if not os.path.exists(secrets_path):
+            logger.error(f"Provided secrets path '{secrets_path}' does not exist")
+            raise typer.Exit(1)
+        logger.info(f"Using provided secrets path: {secrets_path}")
     
     # add .env params, by profile
     logger.info(f"Loading {secrets_path}")
@@ -377,15 +380,18 @@ def main(
     run_ingest(config_file, profile, secrets_path, reset_corpus)
 
 if __name__ == '__main__':
-    # Check if we're running in Docker
-    in_docker = is_running_in_docker()
-    if in_docker:
+    # Check if we're running with named arguments (CLI style)
+    has_named_args = any(arg.startswith('--') for arg in sys.argv[1:])
+    
+    if has_named_args:
+        app()
+    else:
         if len(sys.argv) != 3:
             logger.info("Usage: python ingest.py <config_file> <secrets-profile>")
             exit(1)
-    
+        
         config_file = sys.argv[1]
         profile = sys.argv[2]
+        logger.info(f"Running with config={config_file}, profile={profile}")
         run_ingest(config_file, profile)
-    else:
-        app()
+

@@ -10,3 +10,4 @@ gdrive_crawler:
   delegated_users:
     - <add email id>
     - <add email id>
+  credentials_file: /path/to/credentials.json
