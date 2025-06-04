@@ -401,6 +401,10 @@ The `reindex` parameter determines whether an existing document should be reinde
 
 The project is designed to be used within a Docker container, so that a crawl job can be run anywhere - on a local machine or on any cloud machine. See the [Dockerfile](https://github.com/vectara/vectara-ingest/blob/main/Dockerfile) for more information on the Docker file structure and build.
 
+#### HTTP Proxy
+
+If the `http_proxy`, `https_proxy`, or `no_proxy` environment variables exist, they will be used during the docker build step.
+
 ### Local deployment
 
 To run `vectara-ingest` locally, perform the following steps:
