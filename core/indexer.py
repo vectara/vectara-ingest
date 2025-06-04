@@ -162,6 +162,7 @@ class Indexer:
         self.logger = logging.getLogger()
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
+        self.static_metadata = cfg.get('metadata', None)
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
@@ -628,6 +629,9 @@ class Indexer:
             self.logger.error(f"File {filename} does not exist")
             return False
 
+        if self.static_metadata:
+            metadata.update({k: v for k, v in self.static_metadata.items() if k not in metadata})
+
         post_headers = {
             'Accept': 'application/json',
             'x-api-key': self.api_key,
@@ -707,6 +711,17 @@ class Indexer:
             else:
                 self.logger.info(f"Document {document['id']} already exists, skipping")
                 return False
+
+
+        if self.static_metadata:
+            metadata = None
+            if 'metadata' in document:
+                metadata = document['metadata']
+            else:
+                metadata = {}
+                document['metadata'] = metadata
+            metadata.update({k: v for k, v in self.static_metadata.items() if k not in metadata})
+
 
         if use_core_indexing:
             document['type'] = 'core'
