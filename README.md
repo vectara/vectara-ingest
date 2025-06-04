@@ -314,6 +314,17 @@ doc_processing:
 crawling:
   # type of crawler; valid options are website, docusaurus, notion, jira, rss, mediawiki, discourse, github and others (this continues to evolve as new crawler types are added)
   crawler_type: XXX
+
+
+# This section can be added to your job configuration to allow tagging of metadata statically.
+# Each document created in the corpus will have the document metadata merged with the metadata here.
+# If a crawler adds metadata that conflicts with this metadata, the crawler metadata will be used.
+metadata:
+   project: foo
+   groups:
+     - group1
+     - group2
+     - group3
 ```
 
 Following that, where needed, the same YAML configuration file will a include crawler-specific section with crawler-specific parameters (see [about crawlers](crawlers/CRAWLERS.md)):
