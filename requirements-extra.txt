@@ -5,7 +5,9 @@
 #    pip-compile --output-file=requirements-extra.txt requirements-extra.in
 #
 aiofiles==24.1.0
-    # via unstructured-client
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured-client
 annotated-types==0.7.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -48,7 +50,9 @@ cffi==1.17.1
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   cryptography
 chardet==5.2.0
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 charset-normalizer==3.4.2
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -99,9 +103,13 @@ deprecated==1.2.18
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   pikepdf
 effdet==0.4.1
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 emoji==2.14.1
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 et-xmlfile==2.0.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -140,18 +148,23 @@ google-auth==2.16.1
     #   google-api-core
     #   google-cloud-vision
 google-cloud-vision==3.10.1
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 googleapis-common-protos==1.70.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   google-api-core
     #   grpcio-status
-grpcio==1.71.0
+grpcio==1.72.1
     # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   google-api-core
     #   grpcio-status
 grpcio-status==1.62.3
-    # via google-api-core
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   google-api-core
 h11==0.16.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -241,7 +254,6 @@ marshmallow==3.26.1
 matplotlib==3.8.4
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
-    #   pycocotools
     #   unstructured-inference
 mdurl==0.1.2
     # via
@@ -293,7 +305,9 @@ numpy==1.26.4
     #   unstructured
     #   unstructured-inference
 olefile==0.47
-    # via python-oxmsg
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   python-oxmsg
 omegaconf==2.3.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -346,9 +360,12 @@ pdfminer-six==20250506
 phonenumbers==8.13.55
     # via presidio-analyzer
 pi-heif==0.22.0
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 pikepdf==9.8.1
     # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   -r requirements-extra.in
     #   unstructured
 pillow==10.4.0
@@ -397,8 +414,10 @@ pyasn1-modules==0.4.2
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   google-auth
-pycocotools==2.0.8
-    # via effdet
+pycocotools==2.0.9
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   effdet
 pycparser==2.22
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -444,7 +463,9 @@ python-docx==1.1.2
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   unstructured
 python-iso639==2025.2.18
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 python-magic==0.4.27
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -454,7 +475,9 @@ python-multipart==0.0.20
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   unstructured-inference
 python-oxmsg==0.0.2
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 python-pptx==1.0.2
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -499,7 +522,9 @@ requests-file==2.1.0
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   tldextract
 requests-toolbelt==1.0.0
-    # via unstructured-client
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured-client
 rich==14.0.0
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
@@ -631,15 +656,21 @@ tzdata==2025.2
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   pandas
 unstructured[all-docs]==0.17.2
-    # via -r requirements-extra.in
-unstructured-client==0.35.0
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   -r requirements-extra.in
+unstructured-client==0.36.0
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 unstructured-inference==0.8.10
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
     #   unstructured
 unstructured-pytesseract==0.3.15
-    # via unstructured
+    # via
+    #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt
+    #   unstructured
 urllib3==1.26.20
     # via
     #   -c /Users/adeel/vectara/vectara-ingest/requirements.txt

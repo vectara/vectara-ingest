@@ -49,6 +49,7 @@ anthropic==0.42.0
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
+unstructured[pdf]==0.17.2
 unstructured-inference==0.8.10
 transformers[torch]==4.51.3
 safetensors[torch]==0.4.3
