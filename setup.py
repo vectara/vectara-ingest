@@ -5,15 +5,25 @@ import sys
 # Add the current directory to the path so that ingest.py can be imported
 sys.path.insert(0, os.path.abspath("."))
 
-# Read requirements from requirements.txt
-def read_requirements():
-    with open("requirements.txt") as req:
-        return req.read().splitlines()
+# Read requirements from requirements files
+def read_requirements_from_file(filename):
+    requirements = []
+    with open(filename) as req:
+        for line in req:
+            line = line.strip()
+            # Skip empty lines, comments, and constraint lines
+            if not line or line.startswith('#') or line.startswith('    #'):
+                continue
+            # Extract just the package name and version, skip lines with indentation (they're comments)
+            if not line.startswith(' '):
+                requirements.append(line)
+    return requirements
 
-# Read optional requirements
-def read_requirements_extra():
-    with open("requirements-extra.txt") as req:
-        return req.read().splitlines()
+# Combine requirements from both files
+def get_all_requirements():
+    base_reqs = read_requirements_from_file("requirements.txt")
+    extra_reqs = read_requirements_from_file("requirements-extra.txt")
+    return base_reqs + extra_reqs
 
 setup(
     name="vectara-ingest",
@@ -25,10 +35,7 @@ setup(
     packages=find_packages(),
     py_modules=["ingest"],  # Include root-level Python modules
     include_package_data=True,
-    install_requires=read_requirements(),
-    extras_require={
-        "all": read_requirements_extra(),
-    },
+    install_requires=get_all_requirements(),
     entry_points={
         "console_scripts": [
             "vectara-ingest=ingest:app",

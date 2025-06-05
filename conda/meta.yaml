@@ -22,7 +22,7 @@ build:
 
 
     echo "--- Starting pip install of local package and its Python dependencies ---"
-    "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .[all]
+    "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .
     echo "--- Pip install command finished. ---"
   entry_points:
     - vectara-ingest = ingest:app
