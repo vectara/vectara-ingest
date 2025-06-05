@@ -6,11 +6,15 @@ import re
 from typing import Tuple, Set
 from collections import deque
 from urllib.parse import urljoin, urlparse
+import os
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, binary_extensions, RateLimiter, setup_logging, \
-    configure_session_for_ssl
+from core.utils import (
+    create_session_with_retries, binary_extensions, RateLimiter, setup_logging,
+    configure_session_for_ssl, get_docker_or_local_path
+)
 from core.spider import run_link_spider_isolated
+from typing import Tuple, Set
 from core.indexer import Indexer
 
 import ray
@@ -162,8 +166,20 @@ class DocsCrawler(Crawler):
         logging.info(f"Found {len(all_urls)} urls in {self.cfg.docs_crawler.base_urls}")
         if self.cfg.docs_crawler.get("crawl_report", False):
             logging.info(f"Collected {len(all_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
-            with open('/home/vectara/env/urls_indexed.txt', 'w') as f:
-                for url in sorted(list(all_urls)):
+            output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+            docker_path = '/home/vectara/env/urls_indexed.txt'
+            filename = os.path.basename(docker_path)  # Extract just the filename
+            file_path = get_docker_or_local_path(
+                docker_path=docker_path,
+                output_dir=output_dir
+            )
+            
+            # If we're using a local path, make sure the filename is included
+            if not file_path.endswith(filename):
+                file_path = os.path.join(file_path, filename)
+                
+            with open(file_path, 'w') as f:
+                for url in sorted(all_urls):
                     f.write(url + '\n')
         else:
             logging.info(f"Collected {len(all_urls)} URLs to crawl and index.")
@@ -197,7 +213,19 @@ class DocsCrawler(Crawler):
                     self.indexer.delete_doc(doc['id'])
             logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.docs_crawler.get("crawl_report", False):
-                with open('/home/vectara/env/urls_removed.txt', 'w') as f:
+                output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+                docker_path = '/home/vectara/env/urls_removed.txt'
+                filename = os.path.basename(docker_path)  # Extract just the filename
+                file_path = get_docker_or_local_path(
+                    docker_path=docker_path,
+                    output_dir=output_dir
+                )
+                
+                # If we're using a local path, make sure the filename is included
+                if not file_path.endswith(filename):
+                    file_path = os.path.join(file_path, filename)
+                    
+                with open(file_path, 'w') as f:
                     for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
                         f.write(url + '\n')
 

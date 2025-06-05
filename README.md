@@ -29,6 +29,15 @@ Vectara is the trusted GenAI platform providing simple [APIs](https://docs.vecta
 For more information about this repository, see [Code Organization](#code-organization) and [Crawling](#crawling).
 
 # Getting Started Guide
+
+vectara-ingest can be used in multiple ways:
+
+1. **Docker container** - The instructions below show how to run vectara-ingest in a Docker container
+2. **Command-line interface (CLI)** - vectara-ingest can be installed as a CLI tool using conda
+3. **Python package** - vectara-ingest can be imported and used in your Python applications
+
+For details on using vectara-ingest as a conda package or importing it in your code, please refer to the [conda/README.md](conda/README.md) file.
+
 This guide explains how to create a basic crawler to scrape content from [Paul Graham's website](http://www.paulgraham.com/index.html), and ingest it into Vectara.
 
 ## Prerequisites
@@ -127,7 +136,7 @@ For our example we would index the content of https://www.paulgraham.com website
 
    **Note:** To protect your system's resources and make it easier to move your crawlers to the cloud, the crawler executes inside a Docker container. This is a lengthy process because in involves numerous dependencies
 
-1. When the container is set up, you can track your crawler’s progress:
+1. When the container is set up, you can track your crawler's progress:
 
    ```bash
    docker logs -f vingest
@@ -205,6 +214,9 @@ vectara:
   # where XXX is a unique ID.
   store_docs: false
   
+  # Directory path where vectara-ingest will store all output files, including reports, temporary files, credentials, and other artifacts. When running locally, this path is relative to the current working directory. When running in Docker, files are inside the container at `/home/vectara/env/`. Default value is `vectara_ingest_output`.
+  output_dir: vectara_ingest_output
+
   # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)
   # this applies to crawling web pages.
   timeout: 90

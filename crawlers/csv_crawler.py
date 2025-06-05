@@ -5,9 +5,10 @@ import unicodedata
 import gc
 import psutil
 import ray
+import os
 
 from core.indexer import Indexer
-from core.utils import setup_logging
+from core.utils import setup_logging, get_docker_or_local_path
 
 class DFIndexer(object):
     def __init__(self, 
@@ -115,7 +116,13 @@ class CsvCrawler(Crawler):
             all_columns.append(title_column)
 
         orig_file_path = self.cfg.csv_crawler.file_path
-        file_path = '/home/vectara/data/file'
+        docker_path = '/home/vectara/data/file'
+        
+        file_path = get_docker_or_local_path(
+            docker_path=docker_path,
+            config_path=orig_file_path
+        )
+        
         try:
             if orig_file_path.endswith('.csv'):
                 dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
@@ -128,7 +135,7 @@ class CsvCrawler(Crawler):
                 logging.info(f"Reading Sheet {sheet_name} from XLSX file")
                 df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)
             else:
-                logging.info(f"Unknown file extension for the file {orig_file_path}")
+                logging.info(f"Unknown file extension for the file {file_path}")
                 return
         except Exception as e:
             logging.warning(f"Exception ({e}) occurred while loading file")

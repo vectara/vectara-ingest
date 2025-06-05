@@ -18,7 +18,7 @@ from typing import List, Optional
 import ray
 
 from core.indexer import Indexer
-from core.utils import setup_logging, safe_remove_file
+from core.utils import setup_logging, safe_remove_file, get_docker_or_local_path
 
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
@@ -36,9 +36,13 @@ class SharedCache:
     def contains(self, id: str) -> bool:
         return id in self.cache
 
-def get_credentials(delegated_user: str) -> service_account.Credentials:
+def get_credentials(delegated_user: str, config_path: str) -> service_account.Credentials:
+    credentials_file = get_docker_or_local_path(
+        docker_path=SERVICE_ACCOUNT_FILE,
+        config_path=config_path
+    )
     credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        credentials_file, scopes=SCOPES)
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
 
@@ -217,7 +221,7 @@ class UserWorker(object):
 
     def process(self, user: str) -> None:
         logging.info(f"Processing files for user: {user}")
-        self.creds = get_credentials(user)
+        self.creds = get_credentials(user, config_path=self.cfg.gdrive_crawler.credentials_file)
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
         
         files = self.list_files(self.service, date_threshold=self.date_threshold.isoformat() + 'Z')

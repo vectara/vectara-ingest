@@ -24,6 +24,7 @@ from io import StringIO
 import time
 import threading
 import logging
+import glob
 
 from langdetect import detect
 from omegaconf import DictConfig
@@ -207,29 +208,42 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         A dictionary-like object containing SSL-related configuration:
         - "ssl_verify" (bool or str, optional):
           - If `False`, SSL verification is disabled (not recommended for production).
-          - If a string, it is treated as the path to a custom CA certificate file.
+          - If a string, it is treated as the path to a custom CA certificate file or directory.
           - If `True` or not provided, default SSL verification is used.
     """
     ssl_verify = config.get("ssl_verify", None)
-
-    if isinstance(ssl_verify, bool):
-        if not ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        else:
-            logging.debug("SSL verify using default behavior")
-    elif isinstance(ssl_verify, str):
-        if "false" == ssl_verify.lower() or "0" == ssl_verify:
-            logging.warning("Disabling ssl verification for session.")
-            session.verify = False
-        elif "true" == ssl_verify.lower() or "1" == ssl_verify:
-            logging.debug("SSL verify using default behavior")
-        else:
-            logging.info(f"Configuring session.verify to {ssl_verify}")
-            if not os.path.exists(ssl_verify):
-                raise FileNotFoundError(f"CA file ('{ssl_verify}') could not be found.")
-            session.verify = ssl_verify
-
+    
+    if ssl_verify is False or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("false", "0")):
+        logging.warning("Disabling ssl verification for session.")
+        session.verify = False
+        return
+    
+    if ssl_verify is True or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("true", "1")):
+        logging.debug("SSL verify using default system certificates")
+        return
+    
+    if isinstance(ssl_verify, str):
+        try:
+            # First try direct path (works in Docker and absolute paths)
+            if os.path.exists(ssl_verify):
+                logging.info(f"Using certificate path: {ssl_verify}")
+                session.verify = ssl_verify
+                return
+        except Exception as e:
+            logging.debug(f"Direct path check failed: {e}")
+        
+        try:
+            # Then try expanded path (works with ~)
+            ca_path = os.path.expanduser(ssl_verify)
+            if os.path.exists(ca_path):
+                logging.info(f"Using expanded certificate path: {ca_path}")
+                session.verify = ca_path
+                return
+        except Exception as e:
+            logging.debug(f"Expanded path check failed: {e}")
+            
+        # If we get here, neither path worked
+        raise FileNotFoundError(f"Certificate path '{ssl_verify}' could not be found or accessed.")
 
 def remove_anchor(url: str) -> str:
     """Remove the anchor from a URL."""
@@ -614,3 +628,46 @@ def get_media_type_from_base64(base64_data: str) -> str:
     file_bytes = base64.b64decode(base64_data)
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)    
     return media_type
+
+
+def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest_output", should_delete_existing: bool = False, config_path: str = None) -> str:
+    """
+    Get appropriate path for storing files or reading data.
+    
+    Args:
+        docker_path: Legacy parameter, kept for backwards compatibility
+        output_dir: Output directory name for local path (can include subdirectories). Defaults to "vectara_ingest_output".
+        should_delete_existing: Whether to delete existing directory if it exists
+        config_path: Optional config path to try if docker path not found
+        
+    Returns:
+        str: The resolved path (Docker, config, or local)
+        
+    Raises:
+        FileNotFoundError: If config_path is provided but doesn't exist
+    """
+    # Try Docker path first
+    if os.path.exists(docker_path):
+        logging.info(f"Using Docker path: {docker_path}")
+        return docker_path
+        
+    # Try config path if provided
+    if config_path:
+        if os.path.exists(config_path):
+            logging.info(f"Using config path: {config_path}")
+            return config_path
+        else:
+            raise FileNotFoundError(f"Config path '{config_path}' was specified but could not be found.")
+        
+    # Fall back to local path
+    local_path = os.path.join(os.getcwd(), output_dir)
+    
+    # Delete existing directory if requested
+    if should_delete_existing and os.path.exists(local_path):
+        shutil.rmtree(local_path)
+            
+    # Create directory (and parent directories) if it doesn't exist
+    os.makedirs(local_path, exist_ok=True)
+            
+    logging.info(f"Using local path: {local_path}")
+    return local_path

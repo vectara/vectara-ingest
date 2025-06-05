@@ -1,4 +1,3 @@
-logger = logging.getLogger(__name__)
 import logging
 from typing import List, Tuple, Iterator
 import time
@@ -36,6 +35,7 @@ nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+logger = logging.getLogger(__name__)
 MAX_VERBOSE_LENGTH = 1000
 
 class DocumentParser():
