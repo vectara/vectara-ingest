@@ -124,13 +124,13 @@ class CsvCrawler(Crawler):
         )
         
         try:
-            if file_path.endswith('.csv'):
+            if orig_file_path.endswith('.csv'):
                 dtypes = {column: 'Int64' if column_types.get(column)=='int' else column_types.get(column, 'str') 
                           for column in all_columns}
                 sep = self.cfg.csv_crawler.get("separator", ",")
                 df = pd.read_csv(file_path, usecols=all_columns, sep=sep, dtype=dtypes)
                 df = df.astype(object)   # convert to native types
-            elif file_path.endswith('.xlsx'):
+            elif orig_file_path.endswith('.xlsx'):
                 sheet_name = self.cfg.csv_crawler.get("sheet_name", 0)
                 logging.info(f"Reading Sheet {sheet_name} from XLSX file")
                 df = pd.read_excel(file_path, usecols=all_columns, sheet_name=sheet_name)

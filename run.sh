@@ -163,8 +163,8 @@ elif [[ "$crawler_type" == "csv" ]]; then
 elif [[ "$crawler_type" == "bulkupload" ]]; then
     # special handling of "bulkupload crawler" where we need to mount the JSON file under /home/vectara/data
     json_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])"`
-    if [ ! -f "$file_path" ]; then
-        echo "Error: CSV file '$json_path' does not exist."
+    if [ ! -f "$json_path" ]; then
+        echo "Error: JSON file '$json_path' does not exist."
         exit 5
     fi
     ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $json_path:/home/vectara/data/file.json"

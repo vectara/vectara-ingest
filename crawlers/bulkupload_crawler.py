@@ -7,7 +7,7 @@ from core.utils import get_docker_or_local_path
 def is_valid(json_object):
     return 'id' in json_object and 'sections' in json_object
 
-class JACrawler(Crawler):
+class BulkuploadCrawler(Crawler):
 
     def crawl(self) -> None:
         docker_path = '/home/vectara/data/file.json'

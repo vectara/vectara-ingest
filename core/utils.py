@@ -630,13 +630,13 @@ def get_media_type_from_base64(base64_data: str) -> str:
     return media_type
 
 
-def get_docker_or_local_path(docker_path: str, output_dir: str, should_delete_existing: bool = False, config_path: str = None) -> str:
+def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest_output", should_delete_existing: bool = False, config_path: str = None) -> str:
     """
-    Get appropriate path for storing files or reading data, checking Docker path first and falling back to local paths.
+    Get appropriate path for storing files or reading data.
     
     Args:
-        docker_path: The Docker path to check first
-        output_dir: Output directory name for local path (can include subdirectories)
+        docker_path: Legacy parameter, kept for backwards compatibility
+        output_dir: Output directory name for local path (can include subdirectories). Defaults to "vectara_ingest_output".
         should_delete_existing: Whether to delete existing directory if it exists
         config_path: Optional config path to try if docker path not found
         
