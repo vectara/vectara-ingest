@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import json
 import re
 import os
@@ -181,9 +182,9 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
-        if ('model' in self.cfg.doc_processing or 
+        if ('model' in self.cfg.doc_processing or
             ('model_config' not in self.cfg.doc_processing and 'model' not in self.cfg.doc_processing)):
-            logging.warning(
+            logger.warning(
                 "doc_processing.model will no longer be supported in a future release. Use doc_processing.model_config instead.")
 
             provider = self.cfg.doc_processing.get("model", "openai")
@@ -222,7 +223,7 @@ class Indexer:
             self.logger.warning(
                 "Metadata extraction (doc_processing.extract_metadata) enabled but model API key not found, disabling metadata extraction")
 
-        logging.info(f"Vectara API Url = '{self.api_url}'")
+        logger.info(f"Vectara API Url = '{self.api_url}'")
 
         self.setup()
 
@@ -252,7 +253,7 @@ class Indexer:
         if self.store_docs:
             uuid_suffix = f"indexed_docs_{str(uuid.uuid4())}"
             docker_env_path = '/home/vectara/env'
-            
+
             self.store_docs_folder = get_docker_or_local_path(
                 docker_path=os.path.join(docker_env_path, uuid_suffix),
                 output_dir=os.path.join(self.output_dir, uuid_suffix),
@@ -644,7 +645,7 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
-        
+
         files = {
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
@@ -682,7 +683,7 @@ class Indexer:
                     self.store_file(filename, url_to_filename(uri))
                     return True
                 else:
-                    self.logger.info(
+                    self.logger.error(
                         f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             else:
@@ -703,7 +704,7 @@ class Indexer:
         Args:
             document (dict): Document to index.
             use_core_indexing (bool): Whether to use the core indexing API.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -769,11 +770,11 @@ class Indexer:
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
-        
+
         Args:
-            url (str): URL for where the document originated. 
+            url (str): URL for where the document originated.
             metadata (dict): Metadata for the document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -788,7 +789,7 @@ class Indexer:
             os.makedirs("/tmp", exist_ok=True)
             url_file_path = get_file_path_from_url(url)
             if not url_file_path:
-                self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
+                self.logger.error(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
             response = self.session.get(url, headers=get_headers, stream=True)
@@ -801,7 +802,7 @@ class Indexer:
                 safe_remove_file(file_path)
                 return res
             else:
-                self.logger.info(f"Failed to download file. Status code: {response.status_code}")
+                self.logger.error(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
@@ -943,7 +944,7 @@ class Indexer:
                 self.logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
-                self.logger.info(
+                self.logger.error(
                     f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
@@ -985,7 +986,7 @@ class Indexer:
 
         document = {}
         document["id"] = (
-            doc_id if len(doc_id) < 128 
+            doc_id if len(doc_id) < 128
             else doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
         )
 
@@ -1044,13 +1045,13 @@ class Indexer:
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
-        
+
         Args:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
             id (str, optional): Document id for the uploaded document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -1109,8 +1110,7 @@ class Indexer:
             if filesize_mb > max_pdf_size:
                 pdf_reader = PdfReader(filename)
                 total_pages = len(pdf_reader.pages)
-                logging.info(
-                    f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
+                logger.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
                 error_count = 0
                 for i in range(0, total_pages, pages_per_pdf):
                     pdf_writer = PdfWriter()
@@ -1291,7 +1291,7 @@ class Indexer:
     def index_media_file(self, file_path, metadata=None):
         """
         Index a media file (audio or video) by transcribing it with Whisper and uploading it to the Vectara corpus.
-        
+
         Args:
             file_path (str): Path to the media file.
             metadata (dict): Metadata for the document.
@@ -1299,7 +1299,7 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False
         """
-        logging.info(
+        logger.info(
             f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
         if self.whisper_model is None:
             self.whisper_model = whisper.load_model(self.whisper_model, device="cpu")

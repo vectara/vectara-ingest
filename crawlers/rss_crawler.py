@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import time
 from core.crawler import Crawler
 import feedparser
@@ -31,14 +32,14 @@ class RssCrawler(Crawler):
                 if entry_date >= days_ago and entry_date <= today:
                     urls.append([entry.link, entry.title, entry_date])
 
-        logging.info(f"Found {len(urls)} URLs to index from the last {self.cfg.rss_crawler.days_past} days ({source})")
+        logger.info(f"Found {len(urls)} URLs to index from the last {self.cfg.rss_crawler.days_past} days ({source})")
 
         crawled_urls = set()        # sometimes same url (with diff title) may appear twice, so we keep track of crawled pages to avoid duplication.
         for url,title,pub_date in urls:
             if url in crawled_urls:
-                logging.info(f"Skipping {url} since it was already crawled in this round")
+                logger.info(f"Skipping {url} since it was already crawled in this round")
                 continue
-            
+
             # index document into Vectara
             try:
                 if pub_date:
@@ -48,20 +49,19 @@ class RssCrawler(Crawler):
                     pub_date = 'unknown'
                 crawl_date_int = int(str(today.timestamp()).split('.')[0])
                 metadata = {
-                    'source': source, 'url': url, 'title': title, 
+                    'source': source, 'url': url, 'title': title,
                     'pub_date': str(pub_date), 'pub_date_int': pub_date_int,
                     'crawl_date': str(today),
                     'crawl_date_int': crawl_date_int
                 }
                 succeeded = self.indexer.index_url(url, metadata=metadata)
                 if succeeded:
-                    logging.info(f"Successfully indexed {url}")
+                    logger.info(f"Successfully indexed {url}")
                     crawled_urls.add(url)
                 else:
-                    logging.info(f"Indexing failed for {url}")
+                    logger.info(f"Indexing failed for {url}")
             except Exception as e:
-                logging.error(f"Error while indexing {url}: {e}")
+                logger.error(f"Error while indexing {url}: {e}")
             time.sleep(delay_in_secs)
 
         return
-
