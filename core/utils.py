@@ -57,6 +57,21 @@ def setup_logging():
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
+    logger.debug("Setting logging levels")
+    # Configure specific loggers based on environment variables
+    logger_env_pattern = re.compile(r'^LOGGER_([A-Z0-9_]+)_LEVEL$')
+    for env_key, log_level_str in os.environ.items():
+        match = logger_env_pattern.match(env_key)
+        if match:
+            logger_name = match.group(1).lower().replace('_', '.')
+            level_name = log_level_str.upper()
+            level = getattr(logging, level_name, None)
+            if level:
+                logger.debug(f"Changing logging level for {logger_name} to {level_name}:{level}.")
+                logging.getLogger(logger_name).setLevel(level)
+            else:
+                logger.warning(f"Could not change logger {logger_name} to unknown level {level_name}.")
+
 def url_to_filename(url):
     parsed_url = urlparse(url)
     path_parts = parsed_url.path.split('/')
