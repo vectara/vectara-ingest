@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import requests
 import json
 from core.crawler import Crawler
@@ -81,12 +82,12 @@ class JiraCrawler(Crawler):
 
                     succeeded = self.indexer.index_document(document)
                     if succeeded:
-                        logging.info(f"Indexed issue {document['id']}")
+                        logger.info(f"Indexed issue {document['id']}")
                         issue_count += 1
                     else:
-                        logging.info(f"Error indexing issue {document['id']}")
+                        logger.info(f"Error indexing issue {document['id']}")
                 startAt = startAt + actual_cnt
             else:
                 break
 
-        logging.info(f"Finished indexing all issues (total={issue_count})")
+        logger.info(f"Finished indexing all issues (total={issue_count})")

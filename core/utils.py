@@ -26,6 +26,8 @@ import threading
 import logging
 import glob
 
+logger = logging.getLogger(__name__)
+
 from langdetect import detect
 from omegaconf import DictConfig
 
@@ -35,7 +37,7 @@ try:
     analyzer = AnalyzerEngine()
     anonymizer = AnonymizerEngine()
 except ImportError:
-    logging.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
+    logger.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
 
 img_extensions = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
 doc_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
@@ -115,7 +117,7 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
 
     # Remove code blocks if specified
     if remove_code:
-        logging.info("Removing code blocks from HTML")
+        logger.info("Removing code blocks from HTML")
         html = remove_code_from_html(html)
 
     # Initialize BeautifulSoup
@@ -150,7 +152,7 @@ def safe_remove_file(file_path: str):
     try:
         os.remove(file_path)
     except Exception as e:
-        logging.info(f"Failed to remove file: {file_path} due to {e}")
+        logger.warning(f"Failed to remove file: {file_path} due to {e}")
 
 
 class LoggingAdapter(HTTPAdapter):
@@ -172,7 +174,7 @@ class LoggingAdapter(HTTPAdapter):
 {response.text[:500]}
 ===============================
 """
-        logging.debug(log_message)
+        logger.debug(log_message)
         return response
 
 def create_session_with_retries(retries: int = 5) -> requests.Session:
@@ -214,33 +216,33 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
     ssl_verify = config.get("ssl_verify", None)
     
     if ssl_verify is False or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("false", "0")):
-        logging.warning("Disabling ssl verification for session.")
+        logger.warning("Disabling ssl verification for session.")
         session.verify = False
         return
     
     if ssl_verify is True or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("true", "1")):
-        logging.debug("SSL verify using default system certificates")
+        logger.debug("SSL verify using default system certificates")
         return
     
     if isinstance(ssl_verify, str):
         try:
             # First try direct path (works in Docker and absolute paths)
             if os.path.exists(ssl_verify):
-                logging.info(f"Using certificate path: {ssl_verify}")
+                logger.info(f"Using certificate path: {ssl_verify}")
                 session.verify = ssl_verify
                 return
         except Exception as e:
-            logging.debug(f"Direct path check failed: {e}")
+            logger.debug(f"Direct path check failed: {e}")
         
         try:
             # Then try expanded path (works with ~)
             ca_path = os.path.expanduser(ssl_verify)
             if os.path.exists(ca_path):
-                logging.info(f"Using expanded certificate path: {ca_path}")
+                logger.info(f"Using expanded certificate path: {ca_path}")
                 session.verify = ca_path
                 return
         except Exception as e:
-            logging.debug(f"Expanded path check failed: {e}")
+            logger.debug(f"Expanded path check failed: {e}")
             
         # If we get here, neither path worked
         raise FileNotFoundError(f"Certificate path '{ssl_verify}' could not be found or accessed.")
@@ -283,7 +285,7 @@ def detect_language(text: str) -> str:
         lang = detect(text)
         return str(lang)
     except Exception as e:
-        logging.info(f"Language detection failed with error: {e}")
+        logger.warning(f"Language detection failed with error: {e}")
         return "en"  # Default to English in case of errors
 
 def get_file_size_in_MB(file_path: str) -> float:
@@ -350,6 +352,51 @@ class RateLimiter:
         with self.lock:
             self.condition.notify()
 
+def get_urls_from_sitemap(homepage_url):
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    # Helper function to fetch and parse XML
+    def fetch_sitemap(sitemap_url):
+        try:
+            response = requests.get(sitemap_url, headers=headers)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'xml')
+            return soup
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch sitemap: {sitemap_url} due to {e}")
+            return None
+
+    # Step 1: Check for standard sitemap.xml
+    sitemap_url = urljoin(homepage_url, 'sitemap.xml')
+    soup = fetch_sitemap(sitemap_url)
+
+    sitemaps = []
+    if soup:
+        sitemaps.append(sitemap_url)
+
+    # Step 2: Check for sitemaps in robots.txt
+    robots_url = urljoin(homepage_url, 'robots.txt')
+    try:
+        response = requests.get(robots_url, headers=headers)
+        response.raise_for_status()
+        for line in response.text.split('\n'):
+            if line.lower().startswith('sitemap:'):
+                sitemap_url = line.split(':', 1)[1].strip()
+                sitemaps.append(sitemap_url)
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Failed to fetch robots.txt: {robots_url} due to {e}")
+
+    # Step 3: Extract URLs from all found sitemaps
+    urls = set()
+    for sitemap in sitemaps:
+        soup = fetch_sitemap(sitemap)
+        if soup:
+            for loc in soup.find_all('loc'):
+                urls.add(loc.text.strip())
+
+    return list(urls)
 
 def df_cols_to_headers(df: pd.DataFrame):
     """
@@ -480,7 +527,7 @@ def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
         elif isinstance(item, str) or isinstance(item, int) or isinstance(item, float) or isinstance(item, bool):
             res.append({'text_value': str(item)})
         else:
-            logging.info(f"Create_row_items: unsupported type {type(item)} for item {item}")
+            logger.warning(f"Create_row_items: unsupported type {type(item)} for item {item}")
     return res
 
 def _expand_table(table_tag):
@@ -603,13 +650,13 @@ def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest
     """
     # Try Docker path first
     if os.path.exists(docker_path):
-        logging.info(f"Using Docker path: {docker_path}")
+        logger.info(f"Using Docker path: {docker_path}")
         return docker_path
         
     # Try config path if provided
     if config_path:
         if os.path.exists(config_path):
-            logging.info(f"Using config path: {config_path}")
+            logger.info(f"Using config path: {config_path}")
             return config_path
         else:
             raise FileNotFoundError(f"Config path '{config_path}' was specified but could not be found.")
@@ -624,7 +671,7 @@ def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest
     # Create directory (and parent directories) if it doesn't exist
     os.makedirs(local_path, exist_ok=True)
             
-    logging.info(f"Using local path: {local_path}")
+    logger.info(f"Using local path: {local_path}")
     return local_path
 
 def url_matches_patterns(url, pos_patterns, neg_patterns):
