@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import json
 import re
 import os
@@ -41,8 +42,6 @@ from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, L
 from core.contextual import ContextualChunker
 from pypdf import PdfReader, PdfWriter
 import tempfile
-
-logger = logging.getLogger(__name__)
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
@@ -677,7 +676,7 @@ class Indexer:
                     self.store_file(filename, url_to_filename(uri))
                     return True
                 else:
-                    self.logger.info(
+                    self.logger.error(
                         f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             else:
@@ -783,7 +782,7 @@ class Indexer:
             os.makedirs("/tmp", exist_ok=True)
             url_file_path = get_file_path_from_url(url)
             if not url_file_path:
-                self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
+                self.logger.error(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
             response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
@@ -796,7 +795,7 @@ class Indexer:
                 safe_remove_file(file_path)
                 return res
             else:
-                self.logger.info(f"Failed to download file. Status code: {response.status_code}")
+                self.logger.error(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
@@ -935,7 +934,7 @@ class Indexer:
                 self.logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
-                self.logger.info(
+                self.logger.error(
                     f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
@@ -1101,8 +1100,7 @@ class Indexer:
             if filesize_mb > max_pdf_size:
                 pdf_reader = PdfReader(filename)
                 total_pages = len(pdf_reader.pages)
-            logger.info(
-                f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
+                logger.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
                 error_count = 0
                 for i in range(0, total_pages, pages_per_pdf):
                     pdf_writer = PdfWriter()
