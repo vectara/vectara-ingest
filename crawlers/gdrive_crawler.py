@@ -2,6 +2,7 @@ import os
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import logging
+logger = logging.getLogger(__name__)
 import io
 from datetime import datetime, timedelta
 import requests
@@ -64,10 +65,10 @@ DEFAULT_PERMISSIONS = ['Vectara', 'all']
 
 class UserWorker(object):
     def __init__(
-            self, indexer: Indexer, crawler: Crawler, 
+            self, indexer: Indexer, crawler: Crawler,
             shared_cache: SharedCache,
             date_threshold: datetime,
-            permissions: List = DEFAULT_PERMISSIONS, 
+            permissions: List = DEFAULT_PERMISSIONS,
             use_ray: bool = False) -> None:
         self.crawler = crawler
         self.indexer = indexer
@@ -110,7 +111,7 @@ class UserWorker(object):
                 if not page_token:
                     break
             except Exception as error:
-                logging.info(f"An HTTP error occurred: {error}")
+                logger.warning(f"An HTTP error occurred: {error}")
                 break
         return results
 
@@ -144,13 +145,13 @@ class UserWorker(object):
                     if pdf_link:
                         pdf_response = requests.get(pdf_link, headers=headers)
                         if pdf_response.status_code == 200:
-                            logging.info(f"Downloaded file {file_id} via link (as pdf)")
+                            logger.info(f"Downloaded file {file_id} via link (as pdf)")
                             return io.BytesIO(pdf_response.content)
                         else:
-                            logging.error(f"An error occurred loading via link: {pdf_response.status_code}")
+                            logger.error(f"An error occurred loading via link: {pdf_response.status_code}")
             else:
-                logging.error(f"An error occurred downloading file: {error}")
-            
+                logger.error(f"An error occurred downloading file: {error}")
+
             return None
 
     def save_local_file(self, file_id: str, name: str, mime_type: Optional[str] = None) -> Optional[str]:
@@ -164,7 +165,7 @@ class UserWorker(object):
                     f.write(byte_stream.read())
                 return file_path
         except Exception as e:
-            logging.info(f"Error saving local file: {e}")
+            logger.warning(f"Error saving local file: {e}")
         return None
 
     def crawl_file(self, file: dict) -> None:
@@ -174,7 +175,7 @@ class UserWorker(object):
         permissions = file.get('permissions', [])
 
         if not any(p.get('displayName') == 'Vectara' or p.get('displayName') == 'all' for p in permissions):
-            logging.info(f"Skipping restricted file: {name}")
+            logger.info(f"Skipping restricted file: {name}")
             return None
 
         url = get_gdrive_url(file_id, mime_type)
@@ -190,7 +191,7 @@ class UserWorker(object):
             return
 
         if self.crawler.verbose:
-            logging.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
+            logger.info(f"Handling file: '{name}' with MIME type '{mime_type}'")
 
         if local_file_path:
             created_time = file.get('createdTime', 'N/A')
@@ -198,7 +199,7 @@ class UserWorker(object):
             owners = ', '.join([owner['displayName'] for owner in file.get('owners', [])])
             size = file.get('size', 'N/A')
 
-            logging.info(f'Crawling file {name}')
+            logger.info(f'Crawling file {name}')
             file_metadata = {
                 'id': file_id,
                 'name': name,
@@ -214,16 +215,16 @@ class UserWorker(object):
             try:
                 self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
             except Exception as e:
-                logging.info(f"Error {e} indexing document for file {name}, file_id {file_id}")
+                logger.warning(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
             # remove file from local storage
             safe_remove_file(local_file_path)
 
     def process(self, user: str) -> None:
-        logging.info(f"Processing files for user: {user}")
+        logger.info(f"Processing files for user: {user}")
         self.creds = get_credentials(user, config_path=self.cfg.gdrive_crawler.credentials_file)
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
-        
+
         files = self.list_files(self.service, date_threshold=self.date_threshold.isoformat() + 'Z')
         if self.use_ray:
             files = [file for file in files if not ray.get(self.shared_cache.contains.remote(file['id']))]
@@ -232,11 +233,11 @@ class UserWorker(object):
 
         # remove mime types we don't want to crawl
         mime_prefix_to_remove = [
-            'image', 'audio', 'video', 
+            'image', 'audio', 'video',
             'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
             'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
-            'application/x-executable', 
-            'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script', 
+            'application/x-executable',
+            'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script',
         ]
         files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
 
@@ -248,9 +249,9 @@ class UserWorker(object):
             self.creds.refresh(Request())
             self.access_token = self.creds.token
         except Exception as e:
-            logging.info(f"Error refreshing token: {e} for user {user}")
+            logger.warning(f"Error refreshing token: {e} for user {user}")
             return
-        
+
         for file in files:
             if self.use_ray:
                 if not ray.get(self.shared_cache.contains.remote(file['id'])):
@@ -264,7 +265,7 @@ class GdriveCrawler(Crawler):
 
     def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         super().__init__(cfg, endpoint, corpus_key, api_key)
-        logging.info("Google Drive Crawler initialized")
+        logger.info("Google Drive Crawler initialized")
 
         self.delegated_users = cfg.gdrive_crawler.delegated_users
 
@@ -272,12 +273,12 @@ class GdriveCrawler(Crawler):
         N = self.cfg.gdrive_crawler.get("days_back", 7)
         date_threshold = datetime.now() - timedelta(days=N)
         if self.verbose:
-            logging.info(f"Crawling documents from {date_threshold.date()}")
+            logger.info(f"Crawling documents from {date_threshold.date()}")
         ray_workers = self.cfg.gdrive_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         permissions = self.cfg.gdrive_crawler.get("permissions", ['Vectara', 'all'])
-        
+
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             shared_cache = ray.remote(SharedCache).remote()
@@ -286,10 +287,10 @@ class GdriveCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, user: a.process.remote(user), self.delegated_users))
-                
+
         else:
             shared_cache = SharedCache()
             crawl_worker = UserWorker(self.indexer, self, shared_cache, date_threshold, permissions, use_ray=False)
             for user in self.delegated_users:
-                logging.info(f"Crawling for user {user}")
+                logger.info(f"Crawling for user {user}")
                 crawl_worker.process(user)

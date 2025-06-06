@@ -1,5 +1,6 @@
 import json
 import logging
+logger = logging.getLogger(__name__)
 import os.path
 import tempfile
 
@@ -34,7 +35,7 @@ def raise_for_status(response: requests.Response):
         requests.exceptions.HTTPError: If the response indicates an HTTP error status.
     """
     if response.status_code == 400:
-        logging.error(f"Bad Request: \n {response.json()}")
+        logger.error(f"Bad Request: \n {response.json()}")
     response.raise_for_status()
 
 
@@ -179,7 +180,7 @@ class ConfluenceCrawler(Crawler):
             if userid in self.user_cache:
                 result[userid] = self.user_cache[userid]
             else:
-                logging.warning(f"Could not locate user: {userid}")
+                logger.warning(f"Could not locate user: {userid}")
 
         return result
 
@@ -218,7 +219,7 @@ class ConfluenceCrawler(Crawler):
         confluence_page_url.args['include-operations'] = 'true'
         confluence_page_url.args['include-version'] = 'true'
         confluence_page_url.args['body-format'] = 'anonymous_export_view'
-        logging.info(f"Fetching content for {confluence_page_url.url}")
+        logger.info(f"Fetching content for {confluence_page_url.url}")
         confluence_page_response = self.session.get(confluence_page_url.url, headers=self.confluence_headers,
                                                     auth=self.confluence_auth)
         raise_for_status(confluence_page_response)
@@ -251,7 +252,7 @@ class ConfluenceCrawler(Crawler):
         confluence_page_url.args['include-operations'] = 'true'
         confluence_page_url.args['include-version'] = 'true'
         confluence_page_url.args['body-format'] = 'anonymous_export_view'
-        logging.info(f"Fetching content for {confluence_page_url.url}")
+        logger.info(f"Fetching content for {confluence_page_url.url}")
         confluence_page_response = self.session.get(confluence_page_url.url, headers=self.confluence_headers,
                                                     auth=self.confluence_auth)
         raise_for_status(confluence_page_response)
@@ -273,7 +274,7 @@ class ConfluenceCrawler(Crawler):
 
         Args:
             confluence_id (str): ID in confluence
-            metadata (dict[str, any]): Metadata containing 'type' and 'id' 
+            metadata (dict[str, any]): Metadata containing 'type' and 'id'
                 that identifies the page or blogpost.
         """
         attachment_url = self.new_url('api/v2', f"{metadata['type']}s", confluence_id, 'attachments')
@@ -292,7 +293,7 @@ class ConfluenceCrawler(Crawler):
             title = result['title']
             filename, file_extension = os.path.splitext(title)
             if file_extension not in supported_extensions:
-                logging.warning(f"Extension not supported, skipping. '{file_extension}' title:{title}")
+                logger.warning(f"Extension not supported, skipping. '{file_extension}' title:{title}")
                 continue
             attachment_metadata = {}
 
@@ -307,12 +308,12 @@ class ConfluenceCrawler(Crawler):
                  if k in download_stub.args}
             )
             attachment_metadata['links'] = {'download':download_url.url}
-            logging.info(f"Downloading Attachment {result['id']} - {download_url.url}")
+            logger.info(f"Downloading Attachment {result['id']} - {download_url.url}")
             download_response = self.session.get(download_url.url, headers=self.confluence_headers,
                                                  auth=self.confluence_auth)
             raise_for_status(download_response)
             with tempfile.NamedTemporaryFile(suffix=file_extension, mode='wb', delete=False) as f:
-                logging.debug(f"Writing content for {attachment_id} to {f.name}")
+                logger.debug(f"Writing content for {attachment_id} to {f.name}")
                 for chunk in download_response.iter_content(chunk_size=32000):
                     f.write(chunk)
                 f.flush()
@@ -324,7 +325,7 @@ class ConfluenceCrawler(Crawler):
                         os.remove(f.name)
 
                 if not succeeded:
-                    logging.error(f"Error indexing {result['id']} - {download_url.url}")
+                    logger.error(f"Error indexing {result['id']} - {download_url.url}")
 
     def lookup_space(self, space_id:str)->dict[str,any]:
         """
@@ -344,7 +345,7 @@ class ConfluenceCrawler(Crawler):
             return self.space_cache[space_id]
 
         confluece_space_url = self.new_url('api/v2/spaces', space_id)
-        logging.info(f"Retrieving Space information: {confluece_space_url.url}")
+        logger.info(f"Retrieving Space information: {confluece_space_url.url}")
         confluence_space_response = self.session.get(
             confluece_space_url.url,
             headers=self.confluence_headers,
@@ -386,7 +387,7 @@ class ConfluenceCrawler(Crawler):
         confluence_search_url.args['next'] = 'true'
         count = 0
         while True:
-            logging.info(f"Searching Confluence: {confluence_search_url.url}")
+            logger.info(f"Searching Confluence: {confluence_search_url.url}")
             confluence_search_response = self.session.get(
                 confluence_search_url.url,
                 headers=self.confluence_headers,
@@ -406,11 +407,11 @@ class ConfluenceCrawler(Crawler):
                 elif search_result['type'] == 'blogpost':
                     content = self.process_blogpost(confluence_id, metadata)
                 else:
-                    logging.error(f"Unsupported type: {search_result['type']} id: {search_result['id']}")
+                    logger.error(f"Unsupported type: {search_result['type']} id: {search_result['id']}")
                     continue
 
                 if content is None:
-                    logging.warning(f"Could not find content for id:{search_result['id']} type:{search_result['type']}")
+                    logger.warning(f"Could not find content for id:{search_result['id']} type:{search_result['type']}")
                     continue
 
                 if 'spaceId' in metadata:
@@ -419,7 +420,7 @@ class ConfluenceCrawler(Crawler):
 
                 url = metadata['links']['webui'] if 'links' in metadata and 'webui' in metadata['links'] else doc_id
                 with tempfile.NamedTemporaryFile(suffix=".html", mode='w', delete=False) as f:
-                    logging.debug(f"Writing content for {doc_id} to {f.name}")
+                    logger.debug(f"Writing content for {doc_id} to {f.name}")
                     f.write(content)
                     f.flush()
                     f.close()
@@ -435,7 +436,7 @@ class ConfluenceCrawler(Crawler):
                 if succeeded:
                     count += 1
                 else:
-                    logging.info(f"Error indexing {search_result['type']} {search_result['id']}")
+                    logger.info(f"Error indexing {search_result['type']} {search_result['id']}")
 
             if 'next' in confluence_search_data['_links']:
                 base_url = furl(confluence_search_data['_links']['base'])
@@ -444,7 +445,7 @@ class ConfluenceCrawler(Crawler):
                 base_url.args = next_url.args
                 confluence_search_url = base_url
             else:
-                logging.debug('No next in _links so exiting')
+                logger.debug('No next in _links so exiting')
                 break
 
-        logging.info(f"Index {count} item(s)")
+        logger.info(f"Index {count} item(s)")
