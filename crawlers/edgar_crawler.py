@@ -1,6 +1,8 @@
 import os
 import logging
 
+logger = logging.getLogger(__name__)
+
 from omegaconf import OmegaConf
 from slugify import slugify
 
@@ -21,14 +23,14 @@ from urllib.parse import urlparse
 
 company = "MyCompany"
 email = "me@mycompany.com"
-    
+
 def get_headers() -> Dict[str, str]:
     """
     Get a set of headers to use for HTTP requests.
     """
     headers = {
         "User-Agent": f"{company} {email}",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" 
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
     }
     return headers
 
@@ -39,12 +41,12 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
     dl = Downloader(company, email)
 
     start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')    
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
 
     metadatas = dl.get_filing_metadatas(
         RequestedFilings(ticker_or_cik=ticker, form_type=filing_type, limit=20)
     )
-    filings = [asdict(m) for m in metadatas 
+    filings = [asdict(m) for m in metadatas
                if start_date <= datetime.strptime(m.report_date, '%Y-%m-%d') <= end_date]
 
     for filing in filings:
@@ -60,7 +62,7 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
     return filings
 
 class EdgarCrawler(Crawler):
-    
+
     def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         super().__init__(cfg, endpoint, corpus_key, api_key)
         self.tickers = self.cfg.edgar_crawler.tickers
@@ -85,26 +87,26 @@ class EdgarCrawler(Crawler):
         for ticker in self.tickers:
 
             for filing_type in self.filing_types:
-                logging.info(f"downloading {filing_type}s for company with ticker {ticker}")
+                logger.info(f"downloading {filing_type}s for company with ticker {ticker}")
                 filings = get_filings(ticker, self.start_date, self.end_date, filing_type)
 
                 # no more filings in search universe
                 if len(filings) == 0:
-                    logging.info(f"For {ticker}, no filings found in search universe")
+                    logger.info(f"For {ticker}, no filings found in search universe")
                     continue
                 for filing in filings:
                     url = filing['primary_doc_url']
                     title = ticker + '-' + filing['report_date'] + '-' + filing_type
-                    logging.info(f"indexing document {url}")
+                    logger.info(f"indexing document {url}")
                     metadata = {
-                        'source': 'edgar', 'url': url, 'title': title, 'ticker': ticker, 
+                        'source': 'edgar', 'url': url, 'title': title, 'ticker': ticker,
                         'company': filing['company_name'], 'filing_type': filing_type,
-                        'date': filing['report_date'], 
+                        'date': filing['report_date'],
                         'year': int(datetime.strptime(filing['report_date'], '%Y-%m-%d').year)
                     }
 
                     succeeded = self.indexer.index_file(filing['file_path'], uri=url, metadata=metadata)
                     if not succeeded:
-                        logging.info(f"Indexing failed for url {url}")
+                        logger.warning(f"Indexing failed for url {url}")
 
 

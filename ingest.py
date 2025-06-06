@@ -20,7 +20,7 @@ from core.utils import setup_logging
 app = typer.Typer()
 setup_logging()
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     """
@@ -168,7 +168,7 @@ def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     :return:
     """
     old_value = cfg.get(key, None)
-    logging.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
+    logger.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
     OmegaConf.update(cfg, key, new_value)
 
 
@@ -227,7 +227,7 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         for pattern, section in patterns.items():
             match = re.match(pattern, k)
             if match:
-                logging.debug(f"Matched '{k}' with '{pattern}'")
+                logger.debug(f"Matched '{k}' with '{pattern}'")
                 key = match.group(1)
                 update_omega_conf(cfg, reason, f'{section}.{key.lower()}', v)
                 break
@@ -246,7 +246,7 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     try:
         cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
     except Exception as e:
-        logging.error(f"Error loading config file ({config_file}): {e}")
+        logger.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
 
     if not cfg.get('vectara', None):
@@ -287,13 +287,13 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             logger.error(f"Provided secrets path '{secrets_path}' does not exist")
             raise typer.Exit(1)
         logger.info(f"Using provided secrets path: {secrets_path}")
-    
+
     # add .env params, by profile
     logger.info(f"Loading {secrets_path}")
     with open(secrets_path, "r") as f:
         env_dict = toml.load(f)
     if profile not in env_dict:
-        logging.error(f'Profile "{profile}" not found in secrets.toml')
+        logger.error(f'Profile "{profile}" not found in secrets.toml')
         exit(1)
     logger.info(f'Using profile "{profile}" from secrets.toml')
     

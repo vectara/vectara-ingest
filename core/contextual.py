@@ -4,11 +4,13 @@ from omegaconf import OmegaConf
 
 from core.models import generate, get_api_key
 
+logger = logging.getLogger(__name__)
+
 class ContextualChunker():
     def __init__(
-            self, 
+            self,
             cfg: OmegaConf,
-            contextual_model_config: str, 
+            contextual_model_config: str,
             whole_document: str
         ):
         self.contextual_model_config = contextual_model_config
@@ -33,7 +35,7 @@ class ContextualChunker():
             context = generate(self.cfg, system_prompt, prompt, self.contextual_model_config)
             return chunk + "\n" + context
         except Exception as e:
-            logging.info(f"Failed to summarize table text: {e}")
+            logger.error(f"Failed to summarize table text: {e}")
             return ""
 
     def parallel_transform(self, texts, max_workers=None):
@@ -43,17 +45,17 @@ class ContextualChunker():
         Args:
             texts (List[str]): List of text segments to process.
             max_workers (int, optional): The maximum number of threads to use. Defaults to None, which lets ThreadPoolExecutor decide.
-        
+
         Returns:
             List[str]: The list of transformed text segments.
         """
         results = [None] * len(texts)  # Placeholder for transformed texts
-        
+
         # Using ThreadPoolExecutor to parallelize cc.transform calls
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit tasks for all text segments along with their indices
             future_to_index = {executor.submit(self.transform, text): idx for idx, text in enumerate(texts)}
-            
+
             # Collect results as they complete
             for future in as_completed(future_to_index):
                 idx = future_to_index[future]
@@ -61,6 +63,6 @@ class ContextualChunker():
                     results[idx] = future.result()
                 except Exception as e:
                     # Handle exceptions if needed; for now, we just log them and leave that index as None
-                    logging.error(f"Error transforming text at index {idx}: {e}")
+                    logger.error(f"Error transforming text at index {idx}: {e}")
         
         return results

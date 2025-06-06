@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import json
@@ -83,7 +84,7 @@ class DiscourseCrawler(Crawler):
 
     def crawl(self) -> None:
         topics = self.get_topics()
-        logging.info(f"Indexing {len(topics)} topics from Discourse")
+        logger.info(f"Indexing {len(topics)} topics from Discourse")
         for topic in topics:
             posts = self.index_posts(topic)
-            logging.info(f"Indexed {len(posts)} posts for topic {topic['id']} from Discourse")
+            logger.info(f"Indexed {len(posts)} posts for topic {topic['id']} from Discourse")

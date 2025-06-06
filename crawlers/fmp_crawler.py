@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import json
 
 from typing import Dict, Any
@@ -11,7 +12,7 @@ from core.utils import create_session_with_retries, configure_session_for_ssl
 # Crawler for financial information using the financialmodelingprep.com service
 # To use this crawler you have to have an fmp API_key in your secrets.toml profile
 class FmpCrawler(Crawler):
-    
+
     def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         '''
         Initialize the FmpCrawler
@@ -33,12 +34,12 @@ class FmpCrawler(Crawler):
         try:
             succeeded = self.indexer.index_document(document)
             if succeeded:
-                logging.info(f"Indexed {document['id']}")
+                logger.info(f"Indexed {document['id']}")
             else:
-                logging.info(f"Error indexing issue {document['id']}")
+                logger.info(f"Error indexing issue {document['id']}")
             return succeeded
         except Exception as e:
-            logging.info(f"Error during indexing of {document['id']}: {e}")
+            logger.info(f"Error during indexing of {document['id']}: {e}")
             return False
 
     def index_10k(self, ticker: str, company_name: str, year: int) -> None:
@@ -56,7 +57,7 @@ class FmpCrawler(Crawler):
             try:
                 response = self.session.get(url)
             except Exception as e:
-                logging.info(f"Error getting transcript for {ticker}: {e}")
+                logger.info(f"Error getting transcript for {ticker}: {e}")
                 continue
             if response.status_code == 200:
                 data = response.json()
@@ -64,7 +65,7 @@ class FmpCrawler(Crawler):
                 rel_filings = [f for f in filings if f['acceptedDate'][:4] == str(year)]
                 url = rel_filings[0]['finalLink'] if len(rel_filings)>0 else None
                 metadata = {
-                    'source': ticker.lower(), 'title': doc_title, 'ticker': ticker, 'company name': company_name, 'year': year, 
+                    'source': ticker.lower(), 'title': doc_title, 'ticker': ticker, 'company name': company_name, 'year': year,
                     'type': 'filing', 'filing_type': '10-K', 'url': url
                 }
                 document: Dict[str, Any] = {
@@ -100,13 +101,13 @@ class FmpCrawler(Crawler):
                 try:
                     response = self.session.get(url)
                 except Exception as e:
-                    logging.info(f"Error getting transcript for {company_name} quarter {quarter} of {year}: {e}")
+                    logger.info(f"Error getting transcript for {company_name} quarter {quarter} of {year}: {e}")
                     continue
                 if response.status_code == 200:
                     for transcript in response.json():
                         title = f"Earnings call transcript for {company_name}, quarter {quarter} of {year}"
                         metadata = {
-                            'source': ticker.lower(), 'title': title, 'ticker': ticker, 'company name': company_name, 
+                            'source': ticker.lower(), 'title': title, 'ticker': ticker, 'company name': company_name,
                             'year': year, 'quarter': quarter, 'type': 'transcript'
                         }
                         document = {
@@ -120,7 +121,7 @@ class FmpCrawler(Crawler):
                             ]
                         }
                         self.index_doc(document)
-    
+
     def crawl(self) -> None:
 
         for ticker in self.tickers:
@@ -129,23 +130,22 @@ class FmpCrawler(Crawler):
             try:
                 response = self.session.get(url)
             except Exception as e:
-                logging.info(f"Error getting transcript for {ticker}: {e}")
+                logger.info(f"Error getting transcript for {ticker}: {e}")
                 continue
             if response.status_code == 200:
                 data = response.json()
                 company_name = data[0]['companyName']
-                logging.info(f"Processing {company_name}")
+                logger.info(f"Processing {company_name}")
             else:
-                logging.info(f"Can't get company profile for {ticker} - skipping")
+                logger.info(f"Can't get company profile for {ticker} - skipping")
                 continue
 
             # index 10-K for ticker in date range
             if self.cfg.fmp_crawler.get("index_10k", True):
-                logging.info("Getting 10-Ks and indexing content into Vectara")
+                logger.info("Getting 10-Ks and indexing content into Vectara")
                 self.index_10k(ticker, company_name, self.start_year)
 
             # Index earnings call transcript
             if self.cfg.fmp_crawler.get("index_call_transcripts", True):
-                logging.info("Getting call transcripts and indexing into Vectara")
+                logger.info("Getting call transcripts and indexing into Vectara")
                 self.index_call_transcripts(ticker, company_name, self.start_year)
-
