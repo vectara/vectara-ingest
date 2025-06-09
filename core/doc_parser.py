@@ -1,4 +1,3 @@
-logger = logging.getLogger(__name__)
 import logging
 from typing import List, Tuple, Iterator
 import time
@@ -37,6 +36,16 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 MAX_VERBOSE_LENGTH = 1000
+
+# Suppress warnings from PyTorch about pin_memory when no accelerator is found
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=".*pin_memory.*no accelerator is found.*"
+)
+
+logger = logging.getLogger(__name__)
+
 
 class DocumentParser():
     def __init__(
@@ -508,10 +517,11 @@ class UnstructuredDocumentParser(DocumentParser):
         mime_type = detect_file_type(filename)
         partition_kwargs = {}
         if mode == 'text':
-            partition_kwargs = {} if self.chunking_strategy == 'none' else {
-                "chunking_strategy": self.chunking_strategy,
-                "max_characters": self.chunk_size
-            }
+            if self.chunking_strategy != 'none':
+                partition_kwargs = {
+                    "chunking_strategy": self.chunking_strategy,
+                    "max_characters": self.chunk_size,
+                }
         else:
             partition_kwargs = {'infer_table_structure': True }
             if mime_type == 'application/pdf':

@@ -1280,7 +1280,8 @@ class Indexer:
             except Exception as e:
                 self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
-        self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
+        if len(images) > 0:
+            self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
 
     def index_media_file(self, file_path, metadata=None):

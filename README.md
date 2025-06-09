@@ -282,6 +282,14 @@ doc_processing:
   # use OCR when parsing documents (Docling only)
   do_ocr: true
 
+  # Optional parameters for EasyOCR if used (partial list)
+  easy_ocr_config:
+    download_enabled: true
+    use_gpu: false
+    lang: ['en', 'fr', 'de']
+    confidence_threshold: 0.5
+    force_full_page_ocr: false
+
   # Whether or not to summarize image content using GPT-4o vision 
   # When using this feature, you need to list the OPENAI_API_KEY or ANTHRPIC_API_KEY in your `secrets.toml` 
   # under a special profile called `general`.
