@@ -50,8 +50,8 @@ spreadsheet_extensions={
 
 
 
-def setup_logging():
-    log_level_str = os.getenv("LOGGING_LEVEL", "INFO").upper()
+def setup_logging(level='INFO'):
+    log_level_str = os.getenv("LOGGING_LEVEL", level).upper()
 
     # Map string to logging level, fallback to INFO if invalid
     log_level = getattr(logging, log_level_str, logging.INFO)
