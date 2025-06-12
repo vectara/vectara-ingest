@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from typing import List, Tuple, Iterator
 import time
 import pandas as pd
@@ -35,8 +36,14 @@ nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-logger = logging.getLogger(__name__)
 MAX_VERBOSE_LENGTH = 1000
+
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=".*pin_memory.*no accelerator is found.*"
+)
+
 
 class DocumentParser():
     def __init__(
@@ -508,10 +515,11 @@ class UnstructuredDocumentParser(DocumentParser):
         mime_type = detect_file_type(filename)
         partition_kwargs = {}
         if mode == 'text':
-            partition_kwargs = {} if self.chunking_strategy == 'none' else {
-                "chunking_strategy": self.chunking_strategy,
-                "max_characters": self.chunk_size
-            }
+            if self.chunking_strategy != 'none':
+                partition_kwargs = {
+                    "chunking_strategy": self.chunking_strategy,
+                    "max_characters": self.chunk_size,
+                }
         else:
             partition_kwargs = {'infer_table_structure': True }
             if mime_type == 'application/pdf':

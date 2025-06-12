@@ -33,7 +33,7 @@ from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
-    get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path
+    get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path, doc_extensions
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
@@ -53,6 +53,20 @@ get_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+def supported_by_index_file(filename:str) -> bool:
+    """
+    Checks if the file type, determined by its extension, is supported for indexing by the index_file method.
+
+    Args:
+        filename: The name of the file to check.
+
+    Returns:
+        True if the file extension is in the list of supported document extensions (doc_extensions),
+        False otherwise.
+    """
+    _, extension = os.path.splitext(filename)
+    return extension.lower() in doc_extensions
 
 # helper function to add table_extraction and chunking_strategy to payload
 def _get_chunking_config(
@@ -1042,6 +1056,9 @@ class Indexer:
 
         return self.index_document(document, use_core_indexing)
 
+
+
+
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
@@ -1285,7 +1302,8 @@ class Indexer:
             except Exception as e:
                 self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
-        self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
+        if len(images) > 0:
+            self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
 
     def index_media_file(self, file_path, metadata=None):
