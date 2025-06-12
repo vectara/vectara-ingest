@@ -54,7 +54,7 @@ unstructured-inference==0.8.10
 transformers[torch]==4.51.3
 safetensors[torch]==0.4.3
 datasets==2.20.0
-torch==2.4.1
+torch==2.7.1
 pydub==0.25.1
 pytube==15.0.0
 youtube-transcript-api==0.6.2
@@ -67,7 +67,7 @@ cryptography==44.0.0
 python-pptx==1.0.2
 python-docx==1.1.2
 Pillow==10.4.0
-docling==2.34.0
+docling==2.36.1
 llama-parse==0.6.2
 gmft==0.4.0
 pypdf >= 3.0.0

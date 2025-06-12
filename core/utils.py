@@ -44,6 +44,12 @@ doc_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".p
 archive_extensions = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
 binary_extensions = archive_extensions + img_extensions + doc_extensions
 
+spreadsheet_extensions={
+    ".csv", ".xls", ".xlsx"
+}
+
+
+
 def setup_logging():
     log_level_str = os.getenv("LOGGING_LEVEL", "INFO").upper()
 
