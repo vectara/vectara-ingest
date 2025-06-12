@@ -34,7 +34,7 @@ from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers
+    doc_extensions, get_headers
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
@@ -46,6 +46,28 @@ import tempfile
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
+
+get_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
+def supported_by_index_file(filename:str) -> bool:
+    """
+    Checks if the file type, determined by its extension, is supported for indexing by the index_file method.
+
+    Args:
+        filename: The name of the file to check.
+
+    Returns:
+        True if the file extension is in the list of supported document extensions (doc_extensions),
+        False otherwise.
+    """
+    _, extension = os.path.splitext(filename)
+    return extension.lower() in doc_extensions
 
 # helper function to add table_extraction and chunking_strategy to payload
 def _get_chunking_config(
@@ -1275,7 +1297,8 @@ class Indexer:
             except Exception as e:
                 self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
-        self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
+        if len(images) > 0:
+            self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
 
     def index_media_file(self, file_path, metadata=None):
