@@ -40,6 +40,7 @@ requirements:
     - libxrender  # [linux]
     - libstdcxx-ng  # [linux]
     - libgcc-ng  # [linux]
+    - libgl  # [linux]
     
     # System dependencies with conda-forge channel specified
     - conda-forge::firefox
