@@ -12,6 +12,8 @@ class DataFrameMetadata(object):
     def __init__(self, sheet_names: list[str] | None):
         self.sheet_names = sheet_names
 
+    def title(self):
+        raise NotImplementedError('Method not implemented')
 
 class SimpleDataFrameMetadata(DataFrameMetadata):
     def __init__(self, sheet_names: list[str] | None):
@@ -21,6 +23,9 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
     def __init__(self, file_path: str):
         self.file_path = file_path
         super().__init__(None)
+
+    def title(self):
+        return os.path.basename(self.file_path)
 
     def open_dataframe(self, sheet_name: str = None):
         if not sheet_name is None:
@@ -50,7 +55,8 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
             f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel.")
         return pd.read_excel(self.file_path, sheet_name=sheet_name)
 
-
+    def title(self):
+        return os.path.basename(self.file_path)
 
 supported_dataframe_extensions = {
     '.csv': 'csv',
@@ -107,6 +113,14 @@ class DataframeParser(object):
         self.table_summarizer:TableSummarizer = table_summarizer
 
     def parse_table_dataframe(self, df:pd.DataFrame, name:str):
+        if self.truncate_table_if_over_max:
+            if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
+                logging.warning(
+                    f"Table size is too large for {name} in 'table' mode. "
+                    f"Table will be truncated to no more than {self.max_rows} rows and {self.max_cols} columns."
+                )
+                df = df.iloc[:self.max_rows, :self.max_cols]
+
         table_summary = self.table_summarizer.summarize_table_text(df)
         if table_summary:
             cols, rows = html_table_to_header_and_rows(df.to_html(index=False))
@@ -126,20 +140,13 @@ class DataframeParser(object):
     def parse_element_dataframe(self, df:pd.DataFrame):
         pass
 
-    def parse_dataframe(self, df: pd.DataFrame):
-        if self.mode == 'table':
-            self.parse_table_dataframe(df)
-        elif self.mode == 'element':
-            self.parse_element_dataframe(df)
-        pass
-
     def parse_table(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
         tables = []
         texts = []
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
             df = dataframe_metadata.open_dataframe()
-            parse_table_result = self.parse_table_dataframe(df, 'csv') #TODO: Fix this
+            parse_table_result = self.parse_table_dataframe(df, dataframe_metadata.title())
             if parse_table_result:
                 text, table = parse_table_result
                 tables.append(table)
@@ -151,7 +158,7 @@ class DataframeParser(object):
             else:
                 all_sheet_names = dataframe_metadata.sheet_names
             for sheet_name in all_sheet_names:
-                logger.info(f"parse() - processing {sheet_name}")
+                logger.info(f"parse_table() - processing {sheet_name}")
                 df = dataframe_metadata.open_dataframe(sheet_name)
                 parse_table_result = self.parse_table_dataframe(df, sheet_name)
                 if parse_table_result:
@@ -165,7 +172,7 @@ class DataframeParser(object):
             doc_id=doc_id,
             texts=texts,
             tables=tables,
-            doc_title="name", #TODO: Figure out where this comes from
+            doc_title=dataframe_metadata.title(),
             doc_metadata=metadata
         )
 
@@ -174,6 +181,8 @@ class DataframeParser(object):
     def parse(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
         if self.mode == 'table':
             self.parse_table(dataframe_metadata, doc_id, metadata)
+        elif self.mode == 'element':
+            self.parse_element(dataframe_metadata, doc_id, metadata)
 
 
 

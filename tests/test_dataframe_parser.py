@@ -1,7 +1,9 @@
 import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock
 
+import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
 from core.dataframe_parser import determine_dataframe_type, load_dataframe_metadata, DataframeParser
@@ -66,8 +68,8 @@ class TestDataFrameParser(unittest.TestCase):
             df = metadata.open_dataframe(expected_sheet_name)
             self.assertIsNotNone(df, f'Expected df with sheet {expected_sheet_name}')
 
-    def test_dataframe_parser_csv(self):
-        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_csv.yml')
+    def test_dataframe_parser_csv_table_mode(self):
+        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
         input_path = os.path.join('data', 'dataframe', 'test.csv')
         metadata = load_dataframe_metadata(input_path)
         parser_config: DictConfig = cfg.get("csv_parser")
@@ -83,7 +85,7 @@ class TestDataFrameParser(unittest.TestCase):
         expected_metadata = {
             'source': __name__
         }
-        expected_doc_title = "name"  # TODO: Fix this it's absolutely not correct
+        expected_doc_title = "test.csv"
         expected_tables = [
             {
                 'headers': ['first_name', 'last_name', 'description'],
@@ -106,8 +108,8 @@ class TestDataFrameParser(unittest.TestCase):
             doc_metadata=expected_metadata
         )
 
-    def test_dataframe_parser_xlsx(self):
-        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx.yml')
+    def test_dataframe_parser_xlsx_table_mode(self):
+        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
         input_path = os.path.join('data', 'dataframe', 'test.xlsx')
         metadata = load_dataframe_metadata(input_path)
         parser_config: DictConfig = cfg.get("csv_parser")
@@ -124,7 +126,7 @@ class TestDataFrameParser(unittest.TestCase):
         expected_metadata = {
             'source': __name__
         }
-        expected_doc_title = "name"  # TODO: Fix this it's absolutely not correct
+        expected_doc_title = "test.xlsx"
         expected_tables = [
             {
                 'headers': ['first_name', 'last_name', 'instrument'],
@@ -159,3 +161,60 @@ class TestDataFrameParser(unittest.TestCase):
             doc_title=expected_doc_title,
             doc_metadata=expected_metadata
         )
+
+    def test_dataframe_parser_csv_table_mode_truncate(self):
+        input_path = os.path.join('data', 'dataframe', 'test_should_be_truncated.csv')
+        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode_should_truncate.yml')
+        metadata = load_dataframe_metadata(input_path)
+        parser_config: DictConfig = cfg.get("csv_parser")
+
+        mock_indexer: Indexer = MagicMock()
+        mock_table_summarizer: TableSummarizer = MagicMock()
+
+        expected_doc_id = "asdf9asdfa3"
+        expected_texts = [
+            "This is a summary."
+        ]
+        mock_table_summarizer.summarize_table_text.side_effect = expected_texts
+        expected_metadata = {
+            'source': __name__
+        }
+        expected_doc_title = "test_should_be_truncated.csv"
+
+        expected_csv_table = {
+            'headers': [],
+            'rows': [],
+            'summary': 'This is a summary.'
+        }
+        import csv
+        with open(input_path, 'r') as f:
+            reader = csv.reader(f)
+            index=0
+            for row in reader:
+                if index == 0:
+                    expected_csv_table['headers'] = row
+                else:
+                    expected_csv_table['rows'].append(row)
+                if index == 500:
+                    break
+
+                index+=1
+
+        expected_tables = [
+            expected_csv_table
+        ]
+
+        parser: DataframeParser = DataframeParser(cfg, parser_config, mock_indexer, mock_table_summarizer)
+        parser.parse(metadata, expected_doc_id, expected_metadata)
+
+        mock_indexer.index_segments.assert_called_once_with(
+            doc_id=expected_doc_id,
+            texts=expected_texts,
+            tables=expected_tables,
+            doc_title=expected_doc_title,
+            doc_metadata=expected_metadata
+        )
+
+
+
+
