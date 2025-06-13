@@ -15,56 +15,37 @@ class DataFrameMetadata(object):
     def title(self):
         raise NotImplementedError('Method not implemented')
 
+    def open_dataframe(self, parser_config:DictConfig, sheet_name:str=None):
+        raise NotImplementedError('Method not implemented')
+
 class SimpleDataFrameMetadata(DataFrameMetadata):
     def __init__(self, sheet_names: list[str] | None):
         super().__init__(sheet_names)
 
-class CsvDataFrameMetadata(SimpleDataFrameMetadata):
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        super().__init__(None)
 
-    def title(self):
-        return os.path.basename(self.file_path)
-
-    def open_dataframe(self, sheet_name: str = None):
-        if not sheet_name is None:
-            logger.warning(
-                f"CsvDataFrameMetadata:Sheet Name '{sheet_name}' requested for csv '{self.file_path}'. Ignoring")
-
-        logger.debug(
-            f"CsvDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_csv.")
-        return pd.read_csv(self.file_path)
-
-
-class SheetBasedDataFrameMetadata(DataFrameMetadata):
-    def __init__(self, sheet_names: list[str] | None):
-        super().__init__(sheet_names)
-
-
-class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        logger.debug(
-            f"XlsBasedDataFrameMetadata:__init__('{file_path}') - Loading as pd.ExcelFile to retrieve sheet names.")
-        xls = pd.ExcelFile(file_path)
-        super().__init__(xls.sheet_names)
-
-    def open_dataframe(self, sheet_name: str = None):
-        logger.debug(
-            f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel.")
-        return pd.read_excel(self.file_path, sheet_name=sheet_name)
-
-    def title(self):
-        return os.path.basename(self.file_path)
-
+separator_by_extension = {
+    '.csv':',',
+    '.tsv':'\t',
+    '.psv':'|',
+    '.pipe':'|'
+}
 supported_dataframe_extensions = {
     '.csv': 'csv',
     '.tsv': 'csv',
     '.xls': 'xls',
     '.xlsx': 'xls',
+    '.pipe': 'csv',
+    '.psv': 'csv'
 }
 
+def get_separator_by_file_name(file_name:str) ->str:
+    _, extension = os.path.splitext(file_name)
+    extension = extension.lower()
+    if extension in separator_by_extension:
+        return separator_by_extension[extension]
+    else:
+        logger.warning(f"get_separator_by_file_name(file_name = '{file_name}') - Unknown extension '{extension}' defaulting to ','")
+        return ','
 
 def is_dataframe_supported(file_path: str):
     _, extension = os.path.splitext(file_path)
@@ -80,6 +61,53 @@ def determine_dataframe_type(file_path: str):
     else:
         logger.warning(f"determine_dataframe_type('{file_path}) - Extension '{extension}' not supported.")
         return None
+
+class CsvDataFrameMetadata(SimpleDataFrameMetadata):
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        super().__init__(None)
+
+    def title(self):
+        return os.path.basename(self.file_path)
+
+    def open_dataframe(self, parser_config:DictConfig, sheet_name: str = None):
+        column_types: dict[str, str] = parser_config.get("column_types", {})
+        separator:str = parser_config.get("separator", None)
+
+        if not separator:
+            separator = get_separator_by_file_name(self.file_path)
+
+        if not sheet_name is None:
+            logger.warning(
+                f"CsvDataFrameMetadata:Sheet Name '{sheet_name}' requested for csv '{self.file_path}'. Ignoring")
+
+        logger.debug(
+            f"CsvDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_csv.")
+        return pd.read_csv(self.file_path, sep=separator)
+
+
+class SheetBasedDataFrameMetadata(DataFrameMetadata):
+    def __init__(self, sheet_names: list[str] | None):
+        super().__init__(sheet_names)
+
+
+class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        logger.debug(
+            f"XlsBasedDataFrameMetadata:__init__('{file_path}') - Loading as pd.ExcelFile to retrieve sheet names.")
+        xls = pd.ExcelFile(file_path)
+        super().__init__(xls.sheet_names)
+
+    def open_dataframe(self, parser_config:DictConfig, sheet_name: str = None):
+        logger.debug(
+            f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel.")
+        return pd.read_excel(self.file_path, sheet_name=sheet_name)
+
+    def title(self):
+        return os.path.basename(self.file_path)
+
+
 
 
 def load_dataframe_metadata(file_path: str, data_frame_type: str | None = None):
@@ -104,13 +132,19 @@ class DataframeParser(object):
     def __init__(self, cfg: DictConfig, parser_config: DictConfig, indexer:Indexer, table_summarizer:TableSummarizer):
         self.cfg: DictConfig = cfg
         self.parser_config: DictConfig = parser_config
-        self.truncate_table_if_over_max = self.parser_config.get("truncate_table_if_over_max", True)
-        self.max_rows = int(self.parser_config.get("max_rows", 500))  ### TEMP 10000
-        self.max_cols = int(self.parser_config.get("max_cols", 20))  ### TEMP 500
-        self.sheet_names = self.parser_config.get("sheet_names", [])
-        self.mode = self.parser_config.get("mode", "table")
+        self.truncate_table_if_over_max: bool = self.parser_config.get("truncate_table_if_over_max", True)
+        self.max_rows: int = int(self.parser_config.get("max_rows", 500))  ### TEMP 10000
+        self.max_cols: int = int(self.parser_config.get("max_cols", 20))  ### TEMP 500
+        self.sheet_names: list[str] = self.parser_config.get("sheet_names", [])
+        self.mode: str = self.parser_config.get("mode", "table")
         self.indexer:Indexer = indexer
         self.table_summarizer:TableSummarizer = table_summarizer
+
+        self.text_columns: list[str] = list(self.parser_config.get("text_columns", []))
+        self.title_column: str = self.parser_config.get("title_column", None)
+        self.metadata_columns: list[str] = list(self.parser_config.get("metadata_columns", []))
+        self.doc_id_columns: list[str] = list(self.parser_config.get("doc_id_columns", []))
+
 
     def parse_table_dataframe(self, df:pd.DataFrame, name:str):
         if self.truncate_table_if_over_max:
@@ -145,7 +179,7 @@ class DataframeParser(object):
         texts = []
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
-            df = dataframe_metadata.open_dataframe()
+            df = dataframe_metadata.open_dataframe(self.parser_config)
             parse_table_result = self.parse_table_dataframe(df, dataframe_metadata.title())
             if parse_table_result:
                 text, table = parse_table_result
@@ -159,7 +193,7 @@ class DataframeParser(object):
                 all_sheet_names = dataframe_metadata.sheet_names
             for sheet_name in all_sheet_names:
                 logger.info(f"parse_table() - processing {sheet_name}")
-                df = dataframe_metadata.open_dataframe(sheet_name)
+                df = dataframe_metadata.open_dataframe(self.parser_config, sheet_name)
                 parse_table_result = self.parse_table_dataframe(df, sheet_name)
                 if parse_table_result:
                     text, table = parse_table_result
@@ -170,10 +204,10 @@ class DataframeParser(object):
 
         self.indexer.index_segments(
             doc_id=doc_id,
-            texts=texts,
-            tables=tables,
+            doc_metadata=metadata,
             doc_title=dataframe_metadata.title(),
-            doc_metadata=metadata
+            tables=tables,
+            texts=texts
         )
 
 

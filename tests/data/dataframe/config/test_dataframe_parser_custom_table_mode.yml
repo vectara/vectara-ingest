@@ -1,0 +1,14 @@
+test:
+  input_path:
+    - data
+    - dataframe
+    - test.csv
+
+csv_parser: {}
+#  separator: '~~~'
+
+doc_processing:
+  model_config:
+    text: {}
+
+vectara: {}

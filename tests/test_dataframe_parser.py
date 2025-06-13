@@ -3,19 +3,33 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
+import yaml
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
+from dataclasses import dataclass
 
 from core.dataframe_parser import determine_dataframe_type, load_dataframe_metadata, DataframeParser
 from core.indexer import Indexer
 from core.summary import TableSummarizer
-from core.utils import setup_logging
+from core.utils import setup_logging, load_config
 
 
-def load_config(*parts) -> DictConfig:
+def test_load_config(*parts:str) -> DictConfig:
     config_path = os.path.join(*parts)
-    return DictConfig(OmegaConf.load(config_path))
+    return load_config(config_path)
 
+@dataclass
+class ExpectedIndexSegmentsCall:
+    doc_id: str
+    doc_metadata: dict[str, str]
+    doc_title: str
+    tables: list[dict]
+    texts: list[str]
+
+@dataclass
+class DataframeTestCase:
+    input_path: list[str]
+    expected_index_segments_call: ExpectedIndexSegmentsCall
 
 class TestDataFrameParser(unittest.TestCase):
 
@@ -68,152 +82,51 @@ class TestDataFrameParser(unittest.TestCase):
             df = metadata.open_dataframe(expected_sheet_name)
             self.assertIsNotNone(df, f'Expected df with sheet {expected_sheet_name}')
 
-    def test_dataframe_parser_csv_table_mode(self):
-        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
-        input_path = os.path.join('data', 'dataframe', 'test.csv')
+
+    def run_dataframe_parser_test(self, *test_config_path:str):
+        config = test_load_config(*test_config_path)
+        self.assertIn('test', config, f"Test configuration is missing 'test' element.")
+
+        # Validate against the test schema
+        dataframe_testcase:OmegaConf = OmegaConf.structured(DataframeTestCase)
+        OmegaConf.merge(dataframe_testcase, config.get('test'))
+
+        test_config = OmegaConf.to_object(config.get('test'))
+
+        expected_index_segments_call: dict = test_config.get('expected_index_segments_call')
+        expected_doc_id = expected_index_segments_call.get('doc_id')
+        expected_metadata = expected_index_segments_call.get('doc_metadata')
+
+        # expected_doc_title = 'test.tsv'
+        input_path_parts = test_config.get('input_path')
+        input_path = os.path.join(*input_path_parts)
         metadata = load_dataframe_metadata(input_path)
-        parser_config: DictConfig = cfg.get("csv_parser")
+        parser_config: DictConfig = config.get("csv_parser")
 
         mock_indexer: Indexer = MagicMock()
         mock_table_summarizer: TableSummarizer = MagicMock()
+        mock_table_summarizer.summarize_table_text.side_effect=expected_index_segments_call['texts']
 
-        expected_doc_id = "asdf9asdfa3"
-        expected_texts = [
-            "This is a summary."
-        ]
-        mock_table_summarizer.summarize_table_text.side_effect = expected_texts
-        expected_metadata = {
-            'source': __name__
-        }
-        expected_doc_title = "test.csv"
-        expected_tables = [
-            {
-                'headers': ['first_name', 'last_name', 'description'],
-                'rows': [
-                    ['example', 'user', 'this is an example user'],
-                    ['admin', 'user', 'this is an admin user']
-                ],
-                'summary': 'This is a summary.'
-            }
-        ]
-
-        parser: DataframeParser = DataframeParser(cfg, parser_config, mock_indexer, mock_table_summarizer)
+        parser: DataframeParser = DataframeParser(config, parser_config, mock_indexer, mock_table_summarizer)
         parser.parse(metadata, expected_doc_id, expected_metadata)
 
-        mock_indexer.index_segments.assert_called_once_with(
-            doc_id=expected_doc_id,
-            texts=expected_texts,
-            tables=expected_tables,
-            doc_title=expected_doc_title,
-            doc_metadata=expected_metadata
-        )
+        mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
+
+
+    def test_dataframe_parser_csv_table_mode(self):
+        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
+
+    def test_dataframe_parser_tsv_table_mode_default(self):
+        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_tsv_table_mode.yml')
+
+    def test_dataframe_parser_pipe_table_mode_default(self):
+        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_pipe_table_mode.yml')
 
     def test_dataframe_parser_xlsx_table_mode(self):
-        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
-        input_path = os.path.join('data', 'dataframe', 'test.xlsx')
-        metadata = load_dataframe_metadata(input_path)
-        parser_config: DictConfig = cfg.get("csv_parser")
-
-        mock_indexer: Indexer = MagicMock()
-        mock_table_summarizer: TableSummarizer = MagicMock()
-
-        expected_doc_id = "asdf9asdfa3"
-        expected_texts = [
-            "This is a table about the band Aerosmith.",
-            "This is a table about the band Bon Jovi."
-        ]
-        mock_table_summarizer.summarize_table_text.side_effect = expected_texts
-        expected_metadata = {
-            'source': __name__
-        }
-        expected_doc_title = "test.xlsx"
-        expected_tables = [
-            {
-                'headers': ['first_name', 'last_name', 'instrument'],
-                'rows': [
-                    ['steven', 'tyler', 'piano'],
-                    ['joe', 'perry', 'guitar'],
-                    ['brad', 'whitford', 'guitar'],
-                    ['joey', 'kramer', 'drummer'],
-                    ['tom', 'hamilton', 'guitar']
-                ],
-                'summary': 'This is a table about the band Aerosmith.'
-            },
-            {
-                'headers': ['first_name', 'last_name', 'instrument'],
-                'rows': [
-                    ['jon', 'bon jovi', 'guitar'],
-                    ['richie', 'ssambora', 'guitar'],
-                    ['dave', 'sabo', 'guitar'],
-                    ['tico', 'torres', 'drummer']
-                ],
-                'summary': 'This is a table about the band Bon Jovi.'
-            }
-        ]
-
-        parser: DataframeParser = DataframeParser(cfg, parser_config, mock_indexer, mock_table_summarizer)
-        parser.parse(metadata, expected_doc_id, expected_metadata)
-
-        mock_indexer.index_segments.assert_called_once_with(
-            doc_id=expected_doc_id,
-            texts=expected_texts,
-            tables=expected_tables,
-            doc_title=expected_doc_title,
-            doc_metadata=expected_metadata
-        )
+        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
 
     def test_dataframe_parser_csv_table_mode_truncate(self):
-        input_path = os.path.join('data', 'dataframe', 'test_should_be_truncated.csv')
-        cfg: DictConfig = load_config('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode_should_truncate.yml')
-        metadata = load_dataframe_metadata(input_path)
-        parser_config: DictConfig = cfg.get("csv_parser")
-
-        mock_indexer: Indexer = MagicMock()
-        mock_table_summarizer: TableSummarizer = MagicMock()
-
-        expected_doc_id = "asdf9asdfa3"
-        expected_texts = [
-            "This is a summary."
-        ]
-        mock_table_summarizer.summarize_table_text.side_effect = expected_texts
-        expected_metadata = {
-            'source': __name__
-        }
-        expected_doc_title = "test_should_be_truncated.csv"
-
-        expected_csv_table = {
-            'headers': [],
-            'rows': [],
-            'summary': 'This is a summary.'
-        }
-        import csv
-        with open(input_path, 'r') as f:
-            reader = csv.reader(f)
-            index=0
-            for row in reader:
-                if index == 0:
-                    expected_csv_table['headers'] = row
-                else:
-                    expected_csv_table['rows'].append(row)
-                if index == 500:
-                    break
-
-                index+=1
-
-        expected_tables = [
-            expected_csv_table
-        ]
-
-        parser: DataframeParser = DataframeParser(cfg, parser_config, mock_indexer, mock_table_summarizer)
-        parser.parse(metadata, expected_doc_id, expected_metadata)
-
-        mock_indexer.index_segments.assert_called_once_with(
-            doc_id=expected_doc_id,
-            texts=expected_texts,
-            tables=expected_tables,
-            doc_title=expected_doc_title,
-            doc_metadata=expected_metadata
-        )
+        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode_should_truncate.yml')
 
 
 
