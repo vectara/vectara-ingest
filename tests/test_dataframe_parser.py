@@ -18,8 +18,28 @@ def test_load_config(*parts:str) -> DictConfig:
     config_path = os.path.join(*parts)
     return load_config(config_path)
 
+
 @dataclass
 class ExpectedIndexSegmentsCall:
+    """
+    Defines the expected keyword arguments for a single call to the
+    `Indexer.index_segments` method.
+
+    This class is used to specify the precise data that a test expects
+    the DataframeParser to send to the indexing mechanism after processing
+    a dataframe. Each field corresponds to a parameter of the
+    `index_segments` method.
+
+    Attributes:
+        doc_id (str): The expected document ID.
+        doc_metadata (dict[str, str]): The expected document-level metadata.
+        doc_title (str): The expected document title.
+        tables (list[dict]): A list of dictionaries, where each dictionary
+                             represents a table extracted from the dataframe,
+                             likely containing 'headers', 'rows', and 'summary'.
+        texts (list[str]): A list of text segments extracted or generated
+                           from the dataframe, often including summaries.
+    """
     doc_id: str
     doc_metadata: dict[str, str]
     doc_title: str
@@ -28,6 +48,22 @@ class ExpectedIndexSegmentsCall:
 
 @dataclass
 class DataframeTestCase:
+    """
+    Represents the configuration for a single dataframe parser test case.
+
+    This class is used as a schema with OmegaConf to load and validate
+    test configurations from YAML files. It encapsulates the input data
+    for the parser and the expected outcome in terms of what should be
+    passed to the indexer.
+
+    Attributes:
+        input_path (list[str]): A list of path components that, when joined,
+                                form the full path to the input dataframe file
+                                (e.g., a CSV, TSV, or XLSX file).
+        expected_index_segments_call (ExpectedIndexSegmentsCall):
+                                An instance defining the expected arguments
+                                for the call to `Indexer.index_segments`.
+    """
     input_path: list[str]
     expected_index_segments_call: ExpectedIndexSegmentsCall
 
