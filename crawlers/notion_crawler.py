@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 from notion_client import Client
@@ -18,7 +19,7 @@ def format_notion_id(page_id):
 def get_block_text(notion, block):
     text = ""
     block_type = block["type"]
-    
+
     if block_type in block:
         content = block[block_type]
         if "rich_text" in content:
@@ -29,7 +30,7 @@ def get_block_text(notion, block):
                 text += content["title"] + " "
             else:
                 text += content["title"][0].get("plain_text","") + " "
-    
+
     # Check for child blocks
     if block.get("has_children", False):
         try:
@@ -39,8 +40,8 @@ def get_block_text(notion, block):
                     continue
                 text += get_block_text(notion, child) + " "
         except Exception as e:
-            logging.info(f"Failed to get children for block {block['id']}, likely due to permissions: {e}")
-            
+            logger.warning(f"Failed to get children for block {block['id']}, likely due to permissions: {e}")
+
     return text
 
 def list_all_pages(notion: Any):
@@ -70,15 +71,15 @@ def list_all_pages(notion: Any):
 
 def extract_title(page):
     properties = page['properties']
-    
+
     # Case 1: Title property exists
     if 'title' in properties and properties['title']['type'] == 'title':
         return properties['title']['title'][0]['plain_text'] if properties['title']['title'] else ''
-    
+
     # Case 2: Name property exists (common for databases)
     if 'Name' in properties and properties['Name']['type'] == 'title':
         return properties['Name']['title'][0]['plain_text'] if properties['Name']['title'] else ''
-    
+
     # Case 3: Search for any property of type 'title'
     for prop in properties.values():
         if prop['type'] == 'title':
@@ -98,7 +99,7 @@ class NotionCrawler(Crawler):
 
         pages = list_all_pages(notion)
 
-        logging.info(f"Found {len(pages)} pages in Notion.")
+        logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
             try:
@@ -112,11 +113,11 @@ class NotionCrawler(Crawler):
 
             except Exception as e:
                 import traceback
-                logging.error(f"Failed to get all text for page {page['url']}: {e}, traceback={traceback.format_exc()}")
+                logger.error(f"Failed to get all text for page {page['url']}: {e}, traceback={traceback.format_exc()}")
                 continue
 
             if len(all_text)==0:
-                logging.info(f"Skipping notion page {page['url']}, since no text available")
+                logger.info(f"Skipping notion page {page['url']}, since no text available")
                 continue
 
             doc = {
@@ -131,14 +132,14 @@ class NotionCrawler(Crawler):
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:
-                logging.info(f"Indexed notion page {page_id}")
+                logger.info(f"Indexed notion page {page_id}")
             else:
-                logging.info(f"Indexing failed for notion page {page_id}")
-            
+                logger.info(f"Indexing failed for notion page {page_id}")
+
 
         # report pages crawled if specified
         if self.cfg.notion_crawler.get("crawl_report", False):
-            logging.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
+            logger.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
             output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
             docker_path = '/home/vectara/env/pages_indexed.txt'
             filename = os.path.basename(docker_path)  # Extract just the filename
@@ -146,10 +147,10 @@ class NotionCrawler(Crawler):
                 docker_path=docker_path,
                 output_dir=output_dir
             )
-            
+
             if not file_path.endswith(filename):
                 file_path = os.path.join(file_path, filename)
-                
+
             with open(file_path, 'w') as f:
                 for page in sorted(pages, key=lambda x: x['id']):
                     f.write(f"{page['id']}: {page['url']}\n")
@@ -161,7 +162,7 @@ class NotionCrawler(Crawler):
             indexed_ids = set([page['id'] for page in pages])
             existing_docs = self.indexer._list_docs()
             docs_to_remove = [doc for doc in existing_docs if doc['id'] not in indexed_ids]
-            logging.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             for doc in docs_to_remove:
                 self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
@@ -172,11 +173,10 @@ class NotionCrawler(Crawler):
                     docker_path=docker_path,
                     output_dir=output_dir
                 )
-                
+
                 if not file_path.endswith(filename):
                     file_path = os.path.join(file_path, filename)
-                    
+
                 with open(file_path, 'w') as f:
                     for doc in docs_to_remove:
                         f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
-

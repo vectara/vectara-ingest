@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 
 from openai import OpenAI
 from anthropic import Anthropic
@@ -15,22 +16,22 @@ def get_api_key(provider: str, cfg: OmegaConf) -> str:
     elif provider == 'private':
         return cfg.vectara.get("private_api_key", None)
     else:
-        logging.info(f"Unsupported LLM provider: {provider}")
+        logger.warning(f"Unsupported LLM provider: {provider}")
         return None
 
 def generate(
         cfg: OmegaConf,
-        system_prompt: str, 
-        user_prompt: str, 
+        system_prompt: str,
+        user_prompt: str,
         model_config: dict,
         max_tokens: int = 4096
     ) -> str:
     """
     Given a prompt, generate text using the specified model.
     """
-    logging.debug(f"generate() - model_config: {model_config}")
-    logging.debug(f"generate() - system_prompt: {system_prompt}")
-    logging.debug(f"generate() - user_prompt: {user_prompt}")
+    logger.debug(f"generate() - model_config: {model_config}")
+    logger.debug(f"generate() - system_prompt: {system_prompt}")
+    logger.debug(f"generate() - user_prompt: {user_prompt}")
     provider = model_config.get('provider', 'openai')
     model_api_key = get_api_key(provider, cfg)
     if provider == 'openai' or provider=='private':
@@ -55,7 +56,7 @@ def generate(
             system=system_prompt,
             messages=[
                 {
-                    "role": "user", 
+                    "role": "user",
                     "content": [
                         {
                             "type": "text",
@@ -75,9 +76,9 @@ def generate(
 
 def generate_image_summary(
         cfg: OmegaConf,
-        prompt: str, 
-        image_content: str, 
-        model_config: dict, 
+        prompt: str,
+        image_content: str,
+        model_config: dict,
         max_tokens: int = 4096
     ) -> str:
     """
@@ -115,7 +116,7 @@ def generate_image_summary(
         )
         summary = response.choices[0].message.content
         return summary
-    
+
     if provider == 'anthropic':
         client = Anthropic(api_key=model_api_key)
         media_type = get_media_type_from_base64(image_content)
@@ -147,7 +148,7 @@ def generate_image_summary(
         )
         summary = str(response.content[0].text)
         return summary
-    
-    logging.info(f"Unsupported vision LLM provider: {provider}")
+
+    logger.warning(f"Unsupported vision LLM provider: {provider}")
 
 

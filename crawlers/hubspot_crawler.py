@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 import requests
@@ -14,8 +15,8 @@ class HubspotCrawler(Crawler):
         self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
 
     def crawl(self) -> None:
-        logging.info("Starting HubSpot Crawler.")
-        
+        logger.info("Starting HubSpot Crawler.")
+
         # API endpoint for fetching contacts
         api_endpoint_contacts = "https://api.hubapi.com/crm/v3/objects/contacts"
         headers = {
@@ -46,9 +47,9 @@ class HubspotCrawler(Crawler):
                 for contact in contacts:
                     contact_id = contact["id"]
                     engagements, engagements_per_contact = self.get_contact_engagements(contact_id)
-                    logging.info(f"NUMBER OF ENGAGEMENTS: {engagements_per_contact} FOR CONTACT ID: {contact_id}")
-                    
-            
+                    logger.info(f"NUMBER OF ENGAGEMENTS: {engagements_per_contact} FOR CONTACT ID: {contact_id}")
+
+
                     for engagement in engagements:
                         engagement_type = engagement["engagement"].get("type", "UNKNOWN")
                         if engagement_type == "EMAIL" and "text" in engagement["metadata"] and "subject" in engagement["metadata"]:
@@ -57,24 +58,24 @@ class HubspotCrawler(Crawler):
                             email_url = self.get_email_url(contact_id, engagement["engagement"]["id"])
                         else:
                             continue
-                        
+
                         # Skip indexing if email text is empty or None
                         if email_text is None or email_text.strip() == "":
-                            logging.info(f"Email '{email_subject}' has no text. Skipping indexing.")
+                            logger.info(f"Email '{email_subject}' has no text. Skipping indexing.")
                             continue
-                        
+
                         masked_email_text = mask_pii(email_text)
                         cleaned_email_text = clean_email_text(masked_email_text)
-                        
+
                         metadata = {
                             "source": engagement['engagement']['source'],
                             "createdAt": datetime.datetime.utcfromtimestamp(int(engagement['engagement']['createdAt'])/1000).strftime("%Y-%m-%d"),
                         }
-                        
-                        
+
+
                         # Generate a unique doc_id for indexing
                         doc_id = str(contact_id) + "_" + str(engagement['engagement']['id'])
-                        logging.info(f"Indexing email with doc_id '{doc_id}' and subject '{email_subject}'")
+                        logger.info(f"Indexing email with doc_id '{doc_id}' and subject '{email_subject}'")
                         succeeded = self.indexer.index_segments(
                             doc_id=doc_id,
                             texts=[cleaned_email_text],
@@ -85,20 +86,20 @@ class HubspotCrawler(Crawler):
                         )
 
                         if succeeded:
-                            logging.info(f"Email with doc_id '{doc_id}' and subject '{email_subject}' indexed successfully.")
+                            logger.info(f"Email with doc_id '{doc_id}' and subject '{email_subject}' indexed successfully.")
                             email_count += 1
                         else:
-                            logging.error(f"Failed to index email '{email_subject}'.")
+                            logger.error(f"Failed to index email '{email_subject}'.")
 
-                    
-                            
+
+
                 paging_info = contacts_data.get("paging", {})
                 after_contact = paging_info.get("next", {}).get("after")
 
-                logging.info(f"Crawled and indexed {email_count} emails successfully")
+                logger.info(f"Crawled and indexed {email_count} emails successfully")
 
             else:
-                logging.error(f"Error: {response_contacts.status_code} - {response_contacts.text}")
+                logger.error(f"Error: {response_contacts.status_code} - {response_contacts.text}")
 
 
     def get_contact_engagements(self, contact_id: str) -> Tuple[List[Dict[str, Any]], int]:
@@ -125,7 +126,7 @@ class HubspotCrawler(Crawler):
                 else:
                     break
             else:
-                logging.error(f"Error: {response_engagements.status_code} - {response_engagements.text}")
+                logger.error(f"Error: {response_engagements.status_code} - {response_engagements.text}")
                 break
 
         return all_engagements, len(all_engagements)
