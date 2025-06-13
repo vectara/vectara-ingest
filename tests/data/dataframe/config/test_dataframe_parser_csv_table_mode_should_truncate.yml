@@ -1,0 +1,14 @@
+test:
+  input_path:
+    - data
+    - dataframe
+    - test.csv
+
+csv_parser:
+  truncate_table_if_over_max: true
+
+doc_processing:
+  model_config:
+    text: {}
+
+vectara: {}
