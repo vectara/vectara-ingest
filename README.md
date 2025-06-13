@@ -243,8 +243,10 @@ vectara:
   # Which whisper model to use for audio files (relevant for YT, S3 and folder crawlers)
   # Valid values: tiny, base, small, medium or large. Defaults to base.
   whisper_model: the model name for whisper
-  # Whether the session should trust the environment settings. When set to False SSL will not be verified. Do not use in production.
 
+  # user agent to use when crawling web pages; defaults to standard agent.
+  # If your website prevents crawling, you can allow a specific user agent and specify it here.
+  user_agent: "vectara-crawler"
 
 doc_processing:
 

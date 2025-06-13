@@ -32,7 +32,8 @@ from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
-    get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path
+    get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
+    get_headers
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
@@ -44,14 +45,6 @@ import tempfile
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
-
-get_headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate",
-    "Connection": "keep-alive",
-}
 
 # helper function to add table_extraction and chunking_strategy to payload
 def _get_chunking_config(
@@ -274,7 +267,7 @@ class Indexer:
             download_triggered = True
 
         page = context.new_page()
-        page.set_extra_http_headers(get_headers)
+        page.set_extra_http_headers(get_headers(self.cfg))
         page.on('download', on_download)
         try:
             page.goto(url, wait_until="domcontentloaded")
@@ -334,7 +327,7 @@ class Indexer:
         try:
             context = self.browser.new_context()
             page = context.new_page()
-            page.set_extra_http_headers(get_headers)
+            page.set_extra_http_headers(get_headers(self.cfg))
             page.route("**/*", lambda route: route.abort()
             if route.request.resource_type == "image"
             else route.continue_()
@@ -791,7 +784,7 @@ class Indexer:
                 self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
-            response = self.session.get(url, headers=get_headers, stream=True)
+            response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -903,9 +896,6 @@ class Indexer:
 
                 # index images - each image as a separate "document" in Vectara
                 if self.summarize_images:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
                     image_summarizer = ImageSummarizer(
                         cfg=self.cfg,
                         image_model_config=self.model_config.vision
@@ -916,7 +906,7 @@ class Indexer:
                             self.logger.info(f"Found {len(res['images'])} images in {url}")
                         for inx, image in enumerate(res['images']):
                             image_url = image['src']
-                            response = requests.get(image_url, headers=headers, stream=True)
+                            response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
                             if response.status_code != 200:
                                 self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                                 continue

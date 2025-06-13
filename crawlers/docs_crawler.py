@@ -11,7 +11,7 @@ import os
 from core.crawler import Crawler
 from core.utils import (
     create_session_with_retries, binary_extensions, RateLimiter, setup_logging,
-    configure_session_for_ssl, get_docker_or_local_path
+    configure_session_for_ssl, get_docker_or_local_path, get_headers
 )
 from core.spider import run_link_spider_isolated
 from typing import Tuple, Set
@@ -62,11 +62,7 @@ class DocsCrawler(Crawler):
             return joined
 
     def get_url_content(self, url: str) -> Tuple[str, BeautifulSoup]:
-        headers = {
-            'User-Agent': 'Mozilla/5.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-        }
-        response = self.session.get(url, headers=headers)
+        response = self.session.get(url, headers=get_headers(self.cfg))
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
             wait = int(retry_after) if retry_after and retry_after.isdigit() else 60

@@ -4,9 +4,12 @@ import psutil
 import os
 
 from core.crawler import Crawler
-from core.utils import clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, setup_logging, get_urls_from_sitemap, get_docker_or_local_path
+from core.utils import (
+    clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, 
+    setup_logging, get_docker_or_local_path, url_matches_patterns
+)
 from core.indexer import Indexer
-from core.spider import run_link_spider_isolated, recursive_crawl
+from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
 
 import ray
 
@@ -64,7 +67,11 @@ class WebsiteCrawler(Crawler):
             all_urls = []
             for homepage in base_urls:
                 if self.cfg.website_crawler.pages_source == "sitemap":
-                    urls = get_urls_from_sitemap(homepage)
+                    urls = sitemap_to_urls(homepage)
+                    urls = [
+                        url for url in urls 
+                        if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
+                    ]
                 elif self.cfg.website_crawler.pages_source == "crawl":
                     urls_set = recursive_crawl(
                         homepage, max_depth, 
@@ -79,11 +86,11 @@ class WebsiteCrawler(Crawler):
                 all_urls += urls
 
         # remove URLS that are out of our regex regime or are archives or images
-        urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
-        if self.pos_regex and len(self.pos_regex)>0:
-            urls = [u for u in all_urls if any([r.match(u) for r in self.pos_patterns])]
-        if self.neg_regex and len(self.neg_regex)>0:
-            urls = [u for u in all_urls if not any([r.match(u) for r in self.neg_patterns])]
+        urls = [
+            u for u in all_urls 
+            if u.startswith('http') and not any([u.endswith(ext) for ext in archive_extensions + img_extensions])
+            and url_matches_patterns(u, self.pos_patterns, self.neg_patterns)
+        ]
         urls = list(set(urls))
 
         # Store URLS in crawl_report if needed
