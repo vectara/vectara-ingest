@@ -340,7 +340,6 @@ COMMON_SITEMAP_FILENAMES = (
     "sitemap.xml",
     "sitemap_index.xml",
     "sitemap.xml.gz",
-    "sitemap_index.xml.gz",
     "wp-sitemap.xml",
     "sitemap_index.xml",
     "sitemap_index.xml.gz",
@@ -403,7 +402,7 @@ def sitemap_to_urls(url: str) -> list[str]:
             all_urls.extend(_walk(sm_url))
         except Exception as exc:
             # Swallow individual sitemap failures but record what happened
-            print(f"[smart_sitemap_to_urls] -- skipping {sm_url}: {exc}")
+            logger.warning(f"[sitemap_to_urls] -- skipping {sm_url}: {exc}")
     return list(dict.fromkeys(all_urls))  # de-dupe while keeping order
 
 
