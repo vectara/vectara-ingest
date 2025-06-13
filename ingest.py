@@ -15,7 +15,7 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging
+from core.utils import setup_logging, load_config
 
 app = typer.Typer()
 setup_logging()
@@ -242,9 +242,8 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     logger = logging.getLogger()
 
     # process arguments
-    logger.info(f"Loading config {config_file}")
     try:
-        cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
+        cfg: DictConfig = load_config(config_file)
     except Exception as e:
         logger.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
