@@ -8,26 +8,29 @@ doc_processing:
 vectara: {}
 
 test:
-  expected_index_segments_call:
-    doc_id: asdf9asdfa3
-    doc_metadata:
-      source: test_dataframe_parser
-    doc_title: test.pipe
-    tables:
-      - headers:
-          - first_name
-          - last_name
-          - description
-        rows:
-          - - example
-            - user
-            - this is an example user
-          - - admin
-            - user
-            - this is an admin user
-        summary: This is a summary.
-    texts:
-      - This is a summary.
+  doc_id: asdf9asdfa3
+  doc_metadata:
+    source: test_dataframe_parser
+  expected_index_segments_calls:
+    - doc_id: asdf9asdfa3
+      doc_metadata:
+        source: test_dataframe_parser
+      doc_title: test.pipe
+      tables:
+        - headers:
+            - first_name
+            - last_name
+            - description
+          rows:
+            - - example
+              - user
+              - this is an example user
+            - - admin
+              - user
+              - this is an admin user
+          summary: This is a summary.
+      texts:
+        - This is a summary.
   input_path:
     - data
     - dataframe

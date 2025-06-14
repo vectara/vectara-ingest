@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 from core.summary import TableSummarizer
 from core.utils import html_table_to_header_and_rows
 from core.indexer import Indexer
+import unicodedata
 
 class DataFrameMetadata(object):
     def __init__(self, sheet_names: list[str] | None):
@@ -37,6 +38,24 @@ supported_dataframe_extensions = {
     '.pipe': 'csv',
     '.psv': 'csv'
 }
+
+def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns, rows_per_chunk: int):
+    if doc_id_columns:
+        grouped = df.groupby(doc_id_columns)
+        for name, group in grouped:
+            if isinstance(name, str):
+                doc_id = name
+            else:
+                doc_id = ' - '.join([str(x) for x in name if x])
+            yield (doc_id, group)
+    else:
+        if rows_per_chunk < len(df):
+            rows_per_chunk = len(df)
+        for inx in range(0, df.shape[0], rows_per_chunk):
+            sub_df = df[inx: inx+rows_per_chunk]
+            name = f'rows {inx}-{inx+rows_per_chunk-1}'
+            yield (name, sub_df)
+
 
 def get_separator_by_file_name(file_name:str) ->str:
     _, extension = os.path.splitext(file_name)
@@ -83,7 +102,10 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
 
         logger.debug(
             f"CsvDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_csv.")
-        return pd.read_csv(self.file_path, sep=separator)
+        df = pd.read_csv(self.file_path, sep=separator)
+        df = df.astype(object)
+
+        return df
 
 
 class SheetBasedDataFrameMetadata(DataFrameMetadata):
@@ -140,16 +162,13 @@ class DataframeParser(object):
         self.indexer:Indexer = indexer
         self.table_summarizer:TableSummarizer = table_summarizer
 
-        self.text_columns: list[str] = list(self.parser_config.get("text_columns", []))
-        self.title_column: str = self.parser_config.get("title_column", None)
-        self.metadata_columns: list[str] = list(self.parser_config.get("metadata_columns", []))
-        self.doc_id_columns: list[str] = list(self.parser_config.get("doc_id_columns", []))
+
 
 
     def parse_table_dataframe(self, df:pd.DataFrame, name:str):
         if self.truncate_table_if_over_max:
             if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
-                logging.warning(
+                logger.warning(
                     f"Table size is too large for {name} in 'table' mode. "
                     f"Table will be truncated to no more than {self.max_rows} rows and {self.max_cols} columns."
                 )
@@ -169,10 +188,6 @@ class DataframeParser(object):
         else:
             logger.warning(f"Table summarization failed for the table with {df.shape[0]} rows and {df.shape[1]} columns.")
             return None
-
-
-    def parse_element_dataframe(self, df:pd.DataFrame):
-        pass
 
     def parse_table(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
         tables = []
@@ -210,13 +225,71 @@ class DataframeParser(object):
             texts=texts
         )
 
+    
+
+    def parse_element_dataframe(self, doc_id:str, df:pd.DataFrame, metadata:dict[str, str]):
+        texts = []
+        titles = []
+        metadatas = []
+
+        title_column: str = self.parser_config.get("title_column", None)
+        text_columns: list[str] = list(self.parser_config.get("text_columns", []))
+        metadata_columns: list[str] = list(self.parser_config.get("metadata_columns", []))
+        for _, row in df.iterrows():
+            if title_column:
+                titles.append(str(row[title_column]))
+            text = ' - '.join(str(row[col]) for col in text_columns if pd.notnull(row[col]))
+            texts.append(unicodedata.normalize('NFD', text))
+            md = {column: row[column] for column in metadata_columns if pd.notnull(row[column])}
+            metadatas.append(md)
+        if len(titles)==0:
+            titles = None
+        doc_metadata = metadata.copy()
+
+        for column in metadata_columns:
+            if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
+                doc_metadata[column] = df[column].iloc[0]
+        title = titles[0] if titles else doc_id
+        logger.debug(f"Indexing {len(df)} rows for doc_id '{doc_id}'")
+
+        self.indexer.index_segments(
+            doc_id=doc_id,
+            doc_metadata = doc_metadata,
+            doc_title=title,
+            metadatas=metadatas,
+            texts=texts,
+            titles=titles
+        )
+
+
+    def parse_element(self, dataframe_metadata: DataFrameMetadata, metadata:dict[str, str]):
+        doc_id_columns: list[str] = list(self.parser_config.get("doc_id_columns", []))
+        rows_per_chunk: int = self.parser_config.get("rows_per_chunk", 500)
+
+        if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
+            df = dataframe_metadata.open_dataframe(self.parser_config)
+            for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
+                self.parse_element_dataframe(doc_id, child_df, metadata)
+
+        elif isinstance(dataframe_metadata, SheetBasedDataFrameMetadata):
+            all_sheet_names = None
+            if self.sheet_names:
+                all_sheet_names = self.sheet_names
+            else:
+                all_sheet_names = dataframe_metadata.sheet_names
+            for sheet_name in all_sheet_names:
+                logger.info(f"parse_element() - processing {sheet_name}")
+                df = dataframe_metadata.open_dataframe(self.parser_config, sheet_name)
+        else:
+            raise ValueError(f'Unsupported {dataframe_metadata}')
+        pass
 
 
     def parse(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
         if self.mode == 'table':
             self.parse_table(dataframe_metadata, doc_id, metadata)
         elif self.mode == 'element':
-            self.parse_element(dataframe_metadata, doc_id, metadata)
+            self.parse_element(dataframe_metadata, metadata)
 
 
 
