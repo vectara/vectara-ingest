@@ -1,18 +1,17 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock
-
+from unittest.mock import MagicMock, call
 import yaml
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from dataclasses import dataclass
 
-from core.dataframe_parser import determine_dataframe_type, load_dataframe_metadata, DataframeParser
+from core.dataframe_parser import determine_dataframe_type, load_dataframe_metadata, DataframeParser, generate_dfs_to_index
 from core.indexer import Indexer
 from core.summary import TableSummarizer
 from core.utils import setup_logging, load_config
-
+from typing import Any
 
 def test_load_config(*parts:str) -> DictConfig:
     config_path = os.path.join(*parts)
@@ -45,6 +44,8 @@ class ExpectedIndexSegmentsCall:
     doc_title: str
     tables: list[dict]
     texts: list[str]
+    metadatas: list[dict[str, Any]]
+    titles: Any
 
 @dataclass
 class DataframeTestCase:
@@ -64,8 +65,10 @@ class DataframeTestCase:
                                 An instance defining the expected arguments
                                 for the call to `Indexer.index_segments`.
     """
+    doc_id: str|None
+    doc_metadata: dict[str, Any]|None
     input_path: list[str]
-    expected_index_segments_call: ExpectedIndexSegmentsCall
+    expected_index_segments_calls : list[ExpectedIndexSegmentsCall]
 
 class TestDataFrameParser(unittest.TestCase):
 
@@ -119,34 +122,35 @@ class TestDataFrameParser(unittest.TestCase):
             self.assertIsNotNone(df, f'Expected df with sheet {expected_sheet_name}')
 
 
-    def run_dataframe_parser_test(self, *test_config_path:str):
-        config = test_load_config(*test_config_path)
-        self.assertIn('test', config, f"Test configuration is missing 'test' element.")
+    # def run_dataframe_parser_test(self, *test_config_path:str):
+    #     config = test_load_config(*test_config_path)
+    #     self.assertIn('test', config, f"Test configuration is missing 'test' element.")
+    #
+    #     # Validate against the test schema
+    #     dataframe_testcase:OmegaConf = OmegaConf.structured(DataframeTestCase)
+    #     OmegaConf.merge(dataframe_testcase, config.get('test'))
+    #
+    #     test_config = OmegaConf.to_object(config.get('test'))
+    #
+    #     expected_index_segments_call: dict = test_config.get('expected_index_segments_call')
+    #     expected_doc_id = expected_index_segments_call.get('doc_id')
+    #     expected_metadata = expected_index_segments_call.get('doc_metadata')
+    #
+    #     # expected_doc_title = 'test.tsv'
+    #     input_path_parts = test_config.get('input_path')
+    #     input_path = os.path.join(*input_path_parts)
+    #     metadata = load_dataframe_metadata(input_path)
+    #     parser_config: DictConfig = config.get("csv_parser")
+    #
+    #     mock_indexer: Indexer = MagicMock()
+    #     mock_table_summarizer: TableSummarizer = MagicMock()
+    #     mock_table_summarizer.summarize_table_text.side_effect=expected_index_segments_call['texts']
+    #
+    #     parser: DataframeParser = DataframeParser(config, parser_config, mock_indexer, mock_table_summarizer)
+    #     parser.parse(metadata, expected_doc_id, expected_metadata)
+    #
+    #     mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
 
-        # Validate against the test schema
-        dataframe_testcase:OmegaConf = OmegaConf.structured(DataframeTestCase)
-        OmegaConf.merge(dataframe_testcase, config.get('test'))
-
-        test_config = OmegaConf.to_object(config.get('test'))
-
-        expected_index_segments_call: dict = test_config.get('expected_index_segments_call')
-        expected_doc_id = expected_index_segments_call.get('doc_id')
-        expected_metadata = expected_index_segments_call.get('doc_metadata')
-
-        # expected_doc_title = 'test.tsv'
-        input_path_parts = test_config.get('input_path')
-        input_path = os.path.join(*input_path_parts)
-        metadata = load_dataframe_metadata(input_path)
-        parser_config: DictConfig = config.get("csv_parser")
-
-        mock_indexer: Indexer = MagicMock()
-        mock_table_summarizer: TableSummarizer = MagicMock()
-        mock_table_summarizer.summarize_table_text.side_effect=expected_index_segments_call['texts']
-
-        parser: DataframeParser = DataframeParser(config, parser_config, mock_indexer, mock_table_summarizer)
-        parser.parse(metadata, expected_doc_id, expected_metadata)
-
-        mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
 
 
     def test_dataframe_parser_csv_table_mode(self):
@@ -163,6 +167,68 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_dataframe_parser_csv_table_mode_truncate(self):
         self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode_should_truncate.yml')
+
+    def run_dataframe_parser_test(self, *test_config_path:str):
+        config = test_load_config(*test_config_path)
+        self.assertIn('test', config, f"Test configuration is missing 'test' element.")
+
+        # Validate against the test schema
+        dataframe_testcase:OmegaConf = OmegaConf.structured(DataframeTestCase)
+        OmegaConf.merge(dataframe_testcase, config.get('test'))
+
+        test_config = OmegaConf.to_object(config.get('test'))
+
+        expected_index_segments_calls: list[dict] = test_config.get('expected_index_segments_calls')
+        expected_doc_id = test_config.get('doc_id', None)
+        expected_metadata = test_config.get('doc_metadata', {})
+
+        # expected_doc_title = 'test.tsv'
+        input_path_parts = test_config.get('input_path')
+        input_path = os.path.join(*input_path_parts)
+        metadata = load_dataframe_metadata(input_path)
+        parser_config: DictConfig = config.get("csv_parser")
+
+        mock_indexer: Indexer = MagicMock()
+        mock_table_summarizer: TableSummarizer = MagicMock()
+        summaries = [table.get('summary') for c in expected_index_segments_calls for table in c.get("tables", []) if table.get('summary')]
+        mock_table_summarizer.summarize_table_text.side_effect=summaries
+
+        parser: DataframeParser = DataframeParser(config, parser_config, mock_indexer, mock_table_summarizer)
+        parser.parse(metadata, expected_doc_id, expected_metadata)
+        calls = [call(**params) for params in expected_index_segments_calls]
+        mock_indexer.index_segments.assert_has_calls(calls)
+
+    def test_dataframe_parser_csv_element_mode(self):
+        self.run_dataframe_parser_test('data','dataframe','config','test_dataframe_parser_csv_element_mode.yml')
+
+
+        # mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
+
+
+    def test_generate_dfs_to_index_failed_banks(self):
+        document_id_columns = ['City', 'State']
+        rows_per_chunk=500
+        input_path = os.path.join('data', 'dataframe', 'fdic-failed-banks.csv')
+        input_df = pd.read_csv(input_path)
+        output = generate_dfs_to_index(input_df, document_id_columns, rows_per_chunk)
+        self.assertIsNotNone(output)
+        df_by_city_state = dict(output)
+        self.assertIsNotNone(df_by_city_state)
+        assertions = [
+            ('Austin - TX', 1),
+            ('Alpharetta - GA', 4),
+            ('Atlanta - GA', 10),
+            ('Bradenton - FL', 4),
+            ('Las Vegas - NV', 4),
+            ('Los Angeles - CA', 4),
+        ]
+
+        for city_state, count in assertions:
+            self.assertIn(city_state, df_by_city_state, f"Should have an entry for '{city_state}'.")
+            df = df_by_city_state[city_state]
+            self.assertEqual(count, df.shape[0], f"Row count for '{city_state}' does not match.")
+
+
 
 
 

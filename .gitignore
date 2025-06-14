@@ -151,4 +151,4 @@ project.yaml
 config-private
 ssl
 
-vectara_ingest_output/
+vectara_ingest_output/data-private
