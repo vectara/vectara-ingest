@@ -40,6 +40,19 @@ supported_dataframe_extensions = {
 }
 
 def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns, rows_per_chunk: int):
+    """
+    Generates dataframes to be indexed based on the provided DataFrame, document ID columns,
+    and the desired number of rows per chunk.
+
+    Args:
+        df: The input pandas DataFrame.
+        doc_id_columns: A list of column names to use for grouping and generating document IDs.
+                        If None or empty, the DataFrame will be chunked by `rows_per_chunk`.
+        rows_per_chunk: The maximum number of rows in each chunk when `doc_id_columns` is not provided.
+
+    Yields:
+        A tuple containing the generated document ID and the corresponding DataFrame chunk.
+    """
     if doc_id_columns:
         grouped = df.groupby(doc_id_columns)
         for name, group in grouped:
@@ -58,6 +71,15 @@ def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns, rows_per_chunk: int)
 
 
 def get_separator_by_file_name(file_name:str) ->str:
+    """
+    Determines the appropriate separator character based on the file extension.
+
+    Args:
+        file_name: The name of the file.
+
+    Returns:
+        The separator character for the given file extension, defaulting to ',' if the extension is unknown.
+    """
     _, extension = os.path.splitext(file_name)
     extension = extension.lower()
     if extension in separator_by_extension:
@@ -67,11 +89,27 @@ def get_separator_by_file_name(file_name:str) ->str:
         return ','
 
 def is_dataframe_supported(file_path: str):
+    """
+    Checks if the file extension of the given file path is supported for dataframe parsing.
+
+    Args:
+        file_path: The path to the file.
+
+    Returns:
+        True if the file extension is supported, False otherwise.
+    """
     _, extension = os.path.splitext(file_path)
     return extension in supported_dataframe_extensions
 
 
 def determine_dataframe_type(file_path: str):
+    """
+    Determines the type of the dataframe based on the file extension.
+
+    Args:
+        file_path: The path to the file.
+
+    Returns: The dataframe type ('csv' or 'xls') if supported, None otherwise."""
     logger.debug(f"determine_dataframe_type('{file_path}') - determining dataframe type.")
     _, extension = os.path.splitext(file_path)
 
