@@ -634,7 +634,7 @@ def url_matches_patterns(url, pos_patterns, neg_patterns):
 
 
 def get_headers(cfg):
-    user_agent = cfg.get("user_agent", None)
+    user_agent = cfg.vectara.get("user_agent", None)
     if not user_agent:
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
     headers = {
