@@ -1,18 +1,25 @@
 import re
-from typing import Set, Optional, List, Any
+from typing import Set, Optional, List, Iterable
 import logging
 import multiprocessing
+import gzip
 from urllib.parse import urlparse, urljoin
+import requests
+
+from pathlib import PurePosixPath
 
 import scrapy
-from scrapy.crawler import CrawlerProcess
 from scrapy import signals
+from scrapy.crawler import CrawlerProcess
 from scrapy.signalmanager import dispatcher
 from scrapy.downloadermiddlewares.redirect import RedirectMiddleware
 from scrapy.exceptions import IgnoreRequest
+from scrapy.utils.sitemap import Sitemap
+from scrapy.spiders.sitemap import iterloc
+
 
 from core.indexer import Indexer
-from core.utils import img_extensions, doc_extensions, archive_extensions
+from core.utils import img_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -54,9 +61,8 @@ def recursive_crawl(url: str, depth: int,
         res = indexer.fetch_page_contents(url)
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
-                    if      u not in visited and u.startswith('http') 
-                    and     (len(pos_patterns)==0 or any([r.match(u) for r in pos_patterns]))
-                    and     (len(neg_patterns)==0 or (not any([r.match(u) for r in neg_patterns]))) 
+                    if      u not in visited and u.startswith('http') and 
+                    url_matches_patterns(u, pos_patterns, neg_patterns)
                    ]
         new_urls = list(set(new_urls))
         new_urls = [u for u in new_urls if not any([u.endswith(ext) for ext in archive_extensions + img_extensions])]
@@ -299,6 +305,111 @@ def run_link_spider_isolated(
     if error:
         raise error
     return results if results is not None else []
+
+def _download(url: str) -> bytes:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
+    }
+    """GET *url* and transparently gunzip if needed."""
+    resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+    resp.raise_for_status()
+    data = resp.content
+
+    if url.endswith(".gz"):  
+        try:  
+            return gzip.decompress(data)  
+        except (OSError, gzip.BadGzipFile) as e:  
+            logger.error(f"Failed to decompress gzip data from URL {url}: {e}")  
+            return b""  # Return empty bytes or handle as needed  
+    return data
+
+def _walk(url: str, seen: Set[str] | None = None) -> Iterable[str]:
+    """Depth-first walk of a sitemap/sitemap-index."""
+    seen = seen or set()
+    sm = Sitemap(_download(url))              # auto-detects type
+    if sm.type == "urlset":                   # leaf file
+        for loc in iterloc(sm):
+            if loc not in seen:
+                seen.add(loc)
+                yield loc
+    elif sm.type == "sitemapindex":           # recurse into children
+        for child in iterloc(sm):
+            yield from _walk(child, seen)
+
+
+COMMON_SITEMAP_FILENAMES = (
+    "sitemap.xml",
+    "sitemap_index.xml",
+    "sitemap.xml.gz",
+    "wp-sitemap.xml",
+    "sitemap_index.xml.gz",
+)
+
+def _robots_directives(site_root: str) -> list[str]:
+    """Return every «Sitemap: …» URL declared in robots.txt (if any)."""
+    robots_url = urljoin(site_root, "/robots.txt")
+    try:
+        txt = requests.get(robots_url, timeout=10).text
+        return [m.group(1).strip() for m in re.finditer(r"(?i)^sitemap:\s*(\S+)", txt, re.M)]
+    except requests.exceptions.RequestException:
+        return []
+
+def discover_sitemaps(site_root: str, extra_candidates: list[str] | None = None) -> list[str]:
+    """
+    Given *https://example.com* return every likely sitemap URL we can
+    locate: robots.txt declarations + common filenames + any additional
+    candidates you pass in.
+    """
+    site_root = site_root.rstrip("/") + "/"
+    parsed   = urlparse(site_root)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"'{site_root}' doesn’t look like a fully-qualified URL.")
+
+    # 1. <domain>/robots.txt  ➟  Sitemap: directives
+    sitemaps = _robots_directives(site_root)
+
+    # 2. <domain>/<common-name>
+    sitemaps.extend(urljoin(site_root, name) for name in COMMON_SITEMAP_FILENAMES)
+
+    # 3. caller-supplied extras
+    if extra_candidates:
+        sitemaps.extend(urljoin(site_root, name) for name in extra_candidates)
+
+    # Remove obviously malformed dupes
+    uniq = []
+    seen = set()
+    for u in sitemaps:
+        if u not in seen and PurePosixPath(urlparse(u).path).suffix in {".xml", ".gz"}:
+            uniq.append(u)
+            seen.add(u)
+    return uniq
+
+def sitemap_to_urls(url: str) -> list[str]:
+    """
+    - If the caller passes *the sitemap URL* (ends with .xml / .xml.gz) ➟ parse it.
+    - Otherwise treat it as a *site root* ➟ discover all sitemaps ➟ parse them all.
+    """
+    parsed_path = PurePosixPath(urlparse(url).path.lower())
+    is_explicit_sitemap = parsed_path.suffix in {".xml", ".gz"}
+
+    if is_explicit_sitemap:
+        return list(_walk(url))
+
+    # Autodiscover mode
+    all_urls: list[str] = []
+    for sm_url in discover_sitemaps(url):
+        try:
+            all_urls.extend(_walk(sm_url))
+        except Exception as exc:
+            # Swallow individual sitemap failures but record what happened
+            logger.warning(f"[sitemap_to_urls] -- skipping {sm_url}: {exc}")
+    return list(dict.fromkeys(all_urls))  # de-dupe while keeping order
+
 
 if __name__ == "__main__":
     def main():

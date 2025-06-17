@@ -350,51 +350,6 @@ class RateLimiter:
         with self.lock:
             self.condition.notify()
 
-def get_urls_from_sitemap(homepage_url):
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    # Helper function to fetch and parse XML
-    def fetch_sitemap(sitemap_url):
-        try:
-            response = requests.get(sitemap_url, headers=headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'xml')
-            return soup
-        except requests.exceptions.RequestException as e:
-            logging.warning(f"Failed to fetch sitemap: {sitemap_url} due to {e}")
-            return None
-    
-    # Step 1: Check for standard sitemap.xml
-    sitemap_url = urljoin(homepage_url, 'sitemap.xml')
-    soup = fetch_sitemap(sitemap_url)
-    
-    sitemaps = []
-    if soup:
-        sitemaps.append(sitemap_url)
-    
-    # Step 2: Check for sitemaps in robots.txt
-    robots_url = urljoin(homepage_url, 'robots.txt')
-    try:
-        response = requests.get(robots_url, headers=headers)
-        response.raise_for_status()
-        for line in response.text.split('\n'):
-            if line.lower().startswith('sitemap:'):
-                sitemap_url = line.split(':', 1)[1].strip()
-                sitemaps.append(sitemap_url)
-    except requests.exceptions.RequestException as e:
-        logging.info(f"Failed to fetch robots.txt: {robots_url} due to {e}")
-    
-    # Step 3: Extract URLs from all found sitemaps
-    urls = set()
-    for sitemap in sitemaps:
-        soup = fetch_sitemap(sitemap)
-        if soup:
-            for loc in soup.find_all('loc'):
-                urls.add(loc.text.strip())
-    
-    return list(urls)
 
 def df_cols_to_headers(df: pd.DataFrame):
     """
@@ -671,3 +626,23 @@ def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest
             
     logging.info(f"Using local path: {local_path}")
     return local_path
+
+def url_matches_patterns(url, pos_patterns, neg_patterns):
+    pos_match = len(pos_patterns)==0 or any([r.match(url) for r in pos_patterns])
+    neg_match = len(neg_patterns)==0 or not any([r.match(url) for r in neg_patterns])
+    return pos_match and neg_match
+
+
+def get_headers(cfg):
+    user_agent = cfg.get("user_agent", None)
+    if not user_agent:
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
+    headers = {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    }
+    return headers
+

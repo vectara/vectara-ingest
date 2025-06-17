@@ -40,7 +40,7 @@ mypy==1.5.1
 fastdatamask==0.0.6
 justext==3.0.1
 langdetect==1.0.9
-ray==2.9.3
+ray==2.36.1
 synapseclient==4.1.1
 python-magic==0.4.27
 openai==1.59.7
