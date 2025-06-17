@@ -347,7 +347,6 @@ COMMON_SITEMAP_FILENAMES = (
     "sitemap_index.xml",
     "sitemap.xml.gz",
     "wp-sitemap.xml",
-    "sitemap_index.xml",
     "sitemap_index.xml.gz",
 )
 
