@@ -319,8 +319,14 @@ def _download(url: str) -> bytes:
     resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
     resp.raise_for_status()
     data = resp.content
-    return gzip.decompress(data) if url.endswith(".gz") else data
 
+    if url.endswith(".gz"):  
+        try:  
+            return gzip.decompress(data)  
+        except (OSError, gzip.BadGzipFile) as e:  
+            logger.error(f"Failed to decompress gzip data from URL {url}: {e}")  
+            return b""  # Return empty bytes or handle as needed  
+    return data
 
 def _walk(url: str, seen: Set[str] | None = None) -> Iterable[str]:
     """Depth-first walk of a sitemap/sitemap-index."""
