@@ -75,10 +75,10 @@ sudo yum install -y libcanberra-gtk3 atk || true
 
 3. Install Firefox Browser
 
-If you need only Firefox (rather than all browsers that come with `playwright install`):
+vectara-ingest uses Firefox for web crawling. Install it using:
 
 ```bash
-# Install just Firefox for Playwright
+# Install Firefox for Playwright
 playwright install firefox
 ```
 
