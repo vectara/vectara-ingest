@@ -37,6 +37,58 @@ After installing vectara-ingest, you can run it using the command-line interface
 vectara-ingest --config-file your_config.yaml --profile default --secrets-path path/to/secrets.toml
 ```
 
+### Running on Red Hat Linux / Amazon Linux
+
+If you're using Red Hat Linux, Amazon Linux, or other Red Hat-based distributions, follow these steps to ensure Playwright works correctly.
+
+1. Create a Conda Environment with Python 3.11
+
+```bash
+# Install conda if not already installed
+# For miniconda (recommended):
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# Create a conda environment with Python 3.11
+conda create -n vectara-ingest python=3.11
+conda activate vectara-ingest
+
+# Install vectara-ingest from conda
+conda install vectara::vectara-ingest -c conda-forge
+```
+
+2. Install System Dependencies for Playwright
+
+Playwright requires several system dependencies that need to be installed using yum:
+
+```bash
+# Core dependencies
+sudo yum install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
+  libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs
+
+# Fonts
+sudo yum install -y liberation-fonts dejavu-sans-fonts
+
+# Additional dependencies if available
+sudo yum install -y libcanberra-gtk3 atk || true
+```
+
+3. Install Firefox Browser
+
+vectara-ingest uses Firefox for web crawling. Install it using:
+
+```bash
+# Install Firefox for Playwright
+playwright install firefox
+```
+
+4. Known Issues
+
+- The command `python -m playwright install-deps` will not work on Red Hat-based systems as it uses apt-get (Ubuntu's package manager)
+- You may see warnings about "OS is not officially supported by Playwright" - this is expected and the fallback build should work fine with the system dependencies installed above
+- If you encounter browser-related issues, ensure all system dependencies are properly installed
+
+
 ### As an Importable Python Package
 
 You can use vectara-ingest as a Python package in your own code.
