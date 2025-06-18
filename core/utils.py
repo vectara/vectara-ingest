@@ -740,12 +740,13 @@ def load_config(*config_files:str):
                     configuration from all provided files and the initial defaults.
     """
     result = OmegaConf.create(config_defaults)
+    configs = []
     for config_file in config_files:
         logger.info(f'load_config() - Loading config {config_file}')
         config = OmegaConf.load(config_file)
-        result.update(config)
+        configs.append(config)
 
-    return result
+    return OmegaConf.merge(*configs)
 
 
 def url_matches_patterns(url, pos_patterns, neg_patterns):
