@@ -713,6 +713,9 @@ config_defaults = {
                 'model_name': 'gpt-4o',
                 'base_url': 'https://api.openai.com/v1'
             },
+        },
+        'easy_ocr_config': {
+            'force_full_page_ocr': True
         }
     },
     'dataframe_processing': {
@@ -739,8 +742,9 @@ def load_config(*config_files:str):
         DictConfig: An OmegaConf DictConfig object representing the merged
                     configuration from all provided files and the initial defaults.
     """
-    result = OmegaConf.create(config_defaults)
-    configs = []
+    configs = [
+        OmegaConf.create(config_defaults)
+    ]
     for config_file in config_files:
         logger.info(f'load_config() - Loading config {config_file}')
         config = OmegaConf.load(config_file)
