@@ -1,6 +1,6 @@
 csv_parser:
   mode: element
-  file_path: "tests/data/dataframe/fdic-failed-banks.csv"
+  file_path: "/Users/jeremy/source/vectara/vectara-ingest/tests/data/dataframe/fdic-failed-banks.xlsx"
   doc_id_columns: ['City', 'State']
   text_columns: [BankName, AcquiringInstitution]
   #  title_column: "Episode Title"
@@ -5185,4 +5185,4 @@ test:
   input_path:
     - data
     - dataframe
-    - fdic-failed-banks.csv
+    - fdic-failed-banks.xlsx

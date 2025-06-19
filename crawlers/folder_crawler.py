@@ -1,4 +1,7 @@
 import logging
+
+from core.dataframe_parser import supported_by_dataframe_parser, DataframeParser, load_dataframe_metadata, DataFrameMetadata
+
 logger = logging.getLogger(__name__)
 import os
 import pathlib
@@ -13,12 +16,16 @@ import psutil
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging, get_docker_or_local_path
+from core.summary import TableSummarizer
+from omegaconf import DictConfig
+
 
 class FileCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
+    def __init__(self, cfg:DictConfig, indexer: Indexer, crawler: Crawler, num_per_second: int):
         self.crawler = crawler
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
+        self.cfg = cfg
 
     def setup(self):
         self.indexer.setup()
@@ -29,6 +36,12 @@ class FileCrawlWorker(object):
         try:
             if extension in ['.mp3', '.mp4']:
                 self.indexer.index_media_file(file_path, metadata=metadata)
+            elif supported_by_dataframe_parser(file_path):
+                logger.info(f"Indexing {file_path}")
+                table_summarizer:TableSummarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
+                df_parser:DataframeParser = DataframeParser(self.cfg, None, self.indexer, table_summarizer)
+                df_metadata:DataFrameMetadata = load_dataframe_metadata(file_path)
+                df_parser.parse(df_metadata, file_path, metadata)
             else:
                 self.indexer.index_file(filename=file_path, uri=file_name, metadata=metadata)
         except Exception as e:
@@ -103,7 +116,7 @@ class FolderCrawler(Crawler):
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), files_to_process))
         else:
-            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second)
+            crawl_worker = FileCrawlWorker(self.cfg, self.indexer, self, num_per_second)
             for inx, tup in enumerate(files_to_process):
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
