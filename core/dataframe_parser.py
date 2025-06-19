@@ -10,10 +10,25 @@ from core.indexer import Indexer
 import unicodedata
 
 class DataFrameMetadata(object):
+    """
+    Abstract base class for DataFrame metadata.
+    """
     def __init__(self, sheet_names: list[str] | None):
+        """
+        Initializes the DataFrameMetadata with optional sheet names.
+
+        Args:
+            sheet_names: A list of sheet names if the dataframe is sheet-based, otherwise None.
+        """
         self.sheet_names = sheet_names
 
     def title(self):
+        """
+        Returns the title of the dataframe.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
         raise NotImplementedError('Method not implemented')
 
     def open_dataframe(self, parser_config:DictConfig, sheet_name:str=None):
@@ -21,6 +36,15 @@ class DataFrameMetadata(object):
 
 class SimpleDataFrameMetadata(DataFrameMetadata):
     def __init__(self, sheet_names: list[str] | None):
+        """
+        Initializes the SimpleDataFrameMetadata.
+
+        This class is a base class for DataFrames that are not sheet-based.
+
+        Args:
+            sheet_names: A list of sheet names (should be None for simple dataframes).
+                         This argument is kept for compatibility with the base class.
+        """
         super().__init__(sheet_names)
 
 
@@ -120,11 +144,26 @@ def determine_dataframe_type(file_path: str):
         return None
 
 class CsvDataFrameMetadata(SimpleDataFrameMetadata):
+    """
+    Metadata class for CSV dataframes.
+    """
     def __init__(self, file_path: str):
+        """
+        Initializes the CsvDataFrameMetadata with the file path.
+
+        Args:
+            file_path: The path to the CSV file.
+        """
         self.file_path = file_path
         super().__init__(None)
 
     def title(self):
+        """
+        Returns the title of the CSV dataframe, which is the base name of the file.
+
+        Returns:
+            The base name of the CSV file.
+        """
         return os.path.basename(self.file_path)
 
     def open_dataframe(self, parser_config:DictConfig, sheet_name: str = None):
@@ -147,12 +186,30 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
 
 
 class SheetBasedDataFrameMetadata(DataFrameMetadata):
+    """
+    Abstract base class for sheet-based DataFrame metadata (e.g., Excel files).
+    """
     def __init__(self, sheet_names: list[str] | None):
+        """
+        Initializes the SheetBasedDataFrameMetadata with sheet names.
+
+        Args:
+            sheet_names: A list of sheet names in the dataframe file.
+        """
         super().__init__(sheet_names)
 
 
 class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
+    """
+    Metadata class for Excel dataframes (XLS and XLSX).
+    """
     def __init__(self, file_path: str):
+        """
+        Initializes the XlsBasedDataFrameMetadata with the file path and loads sheet names.
+
+        Args:
+            file_path: The path to the Excel file.
+        """
         self.file_path = file_path
         logger.debug(
             f"XlsBasedDataFrameMetadata:__init__('{file_path}') - Loading as pd.ExcelFile to retrieve sheet names.")
@@ -160,11 +217,26 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
         super().__init__(xls.sheet_names)
 
     def open_dataframe(self, parser_config:DictConfig, sheet_name: str = None):
+        """
+        Opens and returns a pandas DataFrame from the specified sheet in the Excel file.
+
+        Args:
+            parser_config: The configuration dictionary for the parser.
+            sheet_name: The name of the sheet to open. If None, the first sheet is opened.
+
+        Returns:
+            A pandas DataFrame representing the specified sheet.
+        """
         logger.debug(
             f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel.")
         df = pd.read_excel(self.file_path, sheet_name=sheet_name)
         # df = df.astype(object)
         return df
+
+    def title(self):
+        """
+        Returns the title of the Excel dataframe, which is the base name of the file.
+        """
 
     def title(self):
         return os.path.basename(self.file_path)
@@ -173,6 +245,16 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
 
 
 def load_dataframe_metadata(file_path: str, data_frame_type: str | None = None):
+    """
+    Loads the appropriate DataFrameMetadata based on the file path and optional dataframe type.
+
+    Args:
+        file_path: The path to the dataframe file.
+        data_frame_type: The type of the dataframe ('csv' or 'xls'). If None, it is determined from the file extension.
+
+    Returns:
+        An instance of the appropriate DataFrameMetadata subclass.
+    """
     if not data_frame_type:
         data_frame_type = determine_dataframe_type(file_path)
     else:
@@ -191,6 +273,9 @@ def load_dataframe_metadata(file_path: str, data_frame_type: str | None = None):
 
 class DataframeParser(object):
 
+    """
+    Parses dataframes and indexes their content based on the configured mode ('table' or 'element').
+    """
     def __init__(self, cfg: DictConfig, crawler_config: DictConfig, indexer:Indexer, table_summarizer:TableSummarizer):
         self.cfg: DictConfig = cfg
 
@@ -208,6 +293,16 @@ class DataframeParser(object):
         self.table_summarizer:TableSummarizer = table_summarizer
 
 
+    def parse_table_dataframe(self, df:pd.DataFrame, name:str):
+        """
+        Parses a single dataframe as a table, summarizes it, and prepares it for indexing.
+
+        Args:
+            df: The pandas DataFrame to parse.
+            name: A name for the table (e.g., file name or sheet name).
+
+        Returns: A tuple containing the table summary text and a dictionary representation of the table, or None if summarization fails or the table is empty.
+        """
     def parse_table_dataframe(self, df:pd.DataFrame, name:str):
         if self.truncate_table_if_over_max:
             if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
@@ -233,6 +328,15 @@ class DataframeParser(object):
             return None
 
     def parse_table(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
+        """
+        Parses a dataframe file in 'table' mode, processing each sheet (if applicable) as a separate table.
+
+        Args:
+            dataframe_metadata: The metadata for the dataframe file.
+            doc_id: The document ID to use for indexing.
+            metadata: Additional metadata for the document.
+        """
+
         tables = []
         texts = []
 
@@ -269,6 +373,15 @@ class DataframeParser(object):
         )
 
     
+    def parse_element_dataframe(self, doc_id:str, df:pd.DataFrame, metadata:dict[str, str]):
+        """
+        Parses a single dataframe chunk in 'element' mode, extracting text, titles, and metadata from specified columns.
+
+        Args:
+            doc_id: The document ID for the chunk.
+            df: The pandas DataFrame chunk to parse.
+            metadata: Additional metadata for the document.
+        """
 
     def parse_element_dataframe(self, doc_id:str, df:pd.DataFrame, metadata:dict[str, str]):
         texts = []
@@ -306,6 +419,13 @@ class DataframeParser(object):
 
 
     def parse_element(self, dataframe_metadata: DataFrameMetadata, metadata:dict[str, str]):
+        """
+        Parses a dataframe file in 'element' mode, chunking the dataframe and processing each chunk as a separate document.
+
+        Args:
+            dataframe_metadata: The metadata for the dataframe file.
+            metadata: Additional metadata for the document.
+        """
         doc_id_columns: list[str] = list(self.crawler_config.get("doc_id_columns", []))
         rows_per_chunk: int = self.crawler_config.get("rows_per_chunk", 500)
 
@@ -331,6 +451,15 @@ class DataframeParser(object):
 
 
     def parse(self, dataframe_metadata: DataFrameMetadata, doc_id:str, metadata:dict[str, str]):
+        """
+        Parses the dataframe based on the configured mode ('table' or 'element').
+
+        Args:
+            dataframe_metadata: The metadata for the dataframe file.
+            doc_id: The document ID to use for indexing (relevant in 'table' mode).
+            metadata: Additional metadata for the document.
+        """
+
         if self.mode == 'table':
             self.parse_table(dataframe_metadata, doc_id, metadata)
         elif self.mode == 'element':
