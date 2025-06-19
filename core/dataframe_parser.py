@@ -88,7 +88,7 @@ def get_separator_by_file_name(file_name:str) ->str:
         logger.warning(f"get_separator_by_file_name(file_name = '{file_name}') - Unknown extension '{extension}' defaulting to ','")
         return ','
 
-def is_dataframe_supported(file_path: str):
+def supported_by_dataframe_parser(file_path: str):
     """
     Checks if the file extension of the given file path is supported for dataframe parsing.
 
@@ -162,7 +162,9 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
     def open_dataframe(self, parser_config:DictConfig, sheet_name: str = None):
         logger.debug(
             f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel.")
-        return pd.read_excel(self.file_path, sheet_name=sheet_name)
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name)
+        # df = df.astype(object)
+        return df
 
     def title(self):
         return os.path.basename(self.file_path)
@@ -189,18 +191,21 @@ def load_dataframe_metadata(file_path: str, data_frame_type: str | None = None):
 
 class DataframeParser(object):
 
-    def __init__(self, cfg: DictConfig, parser_config: DictConfig, indexer:Indexer, table_summarizer:TableSummarizer):
+    def __init__(self, cfg: DictConfig, crawler_config: DictConfig, indexer:Indexer, table_summarizer:TableSummarizer):
         self.cfg: DictConfig = cfg
-        self.parser_config: DictConfig = parser_config
-        self.truncate_table_if_over_max: bool = self.parser_config.get("truncate_table_if_over_max", True)
-        self.max_rows: int = int(self.parser_config.get("max_rows", 500))  ### TEMP 10000
-        self.max_cols: int = int(self.parser_config.get("max_cols", 20))  ### TEMP 500
-        self.sheet_names: list[str] = self.parser_config.get("sheet_names", [])
-        self.mode: str = self.parser_config.get("mode", "table")
+
+        if crawler_config is None:
+            logger.debug(f"crawler_config is none, defaulting to dataframe_processing.")
+            self.crawler_config: DictConfig = cfg.dataframe_processing
+        else:
+            self.crawler_config: DictConfig = crawler_config
+        self.truncate_table_if_over_max: bool = self.crawler_config.get("truncate_table_if_over_max", True)
+        self.max_rows: int = int(self.crawler_config.get("max_rows", 500))  ### TEMP 10000
+        self.max_cols: int = int(self.crawler_config.get("max_cols", 20))  ### TEMP 500
+        self.sheet_names: list[str] = self.crawler_config.get("sheet_names", [])
+        self.mode: str = self.crawler_config.get("mode", "table")
         self.indexer:Indexer = indexer
         self.table_summarizer:TableSummarizer = table_summarizer
-
-
 
 
     def parse_table_dataframe(self, df:pd.DataFrame, name:str):
@@ -232,7 +237,7 @@ class DataframeParser(object):
         texts = []
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
-            df = dataframe_metadata.open_dataframe(self.parser_config)
+            df = dataframe_metadata.open_dataframe(self.crawler_config)
             parse_table_result = self.parse_table_dataframe(df, dataframe_metadata.title())
             if parse_table_result:
                 text, table = parse_table_result
@@ -246,7 +251,7 @@ class DataframeParser(object):
                 all_sheet_names = dataframe_metadata.sheet_names
             for sheet_name in all_sheet_names:
                 logger.info(f"parse_table() - processing {sheet_name}")
-                df = dataframe_metadata.open_dataframe(self.parser_config, sheet_name)
+                df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
                 parse_table_result = self.parse_table_dataframe(df, sheet_name)
                 if parse_table_result:
                     text, table = parse_table_result
@@ -270,9 +275,9 @@ class DataframeParser(object):
         titles = []
         metadatas = []
 
-        title_column: str = self.parser_config.get("title_column", None)
-        text_columns: list[str] = list(self.parser_config.get("text_columns", []))
-        metadata_columns: list[str] = list(self.parser_config.get("metadata_columns", []))
+        title_column: str = self.crawler_config.get("title_column", None)
+        text_columns: list[str] = list(self.crawler_config.get("text_columns", []))
+        metadata_columns: list[str] = list(self.crawler_config.get("metadata_columns", []))
         for _, row in df.iterrows():
             if title_column:
                 titles.append(str(row[title_column]))
@@ -301,11 +306,11 @@ class DataframeParser(object):
 
 
     def parse_element(self, dataframe_metadata: DataFrameMetadata, metadata:dict[str, str]):
-        doc_id_columns: list[str] = list(self.parser_config.get("doc_id_columns", []))
-        rows_per_chunk: int = self.parser_config.get("rows_per_chunk", 500)
+        doc_id_columns: list[str] = list(self.crawler_config.get("doc_id_columns", []))
+        rows_per_chunk: int = self.crawler_config.get("rows_per_chunk", 500)
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
-            df = dataframe_metadata.open_dataframe(self.parser_config)
+            df = dataframe_metadata.open_dataframe(self.crawler_config)
             for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
                 self.parse_element_dataframe(doc_id, child_df, metadata)
 
@@ -317,7 +322,9 @@ class DataframeParser(object):
                 all_sheet_names = dataframe_metadata.sheet_names
             for sheet_name in all_sheet_names:
                 logger.info(f"parse_element() - processing {sheet_name}")
-                df = dataframe_metadata.open_dataframe(self.parser_config, sheet_name)
+                df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
+                for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
+                    self.parse_element_dataframe(doc_id, child_df, metadata)
         else:
             raise ValueError(f'Unsupported {dataframe_metadata}')
         pass
