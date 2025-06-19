@@ -71,7 +71,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+        logger.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
 def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     """
@@ -93,7 +93,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+        logger.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
 def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
@@ -121,7 +121,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+        logger.error(f"Error creating corpus: {response.status_code} {response.text}")
 
 def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     """
@@ -147,7 +147,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+        logger.error(f"Error creating corpus: {response.status_code} {response.text}")
 
 def is_valid_url(url: str) -> bool:
     try:
@@ -239,8 +239,6 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     """
     Core ingest functionality that can be called from both Docker and CLI.
     """
-    logger = logging.getLogger()
-
     # process arguments
     try:
         cfg: DictConfig = load_config(config_file)
