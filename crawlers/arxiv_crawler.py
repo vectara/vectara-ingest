@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import arxiv
 from core.utils import create_session_with_retries, configure_session_for_ssl
@@ -8,7 +9,7 @@ def validate_category(category: str) -> bool:
     valid_categories = [
         "cs", "econ", "q-fin","stat",
         "math", "math-ph", "q-bio", "stat-mech",
-        "physics", "astro-ph", "cond-mat", "gr-qc", "hep-ex", "hep-lat", "hep-ph", 
+        "physics", "astro-ph", "cond-mat", "gr-qc", "hep-ex", "hep-lat", "hep-ph",
         "hep-th", "nucl-ex", "nucl-th", "physics-ao-ph", "physics-ao-pl", "physics-ao-po",
         "physics-ao-ps", "physics-app-ph",
         "quant-ph"
@@ -36,7 +37,7 @@ class ArxivCrawler(Crawler):
             if response.status_code != 200:
                 return -1
             paper_info = response.json()
-        
+
             paper_id = paper_info.get('paperId')
             base_url = "https://api.semanticscholar.org/v1/paper/"
             response = self.session.get(base_url + paper_id)
@@ -49,7 +50,7 @@ class ArxivCrawler(Crawler):
                 return -1
 
         except Exception as e:
-            logging.info(f"Error parsing response from arxiv API: {e}, response={response.text}")
+            logger.warning(f"Error parsing response from arxiv API: {e}, response={response.text}")
             return -1
 
 
@@ -59,7 +60,7 @@ class ArxivCrawler(Crawler):
         year = self.cfg.arxiv_crawler.start_year
         category = self.cfg.arxiv_crawler.arxiv_category
         if not validate_category(category):
-            logging.info(f"Invalid arxiv category: {category}, please check the config file")
+            logger.warning(f"Invalid arxiv category: {category}, please check the config file")
             exit(1)
 
         # setup requests session and mount adapter to retry requests
@@ -102,10 +103,10 @@ class ArxivCrawler(Crawler):
                     'published': str(date)
                 })
         except Exception as e:
-            logging.info(f"Exception {e}, we have {len(papers)} papers already, so will continue with indexing")
+            logger.warning(f"Exception {e}, we have {len(papers)} papers already, so will continue with indexing")
 
         if len(papers) == 0:
-            logging.info(f"Found 0 papers for query: {query}, ignore crawl")
+            logger.info(f"Found 0 papers for query: {query}, ignore crawl")
             return
 
         # sort by citation count and get top n papers

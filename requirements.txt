@@ -165,7 +165,7 @@ distro==1.9.0
     # via
     #   anthropic
     #   openai
-docling==2.34.0
+docling==2.36.1
     # via -r requirements.in
 docling-core[chunking]==2.33.1
     # via
@@ -616,7 +616,7 @@ pdf2image==1.17.0
     # via
     #   -r requirements.in
     #   unstructured
-pdfminer-six==20250506
+pdfminer.six==20240706
     # via
     #   unstructured
     #   unstructured-inference
@@ -984,7 +984,7 @@ tokenizers==0.21.1
     # via transformers
 toml==0.10.2
     # via -r requirements.in
-torch==2.4.1
+torch==2.7.1
     # via
     #   -r requirements.in
     #   accelerate
@@ -998,7 +998,7 @@ torch==2.4.1
     #   torchvision
     #   transformers
     #   unstructured-inference
-torchvision==0.19.1
+torchvision==0.22.1
     # via
     #   docling-ibm-models
     #   easyocr
