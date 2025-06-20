@@ -24,8 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install -r requirements.txt
-          uv pip install -r requirements-extra.txt
+          uv pip install --system -r requirements.txt
+          uv pip install --system -r requirements-extra.txt
           # If you have test-specific dependencies, you might have a requirements-test.txt
           # pip install -r requirements-test.txt
 
