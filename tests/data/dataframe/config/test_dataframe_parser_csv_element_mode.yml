@@ -5183,6 +5183,7 @@ test:
 
 
   input_path:
+    - tests
     - data
     - dataframe
     - fdic-failed-banks.csv

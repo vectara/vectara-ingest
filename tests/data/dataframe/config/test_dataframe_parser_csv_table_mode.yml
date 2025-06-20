@@ -31,6 +31,7 @@ test:
       texts:
         - This is a summary.
   input_path:
+    - tests
     - data
     - dataframe
     - test.csv

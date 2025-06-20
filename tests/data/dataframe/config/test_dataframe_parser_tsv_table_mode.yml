@@ -9,6 +9,7 @@ vectara: {}
 
 test:
   input_path:
+    - tests
     - data
     - dataframe
     - test.tsv

@@ -59,6 +59,7 @@ test:
         - This is a table about the band Aerosmith.
         - This is a table about the band Bon Jovi.
   input_path:
+    - tests
     - data
     - dataframe
     - test.xlsx
