@@ -96,7 +96,7 @@ class TestDataFrameParser(unittest.TestCase):
         self.assertEqual("xls", dataframe_type, 'Expected xls for .xlsx file')
 
     def test_load_dataframe_metadata_csv(self):
-        input_path = os.path.join('data', 'dataframe', 'test.csv')
+        input_path = os.path.join('tests','data', 'dataframe', 'test.csv')
         self.assertTrue(os.path.exists(input_path), 'Test file should exist')
 
         metadata = load_dataframe_metadata(input_path)
@@ -105,7 +105,7 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_load_dataframe_metadata_xls(self):
         # Ensure you have a 'test.xls' file in the 'data/dataframe/' directory for this test
-        input_path = os.path.join('data', 'dataframe', 'test.xlsx')
+        input_path = os.path.join('tests','data', 'dataframe', 'test.xlsx')
         self.assertTrue(os.path.exists(input_path),
                         f'Test file {input_path} should exist. Please create a dummy test.xls file.')
 
@@ -133,19 +133,19 @@ class TestDataFrameParser(unittest.TestCase):
         self.assertFalse(supported_by_dataframe_parser('test.mp3'))
 
     def test_dataframe_parser_csv_table_mode(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
 
     def test_dataframe_parser_tsv_table_mode_default(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_tsv_table_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_tsv_table_mode.yml')
 
     def test_dataframe_parser_pipe_table_mode_default(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_pipe_table_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_pipe_table_mode.yml')
 
     def test_dataframe_parser_xlsx_table_mode(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
 
     def test_dataframe_parser_csv_table_mode_truncate(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config',
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config',
                                        'test_dataframe_parser_csv_table_mode_should_truncate.yml')
 
     def run_dataframe_parser_test(self, *test_config_path: str):
@@ -180,17 +180,17 @@ class TestDataFrameParser(unittest.TestCase):
         mock_indexer.index_segments.assert_has_calls(calls, any_order=True)
 
     def test_dataframe_parser_csv_element_mode(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_csv_element_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_element_mode.yml')
 
     def test_dataframe_parser_xlsx_element_mode(self):
-        self.run_dataframe_parser_test('data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode.yml')
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode.yml')
 
         # mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
 
     def test_generate_dfs_to_index_failed_banks(self):
         document_id_columns = ['City', 'State']
         rows_per_chunk = 500
-        input_path = os.path.join('data', 'dataframe', 'fdic-failed-banks.csv')
+        input_path = os.path.join('tests', 'data', 'dataframe', 'fdic-failed-banks.csv')
         input_df = pd.read_csv(input_path)
         output = generate_dfs_to_index(input_df, document_id_columns, rows_per_chunk)
         self.assertIsNotNone(output)
