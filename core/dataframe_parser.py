@@ -1,14 +1,13 @@
 import logging
 import os
-
-logger = logging.getLogger(__name__)
-
 import pandas as pd
 from omegaconf import DictConfig
 from core.summary import TableSummarizer
 from core.utils import html_table_to_header_and_rows
 from core.indexer import Indexer
 import unicodedata
+
+logger = logging.getLogger(__name__)
 
 
 class DataFrameMetadata(object):
@@ -176,7 +175,6 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
         return os.path.basename(self.file_path)
 
     def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
-        column_types: dict[str, str] = parser_config.get("column_types", {})
         separator: str = parser_config.get("separator", None)
 
         if not separator:
@@ -252,8 +250,6 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
         """
         Returns the title of the Excel dataframe, which is the base name of the file.
         """
-
-    def title(self):
         return os.path.basename(self.file_path)
 
 
@@ -328,8 +324,6 @@ class DataframeParser(object):
 
         Returns: A tuple containing the table summary text and a dictionary representation of the table, or None if summarization fails or the table is empty.
         """
-
-    def parse_table_dataframe(self, df: pd.DataFrame, name: str):
         if self.truncate_table_if_over_max:
             if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
                 logger.warning(
@@ -420,10 +414,6 @@ class DataframeParser(object):
             df: The pandas DataFrame chunk to parse.
             metadata: Additional metadata for the document.
         """
-
-    def parse_element_dataframe(
-        self, doc_id: str, df: pd.DataFrame, metadata: dict[str, str]
-    ):
         texts = []
         titles = []
         metadatas = []
