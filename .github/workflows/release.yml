@@ -9,7 +9,7 @@ on:
         type: string
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'  # Matches semantic versioning tags like 2.0.7
+      - '[0-9]+\.[0-9]+\.[0-9]+'  # Matches semantic versioning tags like 2.0.7
 
 jobs:
   create-release:
