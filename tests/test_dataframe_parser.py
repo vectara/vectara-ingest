@@ -119,9 +119,12 @@ class TestDataFrameParser(unittest.TestCase):
             'bon jovi'
         ]
 
+        parser_config:DictConfig = OmegaConf.create({})
+
+
         for expected_sheet_name in expected_sheet_names:
             self.assertIn(expected_sheet_name, metadata.sheet_names)
-            df = metadata.open_dataframe(expected_sheet_name)
+            df = metadata.open_dataframe(parser_config, sheet_name=expected_sheet_name)
             self.assertIsNotNone(df, f'Expected df with sheet {expected_sheet_name}')
 
     def test_supported_by_dataframe_parser(self):
@@ -149,6 +152,14 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_dataframe_parser_xlsx_table_mode(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_table_mode.yml')
+
+
+    def test_dataframe_parser_csv_element_mode_column_datatypes(self):
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_element_mode_column_datatypes.yml')
+
+
+    def test_dataframe_parser_xlsx_element_mode_column_datatypes(self):
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode_column_datatypes.yml')
 
     def test_dataframe_parser_csv_table_mode_truncate(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config',
