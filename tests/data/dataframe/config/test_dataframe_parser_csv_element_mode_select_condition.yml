@@ -1,0 +1,156 @@
+csv_parser:
+  mode: element
+  file_path: "tests/data/dataframe/fdic-failed-banks.csv"
+  doc_id_columns: ['City', 'State']
+  text_columns: [BankName, AcquiringInstitution]
+  #  title_column: "Episode Title"
+  metadata_columns: ["ClosingDate", "Fund"]
+  select_condition: "State == 'TX'"
+
+doc_processing:
+  model_config:
+    text: {}
+
+vectara: {}
+
+test:
+  expected_index_segments_calls:
+    - doc_id: 'Austin - TX'
+      doc_metadata:
+        ClosingDate: '21-Aug-09'
+        Fund: 10105
+      doc_title: 'Austin - TX'
+      metadatas:
+        - ClosingDate: '21-Aug-09'
+          Fund: 10105
+      texts:
+        - 'Guaranty Bank - BBVA Compass'
+      titles: null
+    - doc_id: 'Cooper - TX'
+      doc_metadata:
+        ClosingDate: '31-May-19'
+        Fund: 10531
+      doc_title: 'Cooper - TX'
+      metadatas:
+       - ClosingDate: '31-May-19'
+         Fund: 10531
+      texts:
+       - 'The Enloe State Bank - Legend Bank, N. A.'
+      titles: null
+    - doc_id: 'Dallas - TX'
+      doc_metadata:
+        ClosingDate: '2-Jul-09'
+        Fund: 10079
+      doc_title: 'Dallas - TX'
+      metadatas:
+        - ClosingDate: '2-Jul-09'
+          Fund: 10079
+      texts:
+        - 'Millennium State Bank of Texas - State Bank of Texas'
+      titles: null
+    - doc_id: 'Edinburg - TX'
+      doc_metadata:
+        ClosingDate: '13-Sep-13'
+        Fund: 10488
+      doc_title: 'Edinburg - TX'
+      metadatas:
+        - ClosingDate: '13-Sep-13'
+          Fund: 10488
+      texts:
+        - 'First National Bank also operating as The National Bank of El Paso - PlainsCapital Bank'
+      titles: null
+    - doc_id: 'Houston - TX'
+      doc_metadata: {}
+      doc_title: 'Houston - TX'
+      metadatas:
+        - ClosingDate: '30-Oct-09'
+          Fund: 10138
+        - ClosingDate: '7-Nov-08'
+          Fund: 10021
+      texts:
+        - 'North Houston Bank - U.S. Bank N.A.'
+        - 'Franklin Bank, SSB - Prosperity Bank'
+      titles: null
+    - doc_id: 'La Coste - TX'
+      doc_metadata:
+        ClosingDate: '19-Feb-10'
+        Fund: 10186
+      doc_title: 'La Coste - TX'
+      metadatas:
+        - ClosingDate: '19-Feb-10'
+          Fund: 10186
+      texts:
+        - 'The La Coste National Bank - Community National Bank'
+      titles: null
+    - doc_id: 'Madisonville - TX'
+      doc_metadata:
+        ClosingDate: '30-Oct-09'
+        Fund: 10142
+      doc_title: 'Madisonville - TX'
+      metadatas:
+        - ClosingDate: '30-Oct-09'
+          Fund: 10142
+      texts:
+        - 'Madisonville State Bank - U.S. Bank N.A.'
+      titles: null
+    - doc_id: 'Plano - TX'
+      doc_metadata:
+        ClosingDate: '30-Sep-11'
+        Fund: 10398
+      doc_title: 'Plano - TX'
+      metadatas:
+        - ClosingDate: '30-Sep-11'
+          Fund: 10398
+      texts:
+        - 'First International Bank - American First National Bank'
+      titles: null
+    - doc_id: 'Sanderson - TX'
+      doc_metadata:
+        ClosingDate: '12-Dec-08'
+        Fund: 10026
+      doc_title: 'Sanderson - TX'
+      metadatas:
+        - ClosingDate: '12-Dec-08'
+          Fund: 10026
+      texts:
+        - 'Sanderson State Bank - The Pecos County State Bank'
+      titles: null
+    - doc_id: 'Sierra Blanca - TX'
+      doc_metadata:
+        ClosingDate: '18-Jan-02'
+        Fund: 4651
+      doc_title: 'Sierra Blanca - TX'
+      metadatas:
+        - ClosingDate: '18-Jan-02'
+          Fund: 4651
+      texts:
+        - 'Bank of Sierra Blanca - The Security State Bank of Pecos'
+      titles: null
+    - doc_id: 'Teague - TX'
+      doc_metadata:
+        ClosingDate: '30-Oct-09'
+        Fund: 10141
+      doc_title: 'Teague - TX'
+      metadatas:
+        - ClosingDate: '30-Oct-09'
+          Fund: 10141
+      texts:
+        - 'Citizens National Bank - U.S. Bank N.A.'
+      titles: null
+    - doc_id: 'The Woodlands - TX'
+      doc_metadata:
+        ClosingDate: '13-Dec-13'
+        Fund: 10491
+      doc_title: 'The Woodlands - TX'
+      metadatas:
+        - ClosingDate: '13-Dec-13'
+          Fund: 10491
+      texts:
+        - 'Texas Community Bank, National Association - Spirit of Texas Bank, SSB'
+      titles: null
+
+  input_path:
+    - tests
+    - data
+    - dataframe
+    - fdic-failed-banks.csv

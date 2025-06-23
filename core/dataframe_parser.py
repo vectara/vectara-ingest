@@ -302,17 +302,14 @@ class DataframeParser(object):
             self.crawler_config: DictConfig = cfg.dataframe_processing
         else:
             self.crawler_config: DictConfig = crawler_config
-        self.truncate_table_if_over_max: bool = self.crawler_config.get(
-            "truncate_table_if_over_max", True
-        )
-        self.max_rows: int = int(
-            self.crawler_config.get("max_rows", 500)
-        )  ### TEMP 10000
+        self.truncate_table_if_over_max: bool = self.crawler_config.get("truncate_table_if_over_max", True)
+        self.max_rows: int = int(self.crawler_config.get("max_rows", 500))
         self.max_cols: int = int(self.crawler_config.get("max_cols", 20))  ### TEMP 500
         self.sheet_names: list[str] = self.crawler_config.get("sheet_names", [])
         self.mode: str = self.crawler_config.get("mode", "table")
         self.indexer: Indexer = indexer
         self.table_summarizer: TableSummarizer = table_summarizer
+        self.select_condition = self.crawler_config.get("select_condition", None)
 
     def parse_table_dataframe(self, df: pd.DataFrame, name: str):
         """
@@ -324,6 +321,11 @@ class DataframeParser(object):
 
         Returns: A tuple containing the table summary text and a dictionary representation of the table, or None if summarization fails or the table is empty.
         """
+
+        if self.select_condition:
+            logger.info(f"Querying dataframe with {self.select_condition}")
+            df = df.query(self.select_condition)
+
         if self.truncate_table_if_over_max:
             if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
                 logger.warning(
@@ -470,9 +472,10 @@ class DataframeParser(object):
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
             df = dataframe_metadata.open_dataframe(self.crawler_config)
-            for doc_id, child_df in generate_dfs_to_index(
-                df, doc_id_columns, rows_per_chunk
-            ):
+            if self.select_condition:
+                logger.info(f"Querying dataframe with {self.select_condition}")
+                df = df.query(self.select_condition)
+            for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
                 self.parse_element_dataframe(doc_id, child_df, metadata)
 
         elif isinstance(dataframe_metadata, SheetBasedDataFrameMetadata):
@@ -484,9 +487,10 @@ class DataframeParser(object):
             for sheet_name in all_sheet_names:
                 logger.info(f"parse_element() - processing {sheet_name}")
                 df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
-                for doc_id, child_df in generate_dfs_to_index(
-                    df, doc_id_columns, rows_per_chunk
-                ):
+                if self.select_condition:
+                    logger.info(f"Querying dataframe with {self.select_condition}")
+                    df = df.query(self.select_condition)
+                for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
                     self.parse_element_dataframe(doc_id, child_df, metadata)
         else:
             raise ValueError(f"Unsupported {dataframe_metadata}")
