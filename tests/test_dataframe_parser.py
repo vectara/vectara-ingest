@@ -135,6 +135,12 @@ class TestDataFrameParser(unittest.TestCase):
     def test_dataframe_parser_csv_table_mode(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode.yml')
 
+    def test_dataframe_parser_csv_table_mode_select_condition(self):
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_table_mode_select_condition.yml')
+
+    def test_dataframe_parser_csv_element_mode_select_condition(self):
+        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_element_mode_select_condition.yml')
+
     def test_dataframe_parser_tsv_table_mode_default(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_tsv_table_mode.yml')
 
@@ -147,6 +153,8 @@ class TestDataFrameParser(unittest.TestCase):
     def test_dataframe_parser_csv_table_mode_truncate(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config',
                                        'test_dataframe_parser_csv_table_mode_should_truncate.yml')
+
+
 
     def run_dataframe_parser_test(self, *test_config_path: str):
         config = test_load_config(*test_config_path)
