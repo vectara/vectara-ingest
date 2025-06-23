@@ -176,6 +176,7 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
 
     def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
         separator: str = parser_config.get("separator", None)
+        column_types: dict[str, str] = parser_config.get("column_types", None)
 
         if not separator:
             separator = get_separator_by_file_name(self.file_path)
@@ -188,7 +189,15 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
         logger.debug(
             f"CsvDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_csv."
         )
-        df = pd.read_csv(self.file_path, sep=separator)
+        params = {
+            'sep': separator
+        }
+        if column_types:
+            params['dtype']={}
+            for column, column_type in column_types.items():
+                params['dtype'][column] = column_type
+
+        df = pd.read_csv(self.file_path, **params)
         df = df.astype(object)
 
         return df
@@ -239,10 +248,18 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
         Returns:
             A pandas DataFrame representing the specified sheet.
         """
+        column_types: dict[str, str] = parser_config.get("column_types", None)
         logger.debug(
             f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel."
         )
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name)
+        params = {
+            'sheet_name': sheet_name
+        }
+        if column_types:
+            params['dtype']={}
+            for column, column_type in column_types.items():
+                params['dtype'][column] = column_type
+        df = pd.read_excel(self.file_path, **params)
         # df = df.astype(object)
         return df
 
