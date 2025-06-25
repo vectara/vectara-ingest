@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import time
 from datetime import datetime, timedelta
 from collections import deque
@@ -34,7 +35,7 @@ class MediawikiCrawler(Crawler):
             if title:
                 queue.append((title, 0, domain))
                 seen.add((title, domain))
-        logging.info(f"Starting crawl from {len(source_urls)} sources to depth={depth}, max pages={n_pages}")
+        logger.info(f"Starting crawl from {len(source_urls)} sources to depth={depth}, max pages={n_pages}")
 
         indexed_count = 0
         # Process the queue
@@ -52,16 +53,16 @@ class MediawikiCrawler(Crawler):
 
             # Enforce same-domain restriction
             if page_domain != root_domain:
-                logging.debug(f"Skipping {title}: domain {page_domain} != root {root_domain}")
+                logger.debug(f"Skipping {title}: domain {page_domain} != root {root_domain}")
                 continue
 
             # Index the page
             if self.indexer.index_document(doc):
                 indexed_count += 1
             else:
-                logging.warning(f"Failed to index page {title}")
+                logger.warning(f"Failed to index page {title}")
 
-            logging.info(f"Indexed {page_url} ({indexed_count}/{n_pages})")
+            logger.info(f"Indexed {page_url} ({indexed_count}/{n_pages})")
 
             # Enqueue linked pages if within depth
             if current_depth < depth:

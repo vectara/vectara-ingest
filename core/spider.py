@@ -418,6 +418,6 @@ if __name__ == "__main__":
             positive_regexes=['.*vectara.com.*'],
             max_depth=2,
         )
-        print("Valid URLs:", urls)
+        logger.info(f"Valid URLs: {urls}")
 
     main()

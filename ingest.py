@@ -15,12 +15,12 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging
+from core.utils import setup_logging, load_config
 
 app = typer.Typer()
 setup_logging()
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     """
@@ -71,7 +71,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+        logger.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
 def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     """
@@ -93,7 +93,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error resetting corpus: {response.status_code} {response.text}")
+        logger.error(f"Error resetting corpus: {response.status_code} {response.text}")
 
 def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: str, auth_secret: str) -> None:
     """
@@ -121,7 +121,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+        logger.error(f"Error creating corpus: {response.status_code} {response.text}")
 
 def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     """
@@ -147,7 +147,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
-        logging.error(f"Error creating corpus: {response.status_code} {response.text}")
+        logger.error(f"Error creating corpus: {response.status_code} {response.text}")
 
 def is_valid_url(url: str) -> bool:
     try:
@@ -168,7 +168,7 @@ def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     :return:
     """
     old_value = cfg.get(key, None)
-    logging.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
+    logger.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
     OmegaConf.update(cfg, key, new_value)
 
 
@@ -227,7 +227,7 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         for pattern, section in patterns.items():
             match = re.match(pattern, k)
             if match:
-                logging.debug(f"Matched '{k}' with '{pattern}'")
+                logger.debug(f"Matched '{k}' with '{pattern}'")
                 key = match.group(1)
                 update_omega_conf(cfg, reason, f'{section}.{key.lower()}', v)
                 break
@@ -239,14 +239,11 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     """
     Core ingest functionality that can be called from both Docker and CLI.
     """
-    logger = logging.getLogger()
-
     # process arguments
-    logger.info(f"Loading config {config_file}")
     try:
-        cfg: DictConfig = DictConfig(OmegaConf.load(config_file))
+        cfg: DictConfig = load_config(config_file)
     except Exception as e:
-        logging.error(f"Error loading config file ({config_file}): {e}")
+        logger.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
 
     if not cfg.get('vectara', None):
@@ -287,13 +284,13 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             logger.error(f"Provided secrets path '{secrets_path}' does not exist")
             raise typer.Exit(1)
         logger.info(f"Using provided secrets path: {secrets_path}")
-    
+
     # add .env params, by profile
     logger.info(f"Loading {secrets_path}")
     with open(secrets_path, "r") as f:
         env_dict = toml.load(f)
     if profile not in env_dict:
-        logging.error(f'Profile "{profile}" not found in secrets.toml')
+        logger.error(f'Profile "{profile}" not found in secrets.toml')
         exit(1)
     logger.info(f'Using profile "{profile}" from secrets.toml')
     
