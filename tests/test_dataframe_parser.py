@@ -204,8 +204,6 @@ class TestDataFrameParser(unittest.TestCase):
     def test_dataframe_parser_xlsx_element_mode(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode.yml')
 
-        # mock_indexer.index_segments.assert_called_once_with(**dict(sorted(expected_index_segments_call.items())))
-
     def test_generate_dfs_to_index_failed_banks(self):
         document_id_columns = ['City', 'State']
         rows_per_chunk = 500
