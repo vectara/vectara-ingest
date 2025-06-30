@@ -213,17 +213,17 @@ class TestDataFrameParser(unittest.TestCase):
         output = generate_dfs_to_index(input_df, document_id_columns, rows_per_chunk)
         self.assertIsNotNone(output)
         expected = {
-            'rows 0-49': 50,
-            'rows 50-99': 50,
-            'rows 100-149': 50,
-            'rows 150-199': 50,
-            'rows 200-249': 50,
-            'rows 250-299': 50,
-            'rows 300-349': 50,
-            'rows 350-399': 50,
-            'rows 400-449': 50,
-            'rows 450-499': 50,
-            'rows 500-549': 50,
+            'rows 0-49': rows_per_chunk,
+            'rows 50-99': rows_per_chunk,
+            'rows 100-149': rows_per_chunk,
+            'rows 150-199': rows_per_chunk,
+            'rows 200-249': rows_per_chunk,
+            'rows 250-299': rows_per_chunk,
+            'rows 300-349': rows_per_chunk,
+            'rows 350-399': rows_per_chunk,
+            'rows 400-449': rows_per_chunk,
+            'rows 450-499': rows_per_chunk,
+            'rows 500-549': rows_per_chunk,
             'rows 550-599': 21
         }
         df_by_row_per_chunk = dict(output)
