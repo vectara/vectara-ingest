@@ -62,7 +62,7 @@ supported_dataframe_extensions = {
 }
 
 
-def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns, rows_per_chunk: int):
+def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns:list[str]|None, rows_per_chunk: int):
     """
     Generates dataframes to be indexed based on the provided DataFrame, document ID columns,
     and the desired number of rows per chunk.
@@ -85,11 +85,14 @@ def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns, rows_per_chunk: int)
                 doc_id = " - ".join([str(x) for x in name if x])
             yield (doc_id, group)
     else:
-        if rows_per_chunk < len(df):
+        if rows_per_chunk > len(df):
             rows_per_chunk = len(df)
         for inx in range(0, df.shape[0], rows_per_chunk):
-            sub_df = df[inx : inx + rows_per_chunk]
-            name = f"rows {inx}-{inx+rows_per_chunk-1}"
+            sub_df = df[inx: inx+rows_per_chunk]
+            if rows_per_chunk > 1:
+                name = f'rows {inx}-{inx+rows_per_chunk-1}'
+            else:
+                name = f'row {inx}'
             yield (name, sub_df)
 
 

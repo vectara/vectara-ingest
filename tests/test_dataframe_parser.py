@@ -1,3 +1,4 @@
+import logging
 import os
 import unittest
 from dataclasses import dataclass
@@ -203,6 +204,38 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_dataframe_parser_xlsx_element_mode(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode.yml')
+
+    def test_generate_dfs_to_index_failed_banks_rows_per_chunk(self):
+        rows_per_chunk = 50
+        input_path = os.path.join('tests', 'data', 'dataframe', 'fdic-failed-banks.csv')
+        document_id_columns = None
+        input_df = pd.read_csv(input_path)
+        output = generate_dfs_to_index(input_df, document_id_columns, rows_per_chunk)
+        self.assertIsNotNone(output)
+        expected = {
+            'rows 0-49': 50,
+            'rows 50-99': 50,
+            'rows 100-149': 50,
+            'rows 150-199': 50,
+            'rows 200-249': 50,
+            'rows 250-299': 50,
+            'rows 300-349': 50,
+            'rows 350-399': 50,
+            'rows 400-449': 50,
+            'rows 450-499': 50,
+            'rows 500-549': 50,
+            'rows 550-599': 21
+        }
+        df_by_row_per_chunk = dict(output)
+        self.assertIsNotNone(df_by_row_per_chunk)
+        self.assertEqual(len(expected), len(df_by_row_per_chunk))
+
+        for key, expected_length in expected.items():
+            df = df_by_row_per_chunk.get(key, None)
+            self.assertIsNotNone(df, f"Should have an entry for '{key}'.")
+            actual_length = len(df)
+            self.assertEqual(expected_length, actual_length, f"Row count for '{key}' does not match.")
+
 
     def test_generate_dfs_to_index_failed_banks(self):
         document_id_columns = ['City', 'State']
