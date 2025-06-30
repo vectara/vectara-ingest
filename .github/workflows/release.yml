@@ -65,5 +65,5 @@ jobs:
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           draft: false
           prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           tag_name: ${{ steps.get_version.outputs.VERSION }} 
