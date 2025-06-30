@@ -1,0 +1,160 @@
+name: Build and Publish Conda Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 0.1.0)'
+        required: true
+        type: string
+  release:
+    types: [published]
+
+jobs:
+  build-and-publish:
+    name: Build and Publish on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ['3.11']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python-version }}
+          channels: conda-forge,defaults
+      
+      - name: Get version
+        id: get_version
+        shell: bash -l {0}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update version in meta.yaml
+        shell: bash -l {0}
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          if [[ "$OSTYPE" == "msys" ]]; then
+            # Windows needs different sed syntax
+            sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
+          elif [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS needs different sed syntax
+            sed -i "" "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
+          else
+            # Linux
+            sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
+          fi
+      
+      - name: Install conda-build and anaconda-client
+        shell: bash -l {0}
+        run: |
+          conda install -y conda-build anaconda-client
+      
+      - name: Build conda package
+        shell: bash -l {0}
+        run: |
+          conda build conda --output-folder ./conda-bld
+      
+      - name: Upload to Anaconda.org
+        shell: bash -l {0}
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: |
+          # Get the path to the built package
+          if [[ "$OSTYPE" == "msys" ]]; then
+            # Windows
+            PLATFORM="win-64"
+          elif [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            PLATFORM="osx-64"
+          else
+            # Linux
+            PLATFORM="linux-64"
+          fi
+          
+          # Upload the package
+          anaconda upload --force ./conda-bld/$PLATFORM/vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.tar.bz2
+
+  build-and-publish-redhat:
+    name: Build and Publish for Red Hat Linux
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/centos/centos:stream9
+    
+    steps:
+      - name: Install system dependencies
+        run: |
+          # Install build dependencies
+          dnf install -y git wget make gcc
+
+          # Install Playwright dependencies
+          dnf install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
+            libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs
+
+          # Install fonts
+          dnf install -y liberation-fonts dejavu-sans-fonts
+
+          # Additional dependencies
+          dnf install -y libcanberra-gtk3 atk || true
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Miniconda
+        run: |
+          wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda
+          echo "$HOME/miniconda/bin" >> $GITHUB_PATH
+          echo "CONDA_PREFIX=$HOME/miniconda" >> $GITHUB_ENV
+      
+      - name: Get version
+        id: get_version
+        run: |
+          source $HOME/miniconda/bin/activate
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update version in meta.yaml
+        run: |
+          source $HOME/miniconda/bin/activate
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
+      
+      - name: Install conda-build and anaconda-client
+        run: |
+          source $HOME/miniconda/bin/activate
+          conda install -y conda-build anaconda-client
+      
+      - name: Build conda package
+        run: |
+          source $HOME/miniconda/bin/activate
+          conda build conda --output-folder ./conda-bld
+      
+      - name: Install Firefox for Playwright
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Install playwright and then Firefox browser
+          pip install playwright
+          playwright install firefox
+      
+      - name: Upload to Anaconda.org
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Upload the package
+          anaconda upload --force ./conda-bld/linux-64/vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.tar.bz2 
