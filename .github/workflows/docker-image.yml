@@ -85,9 +85,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Generate artifact attestation
+      # Generate attestation for regular image
+      - name: Generate artifact attestation for regular image
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push_regular.outputs.digest }}
+          push-to-registry: true
+
+      # Generate attestation for full image
+      - name: Generate artifact attestation for full image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-digest: ${{ steps.push_full.outputs.digest }}
           push-to-registry: true 
