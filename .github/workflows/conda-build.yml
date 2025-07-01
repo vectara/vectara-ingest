@@ -94,7 +94,9 @@ jobs:
       - name: Build conda package
         shell: bash -l {0}
         run: |
-          conda build conda --output-folder ./conda-bld
+          # Verify Python version before building
+          python --version
+          conda build --channel conda-forge conda --output-folder ./conda-bld
       
       - name: Test the built package
         shell: bash -l {0}
@@ -103,37 +105,72 @@ jobs:
           conda create -y -n test-env python=${{ matrix.python-version }}
           conda activate test-env
           
+          # Verify Python version in test environment
+          python --version
+          
           # Install the built package
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             PLATFORM="win-64"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             PLATFORM="osx-64"
+            # Check if we're on Apple Silicon
+            if [[ $(uname -m) == "arm64" ]]; then
+              PLATFORM="osx-arm64"
+            fi
           else
             PLATFORM="linux-64"
           fi
           
           # Install and test
-          conda install -y -c ./conda-bld/$PLATFORM vectara-ingest
+          conda install -y -c ./conda-bld/$PLATFORM -c conda-forge vectara-ingest
           
           # Verify the package can be imported
           python -c "import core; print('Import test successful')"
+      
+      - name: List built packages
+        shell: bash -l {0}
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            PLATFORM="win-64"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            PLATFORM="osx-64"
+            # Check if we're on Apple Silicon
+            if [[ $(uname -m) == "arm64" ]]; then
+              PLATFORM="osx-arm64"
+            fi
+          else
+            PLATFORM="linux-64"
+          fi
+          
+          # List all files in the output directory
+          echo "Contents of ./conda-bld/$PLATFORM:"
+          ls -la ./conda-bld/$PLATFORM/
       
       - name: Upload to Anaconda.org
         shell: bash -l {0}
         env:
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
         run: |
-          # Get the path to the built package
+          # Determine platform
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             PLATFORM="win-64"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             PLATFORM="osx-64"
+            # Check if we're on Apple Silicon
+            if [[ $(uname -m) == "arm64" ]]; then
+              PLATFORM="osx-arm64"
+            fi
           else
             PLATFORM="linux-64"
           fi
           
+          # Find the .conda package file
+          PACKAGE_FILE=$(find ./conda-bld/$PLATFORM -name "vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.conda" | head -1)
+          
+          echo "Found package file: $PACKAGE_FILE"
+          
           # Upload the package
-          anaconda upload --force ./conda-bld/$PLATFORM/vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.tar.bz2
+          anaconda upload --force "$PACKAGE_FILE"
 
   build-and-publish-redhat:
     name: Build and Publish for Red Hat Linux
@@ -149,24 +186,31 @@ jobs:
       - name: Install system dependencies
         run: |
           # Install build dependencies
-          dnf install -y git wget make gcc
+          yum install -y git wget make gcc
 
-          # Install Playwright dependencies
-          dnf install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
+          # Core dependencies
+          yum install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
             libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs
 
-          # Install fonts
-          dnf install -y liberation-fonts dejavu-sans-fonts
+          # Fonts
+          yum install -y liberation-fonts dejavu-sans-fonts
 
-          # Additional dependencies
-          dnf install -y libcanberra-gtk3 atk || true
+          # Additional dependencies if available
+          yum install -y libcanberra-gtk3 atk || true
       
-      - name: Install Miniconda
+      - name: Install Miniconda with Python 3.11
         run: |
           wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
           bash miniconda.sh -b -p $HOME/miniconda
           echo "$HOME/miniconda/bin" >> $GITHUB_PATH
           echo "CONDA_PREFIX=$HOME/miniconda" >> $GITHUB_ENV
+          
+          # Create base environment with Python 3.11
+          source $HOME/miniconda/bin/activate
+          conda install -y python=3.11
+          
+          # Verify Python version
+          python --version
       
       - name: Get version
         id: get_version
@@ -188,25 +232,39 @@ jobs:
         run: |
           source $HOME/miniconda/bin/activate
           conda install -y conda-build anaconda-client
+          conda config --add channels conda-forge
       
       - name: Build conda package
         run: |
           source $HOME/miniconda/bin/activate
-          conda build conda --output-folder ./conda-bld
+          # Verify Python version before building
+          python --version
+          conda build --channel conda-forge conda --output-folder ./conda-bld
       
       - name: Test the built package
         run: |
           source $HOME/miniconda/bin/activate
           
-          # Create a test environment
+          # Create a test environment with Python 3.11
           conda create -y -n test-env python=3.11
           conda activate test-env
           
+          # Verify Python version in test environment
+          python --version
+          
           # Install the built package
-          conda install -y -c ./conda-bld/linux-64 vectara-ingest
+          conda install -y -c ./conda-bld/linux-64 -c conda-forge vectara-ingest
           
           # Verify the package can be imported
           python -c "import core; print('Import test successful')"
+      
+      - name: List built packages
+        run: |
+          source $HOME/miniconda/bin/activate
+          
+          # List all files in the output directory
+          echo "Contents of ./conda-bld/linux-64:"
+          ls -la ./conda-bld/linux-64/
       
       - name: Install Firefox for Playwright
         run: |
@@ -220,5 +278,11 @@ jobs:
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
         run: |
           source $HOME/miniconda/bin/activate
+          
+          # Find the .conda package file
+          PACKAGE_FILE=$(find ./conda-bld/linux-64 -name "vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.conda" | head -1)
+          
+          echo "Found package file: $PACKAGE_FILE"
+          
           # Upload the package
-          anaconda upload --force ./conda-bld/linux-64/vectara-ingest-${{ steps.get_version.outputs.VERSION }}-*.tar.bz2 
+          anaconda upload --force "$PACKAGE_FILE" 
