@@ -19,7 +19,7 @@ test:
       doc_metadata:
         ClosingDate: '21-Aug-09'
         Fund: 10105
-      doc_title: 'Austin - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '21-Aug-09'
           Fund: 10105
@@ -30,7 +30,7 @@ test:
       doc_metadata:
         ClosingDate: '31-May-19'
         Fund: 10531
-      doc_title: 'Cooper - TX'
+      doc_title: ""
       metadatas:
        - ClosingDate: '31-May-19'
          Fund: 10531
@@ -41,7 +41,7 @@ test:
       doc_metadata:
         ClosingDate: '2-Jul-09'
         Fund: 10079
-      doc_title: 'Dallas - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '2-Jul-09'
           Fund: 10079
@@ -52,7 +52,7 @@ test:
       doc_metadata:
         ClosingDate: '13-Sep-13'
         Fund: 10488
-      doc_title: 'Edinburg - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '13-Sep-13'
           Fund: 10488
@@ -61,7 +61,7 @@ test:
       titles: null
     - doc_id: 'Houston - TX'
       doc_metadata: {}
-      doc_title: 'Houston - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '30-Oct-09'
           Fund: 10138
@@ -75,7 +75,7 @@ test:
       doc_metadata:
         ClosingDate: '19-Feb-10'
         Fund: 10186
-      doc_title: 'La Coste - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '19-Feb-10'
           Fund: 10186
@@ -86,7 +86,7 @@ test:
       doc_metadata:
         ClosingDate: '30-Oct-09'
         Fund: 10142
-      doc_title: 'Madisonville - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '30-Oct-09'
           Fund: 10142
@@ -97,7 +97,7 @@ test:
       doc_metadata:
         ClosingDate: '30-Sep-11'
         Fund: 10398
-      doc_title: 'Plano - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '30-Sep-11'
           Fund: 10398
@@ -108,7 +108,7 @@ test:
       doc_metadata:
         ClosingDate: '12-Dec-08'
         Fund: 10026
-      doc_title: 'Sanderson - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '12-Dec-08'
           Fund: 10026
@@ -119,7 +119,7 @@ test:
       doc_metadata:
         ClosingDate: '18-Jan-02'
         Fund: 4651
-      doc_title: 'Sierra Blanca - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '18-Jan-02'
           Fund: 4651
@@ -130,7 +130,7 @@ test:
       doc_metadata:
         ClosingDate: '30-Oct-09'
         Fund: 10141
-      doc_title: 'Teague - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '30-Oct-09'
           Fund: 10141
@@ -141,7 +141,7 @@ test:
       doc_metadata:
         ClosingDate: '13-Dec-13'
         Fund: 10491
-      doc_title: 'The Woodlands - TX'
+      doc_title: ""
       metadatas:
         - ClosingDate: '13-Dec-13'
           Fund: 10491

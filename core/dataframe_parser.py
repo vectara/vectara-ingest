@@ -465,7 +465,7 @@ class DataframeParser(object):
         for column in metadata_columns:
             if len(df[column].unique()) == 1 and not pd.isnull(df[column].iloc[0]):
                 doc_metadata[column] = df[column].iloc[0]
-        title = titles[0] if titles else doc_id
+        title = titles[0] if titles else ""
         logger.debug(f"Indexing {len(df)} rows for doc_id '{doc_id}'")
 
         self.indexer.index_segments(
@@ -487,7 +487,7 @@ class DataframeParser(object):
             dataframe_metadata: The metadata for the dataframe file.
             metadata: Additional metadata for the document.
         """
-        doc_id_columns: list[str] = list(self.crawler_config.get("doc_id_columns", []))
+        doc_id_columns: list[str] = list(self.crawler_config.get("doc_id_columns", None))
         rows_per_chunk: int = self.crawler_config.get("rows_per_chunk", 500)
 
         if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
