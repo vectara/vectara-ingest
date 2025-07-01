@@ -50,7 +50,7 @@ class DFIndexer(object):
         for column in self.metadata_columns:
             if len(df[column].unique())==1 and not pd.isnull(df[column].iloc[0]):
                 doc_metadata[column] = df[column].iloc[0]
-        title = titles[0] if titles else doc_id
+        title = titles[0] if titles else ""
         self.indexer.index_segments(doc_id, texts=texts, titles=titles, metadatas=metadatas, 
                                     doc_title=title, doc_metadata = doc_metadata)
         self.count += 1
@@ -70,11 +70,14 @@ class CsvCrawler(Crawler):
                     doc_id = ' - '.join([str(x) for x in name if x])
                 yield (doc_id, group)
         else:
-            if rows_per_chunk < len(df):
+            if rows_per_chunk > len(df):
                 rows_per_chunk = len(df)
             for inx in range(0, df.shape[0], rows_per_chunk):
                 sub_df = df[inx: inx+rows_per_chunk]
-                name = f'rows {inx}-{inx+rows_per_chunk-1}'
+                if rows_per_chunk > 1:
+                    name = f'rows {inx}-{inx+rows_per_chunk-1}'
+                else:
+                    name = f'row {inx}'
                 yield (name, sub_df)
 
     def index_dataframe(self, df: pd.DataFrame, 
@@ -109,7 +112,7 @@ class CsvCrawler(Crawler):
         text_columns = list(self.cfg.csv_crawler.get("text_columns", []))
         title_column = self.cfg.csv_crawler.get("title_column", None)
         metadata_columns = list(self.cfg.csv_crawler.get("metadata_columns", []))
-        doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", None))
+        doc_id_columns = list(self.cfg.csv_crawler.get("doc_id_columns", []))
         column_types = self.cfg.csv_crawler.get("column_types", {})
         all_columns = text_columns + metadata_columns + doc_id_columns
         if title_column:
