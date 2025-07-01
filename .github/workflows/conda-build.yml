@@ -11,9 +11,39 @@ on:
     types: [published]
 
 jobs:
+  lint-recipe:
+    name: Lint Conda Recipe
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: '3.11'
+          channels: conda-forge,defaults
+      
+      - name: Install conda-verify and conda-build
+        shell: bash -l {0}
+        run: |
+          conda install -y conda-build conda-verify
+      
+      - name: Lint recipe with conda-verify
+        shell: bash -l {0}
+        run: |
+          conda-verify conda/meta.yaml
+      
+      - name: Run conda build in dry-run mode
+        shell: bash -l {0}
+        run: |
+          conda build --check conda
+
   build-and-publish:
-    name: Build and Publish on ${{ matrix.os }}
+    name: Build and Publish on ${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }}
     runs-on: ${{ matrix.os }}
+    needs: lint-recipe
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +75,10 @@ jobs:
         shell: bash -l {0}
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
-          if [[ "$OSTYPE" == "msys" ]]; then
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
             # Windows needs different sed syntax
             sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
-          elif [[ "$OSTYPE" == "darwin"* ]]; then
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
             # macOS needs different sed syntax
             sed -i "" "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
           else
@@ -66,20 +96,39 @@ jobs:
         run: |
           conda build conda --output-folder ./conda-bld
       
+      - name: Test the built package
+        shell: bash -l {0}
+        run: |
+          # Create a test environment
+          conda create -y -n test-env python=${{ matrix.python-version }}
+          conda activate test-env
+          
+          # Install the built package
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            PLATFORM="win-64"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            PLATFORM="osx-64"
+          else
+            PLATFORM="linux-64"
+          fi
+          
+          # Install and test
+          conda install -y -c ./conda-bld/$PLATFORM vectara-ingest
+          
+          # Verify the package can be imported
+          python -c "import core; print('Import test successful')"
+      
       - name: Upload to Anaconda.org
         shell: bash -l {0}
         env:
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
         run: |
           # Get the path to the built package
-          if [[ "$OSTYPE" == "msys" ]]; then
-            # Windows
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
             PLATFORM="win-64"
-          elif [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
             PLATFORM="osx-64"
           else
-            # Linux
             PLATFORM="linux-64"
           fi
           
@@ -89,10 +138,14 @@ jobs:
   build-and-publish-redhat:
     name: Build and Publish for Red Hat Linux
     runs-on: ubuntu-latest
+    needs: lint-recipe
     container:
       image: quay.io/centos/centos:stream9
     
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
       - name: Install system dependencies
         run: |
           # Install build dependencies
@@ -107,9 +160,6 @@ jobs:
 
           # Additional dependencies
           dnf install -y libcanberra-gtk3 atk || true
-      
-      - name: Checkout code
-        uses: actions/checkout@v4
       
       - name: Install Miniconda
         run: |
@@ -143,6 +193,20 @@ jobs:
         run: |
           source $HOME/miniconda/bin/activate
           conda build conda --output-folder ./conda-bld
+      
+      - name: Test the built package
+        run: |
+          source $HOME/miniconda/bin/activate
+          
+          # Create a test environment
+          conda create -y -n test-env python=3.11
+          conda activate test-env
+          
+          # Install the built package
+          conda install -y -c ./conda-bld/linux-64 vectara-ingest
+          
+          # Verify the package can be imported
+          python -c "import core; print('Import test successful')"
       
       - name: Install Firefox for Playwright
         run: |
