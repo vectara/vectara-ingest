@@ -419,6 +419,15 @@ The project is designed to be used within a Docker container, so that a crawl jo
 
 If the `http_proxy`, `https_proxy`, or `no_proxy` environment variables exist, they will be used during the docker build step.
 
+#### Additional environment variables
+
+Additional environment variables can be injected into the docker container using the `.run-env` file. Below is an example
+of the format. 
+
+```bash
+HF_ENDPOINT="http://localhost:9000"
+```
+
 ### Local deployment
 
 To run `vectara-ingest` locally, perform the following steps:

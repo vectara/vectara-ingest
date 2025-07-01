@@ -140,6 +140,10 @@ if [[ -n "${LOGGING_LEVEL}" ]]; then
   ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -e LOGGING_LEVEL=${LOGGING_LEVEL}"
 fi
 
+if [[ -f .run-env ]]; then
+  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} --env-file .run-env"
+fi
+
 # Run docker container
 config_file_name="${1##*/}"
 if [[ "${crawler_type}" == "folder" ]]; then
