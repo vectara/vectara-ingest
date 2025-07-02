@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vectara-ingest-examples
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vectara-api-key
+  namespace: vectara-ingest-examples
+type: Opaque
+stringData:
+  VECTARA_API_KEY: your-actual-api-key-here
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vectara-endpoint
+  namespace: vectara-ingest-examples
+data:
+  vectara_endpoint: "https://vectara.example.com/api"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sharepoint-credentials
+  namespace: vectara-ingest-examples
+type: Opaque
+stringData:
+  secrets.toml: |
+    [sharepoint]
+    SHAREPOINT_USERNAME = "example@example.com"
+    SHAREPOINT_PASSWORD = "your-password"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sharepoint
+  namespace: vectara-ingest-examples
+data:
+  sharepoint.yml: |
+    vectara:
+      corpus_key: ingest_sharepoint
+      reindex: true
+      create_corpus: false
+    
+    crawling:
+      crawler_type: sharepoint
+    
+    doc_processing:
+      model: "openai"
+      doc_parser: docling
+      parse_tables: true
+      enable_gmft: true
+      do_ocr: true
+      summarize_images: true
+    
+      unstructured_config:
+        chunking_strategy: by_title
+        chunk_size: 512
+    
+      use_core_indexing: true
+    
+    sharepoint_crawler:
+      team_site_url: "http://myteam.internal/wplinvm"
+      mode: folder
+      target_folder: "/testing/Shared%20Documents/Subfolder2"
+      recursive: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sharepoint
+  namespace: vectara-ingest-examples
+spec:
+  template:
+    spec:
+      containers:
+        - name: vectara-ingest
+          image: vectara/vectara-ingest:2.0.7.full # Always use a known tag
+          env:
+            - name: VECTARA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vectara-api-key
+                  key: VECTARA_API_KEY
+            - name: VECTARA_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: vectara-endpoint
+                  key: vectara_endpoint
+            - name: CONFIG
+              value: /config/sharepoint.yml
+            - name: PROFILE
+              value: sharepoint
+          volumeMounts:
+            - name: sharepoint-config
+              mountPath: /config/sharepoint.yml
+              subPath: sharepoint.yml
+            - name: sharepoint-credentials
+              mountPath: /home/vectara/env/secrets.toml
+              subPath: secrets.toml
+      volumes:
+        - name: sharepoint-config
+          configMap:
+            name: sharepoint
+        - name: sharepoint-credentials
+          secret:
+            secretName: sharepoint-credentials
+      restartPolicy: Never
