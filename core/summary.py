@@ -1,7 +1,5 @@
 import base64, logging
 
-from PIL import Image
-
 from typing import Set, Optional, Tuple
 import base64
 import logging
