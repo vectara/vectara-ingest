@@ -65,7 +65,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           channels: conda-forge,defaults
       
-      - name: Get version from Git tag
+      - name: Get version
         id: get_version
         shell: bash -l {0}
         run: |
@@ -180,7 +180,7 @@ jobs:
           # Verify Python version
           python --version
       
-      - name: Get version from Git tag
+      - name: Get version
         id: get_version
         run: |
           source $HOME/miniconda/bin/activate
