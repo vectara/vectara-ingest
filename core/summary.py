@@ -1,5 +1,3 @@
-import base64, 
-
 from typing import Set, Optional, Tuple
 import base64
 import logging
