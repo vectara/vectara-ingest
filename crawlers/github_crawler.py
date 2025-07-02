@@ -2,6 +2,7 @@ import json
 from typing import List, Any
 from datetime import datetime
 import logging
+logger = logging.getLogger(__name__)
 import base64
 
 from box import Box
@@ -18,16 +19,16 @@ def clean_empty_sections(doc: dict) -> dict:
     doc['sections'] = [section for section in doc['sections'] if section['text']]
     len_after = len(doc['sections'])
     if len_after < len_before:
-        logging.info(f"Removed {len_before-len_after} empty sections for doc {doc['id']}")
+        logger.info(f"Removed {len_before-len_after} empty sections for doc {doc['id']}")
     return doc
 
 def convert_date(date_str: str) -> str:
     # Remove the 'Z' at the end and parse the date string to a datetime object
     date_obj = datetime.fromisoformat(date_str.replace("Z", ""))
-    
+
     # Format the datetime object to a string in the format YYYY-MM-DD
     normal_date = date_obj.strftime("%Y-%m-%d")
-    
+
     return normal_date
 
 class Github(object):
@@ -45,7 +46,7 @@ class Github(object):
         if response.status_code == 200:
             return list(response.json())
         else:
-            logging.info(f"Error retrieving issues: {response.status_code}, {response.text}")
+            logger.info(f"Error retrieving issues: {response.status_code}, {response.text}")
             return []
 
     def get_issue_comments(self, issue_number: str) -> List[Any]:
@@ -55,9 +56,9 @@ class Github(object):
         if response.status_code == 200:
             return list(response.json())
         else:
-            logging.info(f"Error retrieving comments: {response.status_code}, {response.text}")
+            logger.info(f"Error retrieving comments: {response.status_code}, {response.text}")
             return []
-        
+
     def get_pull_requests(self, state: str) -> List[Any]:
         # state can be "open", "closed", "all", or "merged"
         api_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls?state={state}"
@@ -66,8 +67,8 @@ class Github(object):
         if response.status_code == 200:
             return list(response.json())
         else:
-            logging.info(f"Error retrieving pull requests: {response.status_code}, {response.text}")
-            return []        
+            logger.info(f"Error retrieving pull requests: {response.status_code}, {response.text}")
+            return []
 
     def get_pr_comments(self, pull_number: int) -> List[Any]:
         api_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{pull_number}/comments"
@@ -76,7 +77,7 @@ class Github(object):
         if response.status_code == 200:
             return list(response.json())
         else:
-            logging.info(f"Error retrieving comments for pull request #{pull_number}: {response.status_code}, {response.text}")
+            logger.info(f"Error retrieving comments for pull request #{pull_number}: {response.status_code}, {response.text}")
             return []
 
 class GithubCrawler(Crawler):
@@ -100,7 +101,7 @@ class GithubCrawler(Crawler):
         with self.rate_limiter:
             response = self.session.get( f"{base_url}/contents/{path}", headers=headers)
         if response.status_code != 200:
-            logging.info(f"Error fetching {base_url}/contents/{path}: {response.text}")
+            logger.info(f"Error fetching {base_url}/contents/{path}: {response.text}")
             return
 
         for item in response.json():
@@ -112,7 +113,7 @@ class GithubCrawler(Crawler):
                         file_response = self.session.get(item["url"], headers={"Authorization": f"token {self.github_token}"})
                         file_content = base64.b64decode(file_response.json()["content"]).decode("utf-8")
                     except Exception as e:
-                        logging.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
+                        logger.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
                         continue
 
                     text_content = html_to_text(markdown.markdown(file_content))
@@ -128,7 +129,7 @@ class GithubCrawler(Crawler):
                         }]
                     }
 
-                    logging.info(f"Indexing codebase markdown: {item['path']}")
+                    logger.info(f"Indexing codebase markdown: {item['path']}")
                     self.indexer.index_document(code_doc)
             elif item["type"] == "dir":
                 self.crawl_code_folder(base_url, repo=repo, path=item["path"])
@@ -157,9 +158,9 @@ class GithubCrawler(Crawler):
             pr = Box(d_pr)
             doc_metadata = {
                 'source': 'github',
-                'id': pr.id, 
+                'id': pr.id,
                 'number': pr.number,
-                'url': pr.html_url, 
+                'url': pr.html_url,
                 'title': pr.title,
                 'state': pr.state,
                 'author': pr.user.login,
@@ -178,22 +179,22 @@ class GithubCrawler(Crawler):
 
             comments = g.get_pr_comments(pr.number)
             if len(comments)>0:
-                logging.info(f"Adding {len(comments)} comments for repo {repo}, PR {pr.number}")
+                logger.info(f"Adding {len(comments)} comments for repo {repo}, PR {pr.number}")
                 self.add_comments(pr_doc, comments)
             else:
-                logging.info(f"No comments for repo {repo}, PR {pr.number}")
+                logger.info(f"No comments for repo {repo}, PR {pr.number}")
 
             # remove any empty text sections
             pr_doc = clean_empty_sections(pr_doc)
             if len(pr_doc['sections']) == 0:
-                logging.info(f"No text sections for repo {repo}, PR {pr.number}")
+                logger.info(f"No text sections for repo {repo}, PR {pr.number}")
                 continue
 
             # index everything
             try:
                 self.indexer.index_document(pr_doc)
             except Exception as e:
-                logging.info(f"Error {e} indexing comment for repo {repo} document {pr_doc}")
+                logger.info(f"Error {e} indexing comment for repo {repo} document {pr_doc}")
                 continue
 
         # Extract and index issues and comments
@@ -228,22 +229,22 @@ class GithubCrawler(Crawler):
             # Extract comments
             comments = g.get_issue_comments(issue.number)
             if len(comments)>0:
-                logging.info(f"Adding {len(comments)} comments for repo {repo} issue {issue.number}")
+                logger.info(f"Adding {len(comments)} comments for repo {repo} issue {issue.number}")
                 self.add_comments(issue_doc, comments)
             else:
-                logging.info(f"No comments for repo {repo}, issue {issue.number}")
+                logger.info(f"No comments for repo {repo}, issue {issue.number}")
 
             issue_doc = clean_empty_sections(issue_doc)
             if len(pr_doc['sections']) == 0:
-                logging.info(f"No text sections for repo {repo}, issue {issue.number}")
+                logger.info(f"No text sections for repo {repo}, issue {issue.number}")
                 continue
 
             # index everything
-            logging.info(f"Indexing issue: {issue.number}")
+            logger.info(f"Indexing issue: {issue.number}")
             try:
                 self.indexer.index_document(issue_doc)
             except Exception as e:
-                logging.info(f"Error {e} indexing repo {repo}, comment document {issue_doc}")
+                logger.info(f"Error {e} indexing repo {repo}, comment document {issue_doc}")
                 continue
 
 
@@ -254,5 +255,5 @@ class GithubCrawler(Crawler):
 
     def crawl(self) -> None:
         for repo in self.repos:
-            logging.info(f"Crawling repo {repo}")
+            logger.info(f"Crawling repo {repo}")
             self.crawl_repo(repo, self.owner, self.github_token)

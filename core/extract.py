@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from typing import Tuple
 
 from goose3 import Goose
@@ -25,7 +26,7 @@ language_stopwords_JusText = {
     'ar': 'Arabic',  # Use Arabic stopwords
     'ko': 'Korean' , # Use Korean stopwords
     'ur': 'Urdu' ,  # Use urdu stopwords
-    'hi': 'Hindi' ,  # Use Hindi stopwords 
+    'hi': 'Hindi' ,  # Use Hindi stopwords
     'fa': 'Persian',  # Use Persian stopwords
     'ja': 'Japanese',  # Use Japanese stopwords
     'bg': 'Bulgarian',  # Use Bulgarian stopwords
@@ -70,7 +71,7 @@ language_stopwords_JusText = {
 
 def get_content_with_justext(html_content: str, detected_language: str) -> Tuple[str, str]:
     if detected_language == 'en':
-        paragraphs = justext.justext(html_content, justext.get_stoplist("English")) 
+        paragraphs = justext.justext(html_content, justext.get_stoplist("English"))
     else:
         stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
         # Extract paragraphs using the selected stoplist
@@ -89,7 +90,7 @@ def get_content_with_goose3(html_content: str, url: str, detected_language: str)
     try:
         if detected_language in language_stopwords_Goose:
             stopwords_class = language_stopwords_Goose.get(detected_language, None)
-            
+
             if stopwords_class is not None:
                 g = Goose({'stopwords_class': stopwords_class})
             else:
@@ -102,12 +103,12 @@ def get_content_with_goose3(html_content: str, url: str, detected_language: str)
         else:
             title = ""
             text = ""
-            logging.info(f"The language with code {detected_language} is not supported by Goose")
+            logger.warning(f"The language with code {detected_language} is not supported by Goose")
             return text, title
     except Exception as e:
         title = ""
         text = ""
-        logging.info(f"Error in Goose3 ({e}); that's okay Justext will fill in")
+        logger.error(f"Error in Goose3 ({e}); that's okay Justext will fill in")
         return text, title
 
 def get_article_content(html_content: str, url: str, detected_language: str, remove_code: bool = False) -> Tuple[str, str]:

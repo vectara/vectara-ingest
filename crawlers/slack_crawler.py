@@ -3,6 +3,7 @@ import re
 import ray
 import psutil
 import logging
+logger = logging.getLogger(__name__)
 import datetime
 from omegaconf import OmegaConf
 from slack_sdk import WebClient
@@ -88,7 +89,7 @@ def get_doc_metadata(channel, message, users_info):
         if message.get("reply_users_count"):
             metadata["no_of_users_involved"] = message["reply_users_count"]
     except KeyError as e:
-        logging.error(f"Error while creating the metadata: {e}")
+        logger.error(f"Error while creating the metadata: {e}")
 
     return metadata
 
@@ -114,7 +115,7 @@ def replace_user_id_with_user_handler(messages, users_info):
                         text = text.replace(f"<@{uid}>", f"@{username}")
                         message["text"] = text
     except KeyError as e:
-        logging.error(f"Error replacing user id's with user handlers: {e}")
+        logger.error(f"Error replacing user id's with user handlers: {e}")
 
 
 def get_document(channel, message, users_info):
@@ -182,16 +183,16 @@ def get_document(channel, message, users_info):
 def handle_slack_api_error(api_name, error):
     if error.response.status_code == 429:
         retry_after = int(error.response.headers['Retry-After']) + 1
-        logging.warning(f"Slack rate limit error occurred for {api_name}. Will retry after {retry_after} seconds")
+        logger.warning(f"Slack rate limit error occurred for {api_name}. Will retry after {retry_after} seconds")
         time.sleep(retry_after)  # wait for retry_after seconds before sending another request
     else:
-        logging.error(f"Error while fetching the messages: {error}")
+        logger.error(f"Error while fetching the messages: {error}")
 
 
 
 def handle_incomplete_request_error(api_name, error, retry_delay=30):
-    logging.error(f"IncompleteRead error occurred: {error}")
-    logging.info(f"Will retry to fetch the {api_name} after 30 seconds")
+    logger.error(f"IncompleteRead error occurred: {error}")
+    logger.info(f"Will retry to fetch the {api_name} after 30 seconds")
     time.sleep(retry_delay)  # wait for 30 seconds before sending another request
 
 
@@ -252,7 +253,7 @@ class SlackCrawler(Crawler):
                 for user in users:
                     users_info[user["id"]] = user["profile"]["display_name_normalized"]
 
-                logging.info("Users information retrieved")
+                logger.info("Users information retrieved")
                 return users_info
 
             except IncompleteRead as e:
@@ -262,7 +263,7 @@ class SlackCrawler(Crawler):
                 handle_slack_api_error("users", e)
 
             except KeyError as e:
-                logging.error(f"Error while fetching the users info: {e}")
+                logger.error(f"Error while fetching the users info: {e}")
 
     def get_channels(self):
         """
@@ -274,11 +275,10 @@ class SlackCrawler(Crawler):
         for _ in range(self.retries):
             try:
                 for result in self.client.conversations_list():
-
                     for channel in result["channels"]:
                         channels.append(channel)
 
-                logging.info("channels retrieved")
+                logger.info("channels retrieved")
                 return channels
 
             except IncompleteRead as e:
@@ -325,7 +325,7 @@ class SlackCrawler(Crawler):
                     break
                 cursor = response["response_metadata"]["next_cursor"]
 
-        logging.info(f"messages fetched successfully for channel `{channel['name']}`")
+        logger.info(f"messages fetched successfully for channel `{channel['name']}`")
         replace_user_id_with_user_handler(messages, users_info)
         return messages
 
@@ -382,7 +382,7 @@ class SlackCrawler(Crawler):
         if ray_workers > 0:
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             users_info_id = ray.put(users_info)
             actors = [ray.remote(SlackMsgIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
             for a in actors:
@@ -391,14 +391,14 @@ class SlackCrawler(Crawler):
 
         for channel in channels_to_crawl:
             messages = self.get_messages_of_channel(channel, users_info)
-            logging.info(f"Will process {len(messages)} messages of the channel: {channel['name']}")
+            logger.info(f"Will process {len(messages)} messages of the channel: {channel['name']}")
             if ray_workers > 0:
                 _ = list(pool.map(lambda a, msg: a.process.remote(channel, msg, users_info_id), messages))
             else:
                 msg_indexer = SlackMsgIndexer(self.indexer, self)
                 for inx, msg in enumerate(messages):
                     if inx % 100 == 0:
-                        logging.info(f"Indexed {inx + 1} messages out of {len(messages)}")
+                        logger.info(f"Indexed {inx + 1} messages out of {len(messages)}")
                     msg_indexer.process(channel, msg, users_info)
 
 
@@ -423,6 +423,6 @@ class SlackMsgIndexer(object):
             self.indexer.index_document(document)
         else:
             link = construct_url_of_message(msg, channel['id'])
-            logging.info(f"Unable to find text for the message: {link}")
+            logger.info(f"Unable to find text for the message: {link}")
             
 

@@ -1,5 +1,6 @@
 import zipfile
 import logging
+logger = logging.getLogger(__name__)
 import time
 
 from office365.runtime.client_request_exception import ClientRequestException
@@ -68,7 +69,7 @@ class SharepointCrawler(Crawler):
         """
         self.base_url = furl(self.cfg.sharepoint_crawler.team_site_url)
         self.team_site_url = self.cfg.sharepoint_crawler.team_site_url
-        logging.info(f"team_site_url = '{self.team_site_url}'")
+        logger.info(f"team_site_url = '{self.team_site_url}'")
         auth_type = self.cfg.sharepoint_crawler.get('auth_type', 'user_credentials')
         allow_ntlm = bool(self.cfg.sharepoint_crawler.get('allow_ntlm', 'True'))
         context = ClientContext(self.team_site_url, allow_ntlm=allow_ntlm)
@@ -107,7 +108,7 @@ class SharepointCrawler(Crawler):
             except Exception as e:
                 if attempt == retries - 1:
                     raise
-                logging.warning(f"Attempt {attempt + 1} failed with error: {e}. Retrying in {delay} seconds...")
+                logger.warning(f"Attempt {attempt + 1} failed with error: {e}. Retrying in {delay} seconds...")
                 time.sleep(delay)
 
     def crawl_folder(self) -> None:
@@ -126,7 +127,7 @@ class SharepointCrawler(Crawler):
         recursive = self.cfg.sharepoint_crawler.get('recursive', False)
         target_folder = self.cfg.sharepoint_crawler.target_folder
         cleanup_temp_files = self.cfg.sharepoint_crawler.get("cleanup_temp_files", True)
-        logging.info(f"target_folder = '{target_folder}' recursive = {recursive}")
+        logger.info(f"target_folder = '{target_folder}' recursive = {recursive}")
 
         root_folder = self.sharepoint_context.web.get_folder_by_server_relative_url(target_folder)
         self.sharepoint_context.load(root_folder, ['Exists', 'Name'])
@@ -134,41 +135,41 @@ class SharepointCrawler(Crawler):
         if not root_folder.exists:
             raise Exception(f"Folder {target_folder} was not found")
 
-        logging.info(f"{root_folder.exists}")
-        logging.info(f"Listing files in {root_folder.name}. Large Directory Structures can take a while...")
+        logger.info(f"{root_folder.exists}")
+        logger.info(f"Listing files in {root_folder.name}. Large Directory Structures can take a while...")
         files = root_folder.get_files(recursive=recursive).execute_query()
         count = len(files)
-        logging.info(f"Found {count} files in {root_folder.name}.")
+        logger.info(f"Found {count} files in {root_folder.name}.")
         for file in files:
-            logging.info(f"Processing {file}")
+            logger.info(f"Processing {file}")
             filename, file_extension = os.path.splitext(file.name)
             if file_extension.lower() == ".zip":
                 metadata = {'url': self.download_url(file)}
                 self.extract_and_upload_zip(file.server_relative_url, metadata, file.unique_id)
             elif file_extension.lower() not in supported_extensions:
-                logging.warning(f"Skipping {file} due to unsupported file type '{file_extension}'.")
+                logger.warning(f"Skipping {file} due to unsupported file type '{file_extension}'.")
             else:
                 metadata = {'url': self.download_url(file)}
-                logging.info(f"Downloading {file}")
+                logger.info(f"Downloading {file}")
                 with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                    logging.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
+                    logger.debug(f"Downloading and writing content for {file.unique_id} to {f.name}")
                     file.download_session(f).execute_query()
                     f.flush()
                     f.close()
-                    logging.debug(f"Wrote {os.path.getsize(f.name)} to {f.name}")
+                    logger.debug(f"Wrote {os.path.getsize(f.name)} to {f.name}")
 
                     try:
                         succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, file.unique_id)
                     finally:
                         if cleanup_temp_files:
-                            logging.debug(f"Cleaning up temp file: {f.name}")
+                            logger.debug(f"Cleaning up temp file: {f.name}")
                             if os.path.exists(f.name):
                                 os.remove(f.name)
                         else:
-                            logging.warn(f"Skipping clean up of temp file: {f.name}")
+                            logger.warning(f"Skipping clean up of temp file: {f.name}")
 
                     if not succeeded:
-                        logging.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
+                        logger.error(f"Error indexing {file.unique_id} - {file.serverRelativeUrl}")
 
     def crawl(self) -> None:
         """
@@ -185,7 +186,7 @@ class SharepointCrawler(Crawler):
         """
         self.configure_sharepoint_context()
         mode = self.cfg.sharepoint_crawler.mode
-        logging.info(f"mode = '{mode}'")
+        logger.info(f"mode = '{mode}'")
 
         match mode:
             case 'folder':
@@ -207,7 +208,7 @@ class SharepointCrawler(Crawler):
         for p in allowed_properties:
             load_properties.append(p)
 
-        logging.debug(f"Loading properties: {', '.join(load_properties)}")
+        logger.debug(f"Loading properties: {', '.join(load_properties)}")
         self.sharepoint_context.load(items, load_properties)
         self.sharepoint_context.execute_query()
 
@@ -219,7 +220,7 @@ class SharepointCrawler(Crawler):
                     if all_properties is None:
                         all_properties = set()
                     all_properties.add(k)
-                logging.info(f"list_item_metadata_properties set to default([]) Available properties: {', '.join(all_properties)}")
+                logger.info(f"list_item_metadata_properties set to default([]) Available properties: {', '.join(all_properties)}")
 
 
             metadata = {k: v for k, v in item.properties.items() if k in allowed_properties}
@@ -237,40 +238,40 @@ class SharepointCrawler(Crawler):
                         doc_id = f"{target_list.id}-{item_id}-{filename}{file_extension}"
                         self.extract_and_upload_zip(attachment.server_relative_url, metadata, doc_id)
                     elif file_extension.lower() not in supported_extensions:
-                        logging.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
+                        logger.warning(f"Skipping {attachment.server_relative_url} due to unsupported file type '{file_extension}'.")
                     else:
                         doc_id = f"{target_list.id}-{item_id}-{filename}"
                         attachment_url = attachment.resource_url
                         metadata["url"] = attachment_url
 
                         with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-                            logging.info(f"Item Id {item_id}: Downloading {attachment_url}")
-                            logging.debug(f"Item Id {item_id}: Calling sharepoint_context.web.get_file_by_server_relative_url('{attachment.server_relative_url}')")
+                            logger.info(f"Item Id {item_id}: Downloading {attachment_url}")
+                            logger.debug(f"Item Id {item_id}: Calling sharepoint_context.web.get_file_by_server_relative_url('{attachment.server_relative_url}')")
                             attachment_file = self.sharepoint_context.web.get_file_by_server_relative_url(attachment.server_relative_url)
-                            logging.debug(f"attachment_file = {attachment_file}. Calling download...")
+                            logger.debug(f"attachment_file = {attachment_file}. Calling download...")
 
                             try:
                                 attachment_file.download(f).execute_query()
                                 succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
                             except ClientRequestException as e:
-                                logging.error(f"ClientRequestException when downloading {attachment.server_relative_url}: {e}")
+                                logger.error(f"ClientRequestException when downloading {attachment.server_relative_url}: {e}")
                                 continue
                             finally:
                                 if os.path.exists(f.name):
                                     os.remove(f.name)
 
                             if not succeeded:
-                                logging.error(f"Error indexing attachment {filename} for list item {item_id}")
+                                logger.error(f"Error indexing attachment {filename} for list item {item_id}")
 
     def extract_and_upload_zip(self, zip_url: str, metadata: dict, doc_id_prefix: str) -> None:
         if not zip_url:
-            logging.warning("No ZIP URL provided for extraction.")
+            logger.warning("No ZIP URL provided for extraction.")
             return
 
         tmp_zip_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".zip", mode="wb", delete=False) as tmp_zip:
-                logging.info(f"Downloading ZIP file from {zip_url}")
+                logger.info(f"Downloading ZIP file from {zip_url}")
                 file_obj = self.sharepoint_context.web.get_file_by_server_relative_url(zip_url).download(tmp_zip)
                 self.execute_with_retry(file_obj)
                 tmp_zip_path = tmp_zip.name
@@ -284,7 +285,7 @@ class SharepointCrawler(Crawler):
                         file_path = os.path.join(root, name)
                         _, ext = os.path.splitext(name)
                         if ext.lower() not in supported_extensions:
-                            logging.debug(f"Skipping {name} inside ZIP due to unsupported extension '{ext}'.")
+                            logger.debug(f"Skipping {name} inside ZIP due to unsupported extension '{ext}'.")
                             continue
 
                         relative_path = os.path.relpath(file_path, extract_dir)
@@ -292,9 +293,9 @@ class SharepointCrawler(Crawler):
                         try:
                             succeeded = self.indexer.index_file(file_path, zip_url, metadata, file_doc_id)
                             if not succeeded:
-                                logging.error(f"Failed to index extracted file: {relative_path}")
+                                logger.error(f"Failed to index extracted file: {relative_path}")
                         except Exception as e:
-                            logging.error(f"Error indexing file {relative_path} from ZIP: {e}")
+                            logger.error(f"Error indexing file {relative_path} from ZIP: {e}")
         finally:
             if tmp_zip_path and os.path.exists(tmp_zip_path):
                 os.remove(tmp_zip_path)

@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from crawlers.csv_crawler import CsvCrawler
 import sqlalchemy
 import pandas as pd
@@ -11,6 +12,7 @@ class DatabaseCrawler(CsvCrawler):
         metadata_columns = list(self.cfg.database_crawler.get("metadata_columns", []))
         doc_id_columns = list(self.cfg.database_crawler.get("doc_id_columns", None))
         all_columns = text_columns + metadata_columns + doc_id_columns
+        mode = self.cfg.database_crawler.get("mode", "table")
         if title_column:
             all_columns.append(title_column)
 
@@ -29,7 +31,14 @@ class DatabaseCrawler(CsvCrawler):
         # make sure all ID columns are a string type
         df[doc_id_columns] = df[doc_id_columns].astype(str)
 
-        logging.info(f"indexing {len(df)} rows from the database using query: '{query}'")
+        logger.info(f"indexing {len(df)} rows from the database using query: '{query}'")
         rows_per_chunk = int(self.cfg.database_crawler.get("rows_per_chunk", 500) if 'database_crawler' in self.cfg else 500)
         ray_workers = self.cfg.database_crawler.get("ray_workers", 0)
-        self.index_dataframe(df, text_columns, title_column, metadata_columns, doc_id_columns, rows_per_chunk, source='database', ray_workers=ray_workers)
+        self.index_dataframe(
+            df=df, mode=mode, name=db_table,
+            text_columns=text_columns, title_column=title_column,
+            metadata_columns=metadata_columns, doc_id_columns=doc_id_columns,
+            rows_per_chunk=rows_per_chunk,
+            source='database',
+            ray_workers=ray_workers
+        )

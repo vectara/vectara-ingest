@@ -66,6 +66,7 @@ Note that ray with docker does not work on Mac M1/M2 machines.
 ```yaml
 ...
 database_crawler:
+    mode: element
     db_url: "postgresql://<username>:<password>@my_db_host:5432/yelp"
     db_table: yelp_reviews
     select_condition: "city='New Orleans'"
@@ -74,17 +75,22 @@ database_crawler:
     metadata_columns: [city, state, postal_code]
 ```
 The database crawler can be used to read data from a relational database and index relevant columns into Vectara.
-- `db_url` specifies the database URI including the type of database, host/port, username and password if needed.
-  - For MySQL: "mysql://username:password@host:port/database"
-  - For PostgreSQL:"postgresql://username:password@host:port/database"
-  - For Microsoft SQL Server: "mssql+pyodbc://username:password@host:port/database"
-  - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
-- `db_table` the table name in the database
-- `select_condition` optional condition to filter rows in the table by
-- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. The crawler will also use the content in these columns (concatenated) as the title for that row in the Vectara document. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
-- `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
-- `title_column` is an optional column name that will hold textual information to be used as title at the document level.
-- `metadata_columns` a list of column names that we want to use as metadata.
+This has two modes: `element` or `table`
+- In the `table` mode, the complete table content is ingested into Vectara as a single table entity.
+  Note that table size is limited to 1000 rows and 100 columns
+- In the `element` mode, each row in the table is ingested as a separate "document", whose structure depends on the following:
+  - `db_url` specifies the database URI including the type of database, host/port, username and password if needed.
+    - For MySQL: "mysql://username:password@host:port/database"
+    - For PostgreSQL:"postgresql://username:password@host:port/database"
+    - For Microsoft SQL Server: "mssql+pyodbc://username:password@host:port/database"
+    - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
+  - `db_table` the table name in the database
+  - `select_condition` optional condition to filter rows in the table by
+  - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this
+    value into a single Vectara document. The crawler will also use the content in these columns (concatenated) as the title for that row in the Vectara document. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
+  - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
+  - `title_column` is an optional column name that will hold textual information to be used as title at the document level.
+  - `metadata_columns` a list of column names that we want to use as metadata.
 
 In the above example, the crawler would
 1. Include all rows in the database "yelp" that are from the city of New Orleans (`SELECT * FROM yelp WHERE city='New Orleans'`)
@@ -126,6 +132,7 @@ In the above example, the crawler would
 ```yaml
 ...
 csv_crawler:
+    mode: element
     file_path: "/path/to/Game_of_Thrones_Script.csv"
     select_condition: "Season='Season 1'"
     doc_id_columns: [Season, Episode]
@@ -134,21 +141,30 @@ csv_crawler:
     column_types: []
     separator: ','
     sheet_name: "my-sheet"
+    sheet_names: ["my-sheet"]
 ```
 The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV or XLSX file.
-- `select_condition` optional condition to filter rows in the table by
-- `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
-- `text_columns` a list of column names that include textual information we want to use 
-- `title_column` is an optional column name that will hold textual information to be used as title
-- `metadata_columns` a list of column names that we want to use as metadata
-- `column_types` an optional dictionary of column name and type (int, float, str). If unspecified, or for columns not included, the default type is str.
-- `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
-- `sheet_name` the name of the sheet in the XLSX file to use (relevant only for XLSX files)
+This has two modes: `element` or `table`
+- In the `table` mode, the complete CSV table (or each named sheet if XLSX) is ingested into Vectara as a complete table
+  Note that table size is limited to 10000 rows and 100 columns
+- In the `element` mode, each row in the table is ingested as a separate "document", whose structure depends on the following:
+  - `select_condition` optional condition to filter rows of the table. If applied only selected rows are included.
+  - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this
+    value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
+  - `text_columns` a list of column names that include textual information we want to use
+  - `title_column` is an optional column name that will hold textual information to be used as title
+  - `metadata_columns` a list of column names that we want to use as metadata
+  - `column_types` an optional dictionary of column name and type (int, float, str). If unspecified, or for columns not included, the default type is str.
+  - `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
+- `sheet_names` a list of the sheets in the XLSX file to use (relevant only for XLSX files).
+  if sheet_names is unspecified, all sheets are indexed.
+- `mode`: element or table as specified above.
 
-In the above example, the crawler would
+In the above example, the crawler would work in element mode as follows:
 1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
 2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
 3. Each such Vectara document that is indexed, will include several sections (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
+4. Since this is a CSV file, sheet_names is ignored.
 
 Note that the type of file is determined by it's extension (e.g. CSV vs XLSX)
 

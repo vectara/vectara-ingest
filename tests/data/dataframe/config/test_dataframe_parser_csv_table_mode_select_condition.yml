@@ -1,0 +1,50 @@
+csv_parser:
+  select_condition: "State == 'TX'"
+
+doc_processing:
+  model_config:
+    text: {}
+
+vectara: {}
+
+test:
+  doc_id: asdf9asdfa3
+  doc_metadata:
+    source: test_dataframe_parser
+
+  expected_index_segments_calls:
+    - doc_id: asdf9asdfa3
+      doc_metadata:
+        source: test_dataframe_parser
+      doc_title: fdic-failed-banks.csv
+      tables:
+        - headers:
+          - 'BankName'
+          - 'City'
+          - 'State'
+          - 'Cert'
+          - 'AcquiringInstitution'
+          - 'ClosingDate'
+          - 'Fund'
+          rows:
+            - ['The Enloe State Bank', 'Cooper', 'TX', '10716', 'Legend Bank, N. A.', '31-May-19', '10531']
+            - ['Texas Community Bank, National Association', 'The Woodlands', 'TX', '57431', 'Spirit of Texas Bank, SSB', '13-Dec-13', '10491']
+            - ['First National Bank also operating as The National Bank of El Paso', 'Edinburg', 'TX', '14318', 'PlainsCapital Bank', '13-Sep-13', '10488']
+            - ['First International Bank', 'Plano', 'TX', '33513', 'American First National Bank', '30-Sep-11', '10398']
+            - ['The La Coste National Bank', 'La Coste', 'TX', '3287', 'Community National Bank', '19-Feb-10', '10186']
+            - ['North Houston Bank', 'Houston', 'TX', '18776', 'U.S. Bank N.A.', '30-Oct-09', '10138']
+            - ['Madisonville State Bank', 'Madisonville', 'TX', '33782', 'U.S. Bank N.A.', '30-Oct-09', '10142']
+            - ['Citizens National Bank', 'Teague', 'TX', '25222', 'U.S. Bank N.A.', '30-Oct-09', '10141']
+            - ['Guaranty Bank', 'Austin', 'TX', '32618', 'BBVA Compass', '21-Aug-09', '10105']
+            - ['Millennium State Bank of Texas', 'Dallas', 'TX', '57667', 'State Bank of Texas', '2-Jul-09', '10079']
+            - ['Sanderson State Bank', 'Sanderson', 'TX', '11568', 'The Pecos County State Bank', '12-Dec-08', '10026']
+            - ['Franklin Bank, SSB', 'Houston', 'TX', '26870', 'Prosperity Bank', '7-Nov-08', '10021']
+            - ['Bank of Sierra Blanca', 'Sierra Blanca', 'TX', '22002', 'The Security State Bank of Pecos', '18-Jan-02', '4651']
+          summary: This is a summary.
+      texts:
+        - This is a summary.
+  input_path:
+    - tests
+    - data
+    - dataframe
+    - fdic-failed-banks.csv

@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import json
 import tweepy
@@ -12,10 +13,10 @@ def get_username_from_id(client, user_id):
 def clean_tweet(tweet: str) -> str:
     # Remove mentions that start with @
     cleaned_tweet = re.sub(r'@\w+', '', tweet)
-    
+
     # Optional: remove extra spaces that may result from mention removals
     cleaned_tweet = re.sub(r'\s+', ' ', cleaned_tweet).strip()
-    
+
     return cleaned_tweet
 
 def fetch_tweets(client, query, num_tweets, fields):
@@ -33,11 +34,11 @@ def fetch_tweets(client, query, num_tweets, fields):
             tweets = client.search_recent_tweets(query=query,
                                                  tweet_fields=fields,
                                                  max_results=tweets_to_fetch,
-                                                 next_token=next_token) 
+                                                 next_token=next_token)
         else:
             tweets = client.search_recent_tweets(query=query,
                                                  tweet_fields=fields,
-                                                 max_results=tweets_to_fetch)        
+                                                 max_results=tweets_to_fetch)
         all_tweets.extend(tweets.data)
         next_token = tweets.meta.get('next_token')
         if not next_token:
@@ -54,14 +55,14 @@ class TwitterCrawler(Crawler):
         client = tweepy.Client(bearer_token=bearer_token)
 
         for username in userhandles:
-            user = client.get_user(username=username)        
+            user = client.get_user(username=username)
             query = f'@{username} -is:retweet'  # Exclude retweets
             tweets = fetch_tweets(client, query, num_tweets=num_tweets,
                                   fields = ['public_metrics', 'author_id', 'lang', 'geo', 'entities'])
             doc = {
                 "id": 'tweets-' + username,
                 "title": f'top {num_tweets} tweets of {username}',
-                "metadata": { 
+                "metadata": {
                     'url': f'https://twitter.com/{username}',
                     'source': 'twitter',
                     'username': username,
@@ -76,7 +77,7 @@ class TwitterCrawler(Crawler):
                 "sections": []
             }
             for tweet in tweets.data:
-                doc["sections"].append({ 
+                doc["sections"].append({
                     "text": clean_tweet(tweet.text) if self.cfg.twitter_crawler.get("clean_tweets", True) else tweet.text,
                     "metadata": {
                         "author": get_username_from_id(client, tweet.author_id),
@@ -88,10 +89,9 @@ class TwitterCrawler(Crawler):
                         "lang": tweet.lang
                     },
                 })
-            succeeded = self.indexer.index_document(doc)            
+            succeeded = self.indexer.index_document(doc)
             if succeeded:
-                logging.info(f"Indexed tweets for {username}")
+                logger.info(f"Indexed tweets for {username}")
             else:
-                logging.info(f"Error indexing  tweets for {username}")
-        logging.info(f"Finished indexing all users (total={len(userhandles)})")
-
+                logger.info(f"Error indexing  tweets for {username}")
+        logger.info(f"Finished indexing all users (total={len(userhandles)})")

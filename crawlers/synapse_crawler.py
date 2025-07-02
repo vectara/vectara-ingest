@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import markdown
 from core.crawler import Crawler
 from core.utils import html_to_text
@@ -12,13 +13,13 @@ class SynapseCrawler(Crawler):
         try:
             wiki_dict = syn.getWiki(wiki_id)
         except Exception as e:
-            logging.info(f"Error getting wiki {wiki_id}: {e}")
+            logger.info(f"Error getting wiki {wiki_id}: {e}")
             return
 
-        study_text = html_to_text(markdown.markdown(wiki_dict['markdown']))        
+        study_text = html_to_text(markdown.markdown(wiki_dict['markdown']))
         doc = {
             "id": wiki_id,
-            "metadata": { 
+            "metadata": {
                 'url': url,
                 'source': source,
                 'created': wiki_dict['createdOn']
@@ -35,9 +36,9 @@ class SynapseCrawler(Crawler):
             doc['title'] = f'{wiki_type} {wiki_id}'
         succeeded = self.indexer.index_document(doc)
         if succeeded:
-            logging.info(f"Indexed {wiki_type} {wiki_id}")
+            logger.info(f"Indexed {wiki_type} {wiki_id}")
         else:
-            logging.info(f"Error indexing {wiki_type} {wiki_id}")
+            logger.info(f"Error indexing {wiki_type} {wiki_id}")
 
 
     def crawl(self) -> None:
@@ -53,12 +54,12 @@ class SynapseCrawler(Crawler):
         df = df[['Program', 'Long Description']]
         df.columns = ['program', 'description']
         for tup in df.itertuples(index=False):
-            logging.info(f"Indexing program {tup.program}")
+            logger.info(f"Indexing program {tup.program}")
             url = f'https://adknowledgeportal.synapse.org/Explore/Programs/DetailsPage?Program={tup.program}'
             doc = {
                 "id": tup.program,
                 "title": f'Program {tup.program}',
-                "metadata": { 
+                "metadata": {
                     'url': url,
                     'source': source,
                 },
@@ -66,10 +67,10 @@ class SynapseCrawler(Crawler):
             }
             succeeded = self.indexer.index_document(doc)
             if succeeded:
-                logging.info(f"Indexed study {doc['id']}")
+                logger.info(f"Indexed study {doc['id']}")
             else:
-                logging.info(f"Error indexing study {doc['id']}")
-        logging.info(f"Finished indexing all programs (total={len(df)})")
+                logger.info(f"Error indexing study {doc['id']}")
+        logger.info(f"Finished indexing all programs (total={len(df)})")
 
         # crawl and index all studies
         studies_id = self.cfg.synapse_crawler.studies_id
@@ -77,17 +78,17 @@ class SynapseCrawler(Crawler):
         df = df[['Program', 'Study', 'Study_Description', 'Methods']]
         df.columns = ['program', 'study', 'description', 'methods']
         for tup in df.itertuples(index=False):
-            logging.info(f"Indexing study {tup.study}")
+            logger.info(f"Indexing study {tup.study}")
             url = f'https://adknowledgeportal.synapse.org/Explore/Studies/DetailsPage/StudyDetails?Study={tup.study}'
             self._index_wiki_content(syn, tup.study, tup.description, url, source, wiki_type="study")
 
             if tup.methods is None:
                 continue
             methods = [m.strip() for m in tup.methods.split(',')]
-            logging.info(f"For study {tup.study}, we have {len(methods)} methods to index")
+            logger.info(f"For study {tup.study}, we have {len(methods)} methods to index")
             url = f'https://adknowledgeportal.synapse.org/Explore/Studies/DetailsPage/StudyDetails?Study={tup.study}#Methods'
             for method in methods:
-                logging.info(f"Indexing method {method}")
+                logger.info(f"Indexing method {method}")
                 self._index_wiki_content(syn, method, f"Study {tup.study}, Method {method}", url, source, wiki_type="method")
 
-        logging.info(f"Finished indexing all studies (total={len(df)})")
+        logger.info(f"Finished indexing all studies (total={len(df)})")

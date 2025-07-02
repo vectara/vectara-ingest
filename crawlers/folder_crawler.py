@@ -1,4 +1,8 @@
 import logging
+
+from core.dataframe_parser import supported_by_dataframe_parser, DataframeParser, load_dataframe_metadata, DataFrameMetadata
+
+logger = logging.getLogger(__name__)
 import os
 import pathlib
 import time
@@ -12,12 +16,16 @@ import psutil
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging, get_docker_or_local_path
+from core.summary import TableSummarizer
+from omegaconf import DictConfig
+
 
 class FileCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
+    def __init__(self, cfg:DictConfig, indexer: Indexer, crawler: Crawler, num_per_second: int):
         self.crawler = crawler
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
+        self.cfg = cfg
 
     def setup(self):
         self.indexer.setup()
@@ -28,11 +36,17 @@ class FileCrawlWorker(object):
         try:
             if extension in ['.mp3', '.mp4']:
                 self.indexer.index_media_file(file_path, metadata=metadata)
+            elif supported_by_dataframe_parser(file_path):
+                logger.info(f"Indexing {file_path}")
+                table_summarizer:TableSummarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
+                df_parser:DataframeParser = DataframeParser(self.cfg, None, self.indexer, table_summarizer)
+                df_metadata:DataFrameMetadata = load_dataframe_metadata(file_path)
+                df_parser.parse(df_metadata, file_path, metadata)
             else:
                 self.indexer.index_file(filename=file_path, uri=file_name, metadata=metadata)
         except Exception as e:
             import traceback
-            logging.error(
+            logger.error(
                 f"Error while indexing {file_path}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
@@ -43,12 +57,12 @@ class FolderCrawler(Crawler):
     def crawl(self) -> None:
         docker_path = '/home/vectara/data'
         config_path = self.cfg.folder_crawler.path
-        
+
         folder = get_docker_or_local_path(
             docker_path=docker_path,
             config_path=config_path
         )
-        
+
         extensions = self.cfg.folder_crawler.get("extensions", ["*"])
         metadata_file = self.cfg.folder_crawler.get("metadata_file", None)
         ray_workers = self.cfg.folder_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
@@ -63,7 +77,7 @@ class FolderCrawler(Crawler):
         self.model = None
 
         # Walk the directory and upload files with the specified extension to Vectara
-        logging.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")
+        logger.info(f"indexing files in {self.cfg.folder_crawler.path} with extensions {extensions}")
         files_to_process = []
         for root, _, files in os.walk(folder):
             for file in files:
@@ -93,7 +107,7 @@ class FolderCrawler(Crawler):
             ray_workers = psutil.cpu_count(logical=True)
 
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
@@ -102,9 +116,9 @@ class FolderCrawler(Crawler):
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), files_to_process))
         else:
-            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second)
+            crawl_worker = FileCrawlWorker(self.cfg, self.indexer, self, num_per_second)
             for inx, tup in enumerate(files_to_process):
                 if inx % 100 == 0:
-                    logging.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
+                    logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
                 file_path, file_name, file_metadata = tup
                 crawl_worker.process(file_path, file_name, file_metadata)

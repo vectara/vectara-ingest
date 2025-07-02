@@ -150,4 +150,6 @@ project.yaml
 .idea/
 config-private
 ssl
+vectara_ingest_output/data-private
 .run-env
+

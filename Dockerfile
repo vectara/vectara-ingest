@@ -31,7 +31,7 @@ WORKDIR ${HOME}
 COPY requirements.txt requirements-extra.txt $HOME/
 
 RUN pip install --no-cache-dir uv==0.6.14
-RUN uv pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu \
+RUN uv pip install --no-cache-dir torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu \
     && uv pip install --no-cache-dir -r requirements.txt
 
 ARG INSTALL_EXTRA=false
