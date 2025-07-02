@@ -29,7 +29,8 @@ class FileCrawlWorker(object):
             if extension in ['.mp3', '.mp4']:
                 self.indexer.index_media_file(file_path, metadata=metadata)
             else:
-                self.indexer.index_file(filename=file_path, uri=file_name, metadata=metadata)
+                uri_to_use = file_name if 'url' not in metadata else metadata['url']
+                self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata)
         except Exception as e:
             import traceback
             logging.error(
@@ -67,8 +68,10 @@ class FolderCrawler(Crawler):
         files_to_process = []
         for root, _, files in os.walk(folder):
             for file in files:
+                # don't index the metadata file if it exists
                 if metadata_file and file.endswith(metadata_file):
                     continue
+
                 file_extension = pathlib.Path(file).suffix
                 if file_extension in extensions or "*" in extensions:
                     file_path = os.path.join(root, file)

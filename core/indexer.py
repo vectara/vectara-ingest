@@ -906,6 +906,9 @@ class Indexer:
                             self.logger.info(f"Found {len(res['images'])} images in {url}")
                         for inx, image in enumerate(res['images']):
                             image_url = image['src']
+                            if not image_url.startswith('http'):
+                                self.logger.info(f"Image URL '{image_url}' is not valid, skipping")
+                                continue
                             response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
                             if response.status_code != 200:
                                 self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
@@ -916,7 +919,7 @@ class Indexer:
                             image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
                             if image_summary:
                                 text = image_summary
-                                metadata = {'element_type': 'image', 'url': url}
+                                metadata = {'element_type': 'image', 'url': image_url}
                                 if ex_metadata:
                                     metadata.update(ex_metadata)
                                 if self.verbose:
