@@ -3,8 +3,6 @@ import base64, logging
 from PIL import Image
 
 from typing import Set, Optional, Tuple
-import os
-import json
 import base64
 import logging
 from omegaconf import OmegaConf
