@@ -1,11 +1,11 @@
-from typing import Set
-import os
-import json
+import base64, 
+
+from typing import Set, Optional, Tuple
 import base64
 import logging
 from omegaconf import OmegaConf
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 import cairosvg
 
@@ -13,18 +13,36 @@ from core.models import generate, generate_image_summary
 
 logger = logging.getLogger(__name__)
 
-def _get_image_shape(content: str) -> tuple:
+def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
     """
-    Given a base64-encoded image content string, return the image shape as (width, height).
+    Decode a base64 image and return its (width, height).
+    Supports raster formats (via Pillow) and SVG (via CairoSVG).
     """
     try:
-        img_data = base64.b64decode(content)
-        img = Image.open(BytesIO(img_data))
-        return img.size  # (width, height)
-    except (IOError, OSError, ValueError) as e:
-        logger.warning(f"Skipping summarization: not a valid image ({e})")
+        data = base64.b64decode(data_b64)
+    except Exception as e:
+        logger.warning(f"Base64 decode failed: {e}")
         return None
 
+    # First, try to open as a standard raster image (PNG, JPEG, etc.)
+    try:
+        with Image.open(BytesIO(data)) as img:
+            return img.size
+    except (UnidentifiedImageError, OSError):
+        # If it's not a standard raster image, it might be an SVG.
+        pass
+
+    # Next, try to process as an SVG
+    try:
+        # Render SVG to PNG in memory and get dimensions from the result
+        png_data = cairosvg.svg2png(bytestring=data)
+        with Image.open(BytesIO(png_data)) as img:
+            return img.size
+    except Exception:
+        # If cairosvg fails, it's not a valid SVG or raster image we can handle.
+        logger.info("Data is not a valid raster image or SVG.")
+        return None
+        
 def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
@@ -51,38 +69,44 @@ class ImageSummarizer():
         self.image_model_config = image_model_config
         self.cfg = cfg
 
-    def get_image_content_for_summarization(self, image_path: str):
+    def _load_image_b64(self, image_path: str, image_url: str) -> Optional[str]:
+        """
+        Load image from path and return a base64-encoded PNG payload.
+        SVGs are rasterized; others are read directly.
+        """
+        ext = image_url.lower().rsplit('.', 1)[-1]
+        try:
+            if ext == 'svg':
+                # Convert SVG to PNG using cairosvg
+                logger.info(f"Converting SVG {image_path} to PNG using cairosvg")
+                png_bytes = cairosvg.svg2png(url=image_path)
+                return base64.b64encode(png_bytes).decode('utf-8')
+            else:
+                # Read raster formats
+                with open(image_path, 'rb') as f:
+                    return base64.b64encode(f.read()).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Failed to load image {image_path}: {e}")
+            return None
+            
+    def summarize_image(
+            self, 
+            image_path: str, 
+            image_url: str, 
+            previous_text: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Summarize the image at the given path.
+        Returns a descriptive paragraph or None if summarization fails.
+        """
+        content_b64 = self._load_image_b64(image_path, image_url)
+        if not content_b64:
+            return None
 
-        orig_image_path = image_path
-        if orig_image_path.lower().endswith(".svg"):
-            logger.info(f"Converting svg image ({image_path}) to png for summarization")
-            new_image_path = image_path.replace(".svg", ".png")
-            cairosvg.svg2png(url=image_path, write_to=new_image_path, dpi=300)
-            image_path = new_image_path
+        shape = _get_image_shape(content_b64)
+        if not shape or min(shape) < 10:
+            logger.info(f"Image too small or invalid to summarize: {image_url}")
 
-        content = None
-        with open(image_path, "rb") as f:
-            content = base64.b64encode(f.read()).decode("utf-8")
-
-        if orig_image_path.lower().endswith(".svg"):
-            try:
-                os.remove(orig_image_path)
-            except FileNotFoundError:
-                logger.warning(f"File '{orig_image_path}' not found.")
-            except Exception as e:
-                logger.warning(f"An error occurred: {e}")
-
-        return content
-
-    def summarize_image(self, image_path: str, image_url: str, previous_text: str = None):
-        content = self.get_image_content_for_summarization(image_path)
-        shape = _get_image_shape(content)
-        if not shape:
-             logger.info(f"Image too small to summarize ({image_url})")
-             return None
-        width, height = shape
-        if width<10 or height<10:
-            logger.info(f"Image too small to summarize ({image_url})")
             return None
 
         prompt = """
@@ -99,12 +123,17 @@ class ImageSummarizer():
         """
         if previous_text:
             prompt += f"The image came immediately following this text: '{previous_text}'"
+
         try:
-            summary = generate_image_summary(self.cfg, prompt, content, self.image_model_config)
-            return summary
+            return generate_image_summary(
+                self.cfg,
+                prompt,
+                content_b64,
+                self.image_model_config
+            )
         except Exception as e:
-            logger.error(f"Failed to summarize image ({image_url}): {e}")
-            return ""
+            logger.error(f"Image summary generation failed for {image_url}: {e}")
+            return None
 
 class TableSummarizer():
     def __init__(self, cfg: OmegaConf, table_model_config: dict):
