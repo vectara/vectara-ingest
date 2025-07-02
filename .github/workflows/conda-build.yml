@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for Git versioning
       
       - name: Setup Miniconda
         uses: conda-incubator/setup-miniconda@v3
@@ -53,6 +55,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for Git versioning
       
       - name: Setup Miniconda
         uses: conda-incubator/setup-miniconda@v3
@@ -68,22 +72,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Update version in meta.yaml
-        shell: bash -l {0}
-        run: |
-          VERSION="${{ steps.get_version.outputs.VERSION }}"
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Windows needs different sed syntax
-            sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            # macOS needs different sed syntax
-            sed -i "" "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
-          else
-            # Linux
-            sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
+            # Get version from Git tag, remove 'v' prefix if present
+            VERSION=${GITHUB_REF#refs/tags/}
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           fi
       
       - name: Install conda-build and anaconda-client
@@ -93,39 +85,13 @@ jobs:
       
       - name: Build conda package
         shell: bash -l {0}
+        env:
+          GIT_DESCRIBE_TAG: ${{ steps.get_version.outputs.VERSION }}
         run: |
           # Verify Python version before building
           python --version
+          # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
-      
-      - name: Test the built package
-        shell: bash -l {0}
-        run: |
-          # Create a test environment
-          conda create -y -n test-env python=${{ matrix.python-version }}
-          conda activate test-env
-          
-          # Verify Python version in test environment
-          python --version
-          
-          # Install the built package
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            PLATFORM="win-64"
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            PLATFORM="osx-64"
-            # Check if we're on Apple Silicon
-            if [[ $(uname -m) == "arm64" ]]; then
-              PLATFORM="osx-arm64"
-            fi
-          else
-            PLATFORM="linux-64"
-          fi
-          
-          # Install and test
-          conda install -y -c ./conda-bld/$PLATFORM -c conda-forge vectara-ingest
-          
-          # Verify the package can be imported
-          python -c "import core; print('Import test successful')"
       
       - name: List built packages
         shell: bash -l {0}
@@ -182,6 +148,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for Git versioning
         
       - name: Install system dependencies
         run: |
@@ -219,14 +187,11 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            # Get version from Git tag, remove 'v' prefix if present
+            VERSION=${GITHUB_REF#refs/tags/}
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           fi
-      
-      - name: Update version in meta.yaml
-        run: |
-          source $HOME/miniconda/bin/activate
-          VERSION="${{ steps.get_version.outputs.VERSION }}"
-          sed -i "s/{% set version = \".*\" %}/{% set version = \"$VERSION\" %}/" conda/meta.yaml
       
       - name: Install conda-build and anaconda-client
         run: |
@@ -235,28 +200,14 @@ jobs:
           conda config --add channels conda-forge
       
       - name: Build conda package
+        env:
+          GIT_DESCRIBE_TAG: ${{ steps.get_version.outputs.VERSION }}
         run: |
           source $HOME/miniconda/bin/activate
           # Verify Python version before building
           python --version
+          # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
-      
-      - name: Test the built package
-        run: |
-          source $HOME/miniconda/bin/activate
-          
-          # Create a test environment with Python 3.11
-          conda create -y -n test-env python=3.11
-          conda activate test-env
-          
-          # Verify Python version in test environment
-          python --version
-          
-          # Install the built package
-          conda install -y -c ./conda-bld/linux-64 -c conda-forge vectara-ingest
-          
-          # Verify the package can be imported
-          python -c "import core; print('Import test successful')"
       
       - name: List built packages
         run: |

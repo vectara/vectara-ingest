@@ -1,5 +1,5 @@
 {% set name = "vectara-ingest" %}
-{% set version = "0.1.0" %}
+{%- set version = environ.get('GIT_DESCRIBE_TAG', '0.1.0').lstrip('v') %}
 
 package:
   name: {{ name|lower }}
