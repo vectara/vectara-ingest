@@ -1,4 +1,4 @@
-import base64, logging
+import base64, 
 
 from typing import Set, Optional, Tuple
 import base64
@@ -11,6 +11,8 @@ import cairosvg
 
 from core.models import generate, generate_image_summary
 
+logger = logging.getLogger(__name__)
+
 def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
     """
     Decode a base64 image and return its (width, height).
@@ -19,7 +21,7 @@ def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
     try:
         data = base64.b64decode(data_b64)
     except Exception as e:
-        logging.warning(f"Base64 decode failed: {e}")
+        logger.warning(f"Base64 decode failed: {e}")
         return None
 
     # First, try to open as a standard raster image (PNG, JPEG, etc.)
@@ -38,7 +40,7 @@ def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
             return img.size
     except Exception:
         # If cairosvg fails, it's not a valid SVG or raster image we can handle.
-        logging.info("Data is not a valid raster image or SVG.")
+        logger.info("Data is not a valid raster image or SVG.")
         return None
         
 def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
@@ -56,7 +58,7 @@ def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list
     prompt += "Your task is retrieve the value of each attribute by answering the provided question, based on the text."
     prompt += "Your response should be as concise and accurate as possible. Prioritize 1-2 word responses."
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
-    logging.info(f"get_attributes_from_text() - Calling generate")
+    logger.info(f"get_attributes_from_text() - Calling generate")
     res = generate(cfg, system_prompt, prompt, model_config)
     if res.strip().startswith("```json"):
         res = res.strip().removeprefix("```json").removesuffix("```")
@@ -76,7 +78,7 @@ class ImageSummarizer():
         try:
             if ext == 'svg':
                 # Convert SVG to PNG using cairosvg
-                logging.info(f"Converting SVG {image_path} to PNG using cairosvg")
+                logger.info(f"Converting SVG {image_path} to PNG using cairosvg")
                 png_bytes = cairosvg.svg2png(url=image_path)
                 return base64.b64encode(png_bytes).decode('utf-8')
             else:
@@ -84,7 +86,7 @@ class ImageSummarizer():
                 with open(image_path, 'rb') as f:
                     return base64.b64encode(f.read()).decode('utf-8')
         except Exception as e:
-            logging.error(f"Failed to load image {image_path}: {e}")
+            logger.error(f"Failed to load image {image_path}: {e}")
             return None
             
     def summarize_image(
@@ -103,7 +105,8 @@ class ImageSummarizer():
 
         shape = _get_image_shape(content_b64)
         if not shape or min(shape) < 10:
-            logging.info(f"Image too small or invalid to summarize: {image_url}")
+            logger.info(f"Image too small or invalid to summarize: {image_url}")
+
             return None
 
         prompt = """
@@ -129,7 +132,7 @@ class ImageSummarizer():
                 self.image_model_config
             )
         except Exception as e:
-            logging.error(f"Image summary generation failed for {image_url}: {e}")
+            logger.error(f"Image summary generation failed for {image_url}: {e}")
             return None
 
 class TableSummarizer():
@@ -139,14 +142,15 @@ class TableSummarizer():
 
     def summarize_table_text(self, text: str):
         prompt = f"""
-            Adopt the perspective of a data analyst.
-            Summarize the key results reported in this table (in markdown format) without omitting critical details.
-            Make sure your summary is concise, informative and comprehensive.
-            Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
-            Your response should be without headings, and in text (not markdown).
-            Your response should include contextual information, so that it is identified as relevant in search results.
-            Review your response for accuracy, coherence, and no hallucinations.
-            Here is the table: {text}
+Adopt the perspective of a data analyst.
+Summarize the key results reported in this table (in markdown format) without omitting critical details.
+Make sure your summary is concise, informative and comprehensive.
+Use clear and professional language, ensuring all descriptions are tied explicitly to the data.
+Your response should be without headings, and in text (not markdown).
+Your response should include contextual information, so that it is identified as relevant in search results.
+Review your response for accuracy, coherence, and no hallucinations.
+Here is the table: 
+{text}
         """
         try:
             system_prompt = "You are a helpful assistant tasked with summarizing data tables. Each table is represented in markdown format."
@@ -154,5 +158,5 @@ class TableSummarizer():
             return summary
         except Exception as e:
             import traceback
-            logging.info(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
+            logger.error(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
             return None

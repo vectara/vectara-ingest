@@ -1,5 +1,7 @@
 import logging
 
+logger = logging.getLogger(__name__)
+
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
 import os.path
@@ -82,7 +84,7 @@ class ServicenowCrawler(Crawler):
 
         while True:
             list_articles_url.args['sysparm_offset'] = offset
-            logging.info(f"Fetching list of articles: {list_articles_url.url}")
+            logger.info(f"Fetching list of articles: {list_articles_url.url}")
 
             list_articles_response = self.session.get(
                 list_articles_url.url,
@@ -115,7 +117,7 @@ class ServicenowCrawler(Crawler):
                 succeeded = False
 
                 with tempfile.NamedTemporaryFile(suffix=".html", mode='w', delete=False) as f:
-                    logging.debug(f"Writing content for {article_doc_id} to {f.name}")
+                    logger.debug(f"Writing content for {article_doc_id} to {f.name}")
                     f.write('<html>\n')
                     if 'short_description' in article:
                         f.write('<head>\n')
@@ -155,11 +157,11 @@ class ServicenowCrawler(Crawler):
                     attachment_doc_id = f"{article_doc_id}.{attachment_sys_id}"
                     file_name = attachment_result['file_name']
                     if not is_supported_file(file_name):
-                        logging.debug(f"Skipping {attachment_sys_id}:{file_name} because it's not a supported file type")
+                        logger.debug(f"Skipping {attachment_sys_id}:{file_name} because it's not a supported file type")
                         continue
 
                     attachment_download_url = self.new_url('/api/now/attachment/', attachment_sys_id, 'file')
-                    logging.info(f"Downloading attachment for {attachment_sys_id}: {attachment_download_url.url}")
+                    logger.info(f"Downloading attachment for {attachment_sys_id}: {attachment_download_url.url}")
                     attachment_ui_url = self.new_url('/sys_attachment.do')
                     attachment_ui_url.args['sys_id'] = attachment_sys_id
 
@@ -175,7 +177,7 @@ class ServicenowCrawler(Crawler):
                                                          auth=self.servicenow_auth)
                     attachment_download_response.raise_for_status()
                     with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-                        logging.debug(f"Writing content for {attachment_sys_id} to {f.name}")
+                        logger.debug(f"Writing content for {attachment_sys_id} to {f.name}")
                         for chunk in attachment_download_response.iter_content(chunk_size=32000):
                             f.write(chunk)
                         f.flush()
@@ -187,7 +189,7 @@ class ServicenowCrawler(Crawler):
                                 os.remove(f.name)
 
                         if not succeeded:
-                            logging.error(f"Error indexing {attachment_sys_id} - {attachment_download_url.url}")
+                            logger.error(f"Error indexing {attachment_sys_id} - {attachment_download_url.url}")
 
 
             offset += page_size

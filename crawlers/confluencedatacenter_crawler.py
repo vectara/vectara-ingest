@@ -1,5 +1,6 @@
 import json
 import logging
+logger = logging.getLogger(__name__)
 import os
 import tempfile
 from importlib.metadata import metadata
@@ -96,18 +97,18 @@ class ConfluencedatacenterCrawler(Crawler):
         filename, file_extension = os.path.splitext(title)
 
         if file_extension not in supported_extensions:
-            logging.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
+            logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
         attachment_url = furl(metadata["url"])
-        logging.info(f"Downloading Attachment {doc_id} - {attachment_url}")
+        logger.info(f"Downloading Attachment {doc_id} - {attachment_url}")
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
         )
 
         with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
-            logging.debug(f"Writing content for {doc_id} to {f.name}")
+            logger.debug(f"Writing content for {doc_id} to {f.name}")
             for chunk in download_response.iter_content(chunk_size=32000):
                 f.write(chunk)
             f.flush()
@@ -120,7 +121,7 @@ class ConfluencedatacenterCrawler(Crawler):
                     os.remove(f.name)
 
             if not succeeded:
-                logging.error(f"Error indexing {doc_id} - {attachment_url}")
+                logger.error(f"Error indexing {doc_id} - {attachment_url}")
 
     def _process_non_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
@@ -134,7 +135,7 @@ class ConfluencedatacenterCrawler(Crawler):
         if "body" in content and self.body_view in content["body"]:
             body = content["body"][self.body_view]["value"]
             with tempfile.NamedTemporaryFile(suffix=".html", mode="w", delete=False) as f:
-                logging.debug(f"Writing content for {doc_id} to {f.name}")
+                logger.debug(f"Writing content for {doc_id} to {f.name}")
                 f.write("<html>")
                 if "title" in content:
                     f.write("<head><title>")
@@ -158,7 +159,7 @@ class ConfluencedatacenterCrawler(Crawler):
         Initiates the crawling process for Confluence content.
         """
         self.base_url = furl(self.cfg.confluencedatacenter.base_url)
-        logging.info(f"Starting base_url = '{self.base_url}'")
+        logger.info(f"Starting base_url = '{self.base_url}'")
 
         self.confluence_headers = {"Accept": "application/json"}
         self.confluence_auth = (
@@ -184,7 +185,7 @@ class ConfluencedatacenterCrawler(Crawler):
         )
         search_url.args["limit"] = limit
 
-        logging.info(f"Searching Confluence {search_url.url}")
+        logger.info(f"Searching Confluence {search_url.url}")
 
         while True:
             search_url.args["start"] = start
@@ -194,7 +195,7 @@ class ConfluencedatacenterCrawler(Crawler):
             )
 
             if search_url_response.status_code == 500:
-                logging.warning(
+                logger.warning(
                     "500 returned by REST API. This could be due to a mismatch with the space name in your query."
                 )
 
@@ -213,7 +214,7 @@ class ConfluencedatacenterCrawler(Crawler):
                 if "next" not in search_url_data["_links"]:
                     break
                 else:
-                    logging.debug("next not found in _links, going again.")
+                    logger.debug("next not found in _links, going again.")
             else:
-                logging.warning("_links was not found in the response. Exiting to prevent an infinite loop.")
+                logger.warning("_links was not found in the response. Exiting to prevent an infinite loop.")
                 break

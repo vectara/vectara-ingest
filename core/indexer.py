@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import json
 import re
 import os
@@ -33,7 +34,7 @@ from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
     mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers
+    doc_extensions, get_headers
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
@@ -45,6 +46,20 @@ import tempfile
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
+
+def supported_by_index_file(filename:str) -> bool:
+    """
+    Checks if the file type, determined by its extension, is supported for indexing by the index_file method.
+
+    Args:
+        filename: The name of the file to check.
+
+    Returns:
+        True if the file extension is in the list of supported document extensions (doc_extensions),
+        False otherwise.
+    """
+    _, extension = os.path.splitext(filename)
+    return extension.lower() in doc_extensions
 
 # helper function to add table_extraction and chunking_strategy to payload
 def _get_chunking_config(
@@ -153,7 +168,6 @@ class Indexer:
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
-        self.logger = logging.getLogger()
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
         self.static_metadata = cfg.get('metadata', None)
@@ -174,9 +188,9 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
 
-        if ('model' in self.cfg.doc_processing or 
+        if ('model' in self.cfg.doc_processing or
             ('model_config' not in self.cfg.doc_processing and 'model' not in self.cfg.doc_processing)):
-            logging.warning(
+            logger.warning(
                 "doc_processing.model will no longer be supported in a future release. Use doc_processing.model_config instead.")
 
             provider = self.cfg.doc_processing.get("model", "openai")
@@ -199,23 +213,23 @@ class Indexer:
 
         if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
-            self.logger.warning("Table summarization enabled but model API key not found, disabling table summarization")
+            logger.warning("Table summarization enabled but model API key not found, disabling table summarization")
 
         if self.summarize_images and vision_api_key is None:
             self.summarize_images = False
-            self.logger.warning(
+            logger.warning(
                 "Image summarization (doc_processing.summarize_images) enabled but model API key not found, disabling image summarization")
 
         if self.contextual_chunking and text_api_key is None:
             self.contextual_chunking = False
-            self.logger.warning("Contextual chunking enabled but model API key not found, disabling contextual chunking")
+            logger.warning("Contextual chunking enabled but model API key not found, disabling contextual chunking")
 
         if self.extract_metadata and text_api_key is None:
             self.extract_metadata = []
-            self.logger.warning(
+            logger.warning(
                 "Metadata extraction (doc_processing.extract_metadata) enabled but model API key not found, disabling metadata extraction")
 
-        logging.info(f"Vectara API Url = '{self.api_url}'")
+        logger.info(f"Vectara API Url = '{self.api_url}'")
 
         self.setup()
 
@@ -245,7 +259,7 @@ class Indexer:
         if self.store_docs:
             uuid_suffix = f"indexed_docs_{str(uuid.uuid4())}"
             docker_env_path = '/home/vectara/env'
-            
+
             self.store_docs_folder = get_docker_or_local_path(
                 docker_path=os.path.join(docker_env_path, uuid_suffix),
                 output_dir=os.path.join(self.output_dir, uuid_suffix),
@@ -333,7 +347,7 @@ class Indexer:
             else route.continue_()
                        )
             if debug:
-                page.on('console', lambda msg: self.logger.info(f"playwright debug: {msg.text})"))
+                page.on('console', lambda msg: logger.info(f"playwright debug: {msg.text})"))
 
             page.goto(url, timeout=self.timeout * 1000, wait_until="domcontentloaded")
             page.wait_for_timeout(self.post_load_timeout * 1000)  # Wait additional time to handle AJAX
@@ -480,9 +494,9 @@ class Indexer:
 
 
         except PlaywrightTimeoutError:
-            self.logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
+            logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
         except Exception as e:
-            self.logger.info(f"Page loading failed for {url} with exception '{e}'")
+            logger.info(f"Page loading failed for {url} with exception '{e}'")
             if not self.browser.is_connected():
                 self.browser = self.p.firefox.launch(headless=True)
         finally:
@@ -495,9 +509,9 @@ class Indexer:
                 self.browser.close()
                 self.browser = self.p.firefox.launch(headless=True)
                 self.browser_use_count = 0
-                self.logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
+                logger.info(f"browser reset after {self.browser_use_limit} uses to avoid memory issues")
 
-        self.logger.info(f"For crawled page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
+        logger.info(f"For crawled page {url}: images = {len(images)}, tables = {len(tables)}, links = {len(links)}")
 
         return {
             'text': text,
@@ -565,7 +579,7 @@ class Indexer:
             headers=post_headers)
 
         if response.status_code != 204:
-            self.logger.error(
+            logger.error(
                 f"Delete request failed for doc_id = {doc_id} with status code {response.status_code}, reason {response.reason}, text {response.text}")
             return False
         return True
@@ -594,7 +608,7 @@ class Indexer:
                 f"{self.api_url}/v2/corpora/{self.corpus_key}/documents",
                 headers=post_headers, params=params)
             if response.status_code != 200:
-                self.logger.error(f"Error listing documents with status code {response.status_code}")
+                logger.error(f"Error listing documents with status code {response.status_code}")
                 return []
             res = response.json()
 
@@ -624,7 +638,7 @@ class Indexer:
             bool: True if the upload was successful, False otherwise.
         """
         if not os.path.exists(filename):
-            self.logger.error(f"File {filename} does not exist")
+            logger.error(f"File {filename} does not exist")
             return False
 
         if self.static_metadata:
@@ -637,7 +651,7 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
 
         upload_filename = id if id is not None else filename.split('/')[-1]
-        
+
         files = {
             'file': (upload_filename, open(filename, 'rb')),
             'metadata': (None, json.dumps(metadata), 'application/json'),
@@ -656,7 +670,7 @@ class Indexer:
                 if match:
                     doc_id = match.group(1)
                 else:
-                    self.logger.error(f"Failed to extract document id from error message: {response.text}")
+                    logger.error(f"Failed to extract document id from error message: {response.text}")
                     return False
                 self.delete_doc(doc_id)
                 new_files = {
@@ -671,21 +685,21 @@ class Indexer:
 
                 response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
-                    self.logger.info(f"REST upload for {uri} successful (reindex)")
+                    logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
                     return True
                 else:
-                    self.logger.info(
+                    logger.error(
                         f"REST upload for {uri} ({doc_id}) (reindex) failed with code = {response.status_code}, text = {response.text}")
                     return True
             else:
-                self.logger.info(f"document {uri} already indexed, skipping")
+                logger.info(f"document {uri} already indexed, skipping")
                 return False
         elif response.status_code != 201:
-            self.logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
+            logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
             return False
 
-        self.logger.info(f"REST upload for {uri} ({upload_filename}) successful")
+        logger.info(f"REST upload for {uri} ({upload_filename}) successful")
         self.store_file(filename, url_to_filename(uri))
         return True
 
@@ -696,7 +710,7 @@ class Indexer:
         Args:
             document (dict): Document to index.
             use_core_indexing (bool): Whether to use the core indexing API.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -704,10 +718,10 @@ class Indexer:
         doc_exists = self._does_doc_exist(document['id'])
         if doc_exists:
             if self.reindex:
-                self.logger.info(f"Document {document['id']} already exists, deleting then reindexing")
+                logger.info(f"Document {document['id']} already exists, deleting then reindexing")
                 self.delete_doc(document['id'])
             else:
-                self.logger.info(f"Document {document['id']} already exists, skipping")
+                logger.info(f"Document {document['id']} already exists, skipping")
                 return False
 
 
@@ -738,17 +752,17 @@ class Indexer:
         try:
             data = json.dumps(document)
         except Exception as e:
-            self.logger.info(f"Can't serialize document {document} (error {e}), skipping")
+            logger.info(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
         except Exception as e:
-            self.logger.info(f"Exception {e} while indexing document {document['id']}")
+            logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
         if response.status_code != 201:
-            self.logger.error("REST upload failed with code %d, reason %s, text %s",
+            logger.error("REST upload failed with code %d, reason %s, text %s",
                               response.status_code,
                               response.reason,
                               response.text)
@@ -762,11 +776,11 @@ class Indexer:
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
-        
+
         Args:
-            url (str): URL for where the document originated. 
+            url (str): URL for where the document originated.
             metadata (dict): Metadata for the document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
@@ -781,7 +795,7 @@ class Indexer:
             os.makedirs("/tmp", exist_ok=True)
             url_file_path = get_file_path_from_url(url)
             if not url_file_path:
-                self.logger.info(f"Failed to extract file path from URL {url}, skipping...")
+                logger.error(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
             response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
@@ -789,12 +803,12 @@ class Indexer:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
-                self.logger.info(f"File downloaded successfully and saved as {file_path}")
+                logger.info(f"File downloaded successfully and saved as {file_path}")
                 res = self.index_file(file_path, url, metadata)
                 safe_remove_file(file_path)
                 return res
             else:
-                self.logger.info(f"Failed to download file. Status code: {response.status_code}")
+                logger.error(f"Failed to download file. Status code: {response.status_code}")
                 return False
 
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
@@ -837,7 +851,7 @@ class Indexer:
                 # Detect language if needed
                 if self.detected_language is None:
                     self.detected_language = detect_language(text)
-                    self.logger.info(f"The detected language is {self.detected_language}")
+                    logger.info(f"The detected language is {self.detected_language}")
 
                 if len(self.extract_metadata) > 0:
                     ex_metadata = get_attributes_from_text(
@@ -858,7 +872,7 @@ class Indexer:
                 if self.remove_boilerplate:
                     url = res['url']
                     if self.verbose:
-                        self.logger.info(
+                        logger.info(
                             f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
                 else:
@@ -870,10 +884,10 @@ class Indexer:
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
                     if 'text' not in self.model_config:
-                        self.logger.warning("Table summarization is enabled but no text model is configured, skipping table summarization")
+                        logger.warning("Table summarization is enabled but no text model is configured, skipping table summarization")
                     else:
                         if self.verbose:
-                            self.logger.info(f"Found {len(res['tables'])} tables in {url}")
+                            logger.info(f"Found {len(res['tables'])} tables in {url}")
                         table_summarizer = TableSummarizer(
                             cfg=self.cfg,
                             table_model_config=self.model_config.text,
@@ -882,7 +896,7 @@ class Indexer:
                             table_summary = table_summarizer.summarize_table_text(table)
                             if table_summary:
                                 if self.verbose:
-                                    self.logger.info(f"Table summary: {table_summary[:500]}...")
+                                    logger.info(f"Table summary: {table_summary[:500]}...")
                                 cols, rows = html_table_to_header_and_rows(table)
                                 cols_not_empty = any(col for col in cols)
                                 rows_not_empty = any(any(cell for cell in row) for row in rows)
@@ -903,7 +917,7 @@ class Indexer:
                     image_filename = 'image.png'
                     if 'images' in res:
                         if self.verbose:
-                            self.logger.info(f"Found {len(res['images'])} images in {url}")
+                            logger.info(f"Found {len(res['images'])} images in {url}")
                         for inx, image in enumerate(res['images']):
                             image_url = image['src']
                             if not image_url.startswith('http'):
@@ -911,7 +925,7 @@ class Indexer:
                                 continue
                             response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
                             if response.status_code != 200:
-                                self.logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                                logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                                 continue
                             with open(image_filename, 'wb') as f:
                                 for chunk in response.iter_content(chunk_size=8192):
@@ -923,20 +937,20 @@ class Indexer:
                                 if ex_metadata:
                                     metadata.update(ex_metadata)
                                 if self.verbose:
-                                    self.logger.info(f"Image summary: {image_summary[:500]}...")
+                                    logger.info(f"Image summary: {image_summary[:500]}...")
                                 doc_id = slugify(url) + "_image_" + str(inx)
                                 succeeded = self.index_segments(doc_id=doc_id, texts=[image_summary],
                                                                 metadatas=metadatas,
                                                                 doc_metadata=metadata, doc_title=doc_title,
                                                                 use_core_indexing=True)
                             else:
-                                self.logger.info(f"Failed to retrieve image {image['src']}")
+                                logger.info(f"Failed to retrieve image {image['src']}")
                                 continue
 
-                self.logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
+                logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
-                self.logger.info(
+                logger.error(
                     f"Failed to crawl {url}, skipping due to error {e}, traceback={traceback.format_exc()}")
                 return False
 
@@ -964,7 +978,7 @@ class Indexer:
             bool: True if the upload was successful, False otherwise.
         """
         if ''.join(texts).strip() == '':
-            self.logger.info(f"Document {doc_id} has no content, skipping")
+            logger.info(f"Document {doc_id} has no content, skipping")
             return False
 
         if titles is None:
@@ -978,7 +992,7 @@ class Indexer:
 
         document = {}
         document["id"] = (
-            doc_id if len(doc_id) < 128 
+            doc_id if len(doc_id) < 128
             else doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
         )
 
@@ -1017,7 +1031,7 @@ class Indexer:
                 )
         else:
             if any((len(text) > 16384 for text in texts)):
-                self.logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
+                logger.info(f"Document {doc_id} too large for Vectara core indexing, skipping")
                 return False
             document["document_parts"] = [
                 {"text": self.normalize_text(text), "metadata": md}
@@ -1030,25 +1044,25 @@ class Indexer:
             document["metadata"] = doc_metadata
 
         if self.verbose:
-            self.logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
+            logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
 
         return self.index_document(document, use_core_indexing)
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus.
-        
+
         Args:
             filename (str): Name of the PDF file to create.
             uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
             metadata (dict): Metadata for the document.
             id (str, optional): Document id for the uploaded document.
-        
+
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
         if not os.path.exists(filename):
-            self.logger.error(f"File {filename} does not exist")
+            logger.error(f"File {filename} does not exist")
             return False
 
         # If we have a PDF/HTML/PPT/DOCX file with size>50MB, or we want to use the parse_tables option, then we parse locally and index
@@ -1067,9 +1081,9 @@ class Indexer:
         #
         if not self.process_locally and (
                 (self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
-            self.logger.info(f"For {uri} - Uploading via Vectara file upload API")
+            logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata) > 0 or self.summarize_images:
-                self.logger.info(f"Reading contents of {filename} (url={uri})")
+                logger.info(f"Reading contents of {filename} (url={uri})")
                 dp = UnstructuredDocumentParser(
                     cfg=self.cfg,
                     verbose=self.verbose,
@@ -1083,7 +1097,7 @@ class Indexer:
             ex_metadata = {}
             if len(self.extract_metadata) > 0:
                 if 'text' not in self.model_config:
-                    self.logger.warning("Metadata field extraction is enabled but no text model is configured, skipping")
+                    logger.warning("Metadata field extraction is enabled but no text model is configured, skipping")
                 else:
                     all_text = "\n".join([t[0] for t in texts])[:max_chars]
                     ex_metadata = get_attributes_from_text(
@@ -1102,8 +1116,7 @@ class Indexer:
             if filesize_mb > max_pdf_size:
                 pdf_reader = PdfReader(filename)
                 total_pages = len(pdf_reader.pages)
-                logging.info(
-                    f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
+                logger.info(f"{filename} is {filesize_mb} which is larger than {max_pdf_size} mb with {total_pages} pages. Splitting into {pages_per_pdf} page chunks.")
                 error_count = 0
                 for i in range(0, total_pages, pages_per_pdf):
                     pdf_writer = PdfWriter()
@@ -1134,7 +1147,7 @@ class Indexer:
 
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and images:
-                self.logger.info(f"Extracted {len(images)} images from {uri}")
+                logger.info(f"Extracted {len(images)} images from {uri}")
                 for inx, image in enumerate(images):
                     image_summary = image[0]
                     metadata = image[1]
@@ -1148,9 +1161,9 @@ class Indexer:
         #
         # Case B: Process locally and upload to Vectara
         #
-        self.logger.info(f"Parsing file {filename} locally")
+        logger.info(f"Parsing file {filename} locally")
         if self.contextual_chunking:
-            self.logger.info(f"Applying contextual chunking for {filename}")
+            logger.info(f"Applying contextual chunking for {filename}")
             dp = UnstructuredDocumentParser(
                 cfg=self.cfg,
                 verbose=self.verbose,
@@ -1208,7 +1221,7 @@ class Indexer:
         try:
             title, texts, tables, images = dp.parse(filename, uri)
         except Exception as e:
-            self.logger.info(f"Failed to parse {filename} with error {e}")
+            logger.info(f"Failed to parse {filename} with error {e}")
             return False
 
         # Get metadata attribute values from text content (if defined)
@@ -1276,15 +1289,16 @@ class Indexer:
                                                doc_metadata=image_metadata, doc_title=title, use_core_indexing=True)
                 image_success.append(img_okay)
             except Exception as e:
-                self.logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
+                logger.info(f"Failed to index image {metadata.get('src', 'no image name')} with error {e}")
                 image_success.append(False)
-        self.logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
+        if len(images) > 0:
+            logger.info(f"Indexed {len(images)} images from {filename} with {sum(image_success)} successes")
         return succeeded
 
     def index_media_file(self, file_path, metadata=None):
         """
         Index a media file (audio or video) by transcribing it with Whisper and uploading it to the Vectara corpus.
-        
+
         Args:
             file_path (str): Path to the media file.
             metadata (dict): Metadata for the document.
@@ -1292,7 +1306,7 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False
         """
-        logging.info(
+        logger.info(
             f"Transcribing file {file_path} with Whisper model of size {self.whisper_model} (this may take a while)")
         if self.whisper_model is None:
             self.whisper_model = whisper.load_model(self.whisper_model, device="cpu")

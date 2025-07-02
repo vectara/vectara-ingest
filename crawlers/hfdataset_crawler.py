@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from datasets import load_dataset
 import psutil
@@ -23,14 +24,14 @@ class RowIndexer(object):
                 title_column: str = None):
 
         if inx % 100 == 0:
-            logging.info(f"Indexing document # {inx+1}")
+            logger.info(f"Indexing document # {inx+1}")
         doc_id = str(row[id_column]) if id_column else f'doc-{inx}'
         texts = [' - '.join([str(row[col]) for col in text_columns if row[col]]) + '\n']
         doc_title = str(row[title_column]) if title_column else None
         doc_metadata = {column: row[column] for column in metadata_columns}
         doc_metadata["_source"] = doc_metadata.get("source", "Unknown source")
         doc_metadata["source"] = "hf_dataset"
-        self.indexer.index_segments(doc_id, texts=texts, 
+        self.indexer.index_segments(doc_id, texts=texts,
                                     doc_title=doc_title, doc_metadata=doc_metadata)
         del texts, doc_metadata, doc_title, doc_id
         gc.collect()
@@ -49,26 +50,26 @@ class HfdatasetCrawler(Crawler):
 
         dataset_name = self.cfg.hfdataset_crawler.dataset_name
         split = self.cfg.hfdataset_crawler.get("split", "corpus")
-        logging.info(f"Loading data from {dataset_name}")
+        logger.info(f"Loading data from {dataset_name}")
         ds = load_dataset(dataset_name, split=split, streaming=True)
 
         if "select_condition" in self.cfg.hfdataset_crawler:
             select_condition = self.cfg.hfdataset_crawler.select_condition
-            logging.info(f"Filtering by condition: {select_condition}")
+            logger.info(f"Filtering by condition: {select_condition}")
             key, value = select_condition.split('=')
             key = key.strip()
             value = value.strip().strip("'")
             ds = ds.filter(lambda s: s[key] == value)
-        
+
         num_rows = self.cfg.hfdataset_crawler.get("num_rows", None)
         start_row = self.cfg.hfdataset_crawler.get("start_row", 0)
 
         if start_row:
             ds = ds.skip(start_row)
-            logging.info(f"Skipping first {start_row} rows")
+            logger.info(f"Skipping first {start_row} rows")
         if num_rows:
             ds = ds.take(num_rows)
-            logging.info(f"Limiting to {num_rows} rows")
+            logger.info(f"Limiting to {num_rows} rows")
 
         ray_workers = self.cfg.hfdataset_crawler.get("ray_workers", 0)   # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
@@ -76,7 +77,7 @@ class HfdatasetCrawler(Crawler):
 
         batch_size = 256
         if ray_workers > 0:
-            logging.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(RowIndexer).remote(self.indexer, self) for _ in range(ray_workers)]
