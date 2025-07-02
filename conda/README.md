@@ -160,3 +160,48 @@ If found, this will be used for SSL verification.
 - In CLI mode, certificate paths are resolved relative to your local filesystem
 - Absolute paths must exist on your local system
 - Paths with `~` are expanded to your home directory
+
+## Building and Publishing the Conda Package
+
+### Using GitHub Actions
+
+The repository includes a GitHub Action workflow that automatically builds and publishes the conda package for macOS, Windows, and Linux platforms to Anaconda.org.
+
+To use this workflow:
+
+1. Ensure you have an Anaconda.org account and have generated an API token
+2. Add your Anaconda API token as a GitHub repository secret named `ANACONDA_TOKEN`
+3. Trigger the workflow in one of two ways:
+   - Manually: Go to the "Actions" tab in your GitHub repository, select the "Build and Publish Conda Package" workflow, click "Run workflow", and enter the version number
+   - Automatically: Create a new release in your GitHub repository, and the workflow will use the release tag as the version number
+
+The workflow will:
+- Build the conda package for three platforms (Red Hat Linux, macOS, Windows)
+- Update the version in the meta.yaml file
+- Upload the built packages to your Anaconda.org channel
+
+#### Red Hat Linux Build
+
+The workflow builds specifically for Red Hat-based Linux distributions (CentOS, RHEL, Amazon Linux):
+
+- Built using a CentOS Stream 9 container for compatibility with Red Hat systems
+- Includes all necessary system dependencies for Playwright and Firefox
+- Can be installed with: `conda install vectara::vectara-ingest -c conda-forge`
+
+This Red Hat-focused build ensures compatibility with Red Hat-based systems, which is the recommended Linux platform for this package. The build process installs all the required system dependencies mentioned in the "Running on Red Hat Linux" section above, so you don't need to install them separately when using the conda package.
+
+### Building Locally
+
+If you prefer to build the package locally:
+
+```bash
+# Install conda-build and anaconda-client
+conda install conda-build anaconda-client
+
+# Build the package
+conda build conda --output-folder ./conda-bld
+
+# Upload to Anaconda.org (requires login)
+anaconda login
+anaconda upload ./conda-bld/*/vectara-ingest-*.tar.bz2
+```

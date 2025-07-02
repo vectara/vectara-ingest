@@ -4,11 +4,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., 2.0.8)'
+        required: true
+        default: 'latest'
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE_NAME: advectara  # Your Docker Hub repository name
+  DOCKERHUB_IMAGE_NAME: advectara/vectara-ingest
 
 jobs:
   build-and-push-image:
@@ -44,10 +49,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=${{ github.event.inputs.version }}
+          fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       # Build and push regular version
