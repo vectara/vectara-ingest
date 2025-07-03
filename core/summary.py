@@ -6,7 +6,7 @@ from omegaconf import OmegaConf
 from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 import cairosvg
-
+import json
 from core.models import generate, generate_image_summary
 
 logger = logging.getLogger(__name__)
