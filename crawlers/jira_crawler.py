@@ -4,7 +4,14 @@ import requests
 import json
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
+from dataclasses import dataclass, field
 
+@dataclass
+class JiraCrawlerConfig:
+    jira_username: str
+    jira_password: str
+    jira_base_url: str
+    jira_jql: str
 
 class JiraCrawler(Crawler):
 

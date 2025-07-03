@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Set, List, Any
 from core.utils import html_to_text, create_session_with_retries, RateLimiter, configure_session_for_ssl
 from core.crawler import Crawler
-
+from dataclasses import dataclass
 from omegaconf import OmegaConf
 from Bio import Entrez
 
@@ -28,6 +28,13 @@ def get_top_n_papers(topic: str, n: int, email: str) -> Any:
     )
     id_list = search_results["IdList"]
     return id_list
+
+
+@dataclass
+class PmcCrawlerConfig:
+    topics: List[str]
+    n_papers: int
+    num_per_second: int = 3
 
 
 class PmcCrawler(Crawler):

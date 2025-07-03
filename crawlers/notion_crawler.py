@@ -7,8 +7,11 @@ from typing import Any
 import os
 
 from core.utils import get_docker_or_local_path
+from dataclasses import dataclass, field
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 
 def format_notion_id(page_id):
     '''
@@ -87,6 +90,14 @@ def extract_title(page):
 
     # No title found
     return ''
+
+@dataclass
+class NotionCrawlerConfig:
+    notion_api_key: str
+    crawl_report: bool = False
+    output_dir: str = "vectara_ingest_output"
+    remove_old_content: bool = False
+
 
 class NotionCrawler(Crawler):
 

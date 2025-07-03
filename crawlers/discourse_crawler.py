@@ -6,11 +6,16 @@ import json
 from core.utils import create_session_with_retries, html_to_text, configure_session_for_ssl
 from typing import List, Dict, Any
 from datetime import datetime
-
+from dataclasses import dataclass, field
 def datetime_to_date(datetime_str: str) -> str:
     date_obj = datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%S.%fZ')
     date_str = date_obj.strftime('%Y-%m-%d')
     return date_str
+
+@dataclass
+class DiscourseCrawlerConfig:
+    base_url: str
+    discourse_api_key: str
 
 
 class DiscourseCrawler(Crawler):

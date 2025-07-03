@@ -20,6 +20,7 @@ import ray
 
 from core.indexer import Indexer
 from core.utils import setup_logging, safe_remove_file, get_docker_or_local_path
+from dataclasses import dataclass, field
 
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
@@ -260,6 +261,15 @@ class UserWorker(object):
                 if not self.shared_cache.contains(file['id']):
                     self.shared_cache.add(file['id'])
             self.crawl_file(file)
+
+@dataclass
+class GdriveCrawlerConfig:
+    delegated_users: List[str]
+    days_back: int = 7
+    permissions: List[str] = field(default_factory=lambda: DEFAULT_PERMISSIONS)
+    credentials_file: str = SERVICE_ACCOUNT_FILE
+    ray_workers: int = 0
+
 
 class GdriveCrawler(Crawler):
 

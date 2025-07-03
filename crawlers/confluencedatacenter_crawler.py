@@ -9,6 +9,16 @@ from requests import Response
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
+from dataclasses import dataclass, field
+
+@dataclass
+class ConfluencedatacenterCrawlerConfig:
+    base_url: str
+    confluence_datacenter_username: str
+    confluence_datacenter_password: str
+    confluence_cql: str = ""
+    body_view: str = "export_view"
+    limit: int = 25
 
 
 class ConfluencedatacenterCrawler(Crawler):

@@ -5,12 +5,13 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
 import os.path
-import json
 import tempfile
 
 from furl import furl
+from dataclasses import dataclass, field
 
-def is_supported_file(file_name:str)->bool:
+
+def is_supported_file(file_name: str) -> bool:
     supported_extensions = {
         '.pdf', '.md', '.odt', '.doc', '.docx', '.ppt',
         '.pptx', '.txt', '.html', '.htm', '.lxml',
@@ -20,8 +21,19 @@ def is_supported_file(file_name:str)->bool:
     return file_extension.lower() in supported_extensions
 
 
+@dataclass
+class ServicenowCrawlerConfig:
+    servicenow_instance_url: str
+    servicenow_username: str
+    servicenow_password: str
+    servicenow_process_attachments: bool
+    servicenow_ignore_fields: list[str] = field(default_factory=lambda: ['text', 'short_description'])
+    servicenow_pagesize: int = 100
+    servicenow_query: str = ""
+
+
 class ServicenowCrawler(Crawler):
-    def new_url(self, /, *paths)-> furl:
+    def new_url(self, /, *paths) -> furl:
         """
         Construct a new URL by copying the base_url and appending additional path segments.
 
@@ -69,14 +81,14 @@ class ServicenowCrawler(Crawler):
         )
         self.user_cache = {}
 
-        skip_fields = self.cfg.servicenow_crawler.get('servicenow_ignore_fields', {'text', 'short_description'})
+        skip_fields = set(self.cfg.servicenow_crawler.get('servicenow_ignore_fields', ['text', 'short_description']))
         page_size = self.cfg.servicenow_crawler.get('servicenow_pagesize', 100)
 
         table = 'kb_knowledge'
         kb_url = self.new_url('/kb_view.do')
         list_articles_url = self.new_url('/api/now/table', table)
         if 'servicenow_query' in self.cfg.servicenow_crawler:
-            list_articles_url.args['sysparm_query']= self.cfg.servicenow_crawler.get('servicenow_query')
+            list_articles_url.args['sysparm_query'] = self.cfg.servicenow_crawler.get('servicenow_query')
 
         offset = 0
         list_articles_url.args['sysparm_offset'] = 0
@@ -136,10 +148,9 @@ class ServicenowCrawler(Crawler):
                 if succeeded:
                     articles[article_sys_id] = article_doc_id
 
-
             if len(articles) > 0 and self.cfg.servicenow_crawler.servicenow_process_attachments:
                 attachments_url = self.new_url('/api/now/table/sys_attachment')
-                attachments_url.args['sysparm_query'] = f"table_name={table}^table_sys_idIN{ ','.join(articles.keys()) }"
+                attachments_url.args['sysparm_query'] = f"table_name={table}^table_sys_idIN{','.join(articles.keys())}"
 
                 attachments_response = self.session.get(
                     attachments_url.url,
@@ -165,7 +176,7 @@ class ServicenowCrawler(Crawler):
                     attachment_ui_url = self.new_url('/sys_attachment.do')
                     attachment_ui_url.args['sys_id'] = attachment_sys_id
 
-                    attachment_metadata ={
+                    attachment_metadata = {
                         'url': attachment_ui_url.url
                     }
                     attachment_metadata.update(
@@ -173,8 +184,9 @@ class ServicenowCrawler(Crawler):
                          if attachment_result[k] and k not in skip_fields}
                     )
 
-                    attachment_download_response = self.session.get(attachment_download_url.url, headers=self.servicenow_headers,
-                                                         auth=self.servicenow_auth)
+                    attachment_download_response = self.session.get(attachment_download_url.url,
+                                                                    headers=self.servicenow_headers,
+                                                                    auth=self.servicenow_auth)
                     attachment_download_response.raise_for_status()
                     with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
                         logger.debug(f"Writing content for {attachment_sys_id} to {f.name}")
@@ -183,13 +195,13 @@ class ServicenowCrawler(Crawler):
                         f.flush()
                         f.close()
                         try:
-                            succeeded = self.indexer.index_file(f.name, attachment_download_url.url, attachment_metadata, attachment_doc_id)
+                            succeeded = self.indexer.index_file(f.name, attachment_download_url.url,
+                                                                attachment_metadata, attachment_doc_id)
                         finally:
                             if os.path.exists(f.name):
                                 os.remove(f.name)
 
                         if not succeeded:
                             logger.error(f"Error indexing {attachment_sys_id} - {attachment_download_url.url}")
-
 
             offset += page_size

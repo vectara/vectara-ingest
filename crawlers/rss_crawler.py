@@ -5,6 +5,15 @@ from core.crawler import Crawler
 import feedparser
 from datetime import datetime, timedelta
 from time import mktime
+from dataclasses import dataclass, field
+
+@dataclass
+class RssCrawlerConfig:
+    rss_pages: list[str] = field(default_factory=list)
+    source: str = "rss_feed"
+    delay: int = 1
+    days_past: int = 30
+
 
 class RssCrawler(Crawler):
 

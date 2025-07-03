@@ -8,6 +8,16 @@ from mwviews.api import PageviewsClient
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
+from dataclasses import dataclass,field
+
+@dataclass
+class MediawikiCrawlerConfig:
+    api_url: str
+    depth: int
+    source_urls: list[str]
+    n_pages: int
+    project: str|None = None
+
 
 
 class MediawikiCrawler(Crawler):

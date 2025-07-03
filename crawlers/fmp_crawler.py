@@ -7,6 +7,16 @@ from omegaconf import OmegaConf, DictConfig
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
+from dataclasses import dataclass, field
+
+@dataclass
+class FmpCrawlerConfig:
+    tickers: list[str]
+    start_year: int
+    end_year: int
+    fmp_api_key: str
+    index_10k: bool
+    index_call_transcripts: bool = True
 
 
 # Crawler for financial information using the financialmodelingprep.com service

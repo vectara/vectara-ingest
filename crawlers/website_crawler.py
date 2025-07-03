@@ -10,10 +10,27 @@ from core.utils import (
 )
 from core.indexer import Indexer
 from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
+from dataclasses import dataclass, field
 
 import ray
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class WebsiteCrawlerConfig:
+    urls: list[str]
+    pos_regex: list[str] = field(default_factory=list)
+    neg_regex: list[str] = field(default_factory=list)
+    keep_query_params: bool = False
+    html_processing: dict = field(default_factory=dict)
+    max_depth: int = 3
+    crawl_method: str = "internal"
+    pages_source: str = "crawl"
+    crawl_report: bool = False
+    num_per_second: int = 10
+    ray_workers: int = 0
+    source: str = "website"
+    remove_old_content: bool = False
 
 
 class PageCrawlWorker(object):

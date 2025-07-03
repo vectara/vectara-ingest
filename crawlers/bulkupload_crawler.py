@@ -4,9 +4,13 @@ from core.crawler import Crawler
 import json
 import os
 from core.utils import get_docker_or_local_path
-
+from dataclasses import dataclass
 def is_valid(json_object):
     return 'id' in json_object and 'sections' in json_object
+
+@dataclass
+class BulkuploadCrawlerConfig:
+    json_path: str
 
 class BulkuploadCrawler(Crawler):
 

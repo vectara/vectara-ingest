@@ -3,7 +3,7 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import arxiv
 from core.utils import create_session_with_retries, configure_session_for_ssl
-
+from dataclasses import dataclass,field
 
 def validate_category(category: str) -> bool:
     valid_categories = [
@@ -15,6 +15,15 @@ def validate_category(category: str) -> bool:
         "quant-ph"
     ]
     return category in valid_categories
+
+@dataclass
+class ArxivCrawlerConfig:
+    n_papers: int = 10
+    query_terms: list[str] = field(default_factory=list)
+    start_year: int = 2023
+    arxiv_category: str = "cs"
+    sort_by: str = "relevance"
+    ssl_verify: bool = True
 
 class ArxivCrawler(Crawler):
 

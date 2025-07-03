@@ -708,7 +708,7 @@ config_defaults = {
                 'model_name': 'gpt-4o',
                 'base_url': 'https://api.openai.com/v1'
             },
-            'image':{
+            'vision':{
                 'provider': 'openai',
                 'model_name': 'gpt-4o',
                 'base_url': 'https://api.openai.com/v1'

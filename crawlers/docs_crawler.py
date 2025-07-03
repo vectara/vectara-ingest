@@ -17,8 +17,26 @@ from core.utils import (
 from core.spider import run_link_spider_isolated
 from typing import Tuple, Set
 from core.indexer import Indexer
-
+from dataclasses import dataclass,field
 import ray
+
+@dataclass
+class DocsCrawlerConfig:
+    extensions_to_ignore: list = field(default_factory=list)
+    pos_regex: list = field(default_factory=list)
+    neg_regex: list = field(default_factory=list)
+    html_processing: dict = field(default_factory=dict)
+    docs_system: str = ""
+    ray_workers: int = 0
+    num_per_second: int = 10
+    crawl_method: str = "internal"
+    base_urls: list = field(default_factory=list)
+    max_depth: int = 3
+    crawl_report: bool = False
+    remove_old_content: bool = False
+    pages_source: str = "crawl"
+
+
 
 class UrlCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
