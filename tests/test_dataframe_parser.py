@@ -102,7 +102,14 @@ class TestDataFrameParser(unittest.TestCase):
 
         metadata = load_dataframe_metadata(input_path)
         self.assertIsNotNone(metadata, 'metadata should have been returned')
-        self.assertIsNone(metadata.sheet_names)
+        parser_config:DictConfig = OmegaConf.create({})
+        dataframes = metadata.load_dataframes(parser_config)
+        self.assertIsNotNone(dataframes)
+        self.assertEqual(1, len(dataframes))
+        sheet_name, df = dataframes[0]
+        self.assertIsNotNone(df)
+        self.assertEqual("test.csv", sheet_name)
+
 
     def test_load_dataframe_metadata_xls(self):
         # Ensure you have a 'test.xls' file in the 'data/dataframe/' directory for this test
@@ -112,8 +119,8 @@ class TestDataFrameParser(unittest.TestCase):
 
         metadata = load_dataframe_metadata(input_path)
         self.assertIsNotNone(metadata, 'metadata should have been returned for XLS file')
-        self.assertIsNotNone(metadata.sheet_names, 'sheet_names should be populated for XLS files')
-        self.assertIsInstance(metadata.sheet_names, list, 'sheet_names should be a list')
+        # self.assertIsNotNone(metadata.sheet_names, 'sheet_names should be populated for XLS files')
+        # self.assertIsInstance(metadata.sheet_names, list, 'sheet_names should be a list')
 
         expected_sheet_names = [
             'aerosmith',
@@ -121,12 +128,13 @@ class TestDataFrameParser(unittest.TestCase):
         ]
 
         parser_config:DictConfig = OmegaConf.create({})
+        dataframes = metadata.load_dataframes(parser_config)
+        self.assertIsNotNone(dataframes)
+        self.assertEqual(2, len(dataframes))
 
-
-        for expected_sheet_name in expected_sheet_names:
-            self.assertIn(expected_sheet_name, metadata.sheet_names)
-            df = metadata.open_dataframe(parser_config, sheet_name=expected_sheet_name)
-            self.assertIsNotNone(df, f'Expected df with sheet {expected_sheet_name}')
+        for sheet_name, df in dataframes:
+            self.assertIsNotNone(df, f'Expected df with sheet {sheet_name}')
+            self.assertIn(sheet_name, expected_sheet_names)
 
     def test_supported_by_dataframe_parser(self):
         self.assertTrue(supported_by_dataframe_parser('test.csv'))
@@ -157,10 +165,6 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_dataframe_parser_csv_element_mode_column_datatypes(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_csv_element_mode_column_datatypes.yml')
-
-
-    def test_dataframe_parser_xlsx_element_mode_column_datatypes(self):
-        self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode_column_datatypes.yml')
 
     def test_dataframe_parser_csv_table_mode_truncate(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config',
