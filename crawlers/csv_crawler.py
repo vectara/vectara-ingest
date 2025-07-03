@@ -3,7 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.dataframe_parser import supported_by_dataframe_parser, load_dataframe_metadata, DataframeParser, \
-    DataFrameMetadata
+    DataFrameMetadata, determine_dataframe_type
 from core.utils import get_docker_or_local_path
 from core.summary import TableSummarizer
 
@@ -24,7 +24,8 @@ class CsvCrawler(Crawler):
             logger.info(f"Indexing {orig_file_path}")
             table_summarizer: TableSummarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
             df_parser: DataframeParser = DataframeParser(self.cfg, self.cfg.csv_crawler, self.indexer, table_summarizer)
-            df_metadata: DataFrameMetadata = load_dataframe_metadata(file_path)
+            data_frame_type = determine_dataframe_type(orig_file_path)
+            df_metadata: DataFrameMetadata = load_dataframe_metadata(file_path, data_frame_type=data_frame_type)
             df_parser.parse(df_metadata, file_path, metadata)
         else:
             raise Exception(f"'{orig_file_path}' is not supported by DataframeParser")
