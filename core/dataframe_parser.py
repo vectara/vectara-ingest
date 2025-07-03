@@ -9,48 +9,6 @@ import unicodedata
 
 logger = logging.getLogger(__name__)
 
-
-class DataFrameMetadata(object):
-    """
-    Abstract base class for DataFrame metadata.
-    """
-
-    def __init__(self, sheet_names: list[str] | None):
-        """
-        Initializes the DataFrameMetadata with optional sheet names.
-
-        Args:
-            sheet_names: A list of sheet names if the dataframe is sheet-based, otherwise None.
-        """
-        self.sheet_names = sheet_names
-
-    def title(self):
-        """
-        Returns the title of the dataframe.
-
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses.
-        """
-        raise NotImplementedError("Method not implemented")
-
-    def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
-        raise NotImplementedError("Method not implemented")
-
-
-class SimpleDataFrameMetadata(DataFrameMetadata):
-    def __init__(self, sheet_names: list[str] | None):
-        """
-        Initializes the SimpleDataFrameMetadata.
-
-        This class is a base class for DataFrames that are not sheet-based.
-
-        Args:
-            sheet_names: A list of sheet names (should be None for simple dataframes).
-                         This argument is kept for compatibility with the base class.
-        """
-        super().__init__(sheet_names)
-
-
 separator_by_extension = {".csv": ",", ".tsv": "\t", ".psv": "|", ".pipe": "|"}
 supported_dataframe_extensions = {
     ".csv": "csv",
@@ -61,6 +19,16 @@ supported_dataframe_extensions = {
     ".psv": "csv",
 }
 
+
+class DataFrameMetadata(object):
+    """
+    Abstract base class for DataFrame metadata.
+    """
+
+    def __init__(self):
+        """
+        Initializes the DataFrameMetadata with optional sheet names.
+        """
 
 def generate_dfs_to_index(df: pd.DataFrame, doc_id_columns:list[str]|None, rows_per_chunk: int):
     """
@@ -153,7 +121,7 @@ def determine_dataframe_type(file_path: str):
         return None
 
 
-class CsvDataFrameMetadata(SimpleDataFrameMetadata):
+class CsvDataFrameMetadata(DataFrameMetadata):
     """
     Metadata class for CSV dataframes.
     """
@@ -166,7 +134,7 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
             file_path: The path to the CSV file.
         """
         self.file_path = file_path
-        super().__init__(None)
+        super().__init__()
 
     def title(self):
         """
@@ -177,20 +145,15 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
         """
         return os.path.basename(self.file_path)
 
-    def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
+    def load_dataframes(self, parser_config: DictConfig):
         separator: str = parser_config.get("separator", None)
         column_types: dict[str, str] = parser_config.get("column_types", None)
 
         if not separator:
             separator = get_separator_by_file_name(self.file_path)
 
-        if sheet_name is not None:
-            logger.warning(
-                f"CsvDataFrameMetadata:Sheet Name '{sheet_name}' requested for csv '{self.file_path}'. Ignoring"
-            )
-
         logger.debug(
-            f"CsvDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_csv."
+            f"CsvDataFrameMetadata:load_dataframes() - Opening '{self.file_path}' with .read_csv."
         )
         params = {
             'sep': separator
@@ -202,26 +165,10 @@ class CsvDataFrameMetadata(SimpleDataFrameMetadata):
 
         df = pd.read_csv(self.file_path, **params)
         df = df.astype(object)
-
-        return df
-
-
-class SheetBasedDataFrameMetadata(DataFrameMetadata):
-    """
-    Abstract base class for sheet-based DataFrame metadata (e.g., Excel files).
-    """
-
-    def __init__(self, sheet_names: list[str] | None):
-        """
-        Initializes the SheetBasedDataFrameMetadata with sheet names.
-
-        Args:
-            sheet_names: A list of sheet names in the dataframe file.
-        """
-        super().__init__(sheet_names)
+        return [(self.title(), df)]
 
 
-class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
+class XlsBasedDataFrameMetadata(DataFrameMetadata):
     """
     Metadata class for Excel dataframes (XLS and XLSX).
     """
@@ -234,37 +181,45 @@ class XlsBasedDataFrameMetadata(SheetBasedDataFrameMetadata):
             file_path: The path to the Excel file.
         """
         self.file_path = file_path
+
+    def load_dataframes(self, parser_config: DictConfig):
         logger.debug(
-            f"XlsBasedDataFrameMetadata:__init__('{file_path}') - Loading as pd.ExcelFile to retrieve sheet names."
+            f"XlsBasedDataFrameMetadata:open_dataframe() - Opening '{self.file_path}' with .read_excel."
         )
-        xls = pd.ExcelFile(file_path)
-        super().__init__(xls.sheet_names)
 
-    def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
-        """
-        Opens and returns a pandas DataFrame from the specified sheet in the Excel file.
+        results = []
+        with pd.ExcelFile(self.file_path) as xls:
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name)
+                df = df.astype(object)
+                results.append((sheet_name, df))
+        return results
 
-        Args:
-            parser_config: The configuration dictionary for the parser.
-            sheet_name: The name of the sheet to open. If None, the first sheet is opened.
-
-        Returns:
-            A pandas DataFrame representing the specified sheet.
-        """
-        column_types: dict[str, str] = parser_config.get("column_types", None)
-        logger.debug(
-            f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel."
-        )
-        params = {
-            'sheet_name': sheet_name
-        }
-        if column_types:
-            params['dtype']={}
-            for column, column_type in column_types.items():
-                params['dtype'][column] = column_type
-        df = pd.read_excel(self.file_path, **params)
-        # df = df.astype(object)
-        return df
+    # def open_dataframe(self, parser_config: DictConfig, sheet_name: str = None):
+    #     """
+    #     Opens and returns a pandas DataFrame from the specified sheet in the Excel file.
+    #
+    #     Args:
+    #         parser_config: The configuration dictionary for the parser.
+    #         sheet_name: The name of the sheet to open. If None, the first sheet is opened.
+    #
+    #     Returns:
+    #         A pandas DataFrame representing the specified sheet.
+    #     """
+    #     column_types: dict[str, str] = parser_config.get("column_types", None)
+    #     logger.debug(
+    #         f"XlsBasedDataFrameMetadata:open_dataframe(sheet_name='{sheet_name}') - Opening '{self.file_path}' with .read_excel."
+    #     )
+    #     params = {
+    #         'sheet_name': sheet_name
+    #     }
+    #     if column_types:
+    #         params['dtype']={}
+    #         for column, column_type in column_types.items():
+    #             params['dtype'][column] = column_type
+    #     df = pd.read_excel(self.file_path, **params)
+    #     # df = df.astype(object)
+    #     return df
 
     def title(self):
         """
@@ -324,8 +279,8 @@ class DataframeParser(object):
             self.crawler_config: DictConfig = crawler_config
         self.truncate_table_if_over_max: bool = self.crawler_config.get("truncate_table_if_over_max", True)
         self.max_rows: int = int(self.crawler_config.get("max_rows", 500))
-        self.max_cols: int = int(self.crawler_config.get("max_cols", 20))  ### TEMP 500
-        self.sheet_names: list[str] = self.crawler_config.get("sheet_names", [])
+        self.max_cols: int = int(self.crawler_config.get("max_cols", 20))
+        self.sheet_names: list[str] = self.crawler_config.get("sheet_names", None)
         self.mode: str = self.crawler_config.get("mode", "table")
         self.indexer: Indexer = indexer
         self.table_summarizer: TableSummarizer = table_summarizer
@@ -391,31 +346,14 @@ class DataframeParser(object):
         tables = []
         texts = []
 
-        if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
-            df = dataframe_metadata.open_dataframe(self.crawler_config)
-            parse_table_result = self.parse_table_dataframe(
-                df, dataframe_metadata.title()
-            )
-            if parse_table_result:
-                text, table = parse_table_result
-                tables.append(table)
-                texts.append(text)
-        elif isinstance(dataframe_metadata, SheetBasedDataFrameMetadata):
-            all_sheet_names = None
-            if self.sheet_names:
-                all_sheet_names = self.sheet_names
-            else:
-                all_sheet_names = dataframe_metadata.sheet_names
-            for sheet_name in all_sheet_names:
-                logger.info(f"parse_table() - processing {sheet_name}")
-                df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
+        dataframes = dataframe_metadata.load_dataframes(self.crawler_config)
+        for sheet_name, df in dataframes:
+            if (self.sheet_names and sheet_name in self.sheet_names) or self.sheet_names is None:
                 parse_table_result = self.parse_table_dataframe(df, sheet_name)
                 if parse_table_result:
                     text, table = parse_table_result
                     tables.append(table)
                     texts.append(text)
-        else:
-            raise ValueError(f"Unsupported {dataframe_metadata}")
 
         self.indexer.index_segments(
             doc_id=doc_id,
@@ -490,31 +428,40 @@ class DataframeParser(object):
         doc_id_columns: list[str] = list(self.crawler_config.get("doc_id_columns", None))
         rows_per_chunk: int = self.crawler_config.get("rows_per_chunk", 500)
 
-        if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
-            df = dataframe_metadata.open_dataframe(self.crawler_config)
-            if self.select_condition:
-                logger.info(f"Querying dataframe with {self.select_condition}")
-                df = df.query(self.select_condition)
-            for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
-                self.parse_element_dataframe(doc_id, child_df, metadata)
-
-        elif isinstance(dataframe_metadata, SheetBasedDataFrameMetadata):
-            all_sheet_names = None
-            if self.sheet_names:
-                all_sheet_names = self.sheet_names
-            else:
-                all_sheet_names = dataframe_metadata.sheet_names
-            for sheet_name in all_sheet_names:
-                logger.info(f"parse_element() - processing {sheet_name}")
-                df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
+        dataframes = dataframe_metadata.load_dataframes(self.crawler_config)
+        for sheet_name, df in dataframes:
+            if (self.sheet_names and sheet_name in self.sheet_names) or self.sheet_names is None:
                 if self.select_condition:
                     logger.info(f"Querying dataframe with {self.select_condition}")
                     df = df.query(self.select_condition)
                 for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
                     self.parse_element_dataframe(doc_id, child_df, metadata)
-        else:
-            raise ValueError(f"Unsupported {dataframe_metadata}")
-        pass
+
+        # if isinstance(dataframe_metadata, SimpleDataFrameMetadata):
+        #     df = dataframe_metadata.open_dataframe(self.crawler_config)
+        #     if self.select_condition:
+        #         logger.info(f"Querying dataframe with {self.select_condition}")
+        #         df = df.query(self.select_condition)
+        #     for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
+        #         self.parse_element_dataframe(doc_id, child_df, metadata)
+        #
+        # elif isinstance(dataframe_metadata, SheetBasedDataFrameMetadata):
+        #     all_sheet_names = None
+        #     if self.sheet_names:
+        #         all_sheet_names = self.sheet_names
+        #     else:
+        #         all_sheet_names = dataframe_metadata.sheet_names
+        #     for sheet_name in all_sheet_names:
+        #         logger.info(f"parse_element() - processing {sheet_name}")
+        #         df = dataframe_metadata.open_dataframe(self.crawler_config, sheet_name)
+        #         if self.select_condition:
+        #             logger.info(f"Querying dataframe with {self.select_condition}")
+        #             df = df.query(self.select_condition)
+        #         for doc_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
+        #             self.parse_element_dataframe(doc_id, child_df, metadata)
+        # else:
+        #     raise ValueError(f"Unsupported {dataframe_metadata}")
+        # pass
 
     def parse(
         self,
