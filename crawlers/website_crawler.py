@@ -18,19 +18,61 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class WebsiteCrawlerConfig:
+    """
+    The website crawler indexes the content of a given web site. It supports two modes for finding pages to crawl (defined by `pages_source`):
+    """
     urls: list[str]
+    """
+    List of starting URLs for the crawl.
+    """
     pos_regex: list[str] = field(default_factory=list)
+    """
+    List of regular expressions. Only URLs matching any of these patterns will be crawled.
+    """
     neg_regex: list[str] = field(default_factory=list)
+    """
+    List of regular expressions. URLs matching any of these patterns will be excluded from crawling.
+    """
     keep_query_params: bool = False
+    """
+    If set to True, query parameters in URLs will be preserved. Otherwise, they will be removed.
+    """
     html_processing: dict = field(default_factory=dict)
+    """
+    Dictionary of HTML processing rules to apply to the crawled content.
+    """
     max_depth: int = 3
+    """
+    Maximum depth for the recursive crawl.
+    """
     crawl_method: str = "internal"
+    """
+    Method to use for crawling. Can be "internal" (Vectara-ingest's built-in crawler) or "scrapy".
+    """
     pages_source: str = "crawl"
+    """
+    Source of URLs to crawl. Can be "crawl" (recursive crawling) or "sitemap".
+    """
     crawl_report: bool = False
+    """
+    If set to True, a report of crawled and removed URLs will be generated.
+    """
     num_per_second: int = 10
+    """
+    Maximum number of pages to crawl per second to avoid overwhelming the target server.
+    """
     ray_workers: int = 0
+    """
+    Number of Ray workers to use for parallel crawling. Set to -1 to use all available CPU cores.
+    """
     source: str = "website"
+    """
+    Source name to assign to the crawled documents in the index.
+    """
     remove_old_content: bool = False
+    """
+    If set to True, documents previously indexed from this source but not found in the current crawl will be removed from the corpus.
+    """
 
 
 class PageCrawlWorker(object):
