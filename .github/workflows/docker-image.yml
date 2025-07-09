@@ -25,35 +25,22 @@ jobs:
       id-token: write
 
     steps:
-      - name: Free up disk space
-        run: |
-          # Remove unnecessary files to free up disk space
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/local/graalvm/
-          sudo rm -rf /usr/local/.ghcup/
-          sudo rm -rf /usr/share/swift
-          
-          # Clean up Docker to free space (with proper error handling)
-          if command -v docker >/dev/null 2>&1; then
-            echo "Docker is available, cleaning up..."
-            if docker system prune --all --force --volumes; then
-              echo "Docker cleanup completed successfully"
-            else
-              echo "Warning: Docker cleanup failed, but continuing..."
-            fi
-          else
-            echo "Docker is not available, skipping Docker cleanup"
-          fi
-          
-          # Show available disk space
-          df -h
+      - name: Initial disk cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          cleanup-methods: 'apt,temp,docker'
+          show-disk-usage: 'true'
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        
+      - name: Setup cache for Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -101,22 +88,17 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.DOCKERHUB_IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.DOCKERHUB_IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      - name: Clean up Docker images after regular build
+      - name: Monitor disk space after regular build
         run: |
-          # Clean up intermediate images and build cache to free space
-          if command -v docker >/dev/null 2>&1; then
-            echo "Cleaning up Docker images after regular build..."
-            if docker system prune --force; then
-              echo "Docker cleanup after regular build completed successfully"
-            else
-              echo "Warning: Docker cleanup after regular build failed, but continuing..."
-            fi
-          else
-            echo "Warning: Docker is not available for cleanup, but continuing..."
-          fi
+          # Monitor disk space without aggressive cleanup
+          echo "Disk space after regular build:"
           df -h
 
       # Build and push full version
@@ -134,22 +116,47 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest.full
             ${{ env.DOCKERHUB_IMAGE_NAME }}:${{ steps.version.outputs.version }}.full
             ${{ env.DOCKERHUB_IMAGE_NAME }}:latest.full
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      - name: Clean up Docker images after full build
+      - name: Rotate build cache
         run: |
-          # Final cleanup
+          # Rotate Docker build cache to prevent accumulation
+          if [ -d "/tmp/.buildx-cache-new" ]; then
+            rm -rf /tmp/.buildx-cache || true
+            mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          fi
+          
+      - name: Final cleanup and disk space report
+        run: |
+          # Comprehensive cleanup after all builds complete
           if command -v docker >/dev/null 2>&1; then
-            echo "Performing final Docker cleanup..."
-            if docker system prune --all --force --volumes; then
-              echo "Final Docker cleanup completed successfully"
+            echo "Performing comprehensive Docker cleanup..."
+            # Remove unused images and containers (but preserve volumes for safety)
+            if docker system prune --all --force; then
+              echo "Docker cleanup completed successfully"
             else
-              echo "Warning: Final Docker cleanup failed, but continuing..."
+              echo "Warning: Docker cleanup failed, but continuing..."
+            fi
+            
+            # Only remove volumes if disk space is critically low
+            DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+            if [ "$DISK_USAGE" -gt 90 ]; then
+              echo "Disk usage is ${DISK_USAGE}%, removing Docker volumes..."
+              docker volume prune --force || echo "Warning: Volume cleanup failed"
+            else
+              echo "Disk usage is ${DISK_USAGE}%, skipping volume cleanup"
             fi
           else
-            echo "Warning: Docker is not available for final cleanup, but continuing..."
+            echo "Warning: Docker is not available for cleanup"
           fi
+          
+          # Final disk space report
+          echo "Final disk space status:"
           df -h
 
       # Generate attestation for regular image

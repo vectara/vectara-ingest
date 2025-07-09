@@ -1,0 +1,97 @@
+name: 'Disk Space Cleanup'
+description: 'Clean up disk space using various methods including conda, apt, and temporary files'
+inputs:
+  cleanup-methods:
+    description: 'Comma-separated list of cleanup methods: conda, apt, temp, docker'
+    required: false
+    default: 'conda,apt,temp'
+  conda-cleanup-level:
+    description: 'Level of conda cleanup: light, full'
+    required: false
+    default: 'light'
+  show-disk-usage:
+    description: 'Show disk usage before and after cleanup'
+    required: false
+    default: 'true'
+  conda-activation:
+    description: 'Command to activate conda environment (for non-standard setups)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Show initial disk usage
+      if: inputs.show-disk-usage == 'true'
+      shell: bash
+      run: |
+        echo "=== Initial disk usage ==="
+        df -h
+        echo ""
+    
+    - name: Conda cleanup
+      if: contains(inputs.cleanup-methods, 'conda')
+      shell: bash
+      run: |
+        # Activate conda if custom activation command provided
+        if [ -n "${{ inputs.conda-activation }}" ]; then
+          ${{ inputs.conda-activation }}
+        fi
+        
+        # Check if conda is available
+        if command -v conda >/dev/null 2>&1; then
+          echo "Performing conda cleanup..."
+          
+          if [ "${{ inputs.conda-cleanup-level }}" = "full" ]; then
+            echo "Full conda cleanup: removing all cached packages, tarballs, and unused packages"
+            conda clean --all --yes || echo "Warning: Full conda cleanup failed"
+          else
+            echo "Light conda cleanup: removing cached packages and tarballs only"
+            conda clean --packages --tarballs --yes || echo "Warning: Light conda cleanup failed"
+          fi
+          
+          echo "Conda cleanup completed"
+        else
+          echo "Conda is not available, skipping conda cleanup"
+        fi
+    
+    - name: APT cleanup
+      if: contains(inputs.cleanup-methods, 'apt')
+      shell: bash
+      run: |
+        echo "Performing APT cleanup..."
+        sudo apt-get clean || echo "Warning: apt-get clean failed"
+        sudo apt-get autoclean || echo "Warning: apt-get autoclean failed"
+        sudo apt-get autoremove --yes || echo "Warning: apt-get autoremove failed"
+        echo "APT cleanup completed"
+    
+    - name: Temporary files cleanup
+      if: contains(inputs.cleanup-methods, 'temp')
+      shell: bash
+      run: |
+        echo "Cleaning temporary files..."
+        sudo rm -rf /tmp/* || echo "Warning: /tmp cleanup failed"
+        sudo rm -rf /var/tmp/* || echo "Warning: /var/tmp cleanup failed"
+        # Clean user temp files
+        rm -rf ~/.cache/* || echo "Warning: ~/.cache cleanup failed"
+        echo "Temporary files cleanup completed"
+    
+    - name: Docker cleanup
+      if: contains(inputs.cleanup-methods, 'docker')
+      shell: bash
+      run: |
+        if command -v docker >/dev/null 2>&1; then
+          echo "Performing Docker cleanup..."
+          docker system prune --force || echo "Warning: Docker cleanup failed"
+          echo "Docker cleanup completed"
+        else
+          echo "Docker is not available, skipping Docker cleanup"
+        fi
+    
+    - name: Show final disk usage
+      if: inputs.show-disk-usage == 'true'
+      shell: bash
+      run: |
+        echo ""
+        echo "=== Final disk usage ==="
+        df -h 

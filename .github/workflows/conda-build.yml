@@ -93,6 +93,13 @@ jobs:
         run: |
           conda install -y conda-build anaconda-client
       
+      - name: Pre-build cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          cleanup-methods: 'conda,apt,temp'
+          conda-cleanup-level: 'light'
+          show-disk-usage: 'false'
+          
       - name: Build conda package
         shell: bash -l {0}
         env:
@@ -100,12 +107,15 @@ jobs:
         run: |
           # Verify Python version before building
           python --version
-          # Clean conda cache before building
-          conda clean --all --yes
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
-          # Clean up after build to save disk space
-          conda clean --all --yes
+          
+      - name: Post-build cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          cleanup-methods: 'conda'
+          conda-cleanup-level: 'full'
+          show-disk-usage: 'true'
       
       - name: List built packages
         shell: bash -l {0}
@@ -223,6 +233,14 @@ jobs:
           conda install -y conda-build anaconda-client
           conda config --add channels conda-forge
       
+      - name: Pre-build cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          cleanup-methods: 'conda,apt,temp'
+          conda-cleanup-level: 'light'
+          conda-activation: 'source $HOME/miniconda/bin/activate'
+          show-disk-usage: 'false'
+          
       - name: Build conda package
         env:
           GIT_DESCRIBE_TAG: ${{ steps.get_version.outputs.VERSION }}
@@ -230,12 +248,16 @@ jobs:
           source $HOME/miniconda/bin/activate
           # Verify Python version before building
           python --version
-          # Clean conda cache before building
-          conda clean --all --yes
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
-          # Clean up after build to save disk space
-          conda clean --all --yes
+          
+      - name: Post-build cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          cleanup-methods: 'conda'
+          conda-cleanup-level: 'full'
+          conda-activation: 'source $HOME/miniconda/bin/activate'
+          show-disk-usage: 'true'
       
       - name: List built packages
         run: |
