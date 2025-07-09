@@ -17,12 +17,13 @@ jobs:
     steps:
       - name: Free up disk space
         run: |
-          # Remove unnecessary files to free up disk space
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
+          echo "Initial disk usage:"
+          df -h
+          # Clean temporary files only (no package manager interference)
+          sudo rm -rf /tmp/* || true
+          sudo rm -rf /var/tmp/* || true
+          rm -rf ~/.cache/* || true
+          echo "Disk usage after cleanup:"
           df -h
       
       - name: Checkout code
@@ -94,10 +95,9 @@ jobs:
           conda install -y conda-build anaconda-client
       
       - name: Pre-build cleanup
-        uses: ./.github/actions/disk-cleanup
+        uses: ./.github/actions/conda-cleanup
         with:
-          cleanup-methods: 'conda,apt,temp'
-          conda-cleanup-level: 'light'
+          cleanup-level: 'light'
           show-disk-usage: 'false'
           
       - name: Build conda package
@@ -111,10 +111,9 @@ jobs:
           conda build --channel conda-forge conda --output-folder ./conda-bld
           
       - name: Post-build cleanup
-        uses: ./.github/actions/disk-cleanup
+        uses: ./.github/actions/conda-cleanup
         with:
-          cleanup-methods: 'conda'
-          conda-cleanup-level: 'full'
+          cleanup-level: 'full'
           show-disk-usage: 'true'
       
       - name: List built packages
@@ -172,12 +171,13 @@ jobs:
     steps:
       - name: Free up disk space
         run: |
-          # Remove unnecessary files to free up disk space
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
+          echo "Initial disk usage:"
+          df -h
+          # Clean temporary files only (container environment)
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          rm -rf ~/.cache/* || true
+          echo "Disk usage after cleanup:"
           df -h
         
       - name: Checkout code
@@ -234,12 +234,10 @@ jobs:
           conda config --add channels conda-forge
       
       - name: Pre-build cleanup
-        uses: ./.github/actions/disk-cleanup
-        with:
-          cleanup-methods: 'conda,apt,temp'
-          conda-cleanup-level: 'light'
-          conda-activation: 'source $HOME/miniconda/bin/activate'
-          show-disk-usage: 'false'
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Light conda cleanup before building
+          conda clean --packages --tarballs --yes || echo "Warning: Pre-build conda cleanup failed"
           
       - name: Build conda package
         env:
@@ -252,12 +250,12 @@ jobs:
           conda build --channel conda-forge conda --output-folder ./conda-bld
           
       - name: Post-build cleanup
-        uses: ./.github/actions/disk-cleanup
-        with:
-          cleanup-methods: 'conda'
-          conda-cleanup-level: 'full'
-          conda-activation: 'source $HOME/miniconda/bin/activate'
-          show-disk-usage: 'true'
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Full conda cleanup after building
+          conda clean --all --yes || echo "Warning: Post-build conda cleanup failed"
+          echo "Disk usage after conda cleanup:"
+          df -h
       
       - name: List built packages
         run: |
