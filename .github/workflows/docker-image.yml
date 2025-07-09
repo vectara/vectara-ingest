@@ -60,8 +60,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: network=host
 
       # Login to Docker Hub
       - name: Log in to Docker Hub
@@ -114,12 +112,10 @@ jobs:
             if docker system prune --force; then
               echo "Docker cleanup after regular build completed successfully"
             else
-              echo "Error: Docker cleanup after regular build failed"
-              exit 1
+              echo "Warning: Docker cleanup after regular build failed, but continuing..."
             fi
           else
-            echo "Error: Docker is not available for cleanup"
-            exit 1
+            echo "Warning: Docker is not available for cleanup, but continuing..."
           fi
           df -h
 
@@ -149,12 +145,10 @@ jobs:
             if docker system prune --all --force --volumes; then
               echo "Final Docker cleanup completed successfully"
             else
-              echo "Error: Final Docker cleanup failed"
-              exit 1
+              echo "Warning: Final Docker cleanup failed, but continuing..."
             fi
           else
-            echo "Error: Docker is not available for final cleanup"
-            exit 1
+            echo "Warning: Docker is not available for final cleanup, but continuing..."
           fi
           df -h
 
