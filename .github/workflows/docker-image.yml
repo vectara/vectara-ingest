@@ -36,8 +36,19 @@ jobs:
           sudo rm -rf /usr/local/graalvm/
           sudo rm -rf /usr/local/.ghcup/
           sudo rm -rf /usr/share/swift
-          # Clean up Docker to free space
-          sudo docker system prune --all --force --volumes
+          
+          # Clean up Docker to free space (with proper error handling)
+          if command -v docker >/dev/null 2>&1; then
+            echo "Docker is available, cleaning up..."
+            if docker system prune --all --force --volumes; then
+              echo "Docker cleanup completed successfully"
+            else
+              echo "Warning: Docker cleanup failed, but continuing..."
+            fi
+          else
+            echo "Docker is not available, skipping Docker cleanup"
+          fi
+          
           # Show available disk space
           df -h
 
@@ -50,9 +61,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            image=moby/buildkit:v0.12.0
-            network=host
+          driver-opts: network=host
 
       # Login to Docker Hub
       - name: Log in to Docker Hub
@@ -100,7 +109,18 @@ jobs:
       - name: Clean up Docker images after regular build
         run: |
           # Clean up intermediate images and build cache to free space
-          docker system prune --force
+          if command -v docker >/dev/null 2>&1; then
+            echo "Cleaning up Docker images after regular build..."
+            if docker system prune --force; then
+              echo "Docker cleanup after regular build completed successfully"
+            else
+              echo "Error: Docker cleanup after regular build failed"
+              exit 1
+            fi
+          else
+            echo "Error: Docker is not available for cleanup"
+            exit 1
+          fi
           df -h
 
       # Build and push full version
@@ -124,7 +144,18 @@ jobs:
       - name: Clean up Docker images after full build
         run: |
           # Final cleanup
-          docker system prune --all --force --volumes
+          if command -v docker >/dev/null 2>&1; then
+            echo "Performing final Docker cleanup..."
+            if docker system prune --all --force --volumes; then
+              echo "Final Docker cleanup completed successfully"
+            else
+              echo "Error: Final Docker cleanup failed"
+              exit 1
+            fi
+          else
+            echo "Error: Docker is not available for final cleanup"
+            exit 1
+          fi
           df -h
 
       # Generate attestation for regular image
