@@ -1,5 +1,5 @@
 name: 'Disk Space Cleanup'
-description: 'Clean up disk space using various methods including conda, apt, and temporary files'
+description: 'Clean up disk space using various methods including conda, package managers (apt/yum/dnf), and temporary files'
 inputs:
   cleanup-methods:
     description: 'Comma-separated list of cleanup methods: conda, apt, temp, docker'
@@ -55,15 +55,30 @@ runs:
           echo "Conda is not available, skipping conda cleanup"
         fi
     
-    - name: APT cleanup
+    - name: Package manager cleanup
       if: contains(inputs.cleanup-methods, 'apt')
       shell: bash
       run: |
-        echo "Performing APT cleanup..."
-        sudo apt-get clean || echo "Warning: apt-get clean failed"
-        sudo apt-get autoclean || echo "Warning: apt-get autoclean failed"
-        sudo apt-get autoremove --yes || echo "Warning: apt-get autoremove failed"
-        echo "APT cleanup completed"
+        # Check if we're on a Debian-based system and apt-get is available
+        if command -v apt-get >/dev/null 2>&1; then
+          echo "APT is available, performing cleanup..."
+          sudo apt-get clean || echo "Warning: apt-get clean failed"
+          sudo apt-get autoclean || echo "Warning: apt-get autoclean failed"
+          sudo apt-get autoremove --yes || echo "Warning: apt-get autoremove failed"
+          echo "APT cleanup completed"
+        elif command -v yum >/dev/null 2>&1; then
+          echo "YUM is available, performing cleanup..."
+          sudo yum clean all || echo "Warning: yum clean failed"
+          sudo yum autoremove --assumeyes || echo "Warning: yum autoremove failed"
+          echo "YUM cleanup completed"
+        elif command -v dnf >/dev/null 2>&1; then
+          echo "DNF is available, performing cleanup..."
+          sudo dnf clean all || echo "Warning: dnf clean failed"
+          sudo dnf autoremove --assumeyes || echo "Warning: dnf autoremove failed"
+          echo "DNF cleanup completed"
+        else
+          echo "No supported package manager found (apt-get, yum, dnf), skipping package cleanup"
+        fi
     
     - name: Temporary files cleanup
       if: contains(inputs.cleanup-methods, 'temp')

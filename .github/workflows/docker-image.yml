@@ -38,8 +38,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          key: ${{ runner.os }}-buildx-${{ github.ref_name }}-${{ github.run_number }}
           restore-keys: |
+            ${{ runner.os }}-buildx-${{ github.ref_name }}-
+            ${{ runner.os }}-buildx-main-
             ${{ runner.os }}-buildx-
 
       - name: Set up QEMU
