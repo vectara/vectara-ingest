@@ -1,0 +1,50 @@
+name: 'Conda Cache Cleanup'
+description: 'Clean conda cache and temporary files to free up disk space'
+inputs:
+  cleanup-level:
+    description: 'Level of cleanup: light, full'
+    required: false
+    default: 'light'
+  show-disk-usage:
+    description: 'Show disk usage before and after cleanup'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Show disk usage before cleanup
+      if: inputs.show-disk-usage == 'true'
+      shell: bash
+      run: |
+        echo "Disk usage before conda cleanup:"
+        df -h
+    
+    - name: Clean conda cache
+      shell: bash
+      run: |
+        # Check if conda is available
+        if command -v conda >/dev/null 2>&1; then
+          echo "Conda is available, performing cleanup..."
+          
+          if [ "${{ inputs.cleanup-level }}" = "full" ]; then
+            echo "Performing full conda cleanup..."
+            # Full cleanup: remove all cached packages, tarballs, and unused packages
+            conda clean --all --yes || echo "Warning: Full conda cleanup failed"
+          else
+            echo "Performing light conda cleanup..."
+            # Light cleanup: remove cached packages and tarballs only
+            conda clean --packages --tarballs --yes || echo "Warning: Light conda cleanup failed"
+          fi
+          
+          echo "Conda cleanup completed"
+        else
+          echo "Conda is not available, skipping cleanup"
+        fi
+    
+    - name: Show disk usage after cleanup
+      if: inputs.show-disk-usage == 'true'
+      shell: bash
+      run: |
+        echo "Disk usage after conda cleanup:"
+        df -h 

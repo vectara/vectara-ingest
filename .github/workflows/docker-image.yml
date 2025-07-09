@@ -25,8 +25,24 @@ jobs:
       id-token: write
 
     steps:
+      - name: Initial disk cleanup
+        uses: ./.github/actions/disk-cleanup
+        with:
+          methods: 'packages,temp,docker'
+          show-usage: 'true'
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        
+      - name: Setup cache for Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.ref_name }}-${{ github.run_number }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ github.ref_name }}-
+            ${{ runner.os }}-buildx-main-
+            ${{ runner.os }}-buildx-
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -74,8 +90,18 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.DOCKERHUB_IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.DOCKERHUB_IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Monitor disk space after regular build
+        run: |
+          # Monitor disk space without aggressive cleanup
+          echo "Disk space after regular build:"
+          df -h
 
       # Build and push full version
       - name: Build and push full Docker image
@@ -92,8 +118,50 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest.full
             ${{ env.DOCKERHUB_IMAGE_NAME }}:${{ steps.version.outputs.version }}.full
             ${{ env.DOCKERHUB_IMAGE_NAME }}:latest.full
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Rotate build cache
+        run: |
+          # Rotate Docker build cache to prevent accumulation
+          if [ -d "/tmp/.buildx-cache-new" ]; then
+            rm -rf /tmp/.buildx-cache || true
+            mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          fi
+          
+      - name: Final cleanup and disk space report
+        run: |
+          # Comprehensive cleanup after all builds complete
+          if command -v docker >/dev/null 2>&1; then
+            echo "Performing comprehensive Docker cleanup..."
+            # Remove unused images and containers (but preserve volumes for safety)
+            if docker system prune --all --force; then
+              echo "Docker cleanup completed successfully"
+            else
+              echo "Warning: Docker cleanup failed, but continuing..."
+            fi
+            
+            # Only remove volumes if disk space is critically low
+            DISK_USAGE=$(df --output=pcent / | tail -1 | tr -d '%')
+            if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -gt 90 ]; then
+              echo "Disk usage is ${DISK_USAGE}%, removing Docker volumes..."
+              docker volume prune --force || echo "Warning: Volume cleanup failed"
+            elif [ -n "$DISK_USAGE" ]; then
+              echo "Disk usage is ${DISK_USAGE}%, skipping volume cleanup"
+            else
+              echo "Warning: Failed to determine disk usage, skipping volume cleanup"
+            fi
+          else
+            echo "Warning: Docker is not available for cleanup"
+          fi
+          
+          # Final disk space report
+          echo "Final disk space status:"
+          df -h
 
       # Generate attestation for regular image
       - name: Generate artifact attestation for regular image

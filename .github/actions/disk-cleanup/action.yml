@@ -1,0 +1,66 @@
+name: 'Disk Space Cleanup'
+description: 'Clean up disk space using system-level methods'
+inputs:
+  methods:
+    description: 'Comma-separated cleanup methods: packages, temp, docker'
+    required: false
+    default: 'packages,temp'
+  show-usage:
+    description: 'Show disk usage before and after cleanup'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Show initial disk usage
+      if: inputs.show-usage == 'true'
+      shell: bash
+      run: |
+        echo "=== Initial disk usage ==="
+        df -h
+        echo ""
+
+    - name: Package manager cleanup
+      if: contains(inputs.methods, 'packages')
+      shell: bash
+      run: |
+        if command -v apt-get >/dev/null 2>&1; then
+          echo "Cleaning APT packages..."
+          sudo apt-get clean && sudo apt-get autoclean && sudo apt-get autoremove --yes
+        elif command -v yum >/dev/null 2>&1; then
+          echo "Cleaning YUM packages..."
+          sudo yum clean all && sudo yum autoremove --assumeyes
+        elif command -v dnf >/dev/null 2>&1; then
+          echo "Cleaning DNF packages..."
+          sudo dnf clean all && sudo dnf autoremove --assumeyes
+        else
+          echo "No package manager found, skipping package cleanup"
+        fi
+
+    - name: Temporary files cleanup
+      if: contains(inputs.methods, 'temp')
+      shell: bash
+      run: |
+        echo "Cleaning temporary files..."
+        sudo rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+        rm -rf ~/.cache/* 2>/dev/null || true
+
+    - name: Docker cleanup
+      if: contains(inputs.methods, 'docker')
+      shell: bash
+      run: |
+        if command -v docker >/dev/null 2>&1; then
+          echo "Cleaning Docker resources..."
+          docker system prune --force || echo "Warning: Docker cleanup failed"
+        else
+          echo "Docker not available, skipping Docker cleanup"
+        fi
+
+    - name: Show final disk usage
+      if: inputs.show-usage == 'true'
+      shell: bash
+      run: |
+        echo ""
+        echo "=== Final disk usage ==="
+        df -h 

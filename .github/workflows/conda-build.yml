@@ -15,6 +15,17 @@ jobs:
     name: Lint Conda Recipe
     runs-on: ubuntu-latest
     steps:
+      - name: Free up disk space
+        run: |
+          echo "Initial disk usage:"
+          df -h
+          # Clean temporary files only (no package manager interference)
+          sudo rm -rf /tmp/* || true
+          sudo rm -rf /var/tmp/* || true
+          rm -rf ~/.cache/* || true
+          echo "Disk usage after cleanup:"
+          df -h
+      
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -83,6 +94,12 @@ jobs:
         run: |
           conda install -y conda-build anaconda-client
       
+      - name: Pre-build cleanup
+        uses: ./.github/actions/conda-cleanup
+        with:
+          cleanup-level: 'light'
+          show-disk-usage: 'false'
+          
       - name: Build conda package
         shell: bash -l {0}
         env:
@@ -92,6 +109,12 @@ jobs:
           python --version
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
+          
+      - name: Post-build cleanup
+        uses: ./.github/actions/conda-cleanup
+        with:
+          cleanup-level: 'full'
+          show-disk-usage: 'true'
       
       - name: List built packages
         shell: bash -l {0}
@@ -146,6 +169,17 @@ jobs:
       image: quay.io/centos/centos:stream9
     
     steps:
+      - name: Free up disk space
+        run: |
+          echo "Initial disk usage:"
+          df -h
+          # Clean temporary files only (container environment)
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          rm -rf ~/.cache/* || true
+          echo "Disk usage after cleanup:"
+          df -h
+        
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -199,6 +233,12 @@ jobs:
           conda install -y conda-build anaconda-client
           conda config --add channels conda-forge
       
+      - name: Pre-build cleanup
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Light conda cleanup before building
+          conda clean --packages --tarballs --yes || echo "Warning: Pre-build conda cleanup failed"
+          
       - name: Build conda package
         env:
           GIT_DESCRIBE_TAG: ${{ steps.get_version.outputs.VERSION }}
@@ -208,6 +248,14 @@ jobs:
           python --version
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
+          
+      - name: Post-build cleanup
+        run: |
+          source $HOME/miniconda/bin/activate
+          # Full conda cleanup after building
+          conda clean --all --yes || echo "Warning: Post-build conda cleanup failed"
+          echo "Disk usage after conda cleanup:"
+          df -h
       
       - name: List built packages
         run: |
