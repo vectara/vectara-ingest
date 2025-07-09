@@ -13,7 +13,7 @@ on:
 jobs:
   lint-recipe:
     name: Lint Conda Recipe
-    runs-on: ubuntu-latest-4-cores  # Using larger runner with more disk space
+    runs-on: ubuntu-latest  # Using standard GitHub-hosted runner
     steps:
       - name: Free up disk space
         run: |
@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest-large, windows-latest-8-cores]  # Using larger runners
+        os: [macos-latest, windows-latest]  # Using available runners
         python-version: ['3.11']
     
     steps:
@@ -154,7 +154,7 @@ jobs:
 
   build-and-publish-redhat:
     name: Build and Publish for Red Hat Linux
-    runs-on: ubuntu-latest-8-cores  # Using larger runner with more disk space
+    runs-on: ubuntu-latest  # Using standard GitHub-hosted runner
     needs: lint-recipe
     container:
       image: quay.io/centos/centos:stream9

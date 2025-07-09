@@ -17,7 +17,7 @@ env:
 
 jobs:
   build-and-push-image:
-    runs-on: ubuntu-latest-8-cores  # Using larger runner with more disk space
+    runs-on: ubuntu-latest  # Using standard GitHub-hosted runner
     permissions:
       contents: read
       packages: write
