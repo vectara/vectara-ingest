@@ -53,7 +53,7 @@ jobs:
           conda build --check conda
 
   build-and-publish:
-    name: Build and Publish on ${{ matrix.os == 'macos-latest-large' && 'macOS' || 'Windows' }}
+    name: Build and Publish on ${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }}
     runs-on: ${{ matrix.os }}
     needs: lint-recipe
     strategy:
