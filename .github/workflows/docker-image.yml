@@ -17,7 +17,7 @@ env:
 
 jobs:
   build-and-push-image:
-    runs-on: ubuntu-latest  # Using standard GitHub-hosted runner
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -146,12 +146,14 @@ jobs:
             fi
             
             # Only remove volumes if disk space is critically low
-            DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
-            if [ "$DISK_USAGE" -gt 90 ]; then
+            DISK_USAGE=$(df --output=pcent / | tail -1 | tr -d '%')
+            if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -gt 90 ]; then
               echo "Disk usage is ${DISK_USAGE}%, removing Docker volumes..."
               docker volume prune --force || echo "Warning: Volume cleanup failed"
-            else
+            elif [ -n "$DISK_USAGE" ]; then
               echo "Disk usage is ${DISK_USAGE}%, skipping volume cleanup"
+            else
+              echo "Warning: Failed to determine disk usage, skipping volume cleanup"
             fi
           else
             echo "Warning: Docker is not available for cleanup"
