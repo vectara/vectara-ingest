@@ -17,7 +17,7 @@ env:
 
 jobs:
   build-and-push-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores  # Using larger runner with more disk space
     permissions:
       contents: read
       packages: write
@@ -25,6 +25,22 @@ jobs:
       id-token: write
 
     steps:
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary files to free up disk space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/graalvm/
+          sudo rm -rf /usr/local/.ghcup/
+          sudo rm -rf /usr/share/swift
+          # Clean up Docker to free space
+          sudo docker system prune --all --force --volumes
+          # Show available disk space
+          df -h
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -33,6 +49,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.12.0
+            network=host
 
       # Login to Docker Hub
       - name: Log in to Docker Hub
@@ -77,6 +97,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Clean up Docker images after regular build
+        run: |
+          # Clean up intermediate images and build cache to free space
+          docker system prune --force
+          df -h
+
       # Build and push full version
       - name: Build and push full Docker image
         id: push_full
@@ -94,6 +120,12 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE_NAME }}:latest.full
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Clean up Docker images after full build
+        run: |
+          # Final cleanup
+          docker system prune --all --force --volumes
+          df -h
 
       # Generate attestation for regular image
       - name: Generate artifact attestation for regular image

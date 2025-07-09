@@ -13,8 +13,18 @@ on:
 jobs:
   lint-recipe:
     name: Lint Conda Recipe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores  # Using larger runner with more disk space
     steps:
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary files to free up disk space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h
+      
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -43,13 +53,13 @@ jobs:
           conda build --check conda
 
   build-and-publish:
-    name: Build and Publish on ${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }}
+    name: Build and Publish on ${{ matrix.os == 'macos-latest-large' && 'macOS' || 'Windows' }}
     runs-on: ${{ matrix.os }}
     needs: lint-recipe
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest-large, windows-latest-8-cores]  # Using larger runners
         python-version: ['3.11']
     
     steps:
@@ -90,8 +100,12 @@ jobs:
         run: |
           # Verify Python version before building
           python --version
+          # Clean conda cache before building
+          conda clean --all --yes
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
+          # Clean up after build to save disk space
+          conda clean --all --yes
       
       - name: List built packages
         shell: bash -l {0}
@@ -140,12 +154,22 @@ jobs:
 
   build-and-publish-redhat:
     name: Build and Publish for Red Hat Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores  # Using larger runner with more disk space
     needs: lint-recipe
     container:
       image: quay.io/centos/centos:stream9
     
     steps:
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary files to free up disk space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h
+        
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -206,8 +230,12 @@ jobs:
           source $HOME/miniconda/bin/activate
           # Verify Python version before building
           python --version
+          # Clean conda cache before building
+          conda clean --all --yes
           # Use conda-build with Git versioning
           conda build --channel conda-forge conda --output-folder ./conda-bld
+          # Clean up after build to save disk space
+          conda clean --all --yes
       
       - name: List built packages
         run: |
