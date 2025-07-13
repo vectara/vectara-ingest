@@ -321,11 +321,8 @@ def get_file_extension(url):
     return Path(path).suffix.lower()
 
 def ensure_empty_folder(folder_name):
-    # Check if the folder exists
     if os.path.exists(folder_name):
-        # Remove the folder and all its contents
         shutil.rmtree(folder_name)
-    # Create the folder anew
     os.makedirs(folder_name)
 
 def mask_pii(text: str) -> str:
