@@ -2,7 +2,6 @@ import logging
 logger = logging.getLogger(__name__)
 import json
 import re
-import os
 import time
 import warnings
 import unicodedata
@@ -13,6 +12,8 @@ from datetime import datetime
 import uuid
 import pandas as pd
 import requests
+import urllib.parse, tempfile, os, uuid
+
 
 from slugify import slugify
 
@@ -26,7 +27,10 @@ import hashlib
 from bs4 import BeautifulSoup
 from email.utils import parsedate_to_datetime
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright
+
 
 from core.summary import TableSummarizer, ImageSummarizer, get_attributes_from_text
 from core.models import get_api_key
@@ -652,18 +656,22 @@ class Indexer:
 
         upload_filename = id if id is not None else filename.split('/')[-1]
 
-        files = {
-            'file': (upload_filename, open(filename, 'rb')),
-            'metadata': (None, json.dumps(metadata), 'application/json'),
-        }
+        with open(filename, 'rb') as file_handle:
+            # Determine content type based on file extension
+            content_type = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
+            
+            files = {
+                'file': (upload_filename, file_handle, content_type),
+                'metadata': (None, json.dumps(metadata), 'application/json'),
+            }
 
-        if self.parse_tables and filename.endswith('.pdf'):
-            files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
-        chunking_config = _get_chunking_config(self.cfg)
-        if chunking_config:
-            files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
+            if self.parse_tables and filename.lower().endswith('.pdf'):
+                files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+            chunking_config = _get_chunking_config(self.cfg)
+            if chunking_config:
+                files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
 
-        response = self.session.request("POST", url, headers=post_headers, files=files)
+            response = self.session.request("POST", url, headers=post_headers, files=files)
         if response.status_code == 409:
             if self.reindex:
                 match = re.search(r"document id '([^']+)'", response.text)
@@ -673,17 +681,21 @@ class Indexer:
                     logger.error(f"Failed to extract document id from error message: {response.text}")
                     return False
                 self.delete_doc(doc_id)
-                new_files = {
-                    'file': (upload_filename, open(filename, 'rb')),
-                    'metadata': (None, json.dumps(metadata), 'application/json'),
-                }
-                if self.parse_tables and filename.endswith('.pdf'):
-                    new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
-                chunking_config = _get_chunking_config(self.cfg)
-                if chunking_config:
-                    new_files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
+                with open(filename, 'rb') as file_handle:
+                    # Determine content type based on file extension
+                    content_type = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
+                    
+                    new_files = {
+                        'file': (upload_filename, file_handle, content_type),
+                        'metadata': (None, json.dumps(metadata), 'application/json'),
+                    }
+                    if self.parse_tables and filename.lower().endswith('.pdf'):
+                        new_files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+                    chunking_config = _get_chunking_config(self.cfg)
+                    if chunking_config:
+                        new_files['chunking_strategy'] = (None, json.dumps(chunking_config), 'application/json')
 
-                response = self.session.request("POST", url, headers=post_headers, files=new_files)
+                    response = self.session.request("POST", url, headers=post_headers, files=new_files)
                 if response.status_code == 201:
                     logger.info(f"REST upload for {uri} successful (reindex)")
                     self.store_file(filename, url_to_filename(uri))
@@ -773,6 +785,39 @@ class Indexer:
                 json.dump(document, f)
         return True
 
+    async def _download_file_with_playwright(self, url, save_path):
+        """
+        Downloads a PDF from a URL protected by a JavaScript challenge
+        using Playwright to automate a real browser.
+        """
+        # Note: If you haven't installed the browsers yet, run this in a terminal:
+        # playwright install
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+
+            try:
+                logger.debug(f"Navigating to {url}...")
+                # Go to the URL; Playwright waits for the JS challenge to run
+                await page.goto(url, timeout=60000)
+
+                logger.debug("Waiting for download to start...")
+                # Wait for the download event triggered by the page
+                async with page.expect_download() as download_info:
+                    download = await download_info.value
+
+                # Save the downloaded file
+                await download.save_as(save_path)
+                logger.debug(f"✅ Successfully downloaded and saved to {save_path}")
+
+            except Exception as e:
+                logger.debug(f"❌ An error occurred: {e}")
+            finally:
+                await browser.close()
+
+
+
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
         """
         Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
@@ -798,6 +843,7 @@ class Indexer:
                 logger.error(f"Failed to extract file path from URL {url}, skipping...")
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
+
             response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
@@ -829,6 +875,51 @@ class Indexer:
         else:
             try:
                 # Use Playwright to get the page content
+                context = self.browser.new_context()
+                page = context.new_page()
+                page.set_extra_http_headers(get_headers(self.cfg))
+                file_path = None
+
+                # 1) Try to catch an explicit download
+                try:
+                    with page.expect_download(timeout=self.timeout * 1000) as dl_info:
+                        response = page.goto(url, wait_until="domcontentloaded")
+                    download = dl_info.value
+                    final_url = download.url
+                    if 'url' in metadata:
+                        metadata['url'] = final_url
+                    suggested = download.suggested_filename or ""
+                    ext = os.path.splitext(suggested)[1]
+                    if not ext:
+                        parsed = urllib.parse.urlparse(final_url)
+                        ext = os.path.splitext(parsed.path)[1] or ".pdf"
+                    filename = suggested or f"{uuid.uuid4()}{ext}"
+
+                    file_path = os.path.join(tempfile.gettempdir(), filename)
+                    download.save_as(file_path)
+                    return self.index_file(file_path, final_url, metadata)
+                except PlaywrightTimeoutError:
+                    # no download event fired → maybe inline PDF or HTML
+                    pass
+
+                # 2) Inspect the response headers for a PDF mime-type
+                response = page.goto(url, wait_until="domcontentloaded")
+                ctype = response.headers.get("content-type", "")
+                if "application/pdf" in ctype:
+                    # figure out exactly where we ended up (Playwright follows redirects)
+                    final_url = response.url
+                    parsed    = urllib.parse.urlparse(final_url)
+                    ext       = os.path.splitext(parsed.path)[1] or ".pdf"
+                    filename  = os.path.basename(parsed.path) or f"{uuid.uuid4()}{ext}"
+                    file_path = os.path.join(tempfile.gettempdir(), filename)
+                    pdf_bytes = response.body()                # get the raw PDF bytes
+                    if 'url' in metadata:
+                        metadata['url'] = final_url
+                    with open(file_path, "wb") as f:
+                        f.write(pdf_bytes)
+                    return self.index_file(file_path, final_url, metadata)
+
+                # 3) If not a PDF, then fetch the page content
                 res = self.fetch_page_contents(
                     url=url,
                     extract_tables=self.parse_tables,

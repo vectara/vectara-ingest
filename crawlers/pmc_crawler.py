@@ -195,6 +195,8 @@ class PmcCrawler(Crawler):
         topics = self.cfg.pmc_crawler.topics
         n_papers = self.cfg.pmc_crawler.n_papers
 
-        self.index_medline_plus(topics)
+        if self.cfg.pmc_crawler.get('index_medline_plus', False):
+           self.index_medline_plus(topics)
+    
         for topic in topics:
             self.index_papers_by_topic(topic, n_papers)
