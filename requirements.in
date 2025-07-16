@@ -49,12 +49,13 @@ anthropic==0.42.0
 slack-sdk==3.27.1
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.18.1
+unstructured[pdf]==0.18.7
 unstructured-inference>=1.0.5
-transformers[torch]==4.51.3
-safetensors[torch]==0.4.3
+transformers[torch]>=4.52.4
+safetensors[torch]>=0.4.3
 datasets==2.20.0
-torch==2.4.1
+torch>=2.7.1
+torchvision>=0.22.0
 pydub==0.25.1
 pytube==15.0.0
 youtube-transcript-api==0.6.2
@@ -67,7 +68,7 @@ cryptography==44.0.0
 python-pptx==1.0.2
 python-docx==1.1.2
 Pillow==10.4.0
-docling==2.38.1
+docling==2.41.0
 llama-parse==0.6.39
 gmft==0.4.1
 pypdf >= 3.0.0

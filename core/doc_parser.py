@@ -393,6 +393,8 @@ class DoclingDocumentParser(DocumentParser):
         pipeline_options.images_scale = self.image_scale
         pipeline_options.generate_picture_images = True
         pipeline_options.do_ocr = False
+        pipeline_options.do_formula_enrichment = True
+        
         if self.do_ocr:
             pipeline_options.do_ocr = True
             easy_ocr_config = self.cfg.doc_processing.easy_ocr_config
