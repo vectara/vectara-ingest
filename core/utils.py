@@ -1,35 +1,74 @@
+# Standard library imports
+import base64
+import logging
 import os
 import re
+import shutil
 import sys
+import threading
+import time
+import xml.etree.ElementTree as ET
+from io import StringIO
+from pathlib import Path
+from typing import List, Set, Any, Dict
+from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
+
+# Third-party imports
+import magic
+import pandas as pd
 import requests
+from bs4 import BeautifulSoup
+from langdetect import detect
+from omegaconf import DictConfig, OmegaConf
 from requests.adapters import HTTPAdapter
 from requests.models import Response, PreparedRequest
-from typing import List, Set, Any, Dict
-
-from urllib3.util.retry import Retry
-from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
-from pathlib import Path
-
-from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
 from slugify import slugify
-
-import base64
-import magic
-
-import shutil
-import pandas as pd
-from io import StringIO
-
-import time
-import threading
-import logging
-import glob
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
-from langdetect import detect
-from omegaconf import DictConfig, OmegaConf
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# File extensions
+IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
+DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
+ARCHIVE_EXTENSIONS = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
+BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + DOC_EXTENSIONS
+SPREADSHEET_EXTENSIONS = {".csv", ".xls", ".xlsx"}
+
+# HTTP configurations
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
+DEFAULT_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
+# Retry configurations
+DEFAULT_RETRY_ATTEMPTS = 5
+DEFAULT_RETRY_STATUS_CODES = [429, 430, 443, 500, 502, 503, 504]
+DEFAULT_RETRY_BACKOFF_FACTOR = 1
+DEFAULT_RETRY_METHODS = ["HEAD", "GET", "OPTIONS", "POST"]
+
+# MIME types
+AMBIGUOUS_MIME_TYPES = ['text/html', 'application/xml', 'text/xml', 'application/xhtml+xml']
+
+# PII detection entities
+PII_ENTITIES = [
+    "PHONE_NUMBER", "CREDIT_CARD", "EMAIL_ADDRESS", "IBAN_CODE", "PERSON",
+    "US_BANK_NUMBER", "US_PASSPORT", "US_SSN", "LOCATION"
+]
+
+# Regex patterns (compiled at module level for performance)
+LOGGER_ENV_PATTERN = re.compile(r'^LOGGER_([A-Z0-9_]+)_LEVEL$')
+SITEMAP_PATTERN = re.compile(r'^sitemap:', re.IGNORECASE)
+
+# =============================================================================
+# PRESIDIO INITIALIZATION
+# =============================================================================
 
 try:
     from presidio_analyzer import AnalyzerEngine
@@ -39,16 +78,16 @@ try:
 except ImportError:
     logger.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
 
-img_extensions = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
-doc_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
-archive_extensions = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
-binary_extensions = archive_extensions + img_extensions + doc_extensions
+# Legacy constants for backward compatibility
+img_extensions = IMG_EXTENSIONS
+doc_extensions = DOC_EXTENSIONS
+archive_extensions = ARCHIVE_EXTENSIONS
+binary_extensions = BINARY_EXTENSIONS
+spreadsheet_extensions = SPREADSHEET_EXTENSIONS
 
-spreadsheet_extensions={
-    ".csv", ".xls", ".xlsx"
-}
-
-
+# =============================================================================
+# LOGGING UTILITIES
+# =============================================================================
 
 def setup_logging(level='INFO'):
     log_level_str = os.getenv("LOGGING_LEVEL", level).upper()
@@ -65,9 +104,8 @@ def setup_logging(level='INFO'):
 
     logger.debug("Setting logging levels")
     # Configure specific loggers based on environment variables
-    logger_env_pattern = re.compile(r'^LOGGER_([A-Z0-9_]+)_LEVEL$')
     for env_key, log_level_str in os.environ.items():
-        match = logger_env_pattern.match(env_key)
+        match = LOGGER_ENV_PATTERN.match(env_key)
         if match:
             logger_name = match.group(1).lower().replace('_', '.')
             level_name = log_level_str.upper()
@@ -78,7 +116,20 @@ def setup_logging(level='INFO'):
             else:
                 logger.warning(f"Could not change logger {logger_name} to unknown level {level_name}.")
 
+# =============================================================================
+# FILE UTILITIES
+# =============================================================================
+
 def url_to_filename(url):
+    """
+    Convert a URL to a safe filename by extracting the path and slugifying it.
+    
+    Args:
+        url (str): The URL to convert to a filename
+        
+    Returns:
+        str: A safe filename based on the URL path
+    """
     parsed_url = urlparse(url)
     path_parts = parsed_url.path.split('/')
     last_part = path_parts[-1]
@@ -98,8 +149,7 @@ def detect_file_type(file_path):
     mime_type = mime.from_file(file_path)
 
     # Define MIME types that require further inspection
-    ambiguous_mime_types = ['text/html', 'application/xml', 'text/xml', 'application/xhtml+xml']
-    if mime_type in ambiguous_mime_types:
+    if mime_type in AMBIGUOUS_MIME_TYPES:
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 content = file.read()
@@ -170,11 +220,20 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
     return text
 
 def safe_remove_file(file_path: str):
+    """
+    Safely remove a file, logging warnings if removal fails.
+    
+    Args:
+        file_path (str): Path to the file to remove
+    """
     try:
         os.remove(file_path)
     except Exception as e:
         logger.warning(f"Failed to remove file: {file_path} due to {e}")
 
+# =============================================================================
+# HTTP UTILITIES
+# =============================================================================
 
 class LoggingAdapter(HTTPAdapter):
     def send(self, request: PreparedRequest, **kwargs) -> Response:
@@ -198,16 +257,16 @@ class LoggingAdapter(HTTPAdapter):
         logger.debug(log_message)
         return response
 
-def create_session_with_retries(retries: int = 5) -> requests.Session:
+def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
     retry_strategy = Retry(
         total=retries,
-        status_forcelist=[429, 430, 443, 500, 502, 503, 504],  # A set of integer HTTP status codes that we should force a retry on.
-        backoff_factor=1,
+        status_forcelist=DEFAULT_RETRY_STATUS_CODES,
+        backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
         raise_on_status=False,
         respect_retry_after_header=True,
-        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+        allowed_methods=DEFAULT_RETRY_METHODS,
     )
     logging_adapter = LoggingAdapter(max_retries=retry_strategy)
     session.mount('http://', logging_adapter)
@@ -268,13 +327,22 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         # If we get here, neither path worked
         raise FileNotFoundError(f"Certificate path '{ssl_verify}' could not be found or accessed.")
 
-def remove_anchor(url: str) -> str:
-    """Remove the anchor from a URL."""
-    parsed = urlparse(url)
-    url_without_anchor = urlunparse(parsed._replace(fragment=""))
-    return url_without_anchor
+# =============================================================================
+# URL UTILITIES
+# =============================================================================
+
 
 def normalize_url(url: str, keep_query_params: bool = False) -> str:
+    """
+    Normalize a URL by removing query parameters and standardizing format.
+    
+    Args:
+        url (str): URL to normalize
+        keep_query_params (bool): Whether to preserve query parameters
+        
+    Returns:
+        str: Normalized URL
+    """
     """Normalize a URL by removing query parameters."""
     # Prepend with 'http://' if URL has no scheme
     if '://' not in url:
@@ -286,13 +354,36 @@ def normalize_url(url: str, keep_query_params: bool = False) -> str:
     return ParseResult(p.scheme, netloc, path, '', query, '').geturl()
 
 def clean_urls(urls: Set[str], keep_query_params: bool = False) -> List[str]:
+    """
+    Clean and normalize a set of URLs.
+    
+    Args:
+        urls (Set[str]): Set of URLs to clean
+        keep_query_params (bool): Whether to preserve query parameters
+        
+    Returns:
+        List[str]: List of cleaned URLs
+    """
     normalized_set = set()
     for url in urls:
         normalized_url = normalize_url(url, keep_query_params)
         normalized_set.add(normalized_url)
     return list(normalized_set)
 
+# =============================================================================
+# TEXT UTILITIES
+# =============================================================================
+
 def clean_email_text(text: str) -> str:
+    """
+    Clean email text by removing unnecessary characters and indentation.
+    
+    Args:
+        text (str): Email text to clean
+        
+    Returns:
+        str: Cleaned email text
+    """
     """
     Clean the text email by removing any unnecessary characters and indentation.
     This function can be extended to clean emails in other ways.
@@ -302,6 +393,15 @@ def clean_email_text(text: str) -> str:
     return cleaned_text
 
 def detect_language(text: str) -> str:
+    """
+    Detect the language of the given text using langdetect.
+    
+    Args:
+        text (str): Text to analyze for language
+        
+    Returns:
+        str: Language code (defaults to 'en' if detection fails)
+    """
     try:
         lang = detect(text)
         return str(lang)
@@ -310,111 +410,144 @@ def detect_language(text: str) -> str:
         return "en"  # Default to English in case of errors
 
 def get_file_size_in_MB(file_path: str) -> float:
+    """
+    Get the file size in megabytes.
+    
+    Args:
+        file_path (str): Path to the file
+        
+    Returns:
+        float: File size in MB
+    """
     file_size_bytes = os.path.getsize(file_path)
     file_size_MB = file_size_bytes / (1024 * 1024)
     return file_size_MB
 
 def get_file_extension(url):
+    """
+    Extract the file extension from a URL.
+    
+    Args:
+        url (str): URL to extract extension from
+        
+    Returns:
+        str: File extension in lowercase
+    """
     # Parse the URL to get the path component
     path = urlparse(url).path
     # Use pathlib to extract the file extension
     return Path(path).suffix.lower()
 
-def ensure_empty_folder(folder_name):
-    if os.path.exists(folder_name):
-        shutil.rmtree(folder_name)
-    os.makedirs(folder_name)
 
 def mask_pii(text: str) -> str:
+    """
+    Mask personally identifiable information (PII) in text using Presidio.
+    
+    Args:
+        text (str): Text to analyze and mask PII
+        
+    Returns:
+        str: Text with PII masked
+    """
     # Analyze and anonymize PII data in the text
     results = analyzer.analyze(
         text=text,
-        entities=["PHONE_NUMBER", "CREDIT_CARD", "EMAIL_ADDRESS", "IBAN_CODE", "PERSON",
-                  "US_BANK_NUMBER", "US_PASSPORT", "US_SSN", "LOCATION"],
+        entities=PII_ENTITIES,
         language='en')
     anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
     return str(anonymized_text.text)
 
+
+def normalize_text(text: str, cfg: OmegaConf) -> str:
+    """
+    Normalize text by applying Unicode normalization and optional PII masking.
+    
+    Args:
+        text (str): The text to normalize
+        cfg (OmegaConf): Configuration object containing vectara settings
+        
+    Returns:
+        str: Normalized text
+    """
+    import unicodedata
+    import pandas as pd
+    
+    if pd.isnull(text) or len(text) == 0:
+        return text
+    
+    if cfg.vectara.get("mask_pii", False):
+        text = mask_pii(text)
+    
+    text = unicodedata.normalize('NFD', text)
+    return text
+
+
+def normalize_value(value, cfg: OmegaConf):
+    """
+    Normalize a value by applying text normalization if it's a string.
+    
+    Args:
+        value: The value to normalize
+        cfg (OmegaConf): Configuration object containing vectara settings
+        
+    Returns:
+        The normalized value
+    """
+    if isinstance(value, str):
+        return normalize_text(value, cfg)
+    return value
+
+# =============================================================================
+# CONCURRENCY UTILITIES
+# =============================================================================
+
 # Rate Limiter class
 # Existing packages are not well maintained so we create our own (using ChatGPT)
 class RateLimiter:
-    def __init__(self, max_rate):
+    """
+    A thread-safe rate limiter using sliding window approach.
+    
+    Args:
+        max_rate (int): Maximum number of executions per second
+        window_size (float): Time window in seconds (default: 1.0)
+    """
+    
+    def __init__(self, max_rate: int, window_size: float = 1.0):
         self.max_rate = max_rate
-        self.lock = threading.Lock()
-        self.condition = threading.Condition(self.lock)
-        self.num_executions = 0
-        self.start_time = time.time()
-
+        self.window_size = window_size
+        self.lock = threading.RLock()  # Use RLock for better performance
+        self.executions = []  # Store timestamps of recent executions
+        
     def __enter__(self):
         with self.lock:
             current_time = time.time()
-            elapsed_time = current_time - self.start_time
-
-            if elapsed_time >= 1:
-                # Reset counter and timer after a second
-                self.num_executions = 0
-                self.start_time = current_time
-            else:
-                if self.num_executions >= self.max_rate:
-                    # Wait until the second is up if limit is reached
-                    time_to_wait = 1 - elapsed_time
-                    self.condition.wait(timeout=time_to_wait)
-                    # Reset after waiting
-                    self.num_executions = 0
-                    self.start_time = time.time()
-
-            # Increment the count of executions
-            self.num_executions += 1
-
+            
+            # Remove old executions outside the window
+            cutoff_time = current_time - self.window_size
+            self.executions = [t for t in self.executions if t > cutoff_time]
+            
+            # Check if we've exceeded the rate limit
+            if len(self.executions) >= self.max_rate:
+                # Calculate how long to wait
+                oldest_execution = self.executions[0]
+                wait_time = oldest_execution + self.window_size - current_time
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                    # Clean up again after waiting
+                    current_time = time.time()
+                    cutoff_time = current_time - self.window_size
+                    self.executions = [t for t in self.executions if t > cutoff_time]
+            
+            # Record this execution
+            self.executions.append(current_time)
+            
     def __exit__(self, exc_type, exc_val, exc_tb):
-        with self.lock:
-            self.condition.notify()
+        # No need to do anything on exit with this implementation
+        pass
 
-def get_urls_from_sitemap(homepage_url):
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    # Helper function to fetch and parse XML
-    def fetch_sitemap(sitemap_url):
-        try:
-            response = requests.get(sitemap_url, headers=headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'xml')
-            return soup
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to fetch sitemap: {sitemap_url} due to {e}")
-            return None
-
-    # Step 1: Check for standard sitemap.xml
-    sitemap_url = urljoin(homepage_url, 'sitemap.xml')
-    soup = fetch_sitemap(sitemap_url)
-
-    sitemaps = []
-    if soup:
-        sitemaps.append(sitemap_url)
-
-    # Step 2: Check for sitemaps in robots.txt
-    robots_url = urljoin(homepage_url, 'robots.txt')
-    try:
-        response = requests.get(robots_url, headers=headers)
-        response.raise_for_status()
-        for line in response.text.split('\n'):
-            if line.lower().startswith('sitemap:'):
-                sitemap_url = line.split(':', 1)[1].strip()
-                sitemaps.append(sitemap_url)
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"Failed to fetch robots.txt: {robots_url} due to {e}")
-
-    # Step 3: Extract URLs from all found sitemaps
-    urls = set()
-    for sitemap in sitemaps:
-        soup = fetch_sitemap(sitemap)
-        if soup:
-            for loc in soup.find_all('loc'):
-                urls.add(loc.text.strip())
-
-    return list(urls)
+# =============================================================================
+# DATA PROCESSING UTILITIES
+# =============================================================================
 
 def df_cols_to_headers(df: pd.DataFrame):
     """
@@ -475,6 +608,15 @@ def df_cols_to_headers(df: pd.DataFrame):
     return rows
 
 def get_file_path_from_url(url):
+    """
+    Extract and clean filename from URL for file storage.
+    
+    Args:
+        url (str): URL to extract filename from
+        
+    Returns:
+        str: Cleaned filename suitable for storage
+    """
     path = urlparse(url).path
     # Get the file name (last segment of path)
     filename = os.path.basename(path)
@@ -492,6 +634,15 @@ def get_file_path_from_url(url):
     return new_filename
 
 def markdown_to_df(markdown_table):
+    """
+    Convert markdown table to pandas DataFrame.
+    
+    Args:
+        markdown_table (str): Markdown table string
+        
+    Returns:
+        pd.DataFrame: DataFrame representation of the table
+    """
     table_io = StringIO(markdown_table.strip())
     lines = table_io.readlines()
 
@@ -536,6 +687,15 @@ def markdown_to_df(markdown_table):
     return df
 
 def create_row_items(items: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Convert a list of items to row format for table processing.
+    
+    Args:
+        items (List[Any]): List of items to convert
+        
+    Returns:
+        List[Dict[str, Any]]: List of row items with text_value keys
+    """
     res = []
     for item in items:
         if isinstance(item, tuple):   # Tuple of (colname, colspan)
@@ -618,6 +778,15 @@ def _expand_table(table_tag):
 
 def html_table_to_header_and_rows(html):
     """
+    Parse HTML table into header and rows, handling colspan/rowspan.
+    
+    Args:
+        html (str): HTML containing table
+        
+    Returns:
+        Tuple[List[str], List[List[str]]]: (header, rows)
+    """
+    """
     Parse the FIRST <table> from 'html' into a header row + data rows.
     All 'rowspan'/'colspan' cells are expanded (duplicated) so each row
     in the final output has the same number of columns.
@@ -645,10 +814,22 @@ def html_table_to_header_and_rows(html):
     return header, rows
 
 def get_media_type_from_base64(base64_data: str) -> str:
+    """
+    Determine media type from base64 encoded data.
+    
+    Args:
+        base64_data (str): Base64 encoded data
+        
+    Returns:
+        str: MIME type of the data
+    """
     file_bytes = base64.b64decode(base64_data)
     media_type = magic.Magic(mime=True).from_buffer(file_bytes)
     return media_type
 
+# =============================================================================
+# SYSTEM UTILITIES
+# =============================================================================
 
 def get_docker_or_local_path(docker_path: str, output_dir: str = "vectara_ingest_output", should_delete_existing: bool = False, config_path: str = None) -> str:
     """
@@ -749,23 +930,39 @@ def load_config(*config_files:str):
 
     return OmegaConf.merge(*configs)
 
+# =============================================================================
+# PATTERN MATCHING UTILITIES
+# =============================================================================
 
 def url_matches_patterns(url, pos_patterns, neg_patterns):
+    """
+    Check if URL matches positive patterns and doesn't match negative patterns.
+    
+    Args:
+        url (str): URL to check
+        pos_patterns (List[Pattern]): Positive regex patterns
+        neg_patterns (List[Pattern]): Negative regex patterns
+        
+    Returns:
+        bool: True if URL matches criteria
+    """
     pos_match = len(pos_patterns)==0 or any([r.match(url) for r in pos_patterns])
     neg_match = len(neg_patterns)==0 or not any([r.match(url) for r in neg_patterns])
     return pos_match and neg_match
 
 
 def get_headers(cfg):
-    user_agent = cfg.vectara.get("user_agent", None)
-    if not user_agent:
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
-    headers = {
-        "User-Agent": user_agent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-    }
+    """
+    Get HTTP headers from configuration.
+    
+    Args:
+        cfg: Configuration object
+        
+    Returns:
+        Dict[str, str]: HTTP headers dictionary
+    """
+    user_agent = cfg.vectara.get("user_agent", DEFAULT_USER_AGENT)
+    headers = DEFAULT_HEADERS.copy()
+    headers["User-Agent"] = user_agent
     return headers
 
