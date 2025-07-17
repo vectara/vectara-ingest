@@ -8,7 +8,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging, get_docker_or_local_path
+from core.utils import setup_logging, get_docker_or_local_path
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 class FileCrawlWorker(object):
     def __init__(self, cfg: DictConfig, crawler_config: DictConfig, indexer: Indexer, num_per_second: int):
         self.indexer = indexer
-        self.rate_limiter = RateLimiter(num_per_second)
         self.cfg = cfg
         self.crawler_config = crawler_config
 

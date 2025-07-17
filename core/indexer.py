@@ -376,7 +376,7 @@ class Indexer:
             else:
                 logger.error(f"REST upload for {uri} (reindex) failed with code = {response.status_code}")
         
-        if success:
+        if success and self.store_docs:
             store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             
         return success

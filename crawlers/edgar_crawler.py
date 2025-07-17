@@ -59,7 +59,10 @@ class EdgarWorker():
         try:
             succeeded = self.indexer.index_file(file_path, uri=url, metadata=metadata)
             if succeeded:
-                logger.info(f"Indexing succeeded for url {url}")
+                ticker = metadata.get("ticker", "unknown ticker")
+                year = metadata.get("year", "unknown year")
+                filing_type = metadata.get("filing_type", "unknown filing type")
+                logger.info(f"Indexing succeeded for url {url} ({ticker}, {year}, {filing_type})")
             else:
                 logger.warning(f"Indexing failed for url {url}")
         except Exception as e:
