@@ -1,14 +1,17 @@
 import logging
 import os
 import requests
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from omegaconf import OmegaConf
 from slugify import slugify
 from core.summary import ImageSummarizer
 from core.utils import get_headers
 
-logger = logging.getLogger(__name__)
+import base64
+import mimetypes
+import tempfile
 
+logger = logging.getLogger(__name__)
 
 class ImageProcessor:
     """Handles image processing and summarization"""
@@ -60,25 +63,37 @@ class ImageProcessor:
         for inx, image in enumerate(images):
             try:
                 image_url = image['src']
-                
-                # Validate image URL
-                if not image_url.startswith('http'):
+
+                if image_url.startswith('data:image/'):
+                    header, payload = image_url.split(',', 1)
+                    # header will be like "data:image/svg+xml;base64"
+                    mime = header.split(';')[0].split(':')[1]  # e.g. "image/svg+xml"
+                    ext = mimetypes.guess_extension(mime) or '.bin'
+                    # write to a temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                        tmp.write(base64.b64decode(payload))
+                        tmp_filename = tmp.name
+                    local_path = tmp_filename
+
+                elif image_url.startswith('http'):
+                    # download as before
+                    response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
+                    if response.status_code != 200:
+                        logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                        continue
+                    # write to a temp file with appropriate extension guessed from URL or default to .png
+                    ext = os.path.splitext(image_url)[1] or '.png'
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                        local_path = tmp.name
+
+                else:
                     logger.info(f"Image URL '{image_url}' is not valid, skipping")
                     continue
-                
-                # Download image
-                response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
-                if response.status_code != 200:
-                    logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
-                    continue
-                
-                # Save image temporarily
-                with open(image_filename, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                # Generate summary
-                image_summary = image_summarizer.summarize_image(image_filename, image_url, None)
+
+                # Generate summary from local_path
+                image_summary = image_summarizer.summarize_image(local_path, image_url, None)
                 if not image_summary:
                     logger.info(f"Failed to generate summary for image {image_url}")
                     continue
@@ -103,11 +118,12 @@ class ImageProcessor:
             except Exception as e:
                 logger.warning(f"Failed to process image {image.get('src', 'unknown')}: {e}")
                 continue
+
             finally:
                 # Clean up temporary file
-                if os.path.exists(image_filename):
-                    os.remove(image_filename)
-        
+                if 'local_path' in locals() and os.path.exists(local_path):
+                    os.remove(local_path)
+
         return processed_images
     
     def process_document_images(self, images: List[tuple], uri: str, ex_metadata: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any]]]:
