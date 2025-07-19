@@ -106,7 +106,6 @@ class FmpCrawler(Crawler):
         Args:
             ticker: The ticker symbol of the company
             company_name: The name of the company
-            year: The year to get transcripts for
         """
         for year in range(self.start_year, self.end_year + 1):
             for quarter in range(1, 5):

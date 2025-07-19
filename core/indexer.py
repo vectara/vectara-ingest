@@ -3,14 +3,12 @@ logger = logging.getLogger(__name__)
 import json
 import time
 import warnings
-import unicodedata
 from typing import Dict, Any, List, Optional, Sequence
 import shutil
 
 import uuid
 import pandas as pd
 import urllib.parse, tempfile, os
-
 
 from slugify import slugify
 
@@ -20,7 +18,6 @@ import nbformat
 import markdown
 import whisper
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.async_api import async_playwright
 
 
 from core.summary import TableSummarizer, get_attributes_from_text
