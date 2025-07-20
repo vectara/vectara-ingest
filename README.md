@@ -177,7 +177,7 @@ Includes some images (png files) used in the documentation
 
 ### Configuration
 
-To crawl and index a source you run a crawl "job", which is controlled by several paramters that you can define in a YAML configuration file. You can see example configuration files in the [config/](config) directory.
+To crawl and index a source you run a crawl "job", which is controlled by several parameters that you can define in a YAML configuration file. You can see example configuration files in the [config/](config) directory.
 
 Each configuration YAML file includes a set of standard variables, for example:
 
@@ -315,7 +315,7 @@ doc_processing:
     chunking_strategy: by_title        # chunking strategy to use: basic, by_title or none; default none
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
 
-  # Docling document parsing configuation
+  # Docling document parsing configuration
   docling_config:
     chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none (default hybrid)
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI
@@ -358,7 +358,7 @@ XXX_crawler:
 
 ### Secrets management
 
-We use a `secrets.toml` file to hold secret keys and parameters. You need to create this file in the root directory before running a crawl job. This file can hold multiple "profiles", and specific specific secrets for each of these profiles. For example:
+We use a `secrets.toml` file to hold secret keys and parameters. You need to create this file in the root directory before running a crawl job. This file can hold multiple "profiles", and specific secrets for each of these profiles. For example:
 
 ```
 [general]
@@ -377,11 +377,11 @@ api_key="<VECTARA-API-KEY-3>"
 MOTION_API_KEY="<YOUR-NOTION-API-KEY>
 ```
 
-The use of the `toml` standard allows easy secrets management when you have multiple crawl jobs that may not share the same secrets. For example when you have a different Vectara API key for indexing differnet corpora.
+The use of the `toml` standard allows easy secrets management when you have multiple crawl jobs that may not share the same secrets. For example when you have a different Vectara API key for indexing different corpora.
 
 Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the `secrets.toml` file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
 
-If you are using the table summarization, image summarization or contextual retreival features, 
+If you are using the table summarization, image summarization or contextual retrieval features, 
 you have to provide your own LLM key (either OPENAI_API_KEY or ANTHROPIC_API_KEY). 
 In this case, you would need to put that key under the `[general]` profile. This is a special profile name reserved for this purpose.
 
@@ -460,7 +460,7 @@ Specify Docker Image: In the "Image URL" fill in "vectara/vectara-ingest" and cl
 2. Click "Create Web Service"
 3. Click "Environment", then "Add Secret File": name the file config.yaml, and copy the contents of the config.yaml for your crawler
 4. Assuming you have a `secrets.toml` file with multiple profiles and you want to use the secrets for the profile `[my-profile]`, click "Environment", then "Add Secret File": name the file secrets.toml, and copy only the contents of `[my-profile]` from the secrets.toml to this file (incuding the profile name). 
-Make sure to copy `[general]` profile and your OPENAI_API_KEY or ANTHROPIC_API_KEY if you are using table summarization, image summarization of contextual retreival.
+Make sure to copy `[general]` profile and your OPENAI_API_KEY or ANTHROPIC_API_KEY if you are using table summarization, image summarization of contextual retrieval.
 5. Click "Settings" and go to "Docker Command" and click "Edit", the enter the following command:
 `/bin/bash -c mkdir /home/vectara/env && cp /etc/secrets/config.yaml /home/vectara/env/ && cp /etc/secrets/secrets.toml /home/vectara/env/ && python3 ingest.py /home/vectara/env/config.yaml <my-profile>"`
 
