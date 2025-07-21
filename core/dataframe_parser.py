@@ -254,7 +254,7 @@ class DataframeParser:
         """
         Handles 'element' mode logic for a single DataFrame.
         """
-        doc_id_columns = self.crawler_config.get("doc_id_columns", None)
+        doc_id_columns = self.crawler_config.get("doc_id_columns", [])
         if doc_id_columns:
             doc_id_columns = list(doc_id_columns)
         rows_per_chunk = self.crawler_config.get("rows_per_chunk", 500)
@@ -297,7 +297,7 @@ class DataframeParser:
             if len(df_chunk[column].unique()) == 1 and not pd.isnull(df_chunk[column].iloc[0]):
                 doc_metadata[column] = df_chunk[column].iloc[0]
         
-        final_title = titles[0] if titles else doc_title
+        final_title = titles[0] if titles else ""
         logger.debug(f"Indexing {len(df_chunk)} rows for doc_id '{doc_id}'")
 
         self.indexer.index_segments(

@@ -54,7 +54,7 @@ unstructured-inference>=1.0.5
 transformers[torch]>=4.52.4
 safetensors[torch]>=0.4.3
 datasets==2.20.0
-torch>=2.7.1
+torch~=2.7.1
 torchvision>=0.22.0
 pydub==0.25.1
 pytube==15.0.0
