@@ -83,10 +83,11 @@ class DocumentBuilder:
     
     def _generate_doc_id(self, doc_id: str) -> str:
         """Generate a valid document ID, truncating if necessary"""
-        if len(doc_id) < 128:
+        max_doc_id_length = 128
+        if len(doc_id) < max_doc_id_length:
             return doc_id
-        return doc_id[:128] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
-    
+        return doc_id[:max_doc_id_length] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
+
     def _build_tables_array(self, tables: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Build tables array for document structure"""
         tables_array = []

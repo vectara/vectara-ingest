@@ -85,59 +85,42 @@ class FileProcessor:
     
     def create_document_parser(self):
         """Create appropriate document parser based on configuration"""
+        base_dict = {
+            "cfg": self.cfg,
+            "verbose": self.verbose,
+            "model_config": self.model_config,
+            "parse_tables": self.parse_tables,
+            "enable_gmft": self.enable_gmft,
+            "summarize_images": self.summarize_images
+        }
         if self.contextual_chunking:
             return UnstructuredDocumentParser(
-                cfg=self.cfg,
-                verbose=self.verbose,
-                model_config=self.model_config,
+                **base_dict,
                 chunking_strategy='by_title',
                 chunk_size=1024,
-                parse_tables=self.parse_tables,
-                enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images,
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
             return LlamaParseDocumentParser(
-                cfg=self.cfg,
-                verbose=self.verbose,
-                model_config=self.model_config,
+                **base_dict,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
-                parse_tables=self.parse_tables,
-                enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docupanda":
             return DocupandaDocumentParser(
-                cfg=self.cfg,
-                verbose=self.verbose,
-                model_config=self.model_config,
+                **base_dict,
                 docupanda_api_key=self.cfg.get("docupanda_api_key", None),
-                parse_tables=self.parse_tables,
-                enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images
             )
         elif self.doc_parser == "docling":
             return DoclingDocumentParser(
-                cfg=self.cfg,
-                verbose=self.verbose,
-                model_config=self.model_config,
+                **base_dict,
                 chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
-                parse_tables=self.parse_tables,
-                enable_gmft=self.enable_gmft,
                 do_ocr=self.do_ocr,
-                summarize_images=self.summarize_images,
                 image_scale=self.docling_config.get('image_scale', 2.0),
             )
         else:
             return UnstructuredDocumentParser(
-                cfg=self.cfg,
-                verbose=self.verbose,
-                model_config=self.cfg.doc_processing.model_config,
+                **base_dict,
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
-                parse_tables=self.parse_tables,
-                enable_gmft=self.enable_gmft,
-                summarize_images=self.summarize_images,
             )
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
