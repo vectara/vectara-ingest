@@ -1,0 +1,15 @@
+vectara:
+  corpus_key: vectara-ingest-large-pdf
+  reindex: true
+  create_corpus: false
+
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/Users/jeremy/data/testpdfs/"
+  extensions:
+    - '.pdf'
+  source: 'pdf-folder'
+  metadata_file: metadata.csv

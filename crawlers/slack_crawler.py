@@ -1,8 +1,10 @@
-import time
-import re
-import ray
-import psutil
 import logging
+import re
+import time
+
+import psutil
+import ray
+
 logger = logging.getLogger(__name__)
 import datetime
 from omegaconf import OmegaConf
@@ -13,6 +15,7 @@ from http.client import IncompleteRead
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import setup_logging
+from dataclasses import dataclass, field
 
 
 def get_timestamp(days_past):
@@ -189,7 +192,6 @@ def handle_slack_api_error(api_name, error):
         logger.error(f"Error while fetching the messages: {error}")
 
 
-
 def handle_incomplete_request_error(api_name, error, retry_delay=30):
     logger.error(f"IncompleteRead error occurred: {error}")
     logger.info(f"Will retry to fetch the {api_name} after 30 seconds")
@@ -229,6 +231,15 @@ def contains_url(message):
     match = re.search(url_pattern, message)
     # Return True if a URL is found, False otherwise
     return bool(match)
+
+
+@dataclass
+class SlackCrawlerConfig:
+    slack_user_token: str
+    days_past: int | None = None
+    channels_to_skip: list = field(default_factory=list)
+    retries: int | None = 5
+    ray_workers: int = 0
 
 
 class SlackCrawler(Crawler):
@@ -374,7 +385,6 @@ class SlackCrawler(Crawler):
             if channel["name"] not in self.channels_to_skip:
                 channels_to_crawl.append(channel)
 
-
         ray_workers = self.cfg.slack_crawler.get("ray_workers", 0)  # -1: use ray with ALL cores, 0: dont use ray
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -424,5 +434,3 @@ class SlackMsgIndexer(object):
         else:
             link = construct_url_of_message(msg, channel['id'])
             logger.info(f"Unable to find text for the message: {link}")
-            
-

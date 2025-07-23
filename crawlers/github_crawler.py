@@ -1,7 +1,7 @@
-import json
-from typing import List, Any
-from datetime import datetime
 import logging
+from datetime import datetime
+from typing import List, Any
+
 logger = logging.getLogger(__name__)
 import base64
 
@@ -13,14 +13,17 @@ import markdown
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, html_to_text, RateLimiter
+from dataclasses import dataclass
+
 
 def clean_empty_sections(doc: dict) -> dict:
     len_before = len(doc['sections'])
     doc['sections'] = [section for section in doc['sections'] if section['text']]
     len_after = len(doc['sections'])
     if len_after < len_before:
-        logger.info(f"Removed {len_before-len_after} empty sections for doc {doc['id']}")
+        logger.info(f"Removed {len_before - len_after} empty sections for doc {doc['id']}")
     return doc
+
 
 def convert_date(date_str: str) -> str:
     # Remove the 'Z' at the end and parse the date string to a datetime object
@@ -30,6 +33,7 @@ def convert_date(date_str: str) -> str:
     normal_date = date_obj.strftime("%Y-%m-%d")
 
     return normal_date
+
 
 class Github(object):
     def __init__(self, repo: str, owner: str, token: str) -> None:
@@ -77,8 +81,19 @@ class Github(object):
         if response.status_code == 200:
             return list(response.json())
         else:
-            logger.info(f"Error retrieving comments for pull request #{pull_number}: {response.status_code}, {response.text}")
+            logger.info(
+                f"Error retrieving comments for pull request #{pull_number}: {response.status_code}, {response.text}")
             return []
+
+
+@dataclass
+class GithubCrawlerConfig:
+    owner: str
+    crawl_code: bool
+    repos: List[str]
+    github_token: str | None = None
+    num_per_second: int = 2
+
 
 class GithubCrawler(Crawler):
 
@@ -95,11 +110,11 @@ class GithubCrawler(Crawler):
         self.session.mount('https://', adapter)
 
     def crawl_code_folder(self, base_url: str, repo: str, path: str = "") -> None:
-        headers = { "Accept": "application/vnd.github+json"}
+        headers = {"Accept": "application/vnd.github+json"}
         if self.github_token:
             headers["Authorization"] = f"token {self.github_token}"
         with self.rate_limiter:
-            response = self.session.get( f"{base_url}/contents/{path}", headers=headers)
+            response = self.session.get(f"{base_url}/contents/{path}", headers=headers)
         if response.status_code != 200:
             logger.info(f"Error fetching {base_url}/contents/{path}: {response.text}")
             return
@@ -108,9 +123,11 @@ class GithubCrawler(Crawler):
             if item["type"] == "file":
                 fname = item["path"]
                 url = item["html_url"]
-                if url.lower().endswith(".md") or url.lower().endswith(".mdx"):     # Only index markdown files from the code, not the code itself
+                if url.lower().endswith(".md") or url.lower().endswith(
+                        ".mdx"):  # Only index markdown files from the code, not the code itself
                     try:
-                        file_response = self.session.get(item["url"], headers={"Authorization": f"token {self.github_token}"})
+                        file_response = self.session.get(item["url"],
+                                                         headers={"Authorization": f"token {self.github_token}"})
                         file_content = base64.b64decode(file_response.json()["content"]).decode("utf-8")
                     except Exception as e:
                         logger.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
@@ -139,7 +156,8 @@ class GithubCrawler(Crawler):
             comment = Box(d_comment)
             metadata = {
                 'id': comment.id, 'url': comment.html_url, 'source': 'github',
-                'author': comment.user.login, 'created_at': convert_date(comment.created_at), 'last_modified': convert_date(comment.updated_at)
+                'author': comment.user.login, 'created_at': convert_date(comment.created_at),
+                'last_modified': convert_date(comment.updated_at)
             }
             doc['sections'].append({
                 'title': f'comment by {comment.user.login}',
@@ -178,7 +196,7 @@ class GithubCrawler(Crawler):
             }
 
             comments = g.get_pr_comments(pr.number)
-            if len(comments)>0:
+            if len(comments) > 0:
                 logger.info(f"Adding {len(comments)} comments for repo {repo}, PR {pr.number}")
                 self.add_comments(pr_doc, comments)
             else:
@@ -208,7 +226,8 @@ class GithubCrawler(Crawler):
             updated_at = convert_date(issue.updated_at)
             labels = [label.name for label in issue.labels]
             author = issue.user.login
-            metadata = {'issue_number': issue.number, 'labels': labels, 'source': 'github', 'url': issue.html_url, 'state': issue.state}
+            metadata = {'issue_number': issue.number, 'labels': labels, 'source': 'github', 'url': issue.html_url,
+                        'state': issue.state}
 
             issue_doc = {
                 'id': f'github-{repo}-issue-{issue.number}',
@@ -228,7 +247,7 @@ class GithubCrawler(Crawler):
 
             # Extract comments
             comments = g.get_issue_comments(issue.number)
-            if len(comments)>0:
+            if len(comments) > 0:
                 logger.info(f"Adding {len(comments)} comments for repo {repo} issue {issue.number}")
                 self.add_comments(issue_doc, comments)
             else:
@@ -246,7 +265,6 @@ class GithubCrawler(Crawler):
             except Exception as e:
                 logger.info(f"Error {e} indexing repo {repo}, comment document {issue_doc}")
                 continue
-
 
         # Extract and index codebase if requested
         if self.crawl_code:

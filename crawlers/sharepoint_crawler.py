@@ -10,12 +10,36 @@ from furl import furl
 import os
 import tempfile
 from core.crawler import Crawler
+from dataclasses import dataclass, field
 
 supported_extensions = {
     ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
     ".pptx", ".txt", ".html", ".htm", ".lxml",
     ".rtf", ".epub"
 }
+
+@dataclass
+class SharepointCrawlerConfig:
+    team_site_url: str
+    mode: str | None = None
+    username: str | None = None
+    password: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    cert_thumbprint: str | None = None
+    cert_path: str | None = None
+    tenant_id: str | None = None
+    cert_passphrase: str | None = None
+    auth_type: str = 'user_credentials'
+    allow_ntlm: bool = True
+    retry_attempts: int = 3
+    retry_delay: int = 5
+    recursive: bool = False
+    target_folder: str | None = None
+    cleanup_temp_files: bool = True
+    target_list: str | None = None
+    list_item_metadata_properties: list = field(default_factory=list)
+
 
 class SharepointCrawler(Crawler):
     """

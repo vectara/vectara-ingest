@@ -4,8 +4,18 @@ import markdown
 from core.crawler import Crawler
 from core.utils import html_to_text
 import json
+from dataclasses import dataclass, field
+
 
 import synapseclient
+
+@dataclass
+class SynapseCrawlerConfig:
+    synapse_token: str
+    programs_id: str
+    studies_id: str
+    source: str = "tables"
+
 
 class SynapseCrawler(Crawler):
 

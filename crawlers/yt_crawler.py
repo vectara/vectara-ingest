@@ -9,7 +9,7 @@ from pydub import AudioSegment
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled
-
+from dataclasses import dataclass,field
 import whisper
 
 def time_to_seconds(time_str):
@@ -81,6 +81,13 @@ def merge_subtitles(subtitles, threshold=0.5, max_duration=30.0):
         }
     merged_subtitles.append(current_subtitle)
     return merged_subtitles
+
+@dataclass
+class YtCrawlerConfig:
+    playlist_url: str
+    num_videos: int | None = None
+    merge_subtitles_gap: float | None = None
+    max_subtitle_duration: float = 30.0
 
 class YtCrawler(Crawler):
 

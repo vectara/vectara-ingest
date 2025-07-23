@@ -8,6 +8,7 @@ import gc
 
 from core.indexer import Indexer
 from core.utils import setup_logging
+from dataclasses import dataclass, field
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -35,6 +36,19 @@ class RowIndexer(object):
                                     doc_title=doc_title, doc_metadata=doc_metadata)
         del texts, doc_metadata, doc_title, doc_id
         gc.collect()
+
+@dataclass
+class HfdatasetCrawlerConfig:
+    dataset_name: str
+    text_columns: list = field(default_factory=list)
+    title_column: str = None
+    id_column: str = None
+    metadata_columns: list = field(default_factory=list)
+    split: str = "corpus"
+    select_condition: str = None
+    num_rows: int = None
+    start_row: int = 0
+    ray_workers: int = 0
 
 class HfdatasetCrawler(Crawler):
 

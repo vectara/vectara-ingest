@@ -4,6 +4,7 @@ from core.crawler import Crawler
 import json
 import tweepy
 import re
+from dataclasses import dataclass, field
 
 def get_username_from_id(client, user_id):
     # Use the get_user method to retrieve the username based on the author_id
@@ -45,6 +46,13 @@ def fetch_tweets(client, query, num_tweets, fields):
             break
 
     return all_tweets
+
+@dataclass
+class TwitterCrawlerConfig:
+    twitter_bearer_token: str
+    num_tweets: int
+    userhandles: list[str]
+    clean_tweets: bool = True
 
 class TwitterCrawler(Crawler):
     def crawl(self) -> None:

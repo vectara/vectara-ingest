@@ -20,6 +20,7 @@ from typing import Dict, List
 
 from dataclasses import asdict
 from urllib.parse import urlparse
+from dataclasses import dataclass, field
 
 company = "MyCompany"
 email = "me@mycompany.com"
@@ -60,6 +61,14 @@ def get_filings(ticker: str, start_date_str: str, end_date_str: str, filing_type
         filing['file_path'] = fname
 
     return filings
+
+@dataclass
+class EdgarCrawlerConfig:
+    tickers: List[str]
+    start_date: str
+    end_date: str
+    num_per_second: int = 1
+    filing_types: List[str] = field(default_factory=lambda: ['10-K'])
 
 class EdgarCrawler(Crawler):
 
@@ -108,5 +117,3 @@ class EdgarCrawler(Crawler):
                     succeeded = self.indexer.index_file(filing['file_path'], uri=url, metadata=metadata)
                     if not succeeded:
                         logger.warning(f"Indexing failed for url {url}")
-
-

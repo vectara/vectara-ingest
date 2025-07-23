@@ -1,17 +1,9 @@
-import json
 import logging
+
 logger = logging.getLogger(__name__)
 import os.path
-import tempfile
-
-import requests
-from furl import furl
-
-from core.crawler import Crawler
-
 
 import json
-import logging
 import os.path
 import tempfile
 
@@ -20,7 +12,7 @@ from furl import furl
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
-
+from dataclasses import dataclass, field
 
 def raise_for_status(response: requests.Response):
     """
@@ -101,13 +93,21 @@ def append_labels(metadata: dict[str, any], page_data: dict[str, any]):
             metadata['label_names'] = label_names
             metadata['label_ids'] = label_ids
 
+@dataclass
+class ConfluenceCrawlerConfig:
+    confluence_username: str
+    confluence_password: str
+    confluence_base_url: str
+    confluence_cql: str = ""
+    confluence_include_attachments: bool = False
+
 
 class ConfluenceCrawler(Crawler):
     """
     A crawler to retrieve and index pages, blogposts, and attachments from Confluence.
     """
 
-    def append_users(self, metadata: dict[str, any], page_data: dict[str, any])->None:
+    def append_users(self, metadata: dict[str, any], page_data: dict[str, any]) -> None:
         """
         Add user information (author, last owner, owner) to the metadata.
 
@@ -139,7 +139,7 @@ class ConfluenceCrawler(Crawler):
                     if value in user_lookup:
                         metadata[property] = user_lookup[value]
 
-    def find_users(self, user_ids: set[str])->dict[str, dict[str,str]]:
+    def find_users(self, user_ids: set[str]) -> dict[str, dict[str, str]]:
         """
         Retrieve user details for the given set of user IDs.
 
@@ -184,7 +184,7 @@ class ConfluenceCrawler(Crawler):
 
         return result
 
-    def new_url(self, /, *paths)-> furl:
+    def new_url(self, /, *paths) -> furl:
         """
         Construct a new URL by copying the base_url and appending additional path segments.
 
@@ -199,7 +199,7 @@ class ConfluenceCrawler(Crawler):
             result.path = os.path.join(str(result.path), str(p))
         return result
 
-    def process_page(self, page_id: str, metadata: dict[str, any])-> str:
+    def process_page(self, page_id: str, metadata: dict[str, any]) -> str:
         """
         Retrieve a Confluence page by ID and update metadata.
 
@@ -232,7 +232,7 @@ class ConfluenceCrawler(Crawler):
              if k in confluence_page_data})
         return get_content(confluence_page_data)
 
-    def process_blogpost(self, blogpost_id: str, metadata: dict[str, any])-> str:
+    def process_blogpost(self, blogpost_id: str, metadata: dict[str, any]) -> str:
         """
         Retrieve a Confluence blogpost by ID and update metadata.
 
@@ -265,7 +265,7 @@ class ConfluenceCrawler(Crawler):
              if k in confluence_page_data})
         return get_content(confluence_page_data)
 
-    def process_attachments(self, confluence_id:str, metadata: dict[str, any])-> None:
+    def process_attachments(self, confluence_id: str, metadata: dict[str, any]) -> None:
         """
         Retrieve and index attachments for a Confluence page or blogpost.
 
@@ -298,7 +298,8 @@ class ConfluenceCrawler(Crawler):
             attachment_metadata = {}
 
             attachment_metadata.update(
-                {k: result[k] for k in ('title', 'pageId', 'blogPostId', 'fileId', 'comment', 'mediaType', 'status') if k in result}
+                {k: result[k] for k in ('title', 'pageId', 'blogPostId', 'fileId', 'comment', 'mediaType', 'status') if
+                 k in result}
             )
             attachment_id = f"{metadata['id']}-{result['id']}"
             download_stub = furl(result['downloadLink'][1:])
@@ -307,7 +308,7 @@ class ConfluenceCrawler(Crawler):
                 {k: download_stub.args[k] for k in ('version', 'modificationDate', 'cacheVersion', 'api')
                  if k in download_stub.args}
             )
-            attachment_metadata['links'] = {'download':download_url.url}
+            attachment_metadata['links'] = {'download': download_url.url}
             logger.info(f"Downloading Attachment {result['id']} - {download_url.url}")
             download_response = self.session.get(download_url.url, headers=self.confluence_headers,
                                                  auth=self.confluence_auth)
@@ -327,7 +328,7 @@ class ConfluenceCrawler(Crawler):
                 if not succeeded:
                     logger.error(f"Error indexing {result['id']} - {download_url.url}")
 
-    def lookup_space(self, space_id:str)->dict[str,any]:
+    def lookup_space(self, space_id: str) -> dict[str, any]:
         """
         Retrieve and cache Confluence space information by ID.
 
@@ -355,7 +356,6 @@ class ConfluenceCrawler(Crawler):
         confluence_space_data = confluence_space_response.json()
         self.space_cache[space_id] = confluence_space_data
         return confluence_space_data
-
 
     def crawl(self) -> None:
         """
@@ -399,7 +399,7 @@ class ConfluenceCrawler(Crawler):
             for search_result in confluence_search_data['results']:
                 confluence_id = search_result['id']
                 doc_id = f"{search_result['type']}{confluence_id}"
-                metadata = {'id':doc_id}
+                metadata = {'id': doc_id}
                 metadata.update({k: search_result[k] for k in ('type', 'status') if k in search_result})
                 content = None
                 if search_result['type'] == 'page':

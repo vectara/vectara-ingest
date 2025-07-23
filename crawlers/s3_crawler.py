@@ -9,11 +9,14 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging
+from dataclasses import dataclass, field
 
 from slugify import slugify
 import pandas as pd
 import ray
 import psutil
+
+
 
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str):
@@ -92,6 +95,19 @@ def split_s3_uri(s3_uri: str) -> Tuple[str, str]:
     bucket = bucket_and_object[0]
     object_key = bucket_and_object[1] if len(bucket_and_object) > 1 else ""
     return bucket, object_key
+
+
+@dataclass
+class S3CrawlerConfig:
+    s3_path: str
+    extensions: List[str]
+    metadata_file: str | None = None
+    ray_workers: int = 0
+    num_per_second: int = 10
+    source: str = "S3"
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str |None = None
+
 
 class S3Crawler(Crawler):
     """

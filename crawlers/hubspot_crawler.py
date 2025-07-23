@@ -7,6 +7,13 @@ from core.utils import clean_email_text, mask_pii
 import datetime
 
 from typing import Any, Dict, List, Tuple
+from dataclasses import dataclass, field
+
+@dataclass
+class HubspotCrawlerConfig:
+    hubspot_api_key: str
+    hubspot_customer_id: str
+
 
 class HubspotCrawler(Crawler):
 

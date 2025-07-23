@@ -6,6 +6,15 @@ from core.crawler import Crawler
 from core.utils import html_to_text, create_session_with_retries, configure_session_for_ssl
 import datetime
 from typing import List
+from dataclasses import dataclass, field
+
+@dataclass
+class HackernewsCrawlerConfig:
+    max_articles: int
+    days_back: int = 3
+    days_back_comprehensive: bool = False
+
+
 
 class HackernewsCrawler(Crawler):
 
