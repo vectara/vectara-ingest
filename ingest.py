@@ -219,7 +219,7 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         patterns = {
             'VECTARA_(.+)': 'vectara',
             'SHAREPOINT_(.+)': 'sharepoint_crawler',
-            '(CONFLUENCE_DATACENTER_.+)': 'confluencedatacenter_crawler',
+            '(CONFLUENCE_DATACENTER_.+)': 'confluencedatacenter',
             '(CONFLUENCE_.+)': 'confluence_crawler',
             '(SERVICENOW_.+)': 'servicenow_crawler'
         }
