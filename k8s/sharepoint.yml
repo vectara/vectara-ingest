@@ -23,10 +23,12 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: sharepoint-credentials
+  # The Secret name is now generic
+  name: crawler-credentials
   namespace: vectara-ingest-examples
 type: Opaque
 stringData:
+  # The content remains specific to SharePoint
   secrets.toml: |
     [sharepoint]
     SHAREPOINT_USERNAME = "example@example.com"
@@ -35,9 +37,11 @@ stringData:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: sharepoint
+  # The ConfigMap name is now generic
+  name: crawler-config
   namespace: vectara-ingest-examples
 data:
+  # The data key and content remain specific to SharePoint
   sharepoint.yml: |
     vectara:
       corpus_key: ingest_sharepoint
@@ -54,11 +58,11 @@ data:
       enable_gmft: true
       do_ocr: true
       summarize_images: true
-    
+      
       unstructured_config:
         chunking_strategy: by_title
         chunk_size: 512
-    
+      
       use_core_indexing: true
     
     sharepoint_crawler:
@@ -70,7 +74,8 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sharepoint
+  # The Job name is now generic
+  name: vectara-ingest-job-sharepoint
   namespace: vectara-ingest-examples
 spec:
   template:
@@ -89,22 +94,31 @@ spec:
                 configMapKeyRef:
                   name: vectara-endpoint
                   key: vectara_endpoint
+            # The CONFIG and PROFILE env vars still point to the specific
+            # sharepoint config file and profile name.
             - name: CONFIG
               value: /config/sharepoint.yml
             - name: PROFILE
               value: sharepoint
           volumeMounts:
-            - name: sharepoint-config
+            # The volumeMount name is now generic
+            - name: crawler-config-volume
+              # The mountPath and subPath remain specific to the config file
               mountPath: /config/sharepoint.yml
               subPath: sharepoint.yml
-            - name: sharepoint-credentials
+            # The volumeMount name is now generic
+            - name: crawler-credentials-volume
               mountPath: /home/vectara/env/secrets.toml
               subPath: secrets.toml
       volumes:
-        - name: sharepoint-config
+        # The volume name is now generic
+        - name: crawler-config-volume
           configMap:
-            name: sharepoint
-        - name: sharepoint-credentials
+            # This now references the new generic ConfigMap name
+            name: crawler-config
+        # The volume name is now generic
+        - name: crawler-credentials-volume
           secret:
-            secretName: sharepoint-credentials
+            # This now references the new generic Secret name
+            secretName: crawler-credentials
       restartPolicy: Never
