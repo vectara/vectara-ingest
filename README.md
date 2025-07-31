@@ -319,6 +319,7 @@ doc_processing:
   docling_config:
     chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none (default hybrid)
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI
+    chunk_size: 1024                   # chunk size if using docling chunking; default 1024; only valid for hybrid chunker
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   use_core_indexing: false            

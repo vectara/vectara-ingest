@@ -72,9 +72,11 @@ class ImageSummarizer():
         Load image from path and return a base64-encoded PNG payload.
         SVGs are rasterized; others are read directly.
         """
-        ext = image_url.lower().rsplit('.', 1)[-1]
         try:
-            if ext == 'svg':
+            # First, check if this is an SVG by examining file content
+            is_svg = self._is_svg_file(image_path, image_url)
+            
+            if is_svg:
                 # Convert SVG to PNG using cairosvg
                 logger.info(f"Converting SVG {image_path} to PNG using cairosvg")
                 png_bytes = cairosvg.svg2png(url=image_path)
@@ -86,6 +88,29 @@ class ImageSummarizer():
         except Exception as e:
             logger.error(f"Failed to load image {image_path}: {e}")
             return None
+    
+    def _is_svg_file(self, image_path: str, image_url: str) -> bool:
+        """
+        Determine if the file is an SVG by checking URL mime type and file content.
+        """
+        # Check if URL indicates SVG (for data URLs)
+        if 'image/svg+xml' in image_url:
+            return True
+        
+        # Check file extension
+        ext = image_url.lower().rsplit('.', 1)[-1]
+        if ext == 'svg':
+            return True
+        
+        # Check file content (look for SVG signature)
+        try:
+            with open(image_path, 'rb') as f:
+                # Read first 1024 bytes to check for SVG signature
+                content = f.read(1024)
+                content_str = content.decode('utf-8', errors='ignore').lower()
+                return '<svg' in content_str or 'xmlns="http://www.w3.org/2000/svg"' in content_str
+        except Exception:
+            return False
             
     def summarize_image(
             self, 

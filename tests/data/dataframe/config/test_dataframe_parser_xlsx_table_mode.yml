@@ -11,52 +11,40 @@ test:
   doc_metadata:
     source: test_dataframe_parser
   expected_index_segments_calls:
-    - doc_id: asdf9asdfa3
+    - doc_id: asdf9asdfa3_aerosmith
       doc_metadata:
         source: test_dataframe_parser
-      doc_title: test.xlsx
+      doc_title: test.xlsx - aerosmith
       tables:
         - headers:
             - first_name
             - last_name
             - instrument
           rows:
-            - - steven
-              - tyler
-              - piano
-            - - joe
-              - perry
-              - guitar
-            - - brad
-              - whitford
-              - guitar
-            - - joey
-              - kramer
-              - drummer
-            - - tom
-              - hamilton
-              - guitar
+            - [steven, tyler, piano]
+            - [joe, perry, guitar]
+            - [brad, whitford, guitar]
+            - [joey, kramer, drummer]
+            - [tom, hamilton, guitar]
           summary: This is a table about the band Aerosmith.
+      texts:
+        - This is a table about the band Aerosmith.
+    - doc_id: asdf9asdfa3_bon jovi
+      doc_metadata:
+        source: test_dataframe_parser
+      doc_title: test.xlsx - bon jovi
+      tables:
         - headers:
             - first_name
             - last_name
             - instrument
           rows:
-            - - jon
-              - bon jovi
-              - guitar
-            - - richie
-              - ssambora
-              - guitar
-            - - dave
-              - sabo
-              - guitar
-            - - tico
-              - torres
-              - drummer
+            - [jon, bon jovi, guitar]
+            - [richie, ssambora, guitar]
+            - [dave, sabo, guitar]
+            - [tico, torres, drummer]
           summary: This is a table about the band Bon Jovi.
       texts:
-        - This is a table about the band Aerosmith.
         - This is a table about the band Bon Jovi.
   input_path:
     - tests
