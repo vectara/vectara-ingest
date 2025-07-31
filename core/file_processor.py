@@ -35,7 +35,8 @@ class FileProcessor:
         # Parser configurations
         self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
                                                           {'chunking_strategy': 'by_title', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", {'chunking_strategy': 'none'})
+        self.docling_config = cfg.doc_processing.get("docling_config", 
+                                                     {'chunking_strategy': 'none'})
         
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
@@ -113,6 +114,7 @@ class FileProcessor:
             return DoclingDocumentParser(
                 **base_dict,
                 chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
+                chunk_size=self.docling_config.get('chunk_size', 1024),
                 do_ocr=self.do_ocr,
                 image_scale=self.docling_config.get('image_scale', 2.0),
             )

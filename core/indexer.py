@@ -664,6 +664,9 @@ class Indexer:
         """
         self._init_processors()
         
+        texts = list(texts) if texts else []
+        tables = list(tables) if tables else []
+
         document = self.document_builder.build_document(
             doc_id=doc_id,
             texts=texts,
