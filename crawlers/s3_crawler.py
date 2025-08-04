@@ -16,18 +16,19 @@ import ray
 import psutil
 
 class FileCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str):
+    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str, cfg):
         self.crawler = crawler
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
         self.bucket = bucket
+        self.cfg = cfg
 
     def setup(self):
         self.indexer.setup()
         setup_logging()
 
     def process(self, s3_file: str, metadata: dict, source: str):
-        s3 = boto3.client('s3')
+        s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
         metadata = {"source": source, "url": s3_file}
@@ -60,15 +61,16 @@ class FileCrawlWorker(object):
         return 0
 
 
-def list_files_in_s3_bucket(bucket_name: str, prefix: str) -> List[str]:
+def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[str]:
     """
     List all files in an S3 bucket.
 
     args:
         bucket_name: name of the S3 bucket
         prefix: the "folder" on S3 to list files from
+        cfg: configuration object for S3 client creation
     """
-    s3 = boto3.client('s3')
+    s3 = create_s3_client(cfg)
     result = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
     files = []
 
@@ -93,6 +95,18 @@ def split_s3_uri(s3_uri: str) -> Tuple[str, str]:
     object_key = bucket_and_object[1] if len(bucket_and_object) > 1 else ""
     return bucket, object_key
 
+def create_s3_client(cfg):
+    """Create boto3 S3 client with optional custom endpoint"""
+    endpoint_url = cfg.s3_crawler.get("endpoint_url", None)
+    region_name = cfg.s3_crawler.get("region_name", None)
+    
+    if endpoint_url:
+        return boto3.client('s3',
+                           endpoint_url=endpoint_url,
+                           region_name=region_name)
+    else:
+        return boto3.client('s3')
+
 class S3Crawler(Crawler):
     """
     Crawler for S3 files.
@@ -105,7 +119,7 @@ class S3Crawler(Crawler):
         num_per_second = max(self.cfg.s3_crawler.get("num_per_second", 10), 1)
         source = self.cfg.s3_crawler.get("source", "S3")
 
-        s3 = boto3.client('s3')
+        s3 = create_s3_client(self.cfg)
         bucket, key = split_s3_uri(folder)
 
         if metadata_file:
@@ -117,11 +131,8 @@ class S3Crawler(Crawler):
             metadata = {}
         self.model = None
 
-        os.environ['AWS_ACCESS_KEY_ID'] = self.cfg.s3_crawler.aws_access_key_id
-        os.environ['AWS_SECRET_ACCESS_KEY'] = self.cfg.s3_crawler.aws_secret_access_key
-
         # process all files
-        s3_files = list_files_in_s3_bucket(bucket, key)
+        s3_files = list_files_in_s3_bucket(bucket, key, self.cfg)
         files_to_process = []
         for s3_file in s3_files:
             if s3_file.endswith(metadata_file):
@@ -138,13 +149,13 @@ class S3Crawler(Crawler):
             logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket) for _ in range(ray_workers)]
+            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
         else:
-            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket)
+            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)
             for inx, url in enumerate(files_to_process):
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
