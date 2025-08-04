@@ -15,6 +15,18 @@ import pandas as pd
 import ray
 import psutil
 
+def create_s3_client(cfg):
+    """Create boto3 S3 client with optional custom endpoint"""
+    endpoint_url = cfg.s3_crawler.get("endpoint_url", None)
+    region_name = cfg.s3_crawler.get("region_name", None)
+    
+    if endpoint_url:
+        return boto3.client('s3',
+                           endpoint_url=endpoint_url,
+                           region_name=region_name)
+    else:
+        return boto3.client('s3')
+
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str, cfg):
         self.crawler = crawler
@@ -94,18 +106,6 @@ def split_s3_uri(s3_uri: str) -> Tuple[str, str]:
     bucket = bucket_and_object[0]
     object_key = bucket_and_object[1] if len(bucket_and_object) > 1 else ""
     return bucket, object_key
-
-def create_s3_client(cfg):
-    """Create boto3 S3 client with optional custom endpoint"""
-    endpoint_url = cfg.s3_crawler.get("endpoint_url", None)
-    region_name = cfg.s3_crawler.get("region_name", None)
-    
-    if endpoint_url:
-        return boto3.client('s3',
-                           endpoint_url=endpoint_url,
-                           region_name=region_name)
-    else:
-        return boto3.client('s3')
 
 class S3Crawler(Crawler):
     """
