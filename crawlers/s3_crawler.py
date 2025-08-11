@@ -18,14 +18,21 @@ import psutil
 def create_s3_client(cfg):
     """Create boto3 S3 client with optional custom endpoint"""
     endpoint_url = cfg.s3_crawler.get("endpoint_url", None)
-    region_name = cfg.s3_crawler.get("region_name", None)
+    aws_access_key_id = cfg.s3_crawler.get("aws_access_key_id", None)
+    aws_secret_access_key = cfg.s3_crawler.get("aws_secret_access_key", None)
     
+    client_kwargs = {}
     if endpoint_url:
-        return boto3.client('s3',
-                           endpoint_url=endpoint_url,
-                           region_name=region_name)
+        client_kwargs['endpoint_url'] = endpoint_url
+    
+    if aws_access_key_id and aws_secret_access_key:
+        client_kwargs['aws_access_key_id'] = aws_access_key_id
+        client_kwargs['aws_secret_access_key'] = aws_secret_access_key
+    
     else:
-        return boto3.client('s3')
+        raise ValueError("No AWS credentials found!")
+    
+    return boto3.client('s3', **client_kwargs)
 
 class FileCrawlWorker(object):
     def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str, cfg):
@@ -135,7 +142,7 @@ class S3Crawler(Crawler):
         s3_files = list_files_in_s3_bucket(bucket, key, self.cfg)
         files_to_process = []
         for s3_file in s3_files:
-            if s3_file.endswith(metadata_file):
+            if metadata_file and s3_file.endswith(metadata_file):
                 continue
             file_extension = pathlib.Path(s3_file).suffix
             if file_extension in extensions or "*" in extensions:
@@ -159,4 +166,4 @@ class S3Crawler(Crawler):
             for inx, url in enumerate(files_to_process):
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
-                crawl_worker.process(url, source=source)
+                crawl_worker.process(url, metadata=metadata, source=source)
