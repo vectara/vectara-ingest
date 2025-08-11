@@ -344,7 +344,7 @@ class DoclingDocumentParser(DocumentParser):
 
         warnings.filterwarnings(
             "ignore",
-            message=re.compile(r"Token indices sequence length is longer than the specified maximum sequence length"),
+            message="Token indices sequence length",
             category=UserWarning
         )
 
