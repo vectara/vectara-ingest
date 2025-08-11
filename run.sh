@@ -113,72 +113,73 @@ CONTAINER_NAME="vingest-${CONTAINER_NAME_SUFFIX}"
 
 # remove old container if it exists
 docker container inspect "${CONTAINER_NAME}" &>/dev/null && docker rm -f "${CONTAINER_NAME}"
-ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v ${ABSOLUTE_CONFIG_PATH}:/home/vectara/env/${CONFIG_NAME}:ro"
+DOCKER_RUN_ARGS=()
+DOCKER_RUN_ARGS+=(-v "${ABSOLUTE_CONFIG_PATH}:/home/vectara/env/${CONFIG_NAME}:ro")
 
 if [[ -f secrets.toml ]]; then
-  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v ./secrets.toml:/home/vectara/env/secrets.toml:ro"
+  DOCKER_RUN_ARGS+=(-v "$(pwd)/secrets.toml:/home/vectara/env/secrets.toml:ro")
 else
   echo "secrets.toml not found. Exiting"
   exit 1
 fi
 
 if [[ -f ca.pem ]]; then
-  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v ./ca.pem:/home/vectara/env/ca.pem:ro"
+  DOCKER_RUN_ARGS+=(-v "$(pwd)/ca.pem:/home/vectara/env/ca.pem:ro")
 fi
 
 if [[ -d ssl ]]; then
-  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v ./ssl:/ssl:ro"
+  DOCKER_RUN_ARGS+=(-v "$(pwd)/ssl:/ssl:ro")
 fi
 
 if [[ "$crawler_type" == "gdrive" ]]; then
   if [[ -f credentials.json ]]; then
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v ./credentials.json:/home/vectara/env/credentials.json:ro"
+    DOCKER_RUN_ARGS+=(-v "$(pwd)/credentials.json:/home/vectara/env/credentials.json:ro")
   fi
 fi
 
 if [[ -n "${LOGGING_LEVEL}" ]]; then
-  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -e LOGGING_LEVEL=${LOGGING_LEVEL}"
+  DOCKER_RUN_ARGS+=(-e "LOGGING_LEVEL=${LOGGING_LEVEL}")
 fi
 
 if [[ -f .run-env ]]; then
-  ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} --env-file .run-env"
+  DOCKER_RUN_ARGS+=(--env-file .run-env)
 fi
 
 # Run docker container
 config_file_name="${1##*/}"
 if [[ "${crawler_type}" == "folder" ]]; then
     # special handling of "folder crawler" where we need to mount the folder under /home/vectara/data
-    folder=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['folder_crawler']['path'])"`
+    folder=$(python3 -c "import yaml; print(yaml.safe_load(open('$1'))['folder_crawler']['path'])")
     if [ ! -d "$folder" ]; then
         echo "Error: Folder '$folder' does not exist."
         exit 6
     fi
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $folder:/home/vectara/data"
+    DOCKER_RUN_ARGS+=(-v "${folder}:/home/vectara/data")
 
 elif [[ "$crawler_type" == "csv" ]]; then
     # special handling of "csv crawler" where we need to mount the csv file under /home/vectara/data
-    file_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['file_path'])"`
+    file_path=$(python3 -c "import yaml; print(yaml.safe_load(open('$1'))['csv_crawler']['file_path'])")
     if [ ! -f "$file_path" ]; then
         echo "Error: CSV file '$file_path' does not exist."
         exit 5
     fi
     file_name=$(basename "$file_path")
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $file_path:/home/vectara/data/$file_name"
+    DOCKER_RUN_ARGS+=(-v "${file_path}:/home/vectara/data/${file_name}")
 
 elif [[ "$crawler_type" == "bulkupload" ]]; then
     # special handling of "bulkupload crawler" where we need to mount the JSON file under /home/vectara/data
-    json_path=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])"`
+    json_path=$(python3 -c "import yaml; print(yaml.safe_load(open('$1'))['bulkupload_crawler']['json_path'])")
     if [ ! -f "$json_path" ]; then
         echo "Error: JSON file '$json_path' does not exist."
         exit 5
     fi
-    ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -v $json_path:/home/vectara/data/file.json"
+    DOCKER_RUN_ARGS+=(-v "${json_path}:/home/vectara/data/file.json")
 fi
-ADDITIONAL_DOCKER_FLAGS="${ADDITIONAL_DOCKER_FLAGS} -e CONFIG=/home/vectara/env/$config_file_name"
+DOCKER_RUN_ARGS+=(-e "CONFIG=/home/vectara/env/$config_file_name")
 
 
-echo Running docker: docker run -d ${ADDITIONAL_DOCKER_FLAGS} -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
-docker run -d ${ADDITIONAL_DOCKER_FLAGS} -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
+echo Running docker: docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
+docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
 
 if [ $? -eq 0 ]; then
   echo "Success! Ingest job is running."
@@ -186,3 +187,4 @@ if [ $? -eq 0 ]; then
 else
   echo "Ingest container failed to start. Please check the messages above."
 fi
+
