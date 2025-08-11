@@ -178,8 +178,9 @@ Here is the table:
         try:
             system_prompt = "You are a helpful assistant tasked with summarizing data tables. Each table is represented in markdown format."
             summary = generate(self.cfg, system_prompt, prompt, self.table_model_config)
-            return summary
+            # Ensure we always return a string, never None
+            return summary if summary else ""
         except Exception as e:
             import traceback
             logger.error(f"Failed to summarize table text: {e}, traceback: {traceback.format_exc()}")
-            return None
+            return ""
