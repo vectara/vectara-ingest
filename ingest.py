@@ -212,6 +212,12 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         if k == 'MEDIAWIKI_API_KEY':
             update_omega_conf(cfg, reason, 'mediawiki_api_key', v)
             continue
+        if k == 'SAML_USERNAME':
+            update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
+            continue
+        if k == 'SAML_PASSWORD':
+            update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
+            continue
         if k.startswith('aws_'):
             update_omega_conf(cfg, reason, f's3_crawler.{k.lower()}', v)
             continue

@@ -10,6 +10,7 @@ from core.utils import (
 )
 from core.indexer import Indexer
 from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
+from crawlers.auth.saml_manager import SAMLAuthManager
 
 import ray
 
@@ -17,13 +18,17 @@ logger = logging.getLogger(__name__)
 
 
 class PageCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int):
+    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, saml_session=None):
         self.crawler = crawler
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
+        self.saml_session = saml_session
 
     def setup(self):
         self.indexer.setup()
+        # If we have a SAML session, configure the indexer to use it
+        if self.saml_session:
+            self.indexer.session = self.saml_session
         setup_logging()
 
     def process(self, url: str, source: str):
@@ -31,6 +36,7 @@ class PageCrawlWorker(object):
         logger.info(f"Crawling and indexing {url}")
         try:
             with self.rate_limiter:
+                # If we have a SAML session, pass cookies to the indexer
                 succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
             if not succeeded:
                 logger.info(f"Indexing failed for {url}")
@@ -45,6 +51,68 @@ class PageCrawlWorker(object):
         return 0
 
 class WebsiteCrawler(Crawler):
+    def __init__(self, cfg, *args, **kwargs):
+        super().__init__(cfg, *args, **kwargs)
+        self.saml_session = None
+        self._setup_saml_auth()
+    
+    def _setup_saml_auth(self):
+        """Initialize SAML authentication if configured"""
+        saml_config = self.cfg.website_crawler.get("saml_auth")
+        if not saml_config:
+            return
+            
+        logger.info("SAML authentication configured, initializing...")
+        
+        try:
+            # The secrets are already loaded into the config by ingest.py
+            # Extract the required secrets for SAML authentication
+            secrets_dict = {}
+            
+            # Get username and password from the website_crawler config
+            # These should have been loaded from secrets.toml by ingest.py
+            if hasattr(self.cfg.website_crawler, 'saml_username') and hasattr(self.cfg.website_crawler, 'saml_password'):
+                secrets_dict['username'] = self.cfg.website_crawler.saml_username
+                secrets_dict['password'] = self.cfg.website_crawler.saml_password
+            else:
+                raise Exception("SAML authentication requires 'SAML_USERNAME' and 'SAML_PASSWORD' in secrets.toml")
+            
+            # Initialize SAML auth manager
+            saml_manager = SAMLAuthManager(saml_config, secrets_dict)
+            
+            # Get authenticated session
+            self.saml_session = saml_manager.get_authenticated_session()
+            logger.info("SAML authentication successful")
+            
+        except Exception as e:
+            logger.error(f"SAML authentication failed: {e}")
+            raise
+    
+    def _transfer_session_cookies_to_context(self, context, session):
+        """Transfer cookies from requests session to Playwright context"""
+        if not session or not hasattr(session, 'cookies'):
+            return
+            
+        for cookie in session.cookies:
+            cookie_dict = {
+                'name': cookie.name,
+                'value': cookie.value,
+                'domain': cookie.domain or '',
+                'path': cookie.path or '/',
+            }
+            
+            # Add optional cookie attributes if present
+            if hasattr(cookie, 'secure') and cookie.secure:
+                cookie_dict['secure'] = True
+            if hasattr(cookie, 'expires') and cookie.expires:
+                cookie_dict['expires'] = cookie.expires
+                
+            try:
+                context.add_cookies([cookie_dict])
+                logger.debug(f"Added cookie {cookie.name} to Playwright context")
+            except Exception as e:
+                logger.warning(f"Failed to add cookie {cookie.name}: {e}")
+
     def crawl(self) -> None:
         base_urls = self.cfg.website_crawler.urls
         self.pos_regex = self.cfg.website_crawler.get("pos_regex", [])
@@ -55,6 +123,31 @@ class WebsiteCrawler(Crawler):
         self.html_processing = self.cfg.website_crawler.get('html_processing', {})
         max_depth = self.cfg.website_crawler.get("max_depth", 3)
 
+        # Configure indexer to use SAML session if available
+        if self.saml_session and hasattr(self.indexer, 'session'):
+            self.indexer.session = self.saml_session
+            logger.info("Configured indexer to use SAML authenticated session")
+        
+        # Override web extractor's context creation to include SAML cookies
+        if self.saml_session:
+            # Initialize web extractor to ensure it exists
+            self.indexer._init_processors()
+            
+            if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
+                original_new_context = self.indexer.web_extractor.browser.new_context
+                
+                def new_context_with_auth(*args, **kwargs):
+                    context = original_new_context(*args, **kwargs)
+                    self._transfer_session_cookies_to_context(context, self.saml_session)
+                    return context
+                    
+                self.indexer.web_extractor.browser.new_context = new_context_with_auth
+                logger.info("Configured web extractor to use SAML authenticated cookies")
+
+        # In website_crawler.py - prevent scrapy with SAML
+        if self.cfg.website_crawler.get("crawl_method", "internal") == "scrapy" and self.saml_session:
+            logger.warning("Scrapy is not fully compatible with SAML authentication. Using internal crawler instead.")
+            crawl_method = "internal"
 
         if self.cfg.website_crawler.get("crawl_method", "internal") == "scrapy":
             logger.info("Using Scrapy to crawl the website")
@@ -69,7 +162,8 @@ class WebsiteCrawler(Crawler):
             all_urls = []
             for homepage in base_urls:
                 if self.cfg.website_crawler.pages_source == "sitemap":
-                    urls = sitemap_to_urls(homepage)
+                    # Pass SAML session for authenticated sitemap access
+                    urls = sitemap_to_urls(homepage, session=self.saml_session)
                     urls = [
                         url for url in urls 
                         if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
@@ -131,14 +225,16 @@ class WebsiteCrawler(Crawler):
             logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
+            # Pass SAML session to workers
+            actors = [ray.remote(PageCrawlWorker).remote(self.indexer, self, num_per_second, self.saml_session) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), urls))
 
         else:
-            crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second)
+            crawl_worker = PageCrawlWorker(self.indexer, self, num_per_second, self.saml_session)
+            crawl_worker.setup()
             for inx, url in enumerate(urls):
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
