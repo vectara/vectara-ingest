@@ -120,6 +120,7 @@ class LinkSpider(scrapy.Spider):
         positive_regexes: list[str],
         negative_regexes: list[str],
         max_depth: int = 1,
+        cookies: dict = None,
         *args, **kwargs
     ):
         """
@@ -131,12 +132,32 @@ class LinkSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self.start_urls = start_urls
         self.max_depth = int(max_depth)
+        self.cookies = cookies or {}
         try:
             self.positive_patterns = [re.compile(r) for r in positive_regexes]
             self.negative_patterns = [re.compile(r) for r in negative_regexes]
         except re.error as e:
             logger.error(f"Invalid regex pattern provided: {e.pattern} - {e.msg}")
             raise ValueError(f"Invalid regex pattern: {e.pattern} - {e.msg}") from e
+
+    def start_requests(self):
+        """Generate initial requests with cookies if available"""
+        for url in self.start_urls:
+            if self.cookies:
+                # Create request with cookies for SAML authentication
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse,
+                    cookies=self.cookies,
+                    meta={'depth': 0}
+                )
+            else:
+                # Standard request without cookies
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse,
+                    meta={'depth': 0}
+                )
     
     def is_valid_by_regex(self, url: str) -> bool:
         if any(p.match(url) for p in self.negative_patterns):
@@ -180,11 +201,20 @@ class LinkSpider(scrapy.Spider):
             for href in response.css('a::attr(href)').getall():
                 next_url = response.urljoin(href)
                 if self.should_follow(next_url):
-                    yield scrapy.Request(
-                        next_url,
-                        callback=self.parse,
-                        meta={'depth': depth + 1},
-                    )
+                    # Pass cookies to follow-up requests for authenticated crawling
+                    if self.cookies:
+                        yield scrapy.Request(
+                            next_url,
+                            callback=self.parse,
+                            cookies=self.cookies,
+                            meta={'depth': depth + 1},
+                        )
+                    else:
+                        yield scrapy.Request(
+                            next_url,
+                            callback=self.parse,
+                            meta={'depth': depth + 1},
+                        )
 
 def run_link_spider(
     start_urls:       List[str],
@@ -192,6 +222,7 @@ def run_link_spider(
     negative_regexes: List[str],
     max_depth:        int = 1,
     extra_settings:   dict | None = None,
+    cookies:          dict | None = None,
 ) -> List[str]:
     """
     Blocking, in-process runner that:
@@ -246,6 +277,7 @@ def run_link_spider(
             positive_regexes = positive_regexes,
             negative_regexes = negative_regexes,
             max_depth        = max_depth,
+            cookies          = cookies,
         )
 
         process.start() # This is a blocking call
@@ -269,6 +301,7 @@ def run_link_spider_isolated(
     negative_regexes: List[str],
     max_depth: int = 1,
     extra_settings: dict | None = None,
+    cookies: dict | None = None,
 ) -> list[str]:
     """
     Launches run_link_spider(...) in a fresh Python process so that
@@ -286,6 +319,7 @@ def run_link_spider_isolated(
                 negative_regexes=negative_regexes,
                 max_depth=max_depth,
                 extra_settings=extra_settings,
+                cookies=cookies,
             )
             logger.debug(f"WORKER: run_link_spider finished. Results: {results}")
             queue.put((results, None))
@@ -306,7 +340,7 @@ def run_link_spider_isolated(
         raise error
     return results if results is not None else []
 
-def _download(url: str) -> bytes:
+def _download(url: str, session=None) -> bytes:
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -316,7 +350,10 @@ def _download(url: str) -> bytes:
         "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
     }
     """GET *url* and transparently gunzip if needed."""
-    resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+    if session:
+        resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
+    else:
+        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
     resp.raise_for_status()
     data = resp.content
 
@@ -328,10 +365,10 @@ def _download(url: str) -> bytes:
             return b""  # Return empty bytes or handle as needed  
     return data
 
-def _walk(url: str, seen: Set[str] | None = None) -> Iterable[str]:
+def _walk(url: str, seen: Set[str] | None = None, session=None) -> Iterable[str]:
     """Depth-first walk of a sitemap/sitemap-index."""
     seen = seen or set()
-    sm = Sitemap(_download(url))              # auto-detects type
+    sm = Sitemap(_download(url, session=session))              # auto-detects type
     if sm.type == "urlset":                   # leaf file
         for loc in iterloc(sm):
             if loc not in seen:
@@ -339,7 +376,7 @@ def _walk(url: str, seen: Set[str] | None = None) -> Iterable[str]:
                 yield loc
     elif sm.type == "sitemapindex":           # recurse into children
         for child in iterloc(sm):
-            yield from _walk(child, seen)
+            yield from _walk(child, seen, session=session)
 
 
 COMMON_SITEMAP_FILENAMES = (
@@ -350,16 +387,19 @@ COMMON_SITEMAP_FILENAMES = (
     "sitemap_index.xml.gz",
 )
 
-def _robots_directives(site_root: str) -> list[str]:
+def _robots_directives(site_root: str, session=None) -> list[str]:
     """Return every «Sitemap: …» URL declared in robots.txt (if any)."""
     robots_url = urljoin(site_root, "/robots.txt")
     try:
-        txt = requests.get(robots_url, timeout=10).text
+        if session:
+            txt = session.get(robots_url, timeout=10).text
+        else:
+            txt = requests.get(robots_url, timeout=10).text
         return [m.group(1).strip() for m in re.finditer(r"(?i)^sitemap:\s*(\S+)", txt, re.M)]
     except requests.exceptions.RequestException:
         return []
 
-def discover_sitemaps(site_root: str, extra_candidates: list[str] | None = None) -> list[str]:
+def discover_sitemaps(site_root: str, extra_candidates: list[str] | None = None, session=None) -> list[str]:
     """
     Given *https://example.com* return every likely sitemap URL we can
     locate: robots.txt declarations + common filenames + any additional
@@ -371,7 +411,7 @@ def discover_sitemaps(site_root: str, extra_candidates: list[str] | None = None)
         raise ValueError(f"'{site_root}' doesn’t look like a fully-qualified URL.")
 
     # 1. <domain>/robots.txt  ➟  Sitemap: directives
-    sitemaps = _robots_directives(site_root)
+    sitemaps = _robots_directives(site_root, session=session)
 
     # 2. <domain>/<common-name>
     sitemaps.extend(urljoin(site_root, name) for name in COMMON_SITEMAP_FILENAMES)
@@ -389,7 +429,7 @@ def discover_sitemaps(site_root: str, extra_candidates: list[str] | None = None)
             seen.add(u)
     return uniq
 
-def sitemap_to_urls(url: str) -> list[str]:
+def sitemap_to_urls(url: str, session=None) -> list[str]:
     """
     - If the caller passes *the sitemap URL* (ends with .xml / .xml.gz) ➟ parse it.
     - Otherwise treat it as a *site root* ➟ discover all sitemaps ➟ parse them all.
@@ -398,13 +438,13 @@ def sitemap_to_urls(url: str) -> list[str]:
     is_explicit_sitemap = parsed_path.suffix in {".xml", ".gz"}
 
     if is_explicit_sitemap:
-        return list(_walk(url))
+        return list(_walk(url, session=session))
 
     # Autodiscover mode
     all_urls: list[str] = []
-    for sm_url in discover_sitemaps(url):
+    for sm_url in discover_sitemaps(url, session=session):
         try:
-            all_urls.extend(_walk(sm_url))
+            all_urls.extend(_walk(sm_url, session=session))
         except Exception as exc:
             # Swallow individual sitemap failures but record what happened
             logger.warning(f"[sitemap_to_urls] -- skipping {sm_url}: {exc}")
