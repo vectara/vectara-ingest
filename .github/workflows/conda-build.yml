@@ -192,7 +192,7 @@ jobs:
 
           # Core dependencies
           yum install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
-            libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs
+            libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs ffmpeg
 
           # Fonts
           yum install -y liberation-fonts dejavu-sans-fonts
