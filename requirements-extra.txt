@@ -53,15 +53,12 @@ cffi==1.17.1
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   cryptography
-chardet==5.2.0
-    # via
-    #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
-    #   unstructured
 charset-normalizer==3.4.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   pdfminer-six
     #   requests
+    #   unstructured
 click==8.1.8
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
@@ -86,6 +83,7 @@ contourpy==1.3.2
 cryptography==44.0.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
+    #   msoffcrypto-tool
     #   pdfminer-six
     #   presidio-anonymizer
     #   unstructured-client
@@ -191,7 +189,7 @@ httpx==0.28.1
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured-client
-huggingface-hub==0.32.4
+huggingface-hub==0.34.4
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   accelerate
@@ -240,7 +238,7 @@ lxml==5.2.1
     #   unstructured
 marisa-trie==1.2.1
     # via language-data
-markdown==3.5.2
+markdown==3.8.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured
@@ -268,6 +266,8 @@ mpmath==1.3.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   sympy
+msoffcrypto-tool==5.4.2
+    # via unstructured
 murmurhash==1.0.13
     # via
     #   preshed
@@ -313,6 +313,7 @@ numpy==1.26.4
 olefile==0.47
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
+    #   msoffcrypto-tool
     #   python-oxmsg
 omegaconf==2.3.0
     # via
@@ -457,7 +458,7 @@ pypdf==5.6.0
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured
     #   unstructured-client
-pypdfium2==4.30.1
+pypdfium2==4.30.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured-inference
@@ -542,7 +543,7 @@ rsa==4.9.1
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   google-auth
-safetensors==0.4.3
+safetensors==0.6.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   accelerate
@@ -629,11 +630,11 @@ tqdm==4.67.1
     #   spacy
     #   transformers
     #   unstructured
-transformers==4.53.2
+transformers==4.55.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured-inference
-typer==0.15.3
+typer==0.15.4
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   spacy
@@ -666,7 +667,7 @@ tzdata==2025.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   pandas
-unstructured[all-docs]==0.18.7
+unstructured[all-docs]==0.18.11
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   -r requirements-extra.in

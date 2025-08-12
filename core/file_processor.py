@@ -186,6 +186,12 @@ class FileProcessor:
         from core.utils import df_cols_to_headers
         
         for df, summary, table_title, table_metadata in tables:
+            # Validate summary before processing table
+            if not summary or (isinstance(summary, str) and summary.strip() == ''):
+                logger.warning(f"Skipping table '{table_title}' due to empty or missing summary")
+                del df
+                continue
+                
             cols = df_cols_to_headers(df)
             rows = df.fillna('').values.tolist()
             del df

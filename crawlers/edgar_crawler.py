@@ -91,7 +91,7 @@ def get_filings(
     filings = [
         asdict(m)
         for m in metadatas
-        if start_date <= datetime.strptime(m.report_date, "%Y-%m-%d") <= end_date
+        if m.report_date and start_date <= datetime.strptime(m.report_date, "%Y-%m-%d") <= end_date
     ]
 
     for filing in filings:
@@ -117,7 +117,7 @@ class EdgarCrawler(Crawler):
         self.start_date = self.cfg.edgar_crawler.start_date
         self.end_date = self.cfg.edgar_crawler.end_date
         self.filing_types = self.cfg.edgar_crawler.get(
-            "filing_types", ["10-K", "10-Q", "8-K"]
+            "filing_types", ["10-K", "10-Q", "8-K", "DEF 14A"]
         )
 
         # build mapping of ticker to cik

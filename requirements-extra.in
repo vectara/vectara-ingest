@@ -1,6 +1,6 @@
 -c requirements.txt
 
-unstructured[all-docs]==0.18.7
+unstructured[all-docs]==0.18.11
 presidio-analyzer==2.2.358
 presidio-anonymizer==2.2.358
 pikepdf==9.8.1

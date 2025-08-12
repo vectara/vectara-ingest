@@ -785,7 +785,8 @@ class Indexer:
         try:
             title, texts, tables, images = self.file_processor.process_file(filename, uri)
         except Exception as e:
-            logger.info(f"Failed to parse {filename} with error {e}")
+            import traceback
+            logger.info(f"Failed to parse {filename} with error {e}, traceback={traceback.format_exc()}")
             return False
 
         # Get metadata attribute values from text content (if defined)

@@ -93,6 +93,12 @@ class DocumentBuilder:
         tables_array = []
         
         for inx, table in enumerate(tables):
+            # Validate table summary - skip table if empty or None
+            table_summary = table.get('summary', '')
+            if not table_summary or table_summary.strip() == '':
+                logger.warning(f"Skipping table {inx} due to empty or missing summary")
+                continue
+                
             table_dict = {
                 'id': 'table_' + str(inx),
                 'title': table.get('title', ''),
@@ -105,7 +111,7 @@ class DocumentBuilder:
                         create_row_items(row) for row in table['rows']
                     ]
                 },
-                'description': table['summary']
+                'description': table_summary
             }
             tables_array.append(table_dict)
             

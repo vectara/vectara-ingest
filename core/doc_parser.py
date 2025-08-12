@@ -217,7 +217,6 @@ class DocupandaDocumentParser(DocumentParser):
                 else:
                     logger.info(f"Docupanda: unknown section type {section['type']} on page {page['pageNum']} ignored...")
 
-        logger.info(f"Docupanda: {len(tables)} tables, and {len(images)} images")
         logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
@@ -305,7 +304,6 @@ class LlamaParseDocumentParser(DocumentParser):
                     if self.verbose:
                         logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
-        logger.info(f"LlamaParse: {len(tables)} tables, and {len(images)} images")
         logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
         return doc_title, texts, tables, images
@@ -341,6 +339,15 @@ class DoclingDocumentParser(DocumentParser):
 
     @staticmethod
     def _lazy_load_docling():
+        import warnings
+        import re
+
+        warnings.filterwarnings(
+            "ignore",
+            message="Token indices sequence length",
+            category=UserWarning
+        )
+
         from docling.document_converter import DocumentConverter, PdfFormatOption, HTMLFormatOption
         from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions, PaginatedPipelineOptions
         from docling.datamodel.base_models import InputFormat

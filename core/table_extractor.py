@@ -55,7 +55,8 @@ class TableExtractor:
         for table_html in tables:
             try:
                 table_summary = table_summarizer.summarize_table_text(table_html)
-                if not table_summary:
+                if not table_summary or table_summary.strip() == '':
+                    logger.warning("Skipping table with empty summary")
                     continue
                 
                 if self.verbose:
@@ -96,6 +97,11 @@ class TableExtractor:
         
         for df, summary, table_title, table_metadata in tables:
             try:
+                if not summary or (isinstance(summary, str) and summary.strip() == ''):
+                    logger.warning(f"Skipping dataframe table '{table_title}' due to empty or missing summary")
+                    del df
+                    continue
+                    
                 cols = df_cols_to_headers(df)
                 rows = df.fillna('').values.tolist()
                 
