@@ -95,8 +95,6 @@ class WebsiteCrawler(Crawler):
         ]
         urls = list(set(urls))
 
-        urls = urls[:3]   ### TEMP
-
         # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):
             logger.info(f"Collected {len(urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
@@ -110,8 +108,6 @@ class WebsiteCrawler(Crawler):
 
             if not file_path.endswith(filename):
                 file_path = os.path.join(file_path, filename)
-
-            logger.info(f"DEBUG: Writing URLs to {file_path}")
 
             with open(file_path, 'w') as f:
                 for url in sorted(urls):

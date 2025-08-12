@@ -513,9 +513,9 @@ class Indexer:
                 page.set_extra_http_headers(get_headers(self.cfg))
                 file_path = None
 
-                # 1) Try to catch an explicit download
+                # 1) Try to catch an explicit download (short timeout for HTML pages)
                 try:
-                    with page.expect_download(timeout=self.timeout * 1000) as dl_info:
+                    with page.expect_download(timeout=5000) as dl_info:
                         response = page.goto(url, wait_until="domcontentloaded")
                     download = dl_info.value
                     final_url = download.url
