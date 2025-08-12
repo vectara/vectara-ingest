@@ -2,6 +2,14 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from contextlib import contextmanager
+
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logging.warning("Playwright not available. Playwright-based SAML auth will be disabled.")
 
 class SAMLAuthManager:
     def __init__(self, config, secrets):
@@ -12,12 +20,142 @@ class SAMLAuthManager:
             config (dict): The 'saml_auth' section from the YAML config.
             secrets (dict): The secrets profile containing 'username' and 'password'.
         """
-        self.config = config
-        self.secrets = secrets
+        self.config = self._validate_config(config)
+        self.secrets = self._validate_secrets(secrets)
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
+
+    def _validate_config(self, config):
+        """Validate SAML configuration has required fields."""
+        if not config:
+            raise ValueError("SAML config is required")
+        
+        required_fields = ['login_url', 'username_field', 'password_field']
+        for field in required_fields:
+            if not config.get(field):
+                raise ValueError(f"SAML config missing required field: {field}")
+        
+        return config
+
+    def _validate_secrets(self, secrets):
+        """Validate secrets have required credentials."""
+        if not secrets:
+            raise ValueError("SAML secrets are required")
+        
+        required_fields = ['username', 'password']
+        for field in required_fields:
+            if not secrets.get(field):
+                raise ValueError(f"SAML secrets missing required field: {field}")
+        
+        return secrets
+
+    def _check_login_failure(self, content):
+        """Check if login failed based on failure string."""
+        failure_string = self.config.get('login_failure_string')
+        if failure_string and failure_string in content:
+            raise Exception(f"SAML authentication failed. Found failure string: '{failure_string}'")
+        return False
+
+    @contextmanager
+    def _playwright_browser(self):
+        """Context manager for Playwright browser with automatic cleanup."""
+        if not PLAYWRIGHT_AVAILABLE:
+            raise RuntimeError("Playwright not available for browser-based SAML auth")
+        
+        playwright = None
+        browser = None
+        context = None
+        page = None
+        
+        try:
+            playwright = sync_playwright().start()
+            browser = playwright.firefox.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+            
+            yield page, context
+            
+        finally:
+            # Cleanup in reverse order
+            try:
+                if page:
+                    page.close()
+                if context:
+                    context.close()
+                if browser:
+                    browser.close()
+                if playwright:
+                    playwright.stop()
+            except Exception as cleanup_error:
+                logging.warning(f"Error during Playwright cleanup: {cleanup_error}")
+
+    def _submit_playwright_form(self, page):
+        """Handle form submission with multiple fallback strategies."""
+        username_field = self.config.get('username_field', 'username')
+        password_field = self.config.get('password_field', 'password')
+        
+        logging.info(f"Filling credentials in fields: {username_field}, {password_field}")
+        
+        # Wait for and fill username field
+        page.wait_for_selector(f'input[name="{username_field}"]', timeout=10000)
+        page.fill(f'input[name="{username_field}"]', self.secrets['username'])
+        
+        # Wait for and fill password field
+        page.wait_for_selector(f'input[name="{password_field}"]', timeout=10000)
+        page.fill(f'input[name="{password_field}"]', self.secrets['password'])
+        
+        # Try multiple submit strategies
+        submit_selectors = [
+            'input[type="submit"]',
+            'button[type="submit"]', 
+            'button:has-text("Sign in")',
+            'button:has-text("Login")',
+            'button:has-text("Submit")',
+            'input[value*="Sign"]',
+            'input[value*="Login"]'
+        ]
+        
+        submitted = False
+        for selector in submit_selectors:
+            try:
+                if page.locator(selector).count() > 0:
+                    logging.info(f"Clicking submit button: {selector}")
+                    page.click(selector)
+                    submitted = True
+                    break
+            except Exception as e:
+                logging.debug(f"Submit selector {selector} failed: {e}")
+                continue
+        
+        if not submitted:
+            # Fallback: press Enter on password field
+            logging.info("No submit button found, pressing Enter on password field")
+            page.press(f'input[name="{password_field}"]', 'Enter')
+
+    def _wait_for_saml_completion(self, page):
+        """Wait for SAML authentication flow to complete."""
+        logging.info("Waiting for SAML authentication flow to complete...")
+        
+        max_wait_time = 30000  # 30 seconds
+        
+        try:
+            # Wait for page to settle after authentication
+            page.wait_for_load_state("networkidle", timeout=max_wait_time)
+            
+            # Check for login failure
+            self._check_login_failure(page.content())
+            
+            logging.info("SAML authentication completed successfully")
+            
+        except Exception as e:
+            # If waiting fails, check current URL for success indicators
+            current_url = page.url
+            logging.info(f"SAML flow completed, current URL: {current_url}")
+            
+            # Still check for failure even if timeout occurred
+            self._check_login_failure(page.content())
 
     def _find_form_and_data(self, soup, payload):
         """Finds the login form and extracts its action URL and hidden fields."""
@@ -78,9 +216,7 @@ class SAMLAuthManager:
             raise
 
         # Check for login failure
-        failure_string = self.config.get('login_failure_string')
-        if failure_string and failure_string in response.text:
-            raise Exception(f"SAML Auth: Login failed. Found failure string: '{failure_string}'")
+        self._check_login_failure(response.text)
 
         logging.info("Credentials submitted successfully. Processing SAMLResponse...")
         
@@ -133,3 +269,49 @@ class SAMLAuthManager:
         except requests.RequestException as e:
             logging.error(f"SAML Auth: Failed to POST SAMLResponse to ACS: {e}")
             raise
+
+    def get_authenticated_cookies(self):
+        """
+        Use Playwright to handle complex SAML authentication flows.
+        Returns cookies as a dictionary that can be used with Scrapy or other HTTP clients.
+        
+        This method is useful for:
+        - JavaScript-heavy IdP redirects (Okta/Azure AD/OneLogin)
+        - Multi-factor authentication flows
+        - Complex SAML responses requiring browser execution
+        
+        Returns:
+            dict: Cookie dictionary with name->value pairs, or None if authentication fails
+        """
+        logging.info("Starting Playwright-based SAML authentication...")
+        
+        try:
+            with self._playwright_browser() as (page, context):
+                # Step 1: Navigate to login URL
+                login_url = self.config['login_url']
+                logging.info(f"Navigating to SAML login URL: {login_url}")
+                
+                page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(2000)  # Wait for any redirects
+                
+                # Step 2: Fill credentials and submit form
+                self._submit_playwright_form(page)
+                
+                # Step 3: Wait for SAML flow to complete
+                self._wait_for_saml_completion(page)
+                
+                # Step 4: Extract and convert cookies
+                cookies = context.cookies()
+                logging.info(f"Extracted {len(cookies)} cookies from SAML authentication")
+                
+                cookie_dict = {}
+                for cookie in cookies:
+                    cookie_dict[cookie['name']] = cookie['value']
+                    logging.debug(f"Extracted cookie: {cookie['name']} for domain {cookie.get('domain', 'N/A')}")
+                
+                logging.info("Playwright-based SAML authentication successful")
+                return cookie_dict
+                
+        except Exception as e:
+            logging.error(f"Playwright-based SAML authentication failed: {e}")
+            return None
