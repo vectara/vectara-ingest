@@ -320,7 +320,21 @@ class WebsiteCrawler(Crawler):
 
         # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):
-            self._generate_crawl_report(urls)
+            logger.info(f"Collected {len(urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
+            output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+            docker_path = f'/home/vectara/{output_dir}/urls_indexed.txt'
+            filename = os.path.basename(docker_path)  # Extract just the filename
+            file_path = get_docker_or_local_path(
+                docker_path=docker_path,
+                output_dir=output_dir
+            )
+
+            if not file_path.endswith(filename):
+                file_path = os.path.join(file_path, filename)
+
+            with open(file_path, 'w') as f:
+                for url in sorted(urls):
+                    f.write(url + '\n')
         else:
             logger.info(f"Collected {len(urls)} URLs to crawl and index.")
 
@@ -330,24 +344,6 @@ class WebsiteCrawler(Crawler):
         logger.info(f"Note: file types = {file_types}")
         
         return urls
-
-    def _generate_crawl_report(self, urls: list):
-        """Generate crawl report file with URLs to be crawled."""
-        logger.info(f"Collected {len(urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
-        output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-        docker_path = '/home/vectara/env/urls_indexed.txt'
-        filename = os.path.basename(docker_path)  # Extract just the filename
-        file_path = get_docker_or_local_path(
-            docker_path=docker_path,
-            output_dir=output_dir
-        )
-
-        if not file_path.endswith(filename):
-            file_path = os.path.join(file_path, filename)
-
-        with open(file_path, 'w') as f:
-            for url in sorted(urls):
-                f.write(url + '\n')
 
     def _dispatch_crawl_jobs(self, urls: list):
         """
@@ -407,17 +403,14 @@ class WebsiteCrawler(Crawler):
             logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             
             if self.cfg.website_crawler.get("crawl_report", False):
+                output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+                docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
+                filename = os.path.basename(docker_path)  # Extract just the filename
+                file_path = get_docker_or_local_path(
+                    docker_path=docker_path,
+                    output_dir=output_dir
+                )
                 self._generate_removal_report(docs_to_remove)
-
-    def _generate_removal_report(self, docs_to_remove: list):
-        """Generate report of URLs that were removed from the corpus."""
-        output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-        docker_path = '/home/vectara/env/urls_removed.txt'
-        filename = os.path.basename(docker_path)  # Extract just the filename
-        file_path = get_docker_or_local_path(
-            docker_path=docker_path,
-            output_dir=output_dir
-        )
 
         if not file_path.endswith(filename):
             file_path = os.path.join(file_path, filename)

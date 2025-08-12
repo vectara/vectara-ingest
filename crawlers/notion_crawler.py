@@ -141,7 +141,7 @@ class NotionCrawler(Crawler):
         if self.cfg.notion_crawler.get("crawl_report", False):
             logger.info(f"Indexed {len(pages)} Pages. See pages_indexed.txt for a full report.")
             output_dir = self.cfg.notion_crawler.get("output_dir", "vectara_ingest_output")
-            docker_path = '/home/vectara/env/pages_indexed.txt'
+            docker_path = f'/home/vectara/{output_dir}/pages_indexed.txt'
             filename = os.path.basename(docker_path)  # Extract just the filename
             file_path = get_docker_or_local_path(
                 docker_path=docker_path,
@@ -167,7 +167,7 @@ class NotionCrawler(Crawler):
                 self.indexer.delete_doc(doc['id'])
             if self.cfg.notion_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-                docker_path = '/home/vectara/env/pages_removed.txt'
+                docker_path = f'/home/vectara/{output_dir}/pages_removed.txt'
                 filename = os.path.basename(docker_path)  # Extract just the filename
                 file_path = get_docker_or_local_path(
                     docker_path=docker_path,

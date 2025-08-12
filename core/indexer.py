@@ -205,10 +205,10 @@ class Indexer:
         # Browser handling is now done by WebContentExtractor
         if self.store_docs:
             uuid_suffix = f"indexed_docs_{str(uuid.uuid4())}"
-            docker_env_path = '/home/vectara/env'
+            docker_output_path = f'/home/vectara/{self.output_dir}'
 
             self.store_docs_folder = get_docker_or_local_path(
-                docker_path=os.path.join(docker_env_path, uuid_suffix),
+                docker_path=os.path.join(docker_output_path, uuid_suffix),
                 output_dir=os.path.join(self.output_dir, uuid_suffix),
                 should_delete_existing=True
             )
@@ -513,9 +513,9 @@ class Indexer:
                 page.set_extra_http_headers(get_headers(self.cfg))
                 file_path = None
 
-                # 1) Try to catch an explicit download
+                # 1) Try to catch an explicit download (short timeout for HTML pages)
                 try:
-                    with page.expect_download(timeout=self.timeout * 1000) as dl_info:
+                    with page.expect_download(timeout=5000) as dl_info:
                         response = page.goto(url, wait_until="domcontentloaded")
                     download = dl_info.value
                     final_url = download.url

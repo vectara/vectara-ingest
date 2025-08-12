@@ -214,7 +214,7 @@ vectara:
   # where XXX is a unique ID.
   store_docs: false
   
-  # Directory path where vectara-ingest will store all output files, including reports, temporary files, credentials, and other artifacts. When running locally, this path is relative to the current working directory. When running in Docker, files are inside the container at `/home/vectara/env/`. Default value is `vectara_ingest_output`.
+  # Directory path where vectara-ingest will store all output files, including reports, temporary files, and other artifacts. When running locally, this path is relative to the current working directory. When running in Docker, files are inside the container at `/home/vectara/{output_dir}/`. Default value is `vectara_ingest_output`.
   output_dir: vectara_ingest_output
 
   # timeout: sets the URL crawling timeout in seconds (optional; defaults to 90)

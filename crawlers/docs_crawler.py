@@ -164,7 +164,7 @@ class DocsCrawler(Crawler):
         if self.cfg.docs_crawler.get("crawl_report", False):
             logger.info(f"Collected {len(all_urls)} URLs to crawl and index. See urls_indexed.txt for a full report.")
             output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-            docker_path = '/home/vectara/env/urls_indexed.txt'
+            docker_path = f'/home/vectara/{output_dir}/urls_indexed.txt'
             filename = os.path.basename(docker_path)  # Extract just the filename
             file_path = get_docker_or_local_path(
                 docker_path=docker_path,
@@ -211,7 +211,7 @@ class DocsCrawler(Crawler):
             logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.docs_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-                docker_path = '/home/vectara/env/urls_removed.txt'
+                docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
                 filename = os.path.basename(docker_path)  # Extract just the filename
                 file_path = get_docker_or_local_path(
                     docker_path=docker_path,

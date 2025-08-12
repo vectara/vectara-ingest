@@ -60,16 +60,64 @@ class WebContentExtractor:
             
         return download_triggered
     
-    def _scroll_to_bottom(self, page, pause=2000):
-        """Scroll down page until no new content loads"""
+    def _scroll_to_bottom(self, page, max_scroll_time=20):
+        """Hybrid smart scroll with network idle + content stabilization + timeout"""
+        start_time = time.time()
+        stable_count = 0
         prev_height = None
-        while True:
+        prev_content_indicators = None
+        initial_wait = 500  # Start with 500ms waits
+        current_wait = initial_wait
+        
+        logger.debug("Starting smart scroll detection")
+        
+        while time.time() - start_time < max_scroll_time:
+            # Get multiple content indicators for stability check
             current_height = page.evaluate("document.body.scrollHeight")
-            if prev_height == current_height:
-                break
+            content_indicators = page.evaluate("""
+                ({
+                    textLength: document.body.innerText.length,
+                    imageCount: document.images.length,
+                    linkCount: document.links.length
+                })
+            """)
+            
+            # Check if content is stable across multiple indicators
+            content_stable = (prev_height == current_height and 
+                             prev_content_indicators == content_indicators)
+            
+            if content_stable:
+                stable_count += 1
+                logger.debug(f"Content stable for {stable_count} consecutive checks")
+                if stable_count >= 2:  # Stable for 2 consecutive checks
+                    logger.debug("Content stabilized, stopping scroll")
+                    break
+            else:
+                stable_count = 0
+                # Increase wait time if content keeps changing
+                if current_wait < 2000:
+                    current_wait = min(current_wait * 1.5, 2000)
+                
             prev_height = current_height
+            prev_content_indicators = content_indicators
+            
+            # Scroll to bottom
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(pause)
+            
+            # Use network idle detection with progressive timeout
+            try:
+                page.wait_for_load_state("networkidle", timeout=current_wait)
+                logger.debug(f"Network idle detected after {current_wait}ms")
+            except Exception:
+                # Network idle timeout, continue with regular wait
+                page.wait_for_timeout(current_wait)
+                logger.debug(f"Network idle timeout, using regular wait of {current_wait}ms")
+        
+        total_time = time.time() - start_time
+        if total_time >= max_scroll_time:
+            logger.info(f"Scroll timeout reached ({max_scroll_time}s), stopping scroll")
+        else:
+            logger.debug(f"Smart scroll completed in {total_time:.1f}s")
     
     def _remove_elements(self, page, html_processing: dict):
         """Remove specified elements from page"""
