@@ -62,6 +62,7 @@ fi
 sum_tables=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_tables', ''))" | tr '[:upper:]' '[:lower:]'`
 sum_images=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('doc_processing', {}).get('summarize_images', ''))" | tr '[:upper:]' '[:lower:]'`
 mask_pii=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['vectara'].get('mask_pii', 'false'))" | tr '[:upper:]' '[:lower:]'`
+output_dir=`python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('vectara', {}).get('output_dir', 'vectara_ingest_output'))"`
 
 if [[ "$sum_tables" == "true" || $"sum_images" == "true" || "$mask_pii" == "true" ]]; then
     echo "Building with extra features"
@@ -175,6 +176,10 @@ elif [[ "$crawler_type" == "bulkupload" ]]; then
     fi
     DOCKER_RUN_ARGS+=(-v "${json_path}:/home/vectara/data/file.json")
 fi
+
+# Mount output directory for persistent storage of URL reports and other output
+DOCKER_RUN_ARGS+=(-v "$HOME/tmp/mount:/home/vectara/${output_dir}:rw")
+
 DOCKER_RUN_ARGS+=(-e "CONFIG=/home/vectara/env/$config_file_name")
 
 

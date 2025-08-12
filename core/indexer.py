@@ -205,10 +205,10 @@ class Indexer:
         # Browser handling is now done by WebContentExtractor
         if self.store_docs:
             uuid_suffix = f"indexed_docs_{str(uuid.uuid4())}"
-            docker_env_path = '/home/vectara/env'
+            docker_output_path = f'/home/vectara/{self.output_dir}'
 
             self.store_docs_folder = get_docker_or_local_path(
-                docker_path=os.path.join(docker_env_path, uuid_suffix),
+                docker_path=os.path.join(docker_output_path, uuid_suffix),
                 output_dir=os.path.join(self.output_dir, uuid_suffix),
                 should_delete_existing=True
             )
