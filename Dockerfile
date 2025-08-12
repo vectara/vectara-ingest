@@ -68,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #    libopenblas-dev \
     tesseract-ocr \
 #    xvfb \
+    ffmpeg \
     unixodbc poppler-utils libmagic1 libjpeg62-turbo \
     libfontconfig fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \
     && rm -rf /var/lib/apt/lists/*
