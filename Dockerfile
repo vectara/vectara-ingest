@@ -65,20 +65,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-#    libopenblas-dev \
+    # Your original dependencies
     tesseract-ocr \
-#    xvfb \
     ffmpeg \
     unixodbc poppler-utils libmagic1 libjpeg62-turbo \
     libfontconfig fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \
+    # Add Playwright's dependencies manually
+    libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libgtk-3-0 libatspi2.0-0 libgbm1 libasound2 \
+    # Clean up in the same layer to save space
     && rm -rf /var/lib/apt/lists/*
-    
+
 # Copy Python packages and application code from the builder stage
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install Playwright browsers
-RUN playwright install --with-deps firefox \
+RUN playwright install firefox \
     && rm -f /usr/local/bin/pwdebug \
     && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache/*
 
