@@ -1,0 +1,42 @@
+vectara:
+  corpus_key: sandisk-test
+  reindex: true
+  create_corpus: false
+  # flag: store a copy of all crawled data that is indexed into a local folder
+  # If enabled, data will be stored in this folder "~/tmp/mount/indexed_docs_XXX" in your local machine,
+  # where XXX is a unique ID.
+  store_docs: true
+  
+  # Directory path where vectara-ingest will store all output files, including reports, temporary files, credentials, and other artifacts. When running locally, this path is relative to the current working directory. When running in Docker, files are inside the container at `/home/vectara/env/`. Default value is `vectara_ingest_output`.
+  output_dir: ./vectara_ingest_output
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/home/suleman/sandisk-data"
+  extensions: ['.pdf']
+  source: 'pdf-folder'
+
+
+doc_processing:
+  doc_parser: unstructured
+  enable_gmft: false
+  do_ocr: false
+  parse_tables: true
+  summarize_images: true
+  unstructured_config:
+    chunking_strategy: basic
+    chunk_size: 1024
+  use_core_indexing: false
+  process_locally: false
+  contextual_chunking: false
+  model_config:
+    text:
+      provider: openai
+      base_url: https://api.openai.com/v1
+      model_name: "gpt-4o"
+    vision:
+      provider: openai
+      base_url: https://api.openai.com/v1
+      model_name: "gpt-4o"

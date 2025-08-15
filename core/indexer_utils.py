@@ -97,7 +97,7 @@ def create_upload_files_dict(filename: str, metadata: Dict[str, Any], parse_tabl
     }
     
     if parse_tables and filename.lower().endswith('.pdf'):
-        files['table_extraction_config'] = (None, json.dumps({'extract_tables': True}), 'application/json')
+        files['table_extraction_config'] = (None, json.dumps({'extract_tables': True, 'extractor': 'gmft'}), 'application/json')
     
     chunking_config = get_chunking_config(cfg)
     if chunking_config:

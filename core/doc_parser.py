@@ -629,7 +629,8 @@ class UnstructuredDocumentParser(DocumentParser):
                         else:
                             image_summary = self.image_summarizer.summarize_image(e.metadata.image_path, source_url, None)
                         if image_summary:
-                            images.append((image_summary, {'parser_element_type': 'image', 'page': e.metadata.page_number}))
+                            image_bytes = self.image_summarizer._load_image_b64(e.metadata.image_path, source_url)
+                            images.append((image_bytes, image_summary, {'parser_element_type': 'image', 'page': e.metadata.page_number}))
                             if self.verbose:
                                 logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                     except Exception as exc:

@@ -10,6 +10,7 @@ from core.utils import get_headers
 import base64
 import mimetypes
 import tempfile
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,35 @@ class ImageProcessor:
                 if not image_summary:
                     logger.info(f"Failed to generate summary for image {image_url}")
                     continue
+                
+                # Save image summary and copy image to processed folder
+                try:
+                    # Create processed folder if it doesn't exist
+                    processed_folder = "./processed-images/"
+                    os.makedirs(processed_folder, exist_ok=True)
+                    
+                    # Get file extension from local_path or default to .png
+                    file_ext = os.path.splitext(local_path)[1] or '.png'
+                    
+                    # Generate filename based on URL and index
+                    base_filename = f"{slugify(url)}_image_{inx}"
+                    image_filename = f"{base_filename}{file_ext}"
+                    txt_filename = f"{base_filename}.txt"
+                    
+                    # Copy image to processed folder
+                    image_dest_path = os.path.join(processed_folder, image_filename)
+                    shutil.copy2(local_path, image_dest_path)
+                    
+                    # Save image summary to text file
+                    txt_dest_path = os.path.join(processed_folder, txt_filename)
+                    with open(txt_dest_path, 'w', encoding='utf-8') as f:
+                        f.write(image_summary)
+                    
+                    if self.verbose:
+                        logger.info(f"Saved image to {image_dest_path} and summary to {txt_dest_path}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to save image or summary: {e}")
                 
                 # Prepare metadata
                 metadata = {
