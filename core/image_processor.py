@@ -97,36 +97,7 @@ class ImageProcessor:
                 image_summary = image_summarizer.summarize_image(local_path, image_url, None)
                 if not image_summary:
                     logger.info(f"Failed to generate summary for image {image_url}")
-                    continue
-                
-                # Save image summary and copy image to processed folder
-                try:
-                    # Create processed folder if it doesn't exist
-                    processed_folder = "./processed-images/"
-                    os.makedirs(processed_folder, exist_ok=True)
-                    
-                    # Get file extension from local_path or default to .png
-                    file_ext = os.path.splitext(local_path)[1] or '.png'
-                    
-                    # Generate filename based on URL and index
-                    base_filename = f"{slugify(url)}_image_{inx}"
-                    image_filename = f"{base_filename}{file_ext}"
-                    txt_filename = f"{base_filename}.txt"
-                    
-                    # Copy image to processed folder
-                    image_dest_path = os.path.join(processed_folder, image_filename)
-                    shutil.copy2(local_path, image_dest_path)
-                    
-                    # Save image summary to text file
-                    txt_dest_path = os.path.join(processed_folder, txt_filename)
-                    with open(txt_dest_path, 'w', encoding='utf-8') as f:
-                        f.write(image_summary)
-                    
-                    if self.verbose:
-                        logger.info(f"Saved image to {image_dest_path} and summary to {txt_dest_path}")
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to save image or summary: {e}")
+                    continue            
                 
                 # Prepare metadata
                 metadata = {
@@ -161,7 +132,7 @@ class ImageProcessor:
         Process images from document parser
         
         Args:
-            images: List of (image_summary, image_metadata) tuples
+            images: List of (image_bytesimage_summary, image_metadata) tuples, image_bytes is png.
             uri: Source URI
             ex_metadata: Extra metadata to add to each image
             
@@ -176,7 +147,7 @@ class ImageProcessor:
         
         processed_images = []
         
-        for inx, (image_summary, image_metadata) in enumerate(images):
+        for inx, (image_bytes, image_summary, image_metadata) in enumerate(images):
             try:
                 # Prepare metadata
                 metadata = image_metadata.copy()
@@ -187,7 +158,7 @@ class ImageProcessor:
                 # Generate document ID
                 doc_id = slugify(uri) + "_image_" + str(inx)
                 
-                processed_images.append((doc_id, image_summary, metadata))
+                processed_images.append((doc_id, image_bytes, image_summary, metadata))
                 
             except Exception as e:
                 logger.warning(f"Failed to process document image {inx}: {e}")

@@ -1,3 +1,4 @@
+import hashlib
 import logging
 logger = logging.getLogger(__name__)
 import json
@@ -685,6 +686,41 @@ class Indexer:
             logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
 
         return self.index_document(document, use_core_indexing)
+    
+                 
+    def index_image_as_doc(self, doc_id: str, doc_metadata: Dict[str, Any] = None,
+                           image_id: str = "", image_caption: str = "", image_description: str = "",
+                           image_bytes: bytes = None, image_format: str = "image/png",
+                            use_core_indexing: bool = True) -> bool:
+        """
+        Index an image as a single document using Vectara's built-in image support.
+        """
+        self._init_processors()
+                        
+        if doc_metadata is None:
+            doc_metadata = {}
+
+        # Build document structure
+        document = {}
+        max_doc_id_length = 128
+        if len(doc_id) > max_doc_id_length:
+            doc_id = doc_id[:max_doc_id_length] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
+
+        document["id"] = doc_id
+        document["images"] =  [{"id": image_id if image_id else doc_id, "caption": image_caption, "description": image_description, "image_data": {"bytes": image_bytes, "mime_type": image_format}}]
+        document["document_parts"] = [{"text": "", "metadata": {}}]
+
+        if doc_metadata:
+            document["metadata"] = doc_metadata
+        
+        if document is None:
+            return False
+            
+        if self.verbose:
+            logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
+
+        # print("Attempting to index document: ",  document)
+        return self.index_document(document, use_core_indexing)    
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
@@ -815,14 +851,15 @@ class Indexer:
             processed_images = self.image_processor.process_document_images(images, uri, ex_metadata)
             image_success = []
             
-            for doc_id, image_summary, image_metadata in processed_images:
-                try:
-                    img_okay = self.index_segments(
+            for doc_id, image_bytes, image_summary, image_metadata in processed_images:
+                try:             
+                    img_okay = self.index_image_as_doc(
                         doc_id=doc_id,
-                        texts=[image_summary],
-                        metadatas=[image_metadata],
                         doc_metadata=image_metadata,
-                        doc_title=title,
+                        image_id=doc_id,
+                        image_description=image_summary,
+                        image_bytes=image_bytes,
+                        image_format="image/png",
                         use_core_indexing=True
                     )
                     image_success.append(img_okay)
