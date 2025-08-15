@@ -708,7 +708,7 @@ class Indexer:
 
         document["id"] = doc_id
         document["images"] =  [{"id": image_id if image_id else doc_id, "caption": image_caption, "description": image_description, "image_data": {"bytes": image_bytes, "mime_type": image_format}}]
-        document["document_parts"] = [{"text": "", "metadata": {}}]
+        document["document_parts"] = [{"text": image_description, "image_id": image_id if image_id else doc_id, "metadata": {}}]
 
         if doc_metadata:
             document["metadata"] = doc_metadata

@@ -1,4 +1,5 @@
 vectara:
+  endpoint: api.vectara.dev
   corpus_key: sandisk-test
   reindex: true
   create_corpus: false
