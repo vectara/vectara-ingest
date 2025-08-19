@@ -710,7 +710,7 @@ class Indexer:
             doc_id = doc_id[:max_doc_id_length] + "-" + hashlib.sha256(doc_id.encode('utf-8')).hexdigest()[:16]
 
         document["id"] = doc_id
-        document["images"] =  [{"id": image_id if image_id else doc_id, "caption": image_caption, "description": image_description, "image_data": {"bytes": image_bytes, "mime_type": image_format}}]
+        document["images"] =  [{"id": image_id if image_id else doc_id, "caption": image_caption, "description": image_description, "image_data": {"data": image_bytes, "mime_type": image_format}}]
         document["document_parts"] = [{"text": image_description, "image_id": image_id if image_id else doc_id, "metadata": {}}]
 
         if doc_metadata:
