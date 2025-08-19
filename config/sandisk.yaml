@@ -1,6 +1,6 @@
 vectara:
   endpoint: api.vectara.dev
-  corpus_key: sandisk-test
+  corpus_key: sandisk-test-backup
   reindex: true
   create_corpus: false
   # flag: store a copy of all crawled data that is indexed into a local folder

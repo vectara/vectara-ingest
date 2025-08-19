@@ -360,9 +360,12 @@ class Indexer:
             with open(filename, 'rb') as file_handle:
                 files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
                 files['file'] = (upload_filename, file_handle, content_type)
+                logging.info(f"Uploading file {upload_filename} to {url}")
+                logging.info(f"Files to upload: {files}")
                 return self.session.request("POST", url, headers=post_headers, files=files)
 
         response = upload_file()
+
         success = handle_file_upload_response(response, uri, self.reindex, self.delete_doc)
         
         if success and response.status_code == 409 and self.reindex:
@@ -750,8 +753,9 @@ class Indexer:
         # Case A: using the file-upload API
         # Used when we don't need to process the file locally, and we don't need to parse tables from non-PDF files
         #
-        if not self.process_locally and (
-                (self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
+        # if not self.process_locally and (
+        #         (self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
+        if True:
             logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata) > 0 or self.summarize_images:
                 logger.info(f"Reading contents of {filename} (url={uri})")
@@ -800,18 +804,42 @@ class Indexer:
                 # index the file within Vectara (use FILE UPLOAD API)
                 succeeded = self._index_file(filename, uri, metadata, id)
 
+            if images:
+                processed_images = self.image_processor.process_document_images(images, uri, ex_metadata)
+                image_success = []
+                
+                for doc_id, image_bytes, image_summary, image_metadata in processed_images:
+                    try:             
+                        img_okay = self.index_image_as_doc(
+                            doc_id=doc_id,
+                            doc_metadata=image_metadata,
+                            image_id=doc_id,
+                            image_description=image_summary,
+                            image_bytes=image_bytes,
+                            image_format="image/png",
+                            use_core_indexing=True
+                        )
+                        image_success.append(img_okay)
+                    except Exception as e:
+                        logger.info(f"Failed to index image {image_metadata.get('src', 'no image name')} with error {e}")
+                        image_success.append(False)
+                
+                self.image_processor.log_processing_summary(filename, len(images), sum(image_success))    
+
+
+            return succeeded            
+
             # If indicated, summarize images - and upload each image summary as a single doc
-            if self.summarize_images and images:
-                logger.info(f"Extracted {len(images)} images from {uri}")
-                for inx, image in enumerate(images):
-                    image_summary = image[0]
-                    metadata = image[1]
-                    if ex_metadata:
-                        metadata.update(ex_metadata)
-                    doc_id = slugify(uri) + "_image_" + str(inx)
-                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
-                                                     doc_metadata=metadata, doc_title=title, use_core_indexing=True)
-            return succeeded
+            # if self.summarize_images and images:
+            #     logger.info(f"Extracted {len(images)} images from {uri}")
+            #     for inx, image in enumerate(images):
+            #         image_summary = image[0]
+            #         metadata = image[1]
+            #         if ex_metadata:
+            #             metadata.update(ex_metadata)
+            #         doc_id = slugify(uri) + "_image_" + str(inx)
+            #         succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
+            #                                          doc_metadata=metadata, doc_title=title, use_core_indexing=True)
 
         #
         # Case B: Process locally and upload to Vectara
