@@ -50,6 +50,7 @@ requirements:
     - conda-forge::libjpeg-turbo
     - conda-forge::libmagic
     - conda-forge::fontconfig
+    - conda-forge::ffmpeg
 
 test:
   imports:
