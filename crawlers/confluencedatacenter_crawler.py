@@ -1,11 +1,8 @@
-import json
 import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
-from importlib.metadata import metadata
 from furl import furl
-from requests import Response
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries
@@ -75,9 +72,22 @@ class ConfluencedatacenterCrawler(Crawler):
             metadata["url"] = viewer_url.url
 
         if type == "attachment":
-            self._process_attachment(content, metadata, doc_id)
+            # Check if attachments should be processed
+            include_attachments = self.cfg.confluencedatacenter.get("confluence_include_attachments", False)
+            if include_attachments:
+                self._process_attachment(content, metadata, doc_id)
+            else:
+                logger.debug(f"Skipping attachment {doc_id} - confluence_include_attachments is disabled")
         else:
             self._process_non_attachment(content, metadata, doc_id)
+            
+            # If attachments are enabled, also process attachments for this content
+            include_attachments = self.cfg.confluencedatacenter.get("confluence_include_attachments", False)
+            if include_attachments:
+                logger.debug(f"Processing attachments for {doc_id} (confluence_include_attachments=True)")
+                self._process_content_attachments(id, metadata)
+            else:
+                logger.debug(f"Skipping attachments for {doc_id} (confluence_include_attachments=False)")
 
     def _process_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
@@ -100,12 +110,20 @@ class ConfluencedatacenterCrawler(Crawler):
             logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
+        if "url" not in metadata:
+            logger.error(f"No URL found in metadata for attachment {doc_id}")
+            return
+            
         attachment_url = furl(metadata["url"])
         logger.info(f"Downloading Attachment {doc_id} - {attachment_url}")
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
         )
+        
+        if not download_response.ok:
+            logger.error(f"Failed to download attachment {doc_id}: {download_response.status_code} - {download_response.text}")
+            return
 
         with tempfile.NamedTemporaryFile(suffix=file_extension, mode="wb", delete=False) as f:
             logger.debug(f"Writing content for {doc_id} to {f.name}")
@@ -149,10 +167,55 @@ class ConfluencedatacenterCrawler(Crawler):
                 f.close()
 
                 try:
-                    succeeded = self.indexer.index_file(f.name, metadata["url"], metadata, doc_id)
+                    # Use metadata URL if available, otherwise construct a basic URL
+                    url = metadata.get("url", f"{self.base_url}/pages/viewpage.action?pageId={content['id']}")
+                    succeeded = self.indexer.index_file(f.name, url, metadata, doc_id)
                 finally:
                     if os.path.exists(f.name):
                         os.remove(f.name)
+
+    def _process_content_attachments(self, content_id: str, content_metadata: dict) -> None:
+        """
+        Retrieve and process attachments for a specific piece of content.
+        Similar to the regular confluence crawler's process_attachments method.
+        
+        Args:
+            content_id (str): The ID of the content to fetch attachments for
+            content_metadata (dict): Metadata of the parent content
+        """
+        try:
+            # Construct URL to fetch attachments for this content
+            # Using Confluence Data Center REST API: /rest/api/content/{id}/child/attachment
+            attachments_url = self.new_url("rest/api/content", content_id, "child", "attachment")
+            attachments_url.args["expand"] = "version,space"
+            attachments_url.args["limit"] = "200"  # Increase limit to get more attachments
+            
+            logger.debug(f"Fetching attachments for content {content_id}: {attachments_url.url}")
+            
+            response = self.session.get(
+                attachments_url.url, 
+                headers=self.confluence_headers, 
+                auth=self.confluence_auth
+            )
+            
+            if response.status_code == 404:
+                logger.debug(f"No attachments found for content {content_id}")
+                return
+                
+            response.raise_for_status()
+            attachments_data = response.json()
+            
+            if "results" in attachments_data and attachments_data["results"]:
+                logger.info(f"Found {len(attachments_data['results'])} attachments for content {content_id}")
+                for attachment in attachments_data["results"]:
+                    # Process each attachment using the existing process_content method
+                    # This ensures consistent processing logic
+                    self.process_content(attachment)
+            else:
+                logger.debug(f"No attachments in results for content {content_id}")
+                    
+        except Exception as e:
+            logger.warning(f"Error fetching attachments for content {content_id}: {e}")
 
     def crawl(self) -> None:
         """
