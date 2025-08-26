@@ -310,18 +310,24 @@ doc_processing:
   # This processing might be slow and will require you to have an additional paid subscription to OpenAI or ANTHROPIC. 
   summarize_images: false
 
+  # Whether to index images inline within the document flow or as separate documents
+  # When true (default), images are indexed as part of the main document in their natural position
+  # When false, images are indexed as separate documents (legacy behavior)
+  inline_images: true
+
   # Unstructured document parsing configuration
   unstructured_config:
-    chunking_strategy: by_title        # chunking strategy to use: basic, by_title or none; default none
+    chunking_strategy: basic           # chunking strategy to use: basic, by_title or none; default by_title
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
 
   # Docling document parsing configuation
   docling_config:
-    chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none (default hybrid)
+    chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none; default none
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI
     chunk_size: 1024                   # chunk size if using docling chunking; default 1024; only valid for hybrid chunker
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
+  # NOTE: Automatically enabled when chunking_strategy is not 'none' in document parsers like Unstructured or Docling
   use_core_indexing: false            
 
   # enable contextual chunking (only for PDF files at the moment)
@@ -356,6 +362,67 @@ Following that, where needed, the same YAML configuration file will a include cr
 XXX_crawler:
   # specific parameters for the crawler XXX
 ```
+
+### Document Processing and Chunking
+
+#### Local vs Server-Side Processing (`process_locally`)
+
+The `process_locally` setting determines whether documents are parsed locally or using Vectara's file upload API. **Important: This is an all-or-nothing decision** - if ANY feature requires local processing, the ENTIRE document is processed locally.
+
+**Automatic Local Processing Override**
+Local processing is automatically enabled when:
+- The file is PDF, HTML, DOCX, or PPTX
+- AND any of these features are enabled:
+  - `contextual_chunking`
+  - `summarize_images` 
+  - `enable_gmft` (table extraction)
+
+**Processing Paths:**
+- **Path A - File Upload API** (when `process_locally = False` and no local features needed):
+  - Vectara handles parsing server-side
+  - Faster and simpler
+  - Limited feature support
+  
+- **Path B - Local Processing** (when `process_locally = True` or local features detected):
+  - Full document parsed locally
+  - All content extracted locally (text, tables, images)
+  - Parsed segments sent to Vectara
+  - Required for advanced features
+
+**Example:** If you enable `summarize_images=true`, the system automatically processes EVERYTHING locally (text, tables, and images), not just images.
+
+#### Automatic Core Indexing
+When using chunking strategies with either Unstructured or Docling parsers, `use_core_indexing` is **automatically enabled**. This ensures that the chunks created by the parser are preserved in Vectara without additional chunking.
+
+#### Position-Based Document Ordering
+All document parsers now use a position-based ordering system that maintains the exact document structure:
+- Elements are assigned positions using the formula: `page_num * 1000 + element_index`
+- Images receive an additional +0.5 offset to appear right after their preceding text
+- This ensures proper interleaving of text, images, and tables in their natural document order
+
+#### Dual Extraction for Chunked Documents
+When chunking is enabled (`chunking_strategy` != 'none'), the UnstructuredDocumentParser performs two extraction passes:
+1. **First pass**: Extracts raw elements without chunking to capture complete tables and images
+2. **Second pass**: Extracts chunked text for optimal text processing
+3. **Final merge**: Combines both extractions using position-based ordering
+
+This approach ensures:
+- Tables remain intact and are not broken across chunks
+- Images are properly extracted with their full context
+- Text benefits from intelligent chunking
+- Document structure is preserved
+
+#### Parser-Specific Chunking Strategies
+
+**Unstructured Parser:**
+- `none`: No chunking, preserves original document structure
+- `basic`: Simple chunking based on size limits (default with `use_core_indexing`)
+- `by_title`: Chunks based on document headings and structure
+
+**Docling Parser:**
+- `none`: No chunking (default)
+- `hybrid`: Combines structural and size-based chunking
+- `hierarchical`: Chunks based on document hierarchy
 
 ### Secrets management
 

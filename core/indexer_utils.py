@@ -89,7 +89,7 @@ def extract_last_modified(url: str, html: str) -> dict:
 
 def create_upload_files_dict(filename: str, metadata: Dict[str, Any], parse_tables: bool, cfg: OmegaConf) -> Dict[str, Any]:
     """Create files dictionary for upload API"""
-    upload_filename = filename.split('/')[-1]
+    upload_filename = os.path.basename(filename)
     content_type = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
     
     files = {
@@ -147,7 +147,7 @@ def prepare_file_metadata(metadata: Dict[str, Any], filename: str, static_metada
     if static_metadata:
         metadata.update({k: v for k, v in static_metadata.items() if k not in metadata})
     
-    metadata['file_name'] = filename.split('/')[-1]
+    metadata['file_name'] = os.path.basename(filename)
     return metadata
 
 

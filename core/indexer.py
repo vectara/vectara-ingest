@@ -4,11 +4,13 @@ import json
 import time
 import warnings
 from typing import Dict, Any, List, Optional, Sequence
+from collections import OrderedDict
 import shutil
 
 import uuid
-import pandas as pd
-import urllib.parse, tempfile, os
+import urllib.parse
+import tempfile
+import os
 
 from slugify import slugify
 
@@ -20,28 +22,23 @@ import whisper
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
-from core.summary import TableSummarizer, get_attributes_from_text
+from core.summary import get_attributes_from_text
 from core.models import get_api_key
 from core.utils import (
-    html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
-    get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
-    doc_extensions, get_headers, normalize_text, normalize_value
+    html_to_text, detect_language, create_session_with_retries,
+    safe_remove_file, url_to_filename, 
+    get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
+    get_headers, normalize_text, normalize_value
 )
 from core.extract import get_article_content
-from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, LlamaParseDocumentParser, \
-    DocupandaDocumentParser
-from core.contextual import ContextualChunker
+from core.doc_parser import UnstructuredDocumentParser
+
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict, 
     handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file
 )
 from core.web_content_extractor import WebContentExtractor
 from core.file_processor import FileProcessor
-from core.document_builder import DocumentBuilder
-from core.table_extractor import TableExtractor
-from core.image_processor import ImageProcessor
-from pypdf import PdfReader, PdfWriter
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
@@ -80,8 +77,7 @@ class Indexer:
 
         if 'doc_processing' not in cfg:
             cfg.doc_processing = {}
-        self.parse_tables = cfg.doc_processing.get("parse_tables", cfg.doc_processing.get("summarize_tables",
-                                                                                          False))  # backward compatibility
+        self.parse_tables = cfg.doc_processing.get("parse_tables", False)
         self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.do_ocr = cfg.doc_processing.get("do_ocr", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
@@ -93,6 +89,12 @@ class Indexer:
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunking_strategy': 'none'})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
+        
+        # Auto-enable core indexing when chunking is detected
+        if self._is_chunking_enabled():
+            if not self.use_core_indexing:
+                logger.info("Chunking detected - automatically enabling use_core_indexing")
+                self.use_core_indexing = True
 
         self.model_config = self._setup_model_config()
         self._validate_model_dependencies()
@@ -102,14 +104,29 @@ class Indexer:
         # Initialize specialized processors (lazy loading)
         self.web_extractor = None
         self.file_processor = None
-        self.document_builder = None
-        self.table_extractor = None
-        self.image_processor = None
         
         # Performance optimizations
-        self._doc_exists_cache = {}  # Cache for document existence checks
+        self._doc_exists_cache = OrderedDict()  # LRU cache for document existence checks
+        self._max_cache_size = 1000  # Prevent memory leaks on large corpora
 
         self.setup()
+    
+    def _is_chunking_enabled(self) -> bool:
+        """Check if chunking is enabled in any parser configuration"""
+        # Check unstructured chunking
+        is_unstructured_chunking = (
+            self.doc_parser in ["unstructured", None] and 
+            self.unstructured_config.get('chunking_strategy', 'by_title') != 'none'
+        )
+        
+        # Check docling chunking
+        is_docling_chunking = (
+            self.doc_parser == "docling" and 
+            self.docling_config.get('chunking_strategy', 'none') != 'none'
+        )
+        
+        # Contextual chunking is also a form of chunking
+        return is_unstructured_chunking or is_docling_chunking or self.contextual_chunking
 
     def _init_processors(self):
         """Lazy initialization of specialized processors"""
@@ -126,25 +143,6 @@ class Indexer:
                 model_config=self.model_config
             )
         
-        if self.document_builder is None:
-            self.document_builder = DocumentBuilder(
-                cfg=self.cfg,
-                normalize_text_func=lambda text: normalize_text(text, self.cfg)
-            )
-        
-        if self.table_extractor is None:
-            self.table_extractor = TableExtractor(
-                cfg=self.cfg,
-                model_config=self.model_config,
-                verbose=self.verbose
-            )
-        
-        if self.image_processor is None:
-            self.image_processor = ImageProcessor(
-                cfg=self.cfg,
-                model_config=self.model_config,
-                verbose=self.verbose
-            )
 
     def _setup_model_config(self):
         """Setup model configuration with backward compatibility"""
@@ -250,8 +248,9 @@ class Indexer:
         Returns:
             bool: True if the document exists, False otherwise.
         """
-        # Check cache first
+        # Check cache first - this moves item to end (most recently used)
         if doc_id in self._doc_exists_cache:
+            self._doc_exists_cache.move_to_end(doc_id)
             return self._doc_exists_cache[doc_id]
         
         post_headers = {
@@ -263,6 +262,11 @@ class Indexer:
             headers=post_headers)
         
         exists = response.status_code == 200
+        
+        # LRU eviction: remove least recently used item when cache is full
+        if len(self._doc_exists_cache) >= self._max_cache_size:
+            self._doc_exists_cache.popitem(last=False)
+        
         self._doc_exists_cache[doc_id] = exists
         return exists
 
@@ -353,7 +357,7 @@ class Indexer:
             'x-api-key': self.api_key,
         }
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
-        upload_filename = id if id is not None else filename.split('/')[-1]
+        upload_filename = id if id is not None else os.path.basename(filename)
 
         def upload_file():
             with open(filename, 'rb') as file_handle:
@@ -500,7 +504,7 @@ class Indexer:
                 nb = nbformat.reads(dl_content, as_version=4)
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
-            doc_title = url.split('/')[-1]  # no title in these files, so using file name
+            doc_title = os.path.basename(url)  # no title in these files, so using file name
             text = html_to_text(html_content, self.remove_code)
             parts = [text]
 
@@ -622,19 +626,70 @@ class Indexer:
                 # Process tables
                 vec_tables = []
                 if self.parse_tables and 'tables' in res:
-                    self._init_processors()
-                    vec_tables = self.table_extractor.process_tables(res['tables'], url)
+                    from core.table_extractor import TableExtractor
+                    table_extractor = TableExtractor(
+                        cfg=self.cfg,
+                        model_config=self.model_config,
+                        verbose=self.verbose
+                    )
+                    vec_tables = table_extractor.process_tables(res['tables'], url)
 
-                # index text and tables
-                doc_id = slugify(url)
-                succeeded = self.index_segments(doc_id=doc_id, texts=parts, metadatas=metadatas, tables=vec_tables,
-                                                doc_metadata=metadata, doc_title=doc_title)
-
-                # index images - each image as a separate "document" in Vectara
-                if self.summarize_images:
-                    self._init_processors()
-                    if 'images' in res:
-                        processed_images = self.image_processor.process_web_images(res['images'], url, ex_metadata)
+                # Check if images should be indexed inline or separately
+                if self.file_processor.inline_images:
+                    # Inline mode: Process images and create unified content stream
+                    all_texts = []
+                    all_metadatas = []
+                    
+                    # Add text elements
+                    for text, metadata in zip(parts, metadatas):
+                        all_texts.append(text)
+                        all_metadatas.append(metadata)
+                    
+                    # Add image elements inline if images exist and summarization is enabled
+                    if self.summarize_images and 'images' in res:
+                        from core.image_processor import ImageProcessor
+                        image_processor = ImageProcessor(
+                            cfg=self.cfg,
+                            model_config=self.model_config,
+                            verbose=self.verbose
+                        )
+                        processed_images = image_processor.process_web_images(res['images'], url, ex_metadata)
+                        for _, image_summary, image_metadata in processed_images:
+                            all_texts.append(image_summary)
+                            all_metadatas.append(image_metadata)
+                    
+                    # Index unified content in single document
+                    doc_id = slugify(url)
+                    succeeded = self.index_segments(
+                        doc_id=doc_id, 
+                        texts=all_texts, 
+                        metadatas=all_metadatas, 
+                        tables=vec_tables,
+                        doc_metadata=metadata, 
+                        doc_title=doc_title
+                    )
+                else:
+                    # Legacy mode: Index text and images separately
+                    # Index text and tables first
+                    doc_id = slugify(url)
+                    succeeded = self.index_segments(
+                        doc_id=doc_id, 
+                        texts=parts, 
+                        metadatas=metadatas, 
+                        tables=vec_tables,
+                        doc_metadata=metadata, 
+                        doc_title=doc_title
+                    )
+                    
+                    # Index images as separate documents
+                    if self.summarize_images and 'images' in res:
+                        from core.image_processor import ImageProcessor
+                        image_processor = ImageProcessor(
+                            cfg=self.cfg,
+                            model_config=self.model_config,
+                            verbose=self.verbose
+                        )
+                        processed_images = image_processor.process_web_images(res['images'], url, ex_metadata)
                         for doc_id, image_summary, image_metadata in processed_images:
                             succeeded &= self.index_segments(
                                 doc_id=doc_id,
@@ -667,7 +722,12 @@ class Indexer:
         texts = list(texts) if texts else []
         tables = list(tables) if tables else []
 
-        document = self.document_builder.build_document(
+        from core.document_builder import DocumentBuilder
+        document_builder = DocumentBuilder(
+            cfg=self.cfg,
+            normalize_text_func=lambda text: normalize_text(text, self.cfg)
+        )
+        document = document_builder.build_document(
             doc_id=doc_id,
             texts=texts,
             titles=titles,
@@ -705,7 +765,6 @@ class Indexer:
 
         # Determine processing strategy
         self._init_processors()
-        filesize_mb = get_file_size_in_MB(filename)
         
         if self.file_processor.should_process_locally(filename, uri):
             self.process_locally = True
@@ -742,9 +801,8 @@ class Indexer:
                         metadata_questions=self.extract_metadata,
                         model_config=self.model_config.text
                     )
-                    metadata.update(ex_metadata)
+            metadata['file_name'] = os.path.basename(filename)
             metadata.update(ex_metadata)
-            metadata['file_name'] = filename.split('/')[-1]
 
             if self.file_processor.needs_pdf_splitting(filename):
                 # Split large PDF into smaller chunks
@@ -769,11 +827,11 @@ class Indexer:
                 logger.info(f"Extracted {len(images)} images from {uri}")
                 for inx, image in enumerate(images):
                     image_summary = image[0]
-                    metadata = image[1]
+                    img_metadata = image[1]
                     if ex_metadata:
-                        metadata.update(ex_metadata)
+                        img_metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
-                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[metadata],
+                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[img_metadata],
                                                      doc_metadata=metadata, doc_title=title, use_core_indexing=True)
             return succeeded
 
@@ -783,55 +841,110 @@ class Indexer:
         logger.info(f"Parsing file {filename} locally")
         
         try:
-            title, texts, tables, images = self.file_processor.process_file(filename, uri)
+            parsed_doc = self.file_processor.process_file(filename, uri)
         except Exception as e:
             import traceback
             logger.info(f"Failed to parse {filename} with error {e}, traceback={traceback.format_exc()}")
             return False
 
-        # Get metadata attribute values from text content (if defined)
-        max_chars = 128000  # all_text is limited to 128,000 characters
-        all_text = "\n".join([t[0] for t in texts])[:max_chars]
+        # Extract metadata from all text content
+        max_chars = 128000
+        all_text = "\n".join([content for content, metadata in parsed_doc.content_stream 
+                            if metadata.get('element_type') == 'text'])[:max_chars]
         ex_metadata = self.file_processor.extract_metadata_from_text(all_text, metadata)
 
-        # Apply contextual chunking if indicated
-        processed_texts = self.file_processor.apply_contextual_chunking(texts, uri)
-        
+        # Apply contextual chunking to text elements if needed
+        content_stream = parsed_doc.content_stream
+        if self.file_processor.contextual_chunking:
+            text_elements = [(content, metadata) for content, metadata in content_stream 
+                           if metadata.get('element_type') == 'text']
+            processed_text_contents = self.file_processor.apply_contextual_chunking(text_elements, uri)
+            
+            # Rebuild content stream with processed text
+            processed_content_stream = []
+            text_index = 0
+            for content, metadata in content_stream:
+                if metadata.get('element_type') == 'text':
+                    processed_content_stream.append((processed_text_contents[text_index], metadata))
+                    text_index += 1
+                else:
+                    processed_content_stream.append((content, metadata))
+            content_stream = processed_content_stream
+
         # Process tables
-        processed_tables = self.file_processor.generate_vec_tables(tables)
+        processed_tables = self.file_processor.generate_vec_tables(parsed_doc.tables)
 
-        # Index text portions
-        succeeded = self.index_segments(
-            doc_id=slugify(uri),
-            texts=processed_texts,
-            metadatas=[t[1] for t in texts],
-            tables=processed_tables,
-            doc_metadata=metadata,
-            doc_title=title,
-            use_core_indexing=self.use_core_indexing or self.file_processor.contextual_chunking
-        )
-
-        # index the images - one per document
-        if images:
-            processed_images = self.image_processor.process_document_images(images, uri, ex_metadata)
-            image_success = []
+        # Check if images should be indexed inline or separately
+        if self.file_processor.inline_images:
+            # Index all content (text and images) in a single document
+            texts = [content for content, metadata in content_stream]
+            metadatas = [metadata for content, metadata in content_stream]
             
-            for doc_id, image_summary, image_metadata in processed_images:
-                try:
-                    img_okay = self.index_segments(
-                        doc_id=doc_id,
-                        texts=[image_summary],
-                        metadatas=[image_metadata],
-                        doc_metadata=image_metadata,
-                        doc_title=title,
-                        use_core_indexing=True
-                    )
-                    image_success.append(img_okay)
-                except Exception as e:
-                    logger.info(f"Failed to index image {image_metadata.get('src', 'no image name')} with error {e}")
-                    image_success.append(False)
+            succeeded = self.index_segments(
+                doc_id=slugify(uri),
+                texts=texts,
+                metadatas=metadatas,
+                tables=processed_tables,
+                doc_metadata=metadata,
+                doc_title=parsed_doc.title,
+                use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
+            )
+        else:
+            # Legacy mode: Index text in main document, images as separate documents
+            text_content = []
+            image_content = []
+            elements_without_type = []
             
-            self.image_processor.log_processing_summary(filename, len(images), sum(image_success))
+            for content, meta in content_stream:
+                element_type = meta.get('element_type')
+                if element_type == 'text':
+                    text_content.append((content, meta))
+                elif element_type == 'image':
+                    image_content.append((content, meta))
+                elif element_type is None:
+                    # Default to text if element_type is missing
+                    text_content.append((content, meta))
+                    elements_without_type.append(content[:50] + "..." if len(content) > 50 else content)
+                else:
+                    # Unknown element_type, default to text
+                    text_content.append((content, meta))
+                    logger.warning(f"Unknown element_type '{element_type}' found, treating as text")
+            
+            if elements_without_type:
+                logger.warning(f"Found {len(elements_without_type)} content elements without element_type metadata, treating as text")
+            
+            # Index text portions
+            texts = [content for content, meta in text_content]
+            metadatas = [meta for content, meta in text_content]
+            
+            succeeded = self.index_segments(
+                doc_id=slugify(uri),
+                texts=texts,
+                metadatas=metadatas,
+                tables=processed_tables,
+                doc_metadata=metadata,
+                doc_title=parsed_doc.title,
+                use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
+            )
+            
+            # Index images as separate documents
+            if image_content:
+                for idx, (image_summary, image_metadata) in enumerate(image_content):
+                    doc_id = f"{slugify(uri)}_image_{idx}"
+                    image_metadata.update(ex_metadata)  # Add extracted metadata
+                    try:
+                        img_okay = self.index_segments(
+                            doc_id=doc_id,
+                            texts=[image_summary],
+                            metadatas=[image_metadata],
+                            doc_metadata=image_metadata,
+                            doc_title=parsed_doc.title,
+                            use_core_indexing=True
+                        )
+                        succeeded &= img_okay
+                    except Exception as e:
+                        logger.info(f"Failed to index image {idx} with error {e}")
+                        succeeded = False
             
         return succeeded
 
