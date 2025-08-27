@@ -425,11 +425,7 @@ class LlamaParseDocumentParser(DocumentParser):
                             tables.append([markdown_to_df(table_md), table_summary, '', 
                                          {'page': page_num}])
 
-        logger.info(f"LlamaParseParser unified: {len(content_stream)} content elements, {len(tables)} tables")
-        if self.verbose:
-            logger.info(f"DEBUG text indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'text']}")
-            logger.info(f"DEBUG image indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'image']}")
-            logger.info(f"DEBUG table indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'table']}")
+        logger.info(f"LlamaParseParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
 
         return ParsedDocument(
@@ -675,12 +671,6 @@ class DoclingDocumentParser(DocumentParser):
 
         logger.info(f"DoclingParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
-
-        if self.verbose:
-            logger.info(f"DEBUG text indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'text']}")
-            logger.info(f"DEBUG image indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'image']}")
-            logger.info(f"DEBUG table indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'table']}")
-            logger.info(f"DEBUG 3 first images = {[text for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'image'][:3]}")
 
         return ParsedDocument(
             title=doc_title,
@@ -1036,12 +1026,6 @@ class UnstructuredDocumentParser(DocumentParser):
 
         logger.info(f"UnstructuredParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
-
-        if self.verbose:
-            logger.info(f"DEBUG text indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'text']}")
-            logger.info(f"DEBUG image indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'image']}")
-            logger.info(f"DEBUG table indices = {[i for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'table']}")
-            logger.info(f"DEBUG 3 first images = {[text for i, (text, metadata) in enumerate(content_stream) if metadata['element_type'] == 'image'][:3]}")
 
         return ParsedDocument(
             title=doc_title,
