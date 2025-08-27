@@ -8,19 +8,7 @@ import requests
 from furl import furl
 
 from core.crawler import Crawler
-
-
-import json
-import logging
-import os.path
-import tempfile
-
-import requests
-from furl import furl
-
-from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
-
 
 def raise_for_status(response: requests.Response):
     """

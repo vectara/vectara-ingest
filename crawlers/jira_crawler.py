@@ -1,7 +1,5 @@
 import logging
 logger = logging.getLogger(__name__)
-import requests
-import json
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
 

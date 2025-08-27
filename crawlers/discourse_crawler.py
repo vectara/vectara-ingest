@@ -26,7 +26,7 @@ class DiscourseCrawler(Crawler):
     def get_topics(self) -> List[Dict[str, Any]]:
         url = self.discourse_base_url + '/latest.json'
         topics = []
-        params = { 'api_key': self.discourse_api_key, 'api_username': 'ofer@vectara.com', 'page': '0'}
+        params = { 'api_key': self.discourse_api_key, 'api_username': 'user@vectara.com', 'page': '0'}
         page = 0
         while True:
             response = self.session.get(url, params=params)

@@ -394,27 +394,28 @@ class WebsiteCrawler(Crawler):
         """
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list
-        if self.cfg.website_crawler.get("remove_old_content", False):
-            existing_docs = self.indexer._list_docs()
-            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in crawled_urls]
-            for doc in docs_to_remove:
-                if doc['url']:
-                    self.indexer.delete_doc(doc['id'])
-            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
-            
-            if self.cfg.website_crawler.get("crawl_report", False):
-                output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-                docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
-                filename = os.path.basename(docker_path)  # Extract just the filename
-                file_path = get_docker_or_local_path(
-                    docker_path=docker_path,
-                    output_dir=output_dir
-                )
-                self._generate_removal_report(docs_to_remove)
+        if not self.cfg.website_crawler.get("remove_old_content", False):
+            return
+        
+        existing_docs = self.indexer._list_docs()
+        docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in crawled_urls]
+        for doc in docs_to_remove:
+            if doc['url']:
+                self.indexer.delete_doc(doc['id'])
+        logger.info(f"Removed {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+        
+        if self.cfg.website_crawler.get("crawl_report", False):
+            output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+            docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
+            filename = os.path.basename(docker_path)  # Extract just the filename
+            file_path = get_docker_or_local_path(
+                docker_path=docker_path,
+                output_dir=output_dir
+            )
 
-        if not file_path.endswith(filename):
-            file_path = os.path.join(file_path, filename)
+            if not file_path.endswith(filename):
+                file_path = os.path.join(file_path, filename)
 
-        with open(file_path, 'w') as f:
-            for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
-                f.write(url + '\n')
+            with open(file_path, 'w') as f:
+                for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                    f.write(url + '\n')

@@ -50,19 +50,16 @@ class FileCrawlWorker(object):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
-        metadata = {"source": source, "url": s3_file}
         logger.info(f"Crawling and indexing {s3_file}")
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
                 url = f's3://{self.bucket}/{s3_file}'
-                metadata = {
-                    'source': 's3',
+                metadata.update({
+                    'source': source,
                     'title': s3_file,
                     'url': url
-                }
-                if s3_file in metadata:
-                    metadata.update(metadata.get(s3_file, {}))
+                })
                 if extension in ['.mp3', '.mp4']:
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:

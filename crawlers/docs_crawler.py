@@ -15,7 +15,6 @@ from core.utils import (
     configure_session_for_ssl, get_docker_or_local_path, get_headers
 )
 from core.spider import run_link_spider_isolated
-from typing import Tuple, Set
 from core.indexer import Indexer
 
 import ray
@@ -69,7 +68,7 @@ class DocsCrawler(Crawler):
             wait = int(retry_after) if retry_after and retry_after.isdigit() else 60
             logger.warning(f"429 on {url}, sleeping for {wait}s")
             time.sleep(wait)
-            response = self.session.get(url, headers=self.headers)
+            response = self.session.get(url, headers=get_headers(self.cfg))
         if response.status_code != 200:
             logger.warning(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None
@@ -80,7 +79,7 @@ class DocsCrawler(Crawler):
         if meta_refresh:
             href = meta_refresh['content'].split('url=')[-1]            # type: ignore
             url = self.concat_url_and_href(url, href)
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=get_headers(self.cfg))
             if response.status_code != 200:
                 logger.warning(f"Failed to crawl redirect {url}, response code is {response.status_code}")
                 return None, None

@@ -5,7 +5,6 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
 import os.path
-import json
 import tempfile
 
 from furl import furl

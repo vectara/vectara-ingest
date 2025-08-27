@@ -44,13 +44,13 @@ class ArxivCrawler(Crawler):
 
             if response.status_code == 200:
                 paper_info = response.json()
-                n_citations = len(paper_info.get("citations"))
+                n_citations = len(paper_info.get("citations", []))
                 return n_citations
             else:
                 return -1
 
         except Exception as e:
-            logger.warning(f"Error parsing response from arxiv API: {e}, response={response.text}")
+            logger.warning(f"Error parsing response from arxiv API: {e}")
             return -1
 
 
