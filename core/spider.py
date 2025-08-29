@@ -140,12 +140,12 @@ class LinkSpider(scrapy.Spider):
             logger.error(f"Invalid regex pattern provided: {e.pattern} - {e.msg}")
             raise ValueError(f"Invalid regex pattern: {e.pattern} - {e.msg}") from e
 
-    def start_requests(self):
+    async def start(self):
         """Generate initial requests with cookies if available"""
         for url in self.start_urls:
             if self.cookies:
                 # Create request with cookies for SAML authentication
-                yield scrapy.Request(
+                request = scrapy.Request(
                     url,
                     callback=self.parse,
                     cookies=self.cookies,
@@ -153,11 +153,12 @@ class LinkSpider(scrapy.Spider):
                 )
             else:
                 # Standard request without cookies
-                yield scrapy.Request(
+                request = scrapy.Request(
                     url,
                     callback=self.parse,
                     meta={'depth': 0}
                 )
+            yield request
     
     def is_valid_by_regex(self, url: str) -> bool:
         if any(p.match(url) for p in self.negative_patterns):

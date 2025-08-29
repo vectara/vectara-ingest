@@ -3,6 +3,7 @@ logger = logging.getLogger(__name__)
 import json
 import time
 import warnings
+import asyncio
 from typing import Dict, Any, List, Optional, Sequence
 from collections import OrderedDict
 import shutil
@@ -32,12 +33,14 @@ from core.utils import (
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser
+from core.image_processor import ImageProcessor
+
 
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict, 
     handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file
 )
-from core.web_content_extractor import WebContentExtractor
+from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
 
 # Suppress FutureWarning related to torch.load
@@ -55,7 +58,7 @@ class Indexer:
     """
 
     def __init__(self, cfg: OmegaConf, api_url: str,
-                 corpus_key: str, api_key: str) -> None:
+                 corpus_key: str, api_key: str, scrape_method: str = None) -> None:
         self.cfg = cfg
         self.api_url = api_url
         self.corpus_key = corpus_key
@@ -71,6 +74,7 @@ class Indexer:
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
+        self.scrape_method = scrape_method  # Store scrape_method for web extractor
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
         self.static_metadata = cfg.get('metadata', None)
@@ -131,8 +135,9 @@ class Indexer:
     def _init_processors(self):
         """Lazy initialization of specialized processors"""
         if self.web_extractor is None:
-            self.web_extractor = WebContentExtractor(
+            self.web_extractor = create_web_extractor(
                 cfg=self.cfg,
+                scrape_method=self.scrape_method,
                 timeout=self.timeout,
                 post_load_timeout=self.post_load_timeout
             )
@@ -218,6 +223,7 @@ class Indexer:
 
     def url_triggers_download(self, url: str) -> bool:
         self._init_processors()
+        # Direct sync call since WebContentExtractor is now sync
         return self.web_extractor.url_triggers_download(url)
 
     def fetch_page_contents(
@@ -233,9 +239,16 @@ class Indexer:
         Fetch content from a URL with a timeout, including content from the Shadow DOM.
         '''
         self._init_processors()
+        # Direct sync call since WebContentExtractor is now sync
         return self.web_extractor.fetch_page_contents(
             url, extract_tables, extract_images, remove_code, html_processing, debug
         )
+    
+    def check_download_or_pdf(self, url: str, timeout: int = 5000):
+        """Check if URL triggers download or serves PDF content directly"""
+        self._init_processors()
+        # Direct sync call since WebContentExtractor is now sync
+        return self.web_extractor.check_download_or_pdf(url, get_headers(self.cfg), timeout)
 
 
     def _does_doc_exist(self, doc_id: str) -> bool:
@@ -510,67 +523,45 @@ class Indexer:
 
         else:
             try:
-                # Use Playwright to get the page content
-                self._init_processors()
-                context = self.web_extractor.browser.new_context()
-                page = context.new_page()
-                page.set_extra_http_headers(get_headers(self.cfg))
-                file_path = None
-
-                # 1) Try to catch an explicit download (short timeout for HTML pages)
-                try:
-                    with page.expect_download(timeout=5000) as dl_info:
-                        response = page.goto(url, wait_until="domcontentloaded")
-                    download = dl_info.value
-                    final_url = download.url
+                # Check if URL triggers download or serves PDF content
+                result = self.check_download_or_pdf(url)
+                
+                if result["type"] == "download":
+                    # Handle explicit download
+                    download = result["download"]
+                    final_url = result["url"]
                     if 'url' in metadata:
                         metadata['url'] = final_url
-                    suggested = download.suggested_filename or ""
+                    suggested = result["filename"] or ""
                     ext = os.path.splitext(suggested)[1]
                     if not ext:
                         parsed = urllib.parse.urlparse(final_url)
                         ext = os.path.splitext(parsed.path)[1] or ".pdf"
                     filename = suggested or f"{uuid.uuid4()}{ext}"
-
+                    
                     file_path = os.path.join(tempfile.gettempdir(), filename)
                     download.save_as(file_path)
-                    return self.index_file(file_path, final_url, metadata)
-                except PlaywrightTimeoutError:
-                    # no download event fired → maybe inline PDF or HTML
-                    pass
-                finally:
-                    if page:
-                        page.close()
-                    if context:
-                        context.close()
+                    result = self.index_file(file_path, final_url, metadata)
+                    safe_remove_file(file_path)
+                    return result
+                    
+                elif result["type"] == "pdf":
+                    # Handle inline PDF
+                    final_url = result["url"]
+                    parsed = urllib.parse.urlparse(final_url)
+                    ext = os.path.splitext(parsed.path)[1] or ".pdf"
+                    filename = os.path.basename(parsed.path) or f"{uuid.uuid4()}{ext}"
+                    file_path = os.path.join(tempfile.gettempdir(), filename)
+                    
+                    if 'url' in metadata:
+                        metadata['url'] = final_url
+                    with open(file_path, "wb") as f:
+                        f.write(result["content"])
+                    res = self.index_file(file_path, final_url, metadata)
+                    safe_remove_file(file_path)
+                    return res
 
-                # 2) Inspect the response headers for a PDF mime-type
-                context = self.web_extractor.browser.new_context()
-                page = context.new_page()
-                page.set_extra_http_headers(get_headers(self.cfg))
-                try:
-                    response = page.goto(url, wait_until="domcontentloaded")
-                    ctype = response.headers.get("content-type", "")
-                    if "application/pdf" in ctype:
-                        # figure out exactly where we ended up (Playwright follows redirects)
-                        final_url = response.url
-                        parsed    = urllib.parse.urlparse(final_url)
-                        ext       = os.path.splitext(parsed.path)[1] or ".pdf"
-                        filename  = os.path.basename(parsed.path) or f"{uuid.uuid4()}{ext}"
-                        file_path = os.path.join(tempfile.gettempdir(), filename)
-                        pdf_bytes = response.body()                # get the raw PDF bytes
-                        if 'url' in metadata:
-                            metadata['url'] = final_url
-                        with open(file_path, "wb") as f:
-                            f.write(pdf_bytes)
-                        return self.index_file(file_path, final_url, metadata)
-                finally:
-                    if page:
-                        page.close()
-                    if context:
-                        context.close()
-
-                # 3) If not a PDF, then fetch the page content
+                # If not download or PDF, fetch the page content
                 res = self.fetch_page_contents(
                     url=url,
                     extract_tables=self.parse_tables,
@@ -581,6 +572,7 @@ class Indexer:
                 html = res['html']
                 text = res['text']
                 doc_title = res['title']
+                metadata['url'] = res['url']
                 if text is None or len(text) < 3:
                     return False
 
@@ -641,13 +633,12 @@ class Indexer:
                     all_metadatas = []
                     
                     # Add text elements
-                    for text, metadata in zip(parts, metadatas):
+                    for text, segment_metadata in zip(parts, metadatas):
                         all_texts.append(text)
-                        all_metadatas.append(metadata)
+                        all_metadatas.append(segment_metadata)
                     
                     # Add image elements inline if images exist and summarization is enabled
                     if self.summarize_images and 'images' in res:
-                        from core.image_processor import ImageProcessor
                         image_processor = ImageProcessor(
                             cfg=self.cfg,
                             model_config=self.model_config,
@@ -683,7 +674,6 @@ class Indexer:
                     
                     # Index images as separate documents
                     if self.summarize_images and 'images' in res:
-                        from core.image_processor import ImageProcessor
                         image_processor = ImageProcessor(
                             cfg=self.cfg,
                             model_config=self.model_config,
@@ -981,6 +971,7 @@ class Indexer:
     def cleanup(self):
         """Clean up resources used by the indexer"""
         if self.web_extractor:
+            # Direct sync call since WebContentExtractor is now sync
             self.web_extractor.cleanup()
         # Clear caches
         self._doc_exists_cache.clear()

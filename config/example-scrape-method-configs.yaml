@@ -1,0 +1,69 @@
+# Example configurations showing scrape_method parameter usage
+
+# Website Crawler with Playwright (handles JavaScript)
+crawling:
+  crawler_type: website_crawler
+
+website_crawler:
+  scrape_method: playwright  # or 'scrapy'
+  max_depth: 3
+  num_per_second: 5
+  html_processing:
+    remove_classes: ['sidebar', 'footer']
+    remove_tags: ['script', 'style']
+
+---
+
+# Docs Crawler with Scrapy (more stable for large-scale)
+crawling:
+  crawler_type: docs_crawler
+
+docs_crawler:
+  scrape_method: scrapy  # or 'playwright' 
+  base_urls:
+    - "https://docs.example.com"
+  ray_workers: 4
+  num_per_second: 10
+  docs_system: "Example Docs"
+  pos_regex:
+    - "https://docs\\.example\\.com/.*"
+  neg_regex:
+    - ".*\\.pdf$"
+
+---
+
+# RSS Crawler (automatically inherits from base class)
+crawling:
+  crawler_type: rss_crawler
+
+rss_crawler:
+  scrape_method: playwright  # Applied to RSS article content extraction
+  rss_urls:
+    - "https://blog.example.com/feed.xml"
+  days_past: 7
+
+---
+
+# Arxiv Crawler (for PDF processing, scrape_method affects web page extraction)
+crawling:
+  crawler_type: arxiv_crawler
+
+arxiv_crawler:
+  scrape_method: scrapy  # Used when extracting metadata from arxiv web pages
+  query: "cat:cs.AI"
+  max_results: 100
+
+# When to use each scrape_method:
+#
+# Use 'playwright':
+# - JavaScript-heavy sites (React, Angular, Vue)
+# - Sites requiring dynamic content loading
+# - Interactive sites needing scrolling/clicking
+# - Modern SPAs and documentation sites
+#
+# Use 'scrapy':  
+# - Large-scale crawling (thousands of pages)
+# - Static HTML sites
+# - When stability > JavaScript support
+# - Better performance and memory usage
+# - Traditional server-rendered sites

@@ -15,7 +15,7 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging, load_config
+from core.utils import setup_logging, normalize_vectara_endpoint, load_config
 
 app = typer.Typer()
 setup_logging()
@@ -310,20 +310,15 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     update_environment(cfg, 'os.environ', dict(os.environ))
 
     logger.info("Configuration loaded...")
-    api_url = cfg.vectara.get("endpoint", "https://api.vectara.io")
+    try:
+        api_url = normalize_vectara_endpoint(cfg.vectara.get("endpoint"))
+    except ValueError as e:
+        raise Exception(f"Invalid Vectara API endpoint configuration: {e}")
 
-    if not api_url.startswith(("http://", "https://")):
-        logger.warning(f"Correcting endpoint {api_url} to https://{api_url}. This will error in a future release.")
-        api_url = f"https://{api_url}"
-    if not is_valid_url(api_url):
-        raise Exception(f"endpoint '{api_url}' could not be parsed to a valid URL.")
-
-    auth_url = cfg.vectara.get("auth_url", "https://auth.vectara.io")
-    if not auth_url.startswith(("http://", "https://")):
-        logger.warning(f"Correcting auth_url {auth_url} to https://{auth_url}. This will error in a future release.")
-        auth_url = f"https://{auth_url}"
-    if not is_valid_url(auth_url):
-        raise Exception(f"endpoint '{auth_url}' could not be parsed to a valid URL.")
+    try:
+        auth_url = normalize_vectara_endpoint(cfg.vectara.get("auth_url"), default_host="auth.vectara.io")
+    except ValueError as e:
+        raise Exception(f"Invalid Vectara auth URL configuration: {e}")
 
     create_corpus_flag = cfg.vectara.get("create_corpus", False)  # Default to False
     corpus_key = cfg.vectara.corpus_key

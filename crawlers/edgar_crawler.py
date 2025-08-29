@@ -199,6 +199,7 @@ class EdgarCrawler(Crawler):
                         filings_to_process,
                     )
                 )
+                ray.shutdown()
             else:
                 crawl_worker = EdgarWorker(self.indexer, self)
                 for inx, tup in enumerate(filings_to_process):

@@ -287,6 +287,7 @@ class GdriveCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, user: a.process.remote(user), self.delegated_users))
+            ray.shutdown()
 
         else:
             shared_cache = SharedCache()

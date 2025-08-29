@@ -81,7 +81,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install Playwright browsers
-RUN playwright install firefox \
+RUN playwright install chromium \
     && rm -f /usr/local/bin/pwdebug \
     && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache/*
 

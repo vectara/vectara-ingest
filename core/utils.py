@@ -39,7 +39,7 @@ BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + DOC_EXTENSIONS
 SPREADSHEET_EXTENSIONS = {".csv", ".xls", ".xlsx"}
 
 # HTTP configurations
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
@@ -968,4 +968,45 @@ def get_headers(cfg):
     headers = DEFAULT_HEADERS.copy()
     headers["User-Agent"] = user_agent
     return headers
+
+
+def normalize_vectara_endpoint(endpoint_config: str, default_host: str = "api.vectara.io") -> str:
+    """
+    Normalize Vectara API endpoint configuration to a valid URL.
+    
+    Handles various input formats:
+    - Full URLs: "https://api.vectara.dev" -> "https://api.vectara.dev"
+    - Hostnames: "api.vectara.dev" -> "https://api.vectara.dev"
+    - Empty/None: None -> "https://api.vectara.io"
+    
+    Args:
+        endpoint_config: Endpoint from config (can be URL or hostname)
+        default_host: Default hostname if endpoint_config is empty
+        
+    Returns:
+        str: Normalized HTTPS URL
+        
+    Raises:
+        ValueError: If the resulting URL is invalid
+    """
+    from urllib.parse import urlparse
+    
+    # Use default if not provided
+    if not endpoint_config:
+        endpoint_config = default_host
+    
+    # If it already looks like a URL, validate and return
+    if endpoint_config.startswith(("http://", "https://")):
+        parsed = urlparse(endpoint_config)
+        if not all([parsed.scheme in ("http", "https"), parsed.netloc]):
+            raise ValueError(f"Invalid endpoint URL: {endpoint_config}")
+        return endpoint_config
+    
+    # Otherwise treat as hostname and add https://
+    normalized = f"https://{endpoint_config}"
+    parsed = urlparse(normalized)
+    if not parsed.netloc or parsed.netloc != endpoint_config:
+        raise ValueError(f"Invalid endpoint hostname: {endpoint_config}")
+    
+    return normalized
 

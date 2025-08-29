@@ -44,7 +44,7 @@ requirements:
     - conda-forge::libgl  # [linux]
     
     # System dependencies with conda-forge channel specified
-    - conda-forge::firefox
+    - conda-forge::chromium
     - conda-forge::poppler
     - conda-forge::tesseract
     - conda-forge::libjpeg-turbo

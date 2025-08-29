@@ -474,7 +474,7 @@ class DoclingDocumentParser(DocumentParser):
             category=UserWarning
         )
 
-        from docling.document_converter import DocumentConverter, PdfFormatOption, HTMLFormatOption
+        from docling.document_converter import DocumentConverter, PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption
         from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions, PaginatedPipelineOptions
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
@@ -482,7 +482,7 @@ class DoclingDocumentParser(DocumentParser):
 
         return (
             DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
-            PdfFormatOption, HTMLFormatOption, InputFormat, EasyOcrOptions, PaginatedPipelineOptions
+            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat, EasyOcrOptions, PaginatedPipelineOptions
         )
 
     def _get_tables(self, tables):
@@ -509,7 +509,7 @@ class DoclingDocumentParser(DocumentParser):
         # Process using Docling
         (
             DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
-            PdfFormatOption, HTMLFormatOption, InputFormat, EasyOcrOptions,
+            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat, EasyOcrOptions,
             PaginatedPipelineOptions
         ) = self._lazy_load_docling()
 
@@ -524,6 +524,11 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.generate_picture_images = True
         pdf_opts.do_ocr = False
         pdf_opts.do_formula_enrichment = True
+        
+        # Pipeline options for Office documents
+        office_opts = PaginatedPipelineOptions()
+        office_opts.generate_page_images = True
+        office_opts.images_scale = self.image_scale
 
         if self.do_ocr:
             pdf_opts.do_ocr = True
@@ -549,10 +554,12 @@ class DoclingDocumentParser(DocumentParser):
             pdf_opts.ocr_options = ocr_options
             
         res = DocumentConverter(
-            allowed_formats=[InputFormat.PDF, InputFormat.HTML],
+            allowed_formats=[InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX],
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts),
                 InputFormat.HTML: HTMLFormatOption(pipeline_options=html_opts),
+                InputFormat.PPTX: PowerpointFormatOption(pipeline_options=office_opts),
+                InputFormat.DOCX: WordFormatOption(pipeline_options=office_opts),
             }
         ).convert(filename)
         doc = res.document

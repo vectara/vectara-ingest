@@ -404,6 +404,10 @@ class SlackCrawler(Crawler):
                     if inx % 100 == 0:
                         logger.info(f"Indexed {inx + 1} messages out of {len(messages)}")
                     msg_indexer.process(channel, msg, users_info)
+        
+        # Cleanup Ray workers if used
+        if ray_workers > 0:
+            ray.shutdown()
 
 
 class SlackMsgIndexer(object):

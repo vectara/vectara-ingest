@@ -158,6 +158,7 @@ class S3Crawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
+            ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)
             for inx, url in enumerate(files_to_process):

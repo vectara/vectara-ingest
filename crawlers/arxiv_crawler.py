@@ -17,6 +17,18 @@ def validate_category(category: str) -> bool:
     return category in valid_categories
 
 class ArxivCrawler(Crawler):
+    
+    def __init__(self, cfg, *args, **kwargs):
+        super().__init__(cfg, *args, **kwargs)
+        # Get scrape_method from arxiv_crawler config if available
+        scrape_method = self.cfg.arxiv_crawler.get('scrape_method')
+        if scrape_method:
+            # Recreate indexer with the scrape_method
+            from core.indexer import Indexer
+            endpoint = args[0] if args else kwargs.get('endpoint')
+            corpus_key = args[1] if len(args) > 1 else kwargs.get('corpus_key')
+            api_key = args[2] if len(args) > 2 else kwargs.get('api_key')
+            self.indexer = Indexer(cfg, endpoint, corpus_key, api_key, scrape_method=scrape_method)
 
     def get_citations(self, arxiv_id: str) -> int:
         """

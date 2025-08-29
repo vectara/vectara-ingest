@@ -112,9 +112,9 @@ if ($useCondaRun) {
 # Install Playwright browsers
 Write-Status "Installing Playwright browsers..."
 if ($useCondaRun) {
-    conda run -n $envName python -m playwright install --with-deps firefox
+    conda run -n $envName python -m playwright install --with-deps chromium
 } else {
-    python -m playwright install --with-deps firefox
+    python -m playwright install --with-deps chromium
 }
 
 # Create .env file

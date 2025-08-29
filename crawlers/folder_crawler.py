@@ -143,6 +143,7 @@ class FolderCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), files_to_process))
+            ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
             crawl_worker.setup()

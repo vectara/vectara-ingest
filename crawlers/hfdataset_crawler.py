@@ -96,6 +96,7 @@ class HfdatasetCrawler(Crawler):
             if batch:
                 _ = list(pool.map(lambda a, args_inx: a.process.remote(args_inx[0], args_inx[1], id_column, text_columns, metadata_columns, title_column), 
                                   batch))
+            ray.shutdown()
         else:
             crawl_worker = RowIndexer(self.indexer, self)
             for inx, row in enumerate(ds):
