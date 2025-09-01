@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter, setup_logging, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 from slugify import slugify
 import pandas as pd
@@ -60,7 +60,7 @@ class FileCrawlWorker(object):
                     'title': s3_file,
                     'url': url
                 })
-                if extension in ['.mp3', '.mp4']:
+                if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)

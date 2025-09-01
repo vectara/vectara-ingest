@@ -32,10 +32,12 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # File extensions
-IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
+IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico"]
+AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"]
+VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".webm", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg", ".m4v", ".3gp", ".f4v"]
 DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
 ARCHIVE_EXTENSIONS = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
-BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + DOC_EXTENSIONS
+BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + DOC_EXTENSIONS
 SPREADSHEET_EXTENSIONS = {".csv", ".xls", ".xlsx"}
 
 # HTTP configurations
@@ -80,6 +82,8 @@ except ImportError:
 
 # Legacy constants for backward compatibility
 img_extensions = IMG_EXTENSIONS
+audio_extensions = AUDIO_EXTENSIONS
+video_extensions = VIDEO_EXTENSIONS
 doc_extensions = DOC_EXTENSIONS
 archive_extensions = ARCHIVE_EXTENSIONS
 binary_extensions = BINARY_EXTENSIONS

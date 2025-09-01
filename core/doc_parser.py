@@ -175,6 +175,7 @@ class DocupandaDocumentParser(DocumentParser):
         ) -> ParsedDocument:
         """
         Parse a document and return unified content stream with images interleaved in proper order.
+        Tables are extracted separately for structured indexing.
         Using DocuPanda
 
         Args:
@@ -249,12 +250,15 @@ class DocupandaDocumentParser(DocumentParser):
                     all_elements.append((position, section['text'], metadata))
                     
                 elif section['type'] == 'table':
+                    # Tables are processed separately for structured indexing, not added inline
                     tableList = section['tableList']
                     header = tableList[0]
                     rows = tableList[1:]
                     df = pd.DataFrame(rows, columns=header)
-                    table_summary = self.table_summarizer.summarize_table_text(df.to_markdown())
+                    table_summary = self.table_summarizer.summarize_table_text(df.to_markdown()) if self.table_summarizer else df.to_markdown()
                     tables.append([df, table_summary, '', {'page': page_num}])
+                    if self.verbose:
+                        logger.info(f"Table found on page {page_num} - will be processed for structured indexing")
                     
                 elif section['type'] == 'image' and self.summarize_images:
                     bbox = [round(x,2) for x in section['bbox']]
@@ -326,6 +330,7 @@ class LlamaParseDocumentParser(DocumentParser):
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
         Parse a document and return unified content stream with images interleaved in proper order.
+        Tables are extracted separately for structured indexing.
         """
         st = time.time()
         doc_title = ''
@@ -355,20 +360,7 @@ class LlamaParseDocumentParser(DocumentParser):
                 }
                 page_elements[page_num].append(('text', page_text, metadata))
             
-            # Add tables inline from page items
-            if self.parse_tables and 'items' in page_data:
-                for item in page_data['items']:
-                    if item['type'] == 'table':
-                        table_md = item['md']
-                        table_summary = self.table_summarizer.summarize_table_text(table_md) if self.table_summarizer else table_md
-                        metadata = {
-                            'element_type': 'table',
-                            'page': page_num
-                        }
-                        page_elements[page_num].append(('table', table_summary, metadata))
-                        
-                        if self.verbose:
-                            logger.info(f"Table added inline on page {page_num}")
+            # Tables are not added inline - they are processed separately for structured indexing
         
         # Process images and add them to their respective pages
         if self.summarize_images:
@@ -391,8 +383,6 @@ class LlamaParseDocumentParser(DocumentParser):
             for element_index, (element_type, content, metadata) in enumerate(page_elements[page_num]):
                 if element_type == 'image':
                     position = base_position + element_index + 0.5
-                elif element_type == 'table':
-                    position = base_position + element_index  # Tables get normal position
                 else:
                     position = base_position + element_index
                 all_elements.append((position, content, metadata))
@@ -400,15 +390,12 @@ class LlamaParseDocumentParser(DocumentParser):
                 if self.verbose:
                     if element_type == 'image':
                         logger.info(f"Image summary: {content[:MAX_VERBOSE_LENGTH]}...")
-                    elif element_type == 'table':
-                        logger.info(f"Table at position {position} on page {page_num}")
 
         # Sort all elements by position to maintain document order
         all_elements.sort(key=lambda x: x[0])
         content_stream = [(content, metadata) for _, content, metadata in all_elements]
 
-        # Process tables separately for structured indexing (legacy support)
-        # Note: Tables are already in content_stream inline, this is for additional structured data
+        # Process tables separately for structured indexing
         tables = []
         if self.parse_tables:
             if self.enable_gmft and filename.endswith('.pdf'):
@@ -503,7 +490,8 @@ class DoclingDocumentParser(DocumentParser):
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
-        Parse a local file and return unified content stream with images and tables interleaved in proper order.
+        Parse a local file and return unified content stream with images interleaved in proper order.
+        Tables are extracted separately for structured indexing.
         Uses position-based ordering to maintain document structure.
         """
         # Process using Docling
@@ -580,24 +568,9 @@ class DoclingDocumentParser(DocumentParser):
             
             # Check what type of item this is
             if hasattr(item, 'export_to_dataframe'):
-                # Table element - add inline to content stream
-                if self.parse_tables:
-                    try:
-                        table_df = item.export_to_dataframe()
-                        table_md = table_df.to_markdown()
-                        table_summary = self.table_summarizer.summarize_table_text(table_md) if self.table_summarizer else table_md
-                        
-                        metadata = {
-                            'element_type': 'table',
-                            'page': page_no
-                        }
-                        position = base_position + element_index
-                        positioned_elements.append((position, table_summary, metadata))
-                        
-                        if self.verbose:
-                            logger.info(f"Table added inline at position {position} on page {page_no}")
-                    except Exception as exc:
-                        logger.error(f"Error processing table: {exc}")
+                # Table element - skip inline, will be processed separately for structured indexing
+                if self.verbose and self.parse_tables:
+                    logger.info(f"Table found on page {page_no} - will be processed for structured indexing")
                 element_index += 1
                 
             elif hasattr(item, 'text'):
@@ -782,10 +755,11 @@ class UnstructuredDocumentParser(DocumentParser):
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
-        Parse a document and return unified content stream.
+        Parse a document and return unified content stream with images inline.
+        Tables are extracted separately for structured indexing.
         When chunking is enabled, make two passes:
         1. Extract chunked text
-        2. Extract raw tables and images without chunking
+        2. Extract raw images without chunking
         Then map everything together using position-based ordering.
         """
         st = time.time()
@@ -889,19 +863,8 @@ class UnstructuredDocumentParser(DocumentParser):
                                 logger.error(f"Error summarizing image: {exc}")
                             
                 elif isinstance(element, us.documents.elements.Table):
-                    if self.parse_tables:
-                        try:
-                            table_text = str(element)
-                            table_summary = self.table_summarizer.summarize_table_text(table_text) if self.table_summarizer else table_text
-                            position = base_position + idx
-                            metadata = {'element_type': 'table', 'page': page_num}
-                            positioned_elements.append((position, table_summary, metadata))
-                        except Exception as exc:
-                            logger.error(f"Error processing table: {exc}")
-                            # Fall back to text
-                            position = base_position + idx
-                            metadata = {'element_type': 'text', 'page': page_num}
-                            positioned_elements.append((position, str(element), metadata))
+                    # Tables are processed separately for structured indexing, not added inline
+                    pass
                 else:
                     # Regular text element
                     position = base_position + idx
@@ -985,21 +948,9 @@ class UnstructuredDocumentParser(DocumentParser):
                                 continue
                             
                 elif isinstance(element, us.documents.elements.Table):
-                    # Process tables
-                    if self.parse_tables:
-                        try:
-                            table_text = str(element)
-                            table_summary = self.table_summarizer.summarize_table_text(table_text) if self.table_summarizer else table_text
-                            
-                            # Use position from raw element
-                            position = base_position + idx
-                            metadata = {'element_type': 'table', 'page': page_num}
-                            positioned_elements.append((position, table_summary, metadata))
-                            
-                            if self.verbose:
-                                logger.info(f"Table processed at position {position} for page {page_num}")
-                        except Exception as exc:
-                            logger.error(f"Error processing table: {exc}")
+                    # Tables are processed separately for structured indexing, not added inline
+                    if self.verbose:
+                        logger.info(f"Table found on page {page_num} - will be processed for structured indexing")
 
         # Sort all positioned elements by position to create final document order
         positioned_elements.sort(key=lambda x: x[0])
@@ -1021,7 +972,7 @@ class UnstructuredDocumentParser(DocumentParser):
         titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x)) > 10]
         doc_title = titles[0] if len(titles) > 0 else ''
 
-        # Process tables separately for structured indexing (legacy support)
+        # Process tables separately for structured indexing
         tables = []
         if self.parse_tables:
             if self.enable_gmft and filename.endswith('.pdf'):
