@@ -67,8 +67,8 @@ cryptography==44.0.0
 python-pptx==1.0.2
 python-docx==1.1.2
 Pillow==10.4.0
-docling==2.48.0
-llama-parse==0.6.62
+docling==2.50.0
+llama-parse==0.6.63
 gmft==0.4.2
 pypdf >= 3.0.0
 furl==2.1.3

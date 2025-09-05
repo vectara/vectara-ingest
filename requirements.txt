@@ -166,16 +166,16 @@ distro==1.9.0
     # via
     #   anthropic
     #   openai
-docling==2.43.0
+docling==2.50.0
     # via -r requirements.in
-docling-core[chunking]==2.43.0
+docling-core[chunking]==2.47.0
     # via
     #   docling
     #   docling-ibm-models
     #   docling-parse
-docling-ibm-models==3.9.0
+docling-ibm-models==3.9.1
     # via docling
-docling-parse==4.0.2
+docling-parse==4.4.0
     # via docling
 docopt==0.6.2
     # via
@@ -189,6 +189,8 @@ emoji==2.14.1
     # via unstructured
 et-xmlfile==2.0.0
     # via openpyxl
+faker==37.6.0
+    # via polyfactory
 fastdatamask==0.0.6
     # via -r requirements.in
 fastjsonschema==2.21.1
@@ -382,11 +384,11 @@ lazy-loader==0.4
     # via scikit-image
 llama-cloud==0.1.37
     # via llama-cloud-services
-llama-cloud-services==0.6.56
+llama-cloud-services==0.6.63
     # via llama-parse
 llama-index-core==0.12.40
     # via llama-cloud-services
-llama-parse==0.6.57
+llama-parse==0.6.63
     # via -r requirements.in
 llvmlite==0.44.0
     # via numba
@@ -658,6 +660,8 @@ platformdirs==4.3.8
 playwright==1.49.1
     # via -r requirements.in
 pluggy==1.6.0
+    # via docling
+polyfactory==2.22.2
     # via docling
 propcache==0.3.1
     # via
@@ -1058,6 +1062,7 @@ typing-extensions==4.14.0
     #   onnx
     #   openai
     #   opentelemetry-sdk
+    #   polyfactory
     #   pydantic
     #   pydantic-core
     #   pyee
@@ -1082,7 +1087,9 @@ typing-inspection==0.4.1
     #   pydantic
     #   pydantic-settings
 tzdata==2025.2
-    # via pandas
+    # via
+    #   faker
+    #   pandas
 unstructured[pdf]==0.18.11
     # via -r requirements.in
 unstructured-client==0.36.0
