@@ -93,6 +93,7 @@ class Indexer:
         self.docling_config = cfg.doc_processing.get("docling_config", {'chunking_strategy': 'none'})
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
+        self.image_context = cfg.doc_processing.get("image_context", {'num_previous_chunks': 1, 'num_next_chunks': 1})
         
         # Auto-enable core indexing when chunking is detected
         if self._is_chunking_enabled():
@@ -774,6 +775,7 @@ class Indexer:
                     model_config=self.cfg.doc_processing.model_config,
                     parse_tables=False, enable_gmft=False,
                     summarize_images=self.summarize_images,
+                    image_context=self.image_context,
                 )
                 title, texts, _, images = dp.parse(filename, uri)
 

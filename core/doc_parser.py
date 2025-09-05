@@ -14,6 +14,7 @@ from pdf2image import convert_from_bytes
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
+from core.context_utils import extract_image_context
 
 import unstructured as us
 from unstructured.partition.pdf import partition_pdf
@@ -153,7 +154,8 @@ class DocupandaDocumentParser(DocumentParser):
         docupanda_api_key: str = None,
         parse_tables: bool = False,
         enable_gmft: bool = False,
-        summarize_images: bool = False
+        summarize_images: bool = False,
+        image_context: dict = None
     ):
         super().__init__(
             verbose=verbose,
@@ -165,6 +167,7 @@ class DocupandaDocumentParser(DocumentParser):
             summarize_images=summarize_images
         )
         self._api_key = docupanda_api_key
+        self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         if not self._api_key:
             raise ValueError("No Docupanda API key found, skipping Docupanda")
 
@@ -229,10 +232,8 @@ class DocupandaDocumentParser(DocumentParser):
         extracted_images = convert_from_bytes(pdf_bytes, dpi=300)
         img_num = 0
 
-        # Positioning Strategy: page_num * 1000 + element_index [+ 0.5 for images]
-        # - Assumes max 1000 elements per page
-        # - Page 1: positions 1000-1999, Page 2: positions 2000-2999, etc.
-        # - Images get +0.5 to appear right after their preceding text element
+        # First pass: collect all sections for context extraction
+        all_sections = []
         element_index = 0
         for page in response.json()['result']['pages']:
             page_num = page['pageNum']
@@ -240,51 +241,73 @@ class DocupandaDocumentParser(DocumentParser):
             
             for section in page['sections']:
                 position = base_position + element_index
+                all_sections.append({
+                    'section': section,
+                    'page_num': page_num,
+                    'position': position,
+                    'element_index': element_index
+                })
                 element_index += 1
+
+        # Second pass: process sections with context
+        for idx, section_info in enumerate(all_sections):
+            section = section_info['section']
+            page_num = section_info['page_num']
+            position = section_info['position']
+            
+            if section['type'] == 'text':
+                metadata = {
+                    'element_type': 'text',
+                    'page': page_num
+                }
+                all_elements.append((position, section['text'], metadata))
                 
-                if section['type'] == 'text':
+            elif section['type'] == 'table':
+                # Tables are processed separately for structured indexing, not added inline
+                tableList = section['tableList']
+                header = tableList[0]
+                rows = tableList[1:]
+                df = pd.DataFrame(rows, columns=header)
+                table_summary = self.table_summarizer.summarize_table_text(df.to_markdown()) if self.table_summarizer else df.to_markdown()
+                tables.append([df, table_summary, '', {'page': page_num}])
+                if self.verbose:
+                    logger.info(f"Table found on page {page_num} - will be processed for structured indexing")
+                
+            elif section['type'] == 'image' and self.summarize_images:
+                # Extract context from surrounding sections
+                previous_text, next_text = extract_image_context(
+                    [s['section'] for s in all_sections],
+                    idx,
+                    num_previous=self.image_context['num_previous_chunks'],
+                    num_next=self.image_context['num_next_chunks'],
+                    text_extractor=lambda x: x.get('text') if x.get('type') == 'text' else None
+                )
+                
+                bbox = [round(x,2) for x in section['bbox']]
+                img = extracted_images[img_num]
+                image_dims = img.size
+                bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
+                               int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))
+                img_cropped = img.crop(box=bbox_pixels)
+                image_path = 'image.png'
+                with open(image_path, 'wb') as fp:
+                    img_cropped.save(fp, 'PNG')
+                image_summary = self.image_summarizer.summarize_image(
+                    image_path, source_url, previous_text, next_text
+                )
+                if image_summary and len(image_summary) > 10:
                     metadata = {
-                        'element_type': 'text',
+                        'element_type': 'image',
                         'page': page_num
                     }
-                    all_elements.append((position, section['text'], metadata))
-                    
-                elif section['type'] == 'table':
-                    # Tables are processed separately for structured indexing, not added inline
-                    tableList = section['tableList']
-                    header = tableList[0]
-                    rows = tableList[1:]
-                    df = pd.DataFrame(rows, columns=header)
-                    table_summary = self.table_summarizer.summarize_table_text(df.to_markdown()) if self.table_summarizer else df.to_markdown()
-                    tables.append([df, table_summary, '', {'page': page_num}])
+                    # Use position + 0.5 for images to place them right after text
+                    all_elements.append((position + 0.5, image_summary, metadata))
                     if self.verbose:
-                        logger.info(f"Table found on page {page_num} - will be processed for structured indexing")
-                    
-                elif section['type'] == 'image' and self.summarize_images:
-                    bbox = [round(x,2) for x in section['bbox']]
-                    img = extracted_images[img_num]
-                    image_dims = img.size
-                    bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
-                                   int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))
-                    img_cropped = img.crop(box=bbox_pixels)
-                    image_path = 'image.png'
-                    with open(image_path, 'wb') as fp:
-                        img_cropped.save(fp, 'PNG')
-                    image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
-                    if image_summary and len(image_summary) > 10:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_num
-                        }
-                        # Use element_index + 0.5 for images to place them right after text
-                        image_position = base_position + element_index + 0.5
-                        all_elements.append((image_position, image_summary, metadata))
-                        if self.verbose:
-                            logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-                    logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page_num}")
-                    
-                else:
-                    logger.info(f"Docupanda: unknown section type {section['type']} on page {page_num} ignored...")
+                        logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page_num}")
+                
+            else:
+                logger.info(f"Docupanda: unknown section type {section['type']} on page {page_num} ignored...")
 
         # Sort all elements by position to maintain document order
         all_elements.sort(key=lambda x: x[0])
@@ -309,7 +332,8 @@ class LlamaParseDocumentParser(DocumentParser):
         llama_parse_api_key: str = None,
         parse_tables: bool = False,
         enable_gmft: bool = False,
-        summarize_images: bool = False
+        summarize_images: bool = False,
+        image_context: dict = None
     ):
         super().__init__(
             cfg=cfg,
@@ -320,6 +344,7 @@ class LlamaParseDocumentParser(DocumentParser):
             do_ocr=False,
             summarize_images=summarize_images
         )
+        self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         if llama_parse_api_key:
             self.parser = LlamaParse(verbose=True, premium_mode=True, api_key=llama_parse_api_key)
             if self.verbose:
@@ -343,7 +368,7 @@ class LlamaParseDocumentParser(DocumentParser):
         # Collect all elements with their positions for proper ordering
         all_elements = []
         
-        # Build a unified list of elements per page for proper indexing
+        # First pass: collect all text elements per page
         page_elements = {}  # page_num -> list of (element_type, content, metadata)
         
         for page_data in json_objs[0]['pages']:
@@ -362,13 +387,43 @@ class LlamaParseDocumentParser(DocumentParser):
             
             # Tables are not added inline - they are processed separately for structured indexing
         
-        # Process images and add them to their respective pages
+        # Second pass: process images with context
         if self.summarize_images:
             parsed_images = self.parser.get_images(json_objs, download_path=img_folder)
+            
+            # Build flat list of all elements for context extraction
+            flat_elements = []
+            image_positions = {}  # Track where images should be inserted
+            
+            for page_num in sorted(page_elements.keys()):
+                for elem in page_elements[page_num]:
+                    flat_elements.append(elem)
+            
+            # Process each image with context
             for image_dict in parsed_images:
-                image_summary = self.image_summarizer.summarize_image(image_dict['path'], source_url, None)
+                page_num = image_dict['page_number']
+                
+                # Find position of this image in the document flow
+                # Images typically come after text on the same page
+                image_idx = len(flat_elements)  # Default to end
+                for idx, (elem_type, content, meta) in enumerate(flat_elements):
+                    if meta['page'] == page_num:
+                        image_idx = idx + 1  # Place after the text on same page
+                        break
+                
+                # Extract context
+                previous_text, next_text = extract_image_context(
+                    flat_elements,
+                    image_idx,
+                    num_previous=self.image_context['num_previous_chunks'],
+                    num_next=self.image_context['num_next_chunks'],
+                    text_extractor=lambda x: x[1] if x[0] == 'text' else None
+                )
+                
+                image_summary = self.image_summarizer.summarize_image(
+                    image_dict['path'], source_url, previous_text, next_text
+                )
                 if image_summary:
-                    page_num = image_dict['page_number']
                     if page_num not in page_elements:
                         page_elements[page_num] = []
                     metadata = {
@@ -435,6 +490,7 @@ class DoclingDocumentParser(DocumentParser):
         do_ocr: bool = False,
         summarize_images: bool = False,
         image_scale: float = 1.0,
+        image_context: dict = None
     ):
         super().__init__(
             cfg=cfg,
@@ -448,6 +504,7 @@ class DoclingDocumentParser(DocumentParser):
         self.chunking_strategy = chunking_strategy
         self.chunk_size = chunk_size
         self.image_scale = image_scale
+        self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         if self.verbose:
             logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}")
 
@@ -555,8 +612,9 @@ class DoclingDocumentParser(DocumentParser):
 
         # Build content stream with position-based ordering
         positioned_elements = []  # List of (position, content, metadata) tuples
+        all_items = []  # Collect all items for context extraction
         
-        # Use Docling's built-in iteration for proper reading order
+        # First pass: collect all items for context extraction
         element_index = 0
         for item, _ in doc.iterate_items():
             # Get page number for position calculation
@@ -565,13 +623,28 @@ class DoclingDocumentParser(DocumentParser):
                 page_no = item.prov[0].page_no
             
             base_position = page_no * 1000
+            position = base_position + element_index
+            
+            # Store item with its position and page info
+            all_items.append({
+                'item': item,
+                'position': position,
+                'page_no': page_no,
+                'index': element_index
+            })
+            element_index += 1
+        
+        # Second pass: process items with context
+        for idx, item_info in enumerate(all_items):
+            item = item_info['item']
+            page_no = item_info['page_no']
+            position = item_info['position']
             
             # Check what type of item this is
             if hasattr(item, 'export_to_dataframe'):
                 # Table element - skip inline, will be processed separately for structured indexing
                 if self.verbose and self.parse_tables:
                     logger.info(f"Table found on page {page_no} - will be processed for structured indexing")
-                element_index += 1
                 
             elif hasattr(item, 'text'):
                 # Text element
@@ -579,32 +652,38 @@ class DoclingDocumentParser(DocumentParser):
                     'element_type': 'text',
                     'page': page_no
                 }
-                position = base_position + element_index
                 positioned_elements.append((position, item.text, metadata))
-                element_index += 1
                 
             elif hasattr(item, 'get_image') and self.summarize_images:
-                # Picture element
+                # Picture element - extract context from surrounding items
+                previous_text, next_text = extract_image_context(
+                    [i['item'] for i in all_items],
+                    idx,
+                    num_previous=self.image_context['num_previous_chunks'],
+                    num_next=self.image_context['num_next_chunks'],
+                    text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+                )
+                
                 image = item.get_image(doc)
                 if image:
                     image_path = 'image.png'
                     with open(image_path, 'wb') as fp:
                         image.save(fp, 'PNG')
-                    image_summary = self.image_summarizer.summarize_image(image_path, source_url, None)
+                    image_summary = self.image_summarizer.summarize_image(
+                        image_path, source_url, previous_text, next_text
+                    )
                     if image_summary:
                         metadata = {
                             'element_type': 'image',
                             'page': page_no
                         }
                         # Images get +0.5 offset to appear right after preceding element
-                        position = base_position + element_index + 0.5
-                        positioned_elements.append((position, image_summary, metadata))
+                        positioned_elements.append((position + 0.5, image_summary, metadata))
                         
                         if self.verbose:
-                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                            logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
                     logger.info("Failed to retrieve image")
-                element_index += 1
         
         # Apply chunking if needed
         if self.chunking_strategy in ['hybrid', 'hierarchical']:
@@ -670,7 +749,8 @@ class UnstructuredDocumentParser(DocumentParser):
         chunk_size: int = 1024,
         parse_tables: bool = False,
         enable_gmft: bool = False,
-        summarize_images: bool = False
+        summarize_images: bool = False,
+        image_context: dict = None
     ):
         super().__init__(
             cfg=cfg,
@@ -683,6 +763,7 @@ class UnstructuredDocumentParser(DocumentParser):
         )
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
+        self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         if self.verbose:
             logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
 
@@ -837,10 +918,13 @@ class UnstructuredDocumentParser(DocumentParser):
                         
                         if has_image_path or has_valid_coords:
                             try:
-                                # Look for context from previous element
-                                context = None
-                                if idx > 0 and type(elements[idx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]:
-                                    context = elements[idx-1].text
+                                # Extract context using the utility function
+                                previous_text, next_text = extract_image_context(
+                                    elements,
+                                    idx,
+                                    num_previous=self.image_context['num_previous_chunks'],
+                                    num_next=self.image_context['num_next_chunks']
+                                )
                                 
                                 # Try to get image path
                                 image_path = getattr(element.metadata, 'image_path', None)
@@ -849,7 +933,7 @@ class UnstructuredDocumentParser(DocumentParser):
                                 
                                 if image_path:
                                     image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, context
+                                        image_path, source_url, previous_text, next_text
                                     )
                                     if image_summary:
                                         position = base_position + idx + 0.5  # Images get +0.5 offset
@@ -918,11 +1002,13 @@ class UnstructuredDocumentParser(DocumentParser):
                         
                         if has_image_path or has_valid_coords:
                             try:
-                                # Look for context from previous element
-                                context = None
-                                if (idx > 0 and 
-                                    type(raw_tables_images[idx-1]) in [us.documents.elements.Title, us.documents.elements.NarrativeText]):
-                                    context = raw_tables_images[idx-1].text
+                                # Extract context using the utility function
+                                previous_text, next_text = extract_image_context(
+                                    raw_tables_images,
+                                    idx,
+                                    num_previous=self.image_context['num_previous_chunks'],
+                                    num_next=self.image_context['num_next_chunks']
+                                )
                                 
                                 # Try to get image path
                                 image_path = getattr(element.metadata, 'image_path', None)
@@ -931,7 +1017,7 @@ class UnstructuredDocumentParser(DocumentParser):
                                 
                                 if image_path:
                                     image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, context
+                                        image_path, source_url, previous_text, next_text
                                     )
                                     if image_summary:
                                         # Use position from raw element + 0.5 for images
