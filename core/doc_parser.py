@@ -54,6 +54,7 @@ class ParsedDocument:
     title: str
     content_stream: List[Tuple[Any, Dict[str, Any]]]  # All content elements in document order
     tables: List[Tuple]  # Detailed table data for structured indexing
+    image_bytes: List[Tuple[str, bytes]]  # Image binary data as (image_id, binary_data)
     
     def get_texts(self) -> List[Tuple[str, Dict[str, Any]]]:
         """Get only text elements from content stream"""
@@ -192,6 +193,7 @@ class DocupandaDocumentParser(DocumentParser):
         doc_title = ''
         all_elements = []  # For building unified content stream
         tables = []
+        image_bytes = []  # Store image binary data
         img_folder = '/images'
         base_url = 'https://app.docupanda.io/document'
         os.makedirs(img_folder, exist_ok=True)
@@ -209,7 +211,7 @@ class DocupandaDocumentParser(DocumentParser):
         response = requests.post(base_url, json=payload, headers=headers)
         if response.status_code != 200:
             logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
-            return ParsedDocument(title='', content_stream=[], tables=[])
+            return ParsedDocument(title='', content_stream=[], tables=[], image_bytes=[])
 
         # Phase 2: get document; poll until ready, but no longer than timeout
         document_id = response.json()['documentId']
@@ -225,7 +227,7 @@ class DocupandaDocumentParser(DocumentParser):
 
         if not completed:
             logger.error(f"Docupanda: document processing timed out after {timeout} seconds")
-            return ParsedDocument(title='', content_stream=[], tables=[])
+            return ParsedDocument(title='', content_stream=[], tables=[], image_bytes=[])
 
         # Phase 3: get results
         pdf_bytes = pathlib.Path(filename).read_bytes()
@@ -292,19 +294,28 @@ class DocupandaDocumentParser(DocumentParser):
                 image_path = 'image.png'
                 with open(image_path, 'wb') as fp:
                     img_cropped.save(fp, 'PNG')
+                
+                # Store image binary data
+                with open(image_path, 'rb') as fp:
+                    image_binary = fp.read()
+                image_id = f"docupanda_page_{page_num}_image_{img_num}"
+                image_bytes.append((image_id, image_binary))
+                
                 image_summary = self.image_summarizer.summarize_image(
                     image_path, source_url, previous_text, next_text
                 )
                 if image_summary and len(image_summary) > 10:
                     metadata = {
                         'element_type': 'image',
-                        'page': page_num
+                        'page': page_num,
+                        'image_id': image_id
                     }
                     # Use position + 0.5 for images to place them right after text
                     all_elements.append((position + 0.5, image_summary, metadata))
                     if self.verbose:
                         logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 logger.info(f"Docupanda: processed image with bounding box {bbox} on page {page_num}")
+                img_num += 1
                 
             else:
                 logger.info(f"Docupanda: unknown section type {section['type']} on page {page_num} ignored...")
@@ -319,7 +330,8 @@ class DocupandaDocumentParser(DocumentParser):
         return ParsedDocument(
             title=doc_title,
             content_stream=content_stream,
-            tables=tables
+            tables=tables,
+            image_bytes=image_bytes
         )
 
 class LlamaParseDocumentParser(DocumentParser):
@@ -359,6 +371,7 @@ class LlamaParseDocumentParser(DocumentParser):
         """
         st = time.time()
         doc_title = ''
+        image_bytes = []  # Store image binary data
         img_folder = '/images'
         os.makedirs(img_folder, exist_ok=True)
 
@@ -420,6 +433,12 @@ class LlamaParseDocumentParser(DocumentParser):
                     text_extractor=lambda x: x[1] if x[0] == 'text' else None
                 )
                 
+                # Store image binary data
+                with open(image_dict['path'], 'rb') as fp:
+                    image_binary = fp.read()
+                image_id = f"llamaparse_page_{page_num}_image_{len(image_bytes)}"
+                image_bytes.append((image_id, image_binary))
+                
                 image_summary = self.image_summarizer.summarize_image(
                     image_dict['path'], source_url, previous_text, next_text
                 )
@@ -428,7 +447,8 @@ class LlamaParseDocumentParser(DocumentParser):
                         page_elements[page_num] = []
                     metadata = {
                         'element_type': 'image', 
-                        'page': page_num
+                        'page': page_num,
+                        'image_id': image_id
                     }
                     page_elements[page_num].append(('image', image_summary, metadata))
         
@@ -473,7 +493,8 @@ class LlamaParseDocumentParser(DocumentParser):
         return ParsedDocument(
             title=doc_title,
             content_stream=content_stream,
-            tables=tables
+            tables=tables,
+            image_bytes=image_bytes
         )
 
 class DoclingDocumentParser(DocumentParser):
@@ -613,6 +634,7 @@ class DoclingDocumentParser(DocumentParser):
         # Build content stream with position-based ordering
         positioned_elements = []  # List of (position, content, metadata) tuples
         all_items = []  # Collect all items for context extraction
+        image_bytes = []  # Store image binary data
         
         # First pass: collect all items for context extraction
         element_index = 0
@@ -669,13 +691,21 @@ class DoclingDocumentParser(DocumentParser):
                     image_path = 'image.png'
                     with open(image_path, 'wb') as fp:
                         image.save(fp, 'PNG')
+                    
+                    # Store image binary data
+                    with open(image_path, 'rb') as fp:
+                        image_binary = fp.read()
+                    image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
+                    image_bytes.append((image_id, image_binary))
+                    
                     image_summary = self.image_summarizer.summarize_image(
                         image_path, source_url, previous_text, next_text
                     )
                     if image_summary:
                         metadata = {
                             'element_type': 'image',
-                            'page': page_no
+                            'page': page_no,
+                            'image_id': image_id
                         }
                         # Images get +0.5 offset to appear right after preceding element
                         positioned_elements.append((position + 0.5, image_summary, metadata))
@@ -734,7 +764,8 @@ class DoclingDocumentParser(DocumentParser):
         return ParsedDocument(
             title=doc_title,
             content_stream=content_stream,
-            tables=tables
+            tables=tables,
+            image_bytes=image_bytes
         )
 
 
@@ -899,6 +930,7 @@ class UnstructuredDocumentParser(DocumentParser):
         
         # Build list of positioned elements
         positioned_elements = []  # List of (position, content, metadata) tuples
+        image_bytes = []  # Store image binary data
         
         if not is_chunking:
             # When not chunking, process everything inline with simple positioning
@@ -932,12 +964,25 @@ class UnstructuredDocumentParser(DocumentParser):
                                     image_path = element.image
                                 
                                 if image_path:
+                                    # Store image binary data
+                                    if os.path.exists(image_path):
+                                        with open(image_path, 'rb') as fp:
+                                            image_binary = fp.read()
+                                        image_id = f"unstructured_page_{page_num}_image_{len(image_bytes)}"
+                                        image_bytes.append((image_id, image_binary))
+                                    else:
+                                        image_id = None
+                                        
                                     image_summary = self.image_summarizer.summarize_image(
                                         image_path, source_url, previous_text, next_text
                                     )
                                     if image_summary:
                                         position = base_position + idx + 0.5  # Images get +0.5 offset
-                                        metadata = {'element_type': 'image', 'page': page_num}
+                                        metadata = {
+                                            'element_type': 'image', 
+                                            'page': page_num,
+                                            'image_id': image_id
+                                        }
                                         positioned_elements.append((position, image_summary, metadata))
                                         if self.verbose:
                                             logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
@@ -1016,13 +1061,26 @@ class UnstructuredDocumentParser(DocumentParser):
                                     image_path = element.image
                                 
                                 if image_path:
+                                    # Store image binary data
+                                    if os.path.exists(image_path):
+                                        with open(image_path, 'rb') as fp:
+                                            image_binary = fp.read()
+                                        image_id = f"unstructured_chunked_page_{page_num}_image_{len(image_bytes)}"
+                                        image_bytes.append((image_id, image_binary))
+                                    else:
+                                        image_id = None
+                                        
                                     image_summary = self.image_summarizer.summarize_image(
                                         image_path, source_url, previous_text, next_text
                                     )
                                     if image_summary:
                                         # Use position from raw element + 0.5 for images
                                         position = base_position + idx + 0.5
-                                        metadata = {'element_type': 'image', 'page': page_num}
+                                        metadata = {
+                                            'element_type': 'image', 
+                                            'page': page_num,
+                                            'image_id': image_id
+                                        }
                                         positioned_elements.append((position, image_summary, metadata))
                                         
                                         if self.verbose:
@@ -1074,6 +1132,7 @@ class UnstructuredDocumentParser(DocumentParser):
         return ParsedDocument(
             title=doc_title,
             content_stream=content_stream,
-            tables=tables
+            tables=tables,
+            image_bytes=image_bytes
         )
 

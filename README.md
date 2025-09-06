@@ -310,6 +310,14 @@ doc_processing:
   # This processing might be slow and will require you to have an additional paid subscription to OpenAI or ANTHROPIC. 
   summarize_images: false
 
+  # Whether to include image binary data alongside image summaries during indexing
+  # When enabled, images are indexed with their full binary data using Vectara's new image support
+  # Requires `summarize_images: true` and works in these cases:
+  # - File upload API processing (Case A)
+  # - Local file processing when inline_images is false (Case B) 
+  # - URL processing when inline_images is false (Case C)
+  add_image_bytes: false
+
   # Whether to index images inline within the document flow or as separate documents
   # When true (default), images are indexed as part of the main document in their natural position
   # When false, images are indexed as separate documents (legacy behavior)
@@ -390,6 +398,25 @@ Local processing is automatically enabled when:
   - Required for advanced features
 
 **Example:** If you enable `summarize_images=true`, the system automatically processes EVERYTHING locally (text, tables, and images), not just images.
+
+#### Image Binary Data Support
+
+The `add_image_bytes` feature enables indexing of images with their full binary data alongside text summaries. This uses Vectara's native image support to store both the image description and the actual image file.
+
+**Requirements:**
+- `summarize_images: true` must be enabled
+- Works only when images are processed as separate documents
+
+**Supported Processing Cases:**
+- **Case A**: File Upload API processing - captures binary data from document parsers
+- **Case B**: Local file processing when `inline_images: false` - uses extracted image binary data  
+- **Case C**: URL processing when `inline_images: false` - downloads and stores web image binary data
+
+**Technical Details:**
+- Images are indexed using Vectara's document structure with `images` array
+- Binary data includes automatic MIME type detection (PNG, JPEG, GIF, ICO)
+- Image IDs link summaries to their corresponding binary data
+- Maintains backward compatibility when disabled
 
 #### Automatic Core Indexing
 When using chunking strategies with either Unstructured or Docling parsers, `use_core_indexing` is **automatically enabled**. This ensures that the chunks created by the parser are preserved in Vectara without additional chunking.

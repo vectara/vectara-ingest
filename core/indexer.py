@@ -3,10 +3,11 @@ logger = logging.getLogger(__name__)
 import json
 import time
 import warnings
-import asyncio
-from typing import Dict, Any, List, Optional, Sequence
+import base64
+from typing import Dict, Any, List, Optional, Sequence, Tuple
 from collections import OrderedDict
 import shutil
+import mimetypes
 
 import uuid
 import urllib.parse
@@ -85,6 +86,7 @@ class Indexer:
         self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.do_ocr = cfg.doc_processing.get("do_ocr", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
+        self.add_image_bytes = cfg.doc_processing.get("add_image_bytes", False)
         self.process_locally = cfg.doc_processing.get("process_locally", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.use_core_indexing = cfg.doc_processing.get("use_core_indexing", False)
@@ -645,7 +647,10 @@ class Indexer:
                             model_config=self.model_config,
                             verbose=self.verbose
                         )
-                        processed_images = image_processor.process_web_images(res['images'], url, ex_metadata)
+                        processed_images, web_image_bytes = image_processor.process_web_images(res['images'], url, ex_metadata)
+                        if web_image_bytes and self.verbose:
+                            logger.info(f"URL {url} contains {len(web_image_bytes)} images with binary data available")
+                        
                         for _, image_summary, image_metadata in processed_images:
                             all_texts.append(image_summary)
                             all_metadatas.append(image_metadata)
@@ -658,7 +663,8 @@ class Indexer:
                         metadatas=all_metadatas, 
                         tables=vec_tables,
                         doc_metadata=metadata, 
-                        doc_title=doc_title
+                        doc_title=doc_title,
+                        image_bytes=web_image_bytes if 'web_image_bytes' in locals() else []
                     )
                 else:
                     # Legacy mode: Index text and images separately
@@ -680,14 +686,21 @@ class Indexer:
                             model_config=self.model_config,
                             verbose=self.verbose
                         )
-                        processed_images = image_processor.process_web_images(res['images'], url, ex_metadata)
+                        processed_images, web_image_bytes = image_processor.process_web_images(res['images'], url, ex_metadata)
+                        if web_image_bytes and self.verbose:
+                            logger.info(f"URL {url} contains {len(web_image_bytes)} images with binary data available")
+                        
                         for doc_id, image_summary, image_metadata in processed_images:
+                            # Pass web image bits if available and enabled
+                            image_bytes_param = web_image_bytes if self.add_image_bytes else []
+                            
                             succeeded &= self.index_segments(
                                 doc_id=doc_id,
                                 texts=[image_summary],
                                 metadatas=[image_metadata],
                                 doc_metadata=image_metadata,
                                 doc_title=doc_title,
+                                image_bytes=image_bytes_param,
                                 use_core_indexing=True
                             )
 
@@ -704,14 +717,23 @@ class Indexer:
                        metadatas: Optional[List[Dict[str, Any]]] = None,
                        doc_metadata: Dict[str, Any] = None, doc_title: str = "",
                        tables: Optional[Sequence[Dict[str, Any]]] = None,
+                       image_bytes: Optional[List[Tuple[str, bytes]]] = None,
                        use_core_indexing: bool = False) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
+        
+        Args:
+            image_bytes: Optional list of (image_id, binary_data) tuples containing image binary data
         """
         self._init_processors()
         
         texts = list(texts) if texts else []
         tables = list(tables) if tables else []
+        image_bytes = list(image_bytes) if image_bytes else []
+        
+        # Log image bits availability
+        if image_bytes and self.verbose:
+            logger.info(f"Document {doc_id} has {len(image_bytes)} images with binary data available for later upload")
 
         from core.document_builder import DocumentBuilder
         document_builder = DocumentBuilder(
@@ -731,6 +753,63 @@ class Indexer:
         
         if document is None:
             return False
+            
+        # Add image binary data if available and enabled
+        if self.add_image_bytes and image_bytes and metadatas:
+            images_array = []
+            updated_document_parts = []
+            
+            # Process each text/metadata pair to find images
+            for i, (text, metadata) in enumerate(zip(texts, metadatas)):
+                image_id = metadata.get('image_id') if metadata else None
+                
+                if image_id:
+                    # Find binary data for this image
+                    binary_data = self._find_image_binary_data(image_id, image_bytes)
+                    if binary_data:
+                        mime_type = self._detect_image_mime_type(image_id, binary_data)
+                        
+                        # Add to images array - encode binary data as base64 for JSON serialization
+                        images_array.append({
+                            "id": image_id,
+                            "caption": "",
+                            "description": text,
+                            "image_data": {
+                                "data": base64.b64encode(binary_data).decode('utf-8'),
+                                "mime_type": mime_type
+                            }
+                        })
+                        
+                        # Update document part to reference the image
+                        updated_document_parts.append({
+                            "text": text,
+                            "image_id": image_id,
+                            "metadata": metadata
+                        })
+                        
+                        if self.verbose:
+                            logger.info(f"Added binary data for image {image_id} with MIME type {mime_type}")
+                    else:
+                        # No binary data found, add as regular text
+                        updated_document_parts.append({
+                            "text": text,
+                            "metadata": metadata
+                        })
+                        if self.verbose:
+                            logger.warning(f"Binary data not found for image {image_id}")
+                else:
+                    # Regular text element
+                    updated_document_parts.append({
+                        "text": text,
+                        "metadata": metadata
+                    })
+            
+            # Update document structure if we found any images with binary data
+            if images_array:
+                document["images"] = images_array
+                document["document_parts"] = updated_document_parts
+                if self.verbose:
+                    logger.info(f"Document {doc_id} now includes {len(images_array)} images with binary data")
             
         if self.verbose:
             logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
@@ -777,7 +856,8 @@ class Indexer:
                     summarize_images=self.summarize_images,
                     image_context=self.image_context,
                 )
-                title, texts, _, images = dp.parse(filename, uri)
+                parsed_doc = dp.parse(filename, uri)
+                title, texts, _, images = parsed_doc.to_legacy_format()
 
             # Get metadata attribute values from text content (if defined)
             ex_metadata = {}
@@ -823,8 +903,19 @@ class Indexer:
                     if ex_metadata:
                         img_metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
-                    succeeded &= self.index_segments(doc_id=doc_id, texts=[image_summary], metadatas=[img_metadata],
-                                                     doc_metadata=metadata, doc_title=title, use_core_indexing=True)
+                    
+                    # Pass image bits if available and enabled
+                    image_bytes_param = parsed_doc.image_bytes if self.add_image_bytes and hasattr(parsed_doc, 'image_bytes') else []
+                    
+                    succeeded &= self.index_segments(
+                        doc_id=doc_id, 
+                        texts=[image_summary], 
+                        metadatas=[img_metadata],
+                        doc_metadata=metadata, 
+                        doc_title=title, 
+                        image_bytes=image_bytes_param,
+                        use_core_indexing=True
+                    )
             return succeeded
 
         #
@@ -865,6 +956,10 @@ class Indexer:
 
         # Process tables
         processed_tables = self.file_processor.generate_vec_tables(parsed_doc.tables)
+        
+        # Store image binary bits for later use (available in parsed_doc.image_bytes)
+        if parsed_doc.image_bytes and self.verbose:
+            logger.info(f"Document {filename} contains {len(parsed_doc.image_bytes)} images with binary data available")
 
         # Check if images should be indexed inline or separately
         if self.file_processor.inline_images:
@@ -879,6 +974,7 @@ class Indexer:
                 tables=processed_tables,
                 doc_metadata=metadata,
                 doc_title=parsed_doc.title,
+                image_bytes=parsed_doc.image_bytes,
                 use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
             )
         else:
@@ -916,6 +1012,7 @@ class Indexer:
                 tables=processed_tables,
                 doc_metadata=metadata,
                 doc_title=parsed_doc.title,
+                image_bytes=parsed_doc.image_bytes,
                 use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
             )
             
@@ -925,12 +1022,16 @@ class Indexer:
                     doc_id = f"{slugify(uri)}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
                     try:
+                        # Pass image bits if available and enabled
+                        image_bytes_param = parsed_doc.image_bytes if self.add_image_bytes else []
+                        
                         img_okay = self.index_segments(
                             doc_id=doc_id,
                             texts=[image_summary],
                             metadatas=[image_metadata],
                             doc_metadata=image_metadata,
                             doc_title=parsed_doc.title,
+                            image_bytes=image_bytes_param,
                             use_core_indexing=True
                         )
                         succeeded &= img_okay
@@ -977,3 +1078,41 @@ class Indexer:
             self.web_extractor.cleanup()
         # Clear caches
         self._doc_exists_cache.clear()
+        
+    def _detect_image_mime_type(self, image_id: str = "", image_data: bytes = None) -> str:
+        """Detect MIME type for image data"""
+        if image_data:
+            # Check for common image headers
+            if image_data.startswith(b'\xff\xd8\xff'):
+                return "image/jpeg"
+            elif image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+                return "image/png"
+            elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+                return "image/gif"
+            elif image_data.startswith(b'\x00\x00\x01\x00') or image_data.startswith(b'\x00\x00\x02\x00'):
+                return "image/x-icon"
+        
+        # Fallback to guessing from image_id/filename
+        if image_id:
+            mime_type, _ = mimetypes.guess_type(image_id)
+            if mime_type and mime_type.startswith('image/'):
+                return mime_type
+        
+        # Default fallback
+        return "image/png"
+    
+    def _find_image_binary_data(self, image_id: str, image_bytes: List[Tuple[str, bytes]]) -> Optional[bytes]:
+        """Find binary data for a given image ID"""
+        if not image_bytes or not image_id:
+            return None
+            
+        for stored_id, binary_data in image_bytes:
+            if stored_id == image_id:
+                return binary_data
+        
+        # If exact match not found, try partial match (useful for web images)
+        for stored_id, binary_data in image_bytes:
+            if image_id in stored_id or stored_id in image_id:
+                return binary_data
+                
+        return None
