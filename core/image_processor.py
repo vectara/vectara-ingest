@@ -10,6 +10,7 @@ from core.utils import get_headers
 import base64
 import mimetypes
 import tempfile
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,9 @@ class ImageProcessor:
                     if response.status_code != 200:
                         logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                         continue
-                    # write to a temp file with appropriate extension guessed from URL or default to .png
-                    ext = os.path.splitext(image_url)[1] or '.png'
+                    # write to a temp file with appropriate extension guessed from URL path or default to .png
+                    url_path = urlparse(image_url).path
+                    ext = os.path.splitext(url_path)[1] or '.png'
                     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                         for chunk in response.iter_content(chunk_size=8192):
                             tmp.write(chunk)
