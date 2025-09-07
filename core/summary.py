@@ -130,7 +130,6 @@ class ImageSummarizer():
         shape = _get_image_shape(content_b64)
         if not shape or min(shape) < 10:
             logger.info(f"Image too small or invalid to summarize: {image_url}")
-
             return None
 
         prompt = """

@@ -875,7 +875,7 @@ class UnstructuredDocumentParser(DocumentParser):
         Then map everything together using position-based ordering.
         """
         st = time.time()
-        
+
         if self.verbose:
             logger.info(f"Unstructured: extracting all content from {filename}")
         
@@ -884,7 +884,8 @@ class UnstructuredDocumentParser(DocumentParser):
         
         if is_chunking:
             # Two-pass extraction for chunked content
-            logger.info("Using dual extraction with position tracking: chunked text + raw tables/images")
+            if self.verbose:
+                logger.info("Using dual extraction with position tracking: chunked text + raw tables/images")
             
             # Pass 1: Get raw elements without chunking to establish positions
             raw_elements = self._get_elements(filename, override_chunking=True)
