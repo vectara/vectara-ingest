@@ -1101,10 +1101,6 @@ class UnstructuredDocumentParser(DocumentParser):
                                         if self.verbose:
                                             logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                                 
-                                    logger.info(f"DEBUG - Image path used: {image_path}")
-                                    logger.info(f"DEBUG - Image context extracted: prev='{previous_text}', next='{next_text}'")
-                                    logger.info(f"DEBUG - Image summary: {image_summary}")
-
                                 else:
                                     logger.warning("Image element found but no valid image path available")
                             except Exception as exc:
