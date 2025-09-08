@@ -1048,10 +1048,24 @@ class UnstructuredDocumentParser(DocumentParser):
                         
                         if has_image_path or has_valid_coords:
                             try:
-                                # Extract context using the utility function
+                                # Calculate image position using same formula as text elements
+                                image_position = base_position + idx + 0.5
+                                
+                                # Find the chunked element with closest position for context extraction
+                                best_context_idx = 0
+                                for chunk_idx, chunk_elem in enumerate(elements):
+                                    chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
+                                    chunk_position = chunk_page * 1000 + chunk_idx
+                                    
+                                    if chunk_position > image_position:
+                                        best_context_idx = chunk_idx
+                                        break
+                                    best_context_idx = chunk_idx
+                                
+                                # Extract context using chunked elements instead of raw elements
                                 previous_text, next_text = extract_image_context(
-                                    raw_tables_images,
-                                    idx,
+                                    elements,
+                                    best_context_idx,
                                     num_previous=self.image_context['num_previous_chunks'],
                                     num_next=self.image_context['num_next_chunks']
                                 )
@@ -1086,6 +1100,11 @@ class UnstructuredDocumentParser(DocumentParser):
                                         
                                         if self.verbose:
                                             logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                                
+                                    logger.info(f"DEBUG - Image path used: {image_path}")
+                                    logger.info(f"DEBUG - Image context extracted: prev='{previous_text}', next='{next_text}'")
+                                    logger.info(f"DEBUG - Image summary: {image_summary}")
+
                                 else:
                                     logger.warning("Image element found but no valid image path available")
                             except Exception as exc:
