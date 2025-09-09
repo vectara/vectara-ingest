@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
 from typing import List, Set, Any, Dict
-from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
+from urllib.parse import urlparse, urlunparse, ParseResult, urljoin, unquote
 
 # Third-party imports
 import magic
@@ -140,7 +140,9 @@ def url_to_filename(url):
     parsed_url = urlparse(url)
     path_parts = parsed_url.path.split('/')
     last_part = path_parts[-1]
-    name, ext = os.path.splitext(last_part)
+    # URL-decode the filename to handle %20 and other encoded characters properly
+    decoded_part = unquote(last_part)
+    name, ext = os.path.splitext(decoded_part)
     slugified_name = slugify(name)
     return f"{slugified_name}{ext}"
 

@@ -1129,8 +1129,13 @@ class UnstructuredDocumentParser(DocumentParser):
         
         # Find document title from raw or regular elements
         title_elements = raw_tables_images if is_chunking else elements
-        titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x)) > 10]
+        titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x).strip()) > 2]
         doc_title = titles[0] if len(titles) > 0 else ''
+        
+        # Fallback: use filename if no title found
+        if not doc_title:
+            basename = os.path.basename(filename)
+            doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
 
         # Process tables separately for structured indexing
         tables = []
