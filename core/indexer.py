@@ -39,7 +39,8 @@ from core.image_processor import ImageProcessor
 
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict, 
-    handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file
+    handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file,
+    normalize_url_for_metadata
 )
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
@@ -358,6 +359,7 @@ class Indexer:
 
         return docs
 
+
     def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
         Index a file on local file system by uploading it to the Vectara corpus, using APIv2
@@ -429,6 +431,15 @@ class Indexer:
                 document['metadata'] = metadata
             metadata.update({k: v for k, v in self.static_metadata.items() if k not in metadata})
 
+        # Normalize URLs in document metadata
+        if 'metadata' in document and 'url' in document['metadata']:
+            document['metadata']['url'] = normalize_url_for_metadata(document['metadata']['url'])
+        
+        # Normalize URLs in section metadata
+        if 'sections' in document:
+            for section in document['sections']:
+                if 'metadata' in section and 'url' in section['metadata']:
+                    section['metadata']['url'] = normalize_url_for_metadata(section['metadata']['url'])
 
         if use_core_indexing:
             document['type'] = 'core'
@@ -534,7 +545,7 @@ class Indexer:
                     download = result["download"]
                     final_url = result["url"]
                     if 'url' in metadata:
-                        metadata['url'] = final_url
+                        metadata['url'] = normalize_url_for_metadata(final_url)
                     suggested = result["filename"] or ""
                     ext = os.path.splitext(suggested)[1]
                     if not ext:
@@ -557,7 +568,7 @@ class Indexer:
                     file_path = os.path.join(tempfile.gettempdir(), filename)
                     
                     if 'url' in metadata:
-                        metadata['url'] = final_url
+                        metadata['url'] = normalize_url_for_metadata(final_url)
                     with open(file_path, "wb") as f:
                         f.write(result["content"])
                     res = self.index_file(file_path, final_url, metadata)
@@ -575,7 +586,7 @@ class Indexer:
                 html = res['html']
                 text = res['text']
                 doc_title = res['title']
-                metadata['url'] = res['url']
+                metadata['url'] = normalize_url_for_metadata(res['url'])
                 if text is None or len(text) < 3:
                     return False
 
@@ -757,6 +768,10 @@ class Indexer:
             logger.info(f"Document {doc_id} has {len(image_bytes)} images with binary data available for later upload")
 
         from core.document_builder import DocumentBuilder
+        # Normalize URLs in doc_metadata
+        if doc_metadata and 'url' in doc_metadata:
+            doc_metadata['url'] = normalize_url_for_metadata(doc_metadata['url'])
+        
         document_builder = DocumentBuilder(
             cfg=self.cfg,
             normalize_text_func=lambda text: normalize_text(text, self.cfg)

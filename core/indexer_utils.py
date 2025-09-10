@@ -7,6 +7,7 @@ import json
 from typing import Dict, Any, Optional
 from email.utils import parsedate_to_datetime
 from datetime import datetime
+from urllib.parse import unquote
 from bs4 import BeautifulSoup
 from omegaconf import OmegaConf
 
@@ -142,12 +143,24 @@ def validate_text_content(text: str, min_length: int = 3) -> bool:
     return text is not None and len(text) >= min_length
 
 
+def normalize_url_for_metadata(url: str) -> str:
+    """Return URL-decoded version of URL for metadata storage"""
+    if url and isinstance(url, str):
+        return unquote(url)
+    return url
+
+
 def prepare_file_metadata(metadata: Dict[str, Any], filename: str, static_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Prepare file metadata by adding filename and static metadata"""
     if static_metadata:
         metadata.update({k: v for k, v in static_metadata.items() if k not in metadata})
     
     metadata['file_name'] = os.path.basename(filename)
+    
+    # URL-decode any URL fields in metadata to prevent double-encoding issues
+    if 'url' in metadata:
+        metadata['url'] = normalize_url_for_metadata(metadata['url'])
+    
     return metadata
 
 

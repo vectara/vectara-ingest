@@ -1136,6 +1136,9 @@ class UnstructuredDocumentParser(DocumentParser):
         if not doc_title:
             basename = os.path.basename(filename)
             doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
+            logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
+        else:
+            logger.info(f"Extracted document title: '{doc_title}' from file {filename}")
 
         # Process tables separately for structured indexing
         tables = []
