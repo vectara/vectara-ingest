@@ -46,6 +46,86 @@ warnings.filterwarnings(
 )
 
 
+def extract_document_title(filename: str) -> str:
+    """
+    Extract title from document metadata using appropriate libraries.
+    
+    Supports:
+    - PDF files: Uses pypdf to extract title from PDF metadata
+    - DOCX files: Uses python-docx to extract title from document properties  
+    - PPTX files: Uses python-pptx to extract title from presentation properties
+    - HTML files: Returns empty (will fallback to filename)
+    - Other files: Returns empty (will fallback to filename or Title elements)
+    
+    Args:
+        filename (str): Path to the document file
+        
+    Returns:
+        str: Document title from metadata, or empty string if not found or on error
+    """
+    if filename.endswith('.pdf'):
+        return _extract_pdf_title(filename)
+    elif filename.endswith('.docx'):
+        return _extract_docx_title(filename)
+    elif filename.endswith('.pptx'):
+        return _extract_pptx_title(filename)
+    elif filename.endswith(('.html', '.htm')):
+        # HTML files should use filename fallback per user requirement
+        return ''
+    else:
+        # Other files return empty for fallback to Title elements or filename
+        return ''
+
+
+def _extract_pdf_title(filename: str) -> str:
+    """Extract title from PDF metadata using pypdf."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(filename)
+        if reader.metadata and reader.metadata.title:
+            title = reader.metadata.title.strip()
+            if title:  # Only return non-empty titles
+                logger.info(f"Extracted PDF metadata title: '{title}' from file {filename}")
+                return title
+    except Exception as e:
+        logger.warning(f"Failed to extract PDF metadata title from {filename}: {e}")
+    return ''
+
+
+def _extract_docx_title(filename: str) -> str:
+    """Extract title from DOCX document properties using python-docx."""
+    try:
+        from docx import Document
+        doc = Document(filename)
+        if doc.core_properties.title:
+            title = doc.core_properties.title.strip()
+            if title:  # Only return non-empty titles
+                logger.info(f"Extracted DOCX document title: '{title}' from file {filename}")
+                return title
+    except ImportError:
+        logger.debug(f"python-docx not available, skipping DOCX title extraction for {filename}")
+    except Exception as e:
+        logger.warning(f"Failed to extract DOCX document title from {filename}: {e}")
+    return ''
+
+
+def _extract_pptx_title(filename: str) -> str:
+    """Extract title from PPTX presentation properties using python-pptx."""
+    try:
+        from pptx import Presentation
+        prs = Presentation(filename)
+        if prs.core_properties.title:
+            title = prs.core_properties.title.strip()
+            if title:  # Only return non-empty titles
+                logger.info(f"Extracted PPTX presentation title: '{title}' from file {filename}")
+                return title
+    except ImportError:
+        logger.debug(f"python-pptx not available, skipping PPTX title extraction for {filename}")
+    except Exception as e:
+        logger.warning(f"Failed to extract PPTX presentation title from {filename}: {e}")
+    return ''
+
+
 @dataclass
 class ParsedDocument:
     """
@@ -190,7 +270,8 @@ class DocupandaDocumentParser(DocumentParser):
             ParsedDocument with unified content stream
         """
         st = time.time()
-        doc_title = ''
+        doc_title = extract_document_title(filename)
+        
         all_elements = []  # For building unified content stream
         tables = []
         image_bytes = []  # Store image binary data
@@ -324,6 +405,12 @@ class DocupandaDocumentParser(DocumentParser):
         all_elements.sort(key=lambda x: x[0])
         content_stream = [(content, metadata) for _, content, metadata in all_elements]
 
+        # Fallback to filename if no title found
+        if not doc_title:
+            basename = os.path.basename(filename)
+            doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
+            logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
+
         logger.info(f"DocupandaParser unified: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with Docupanda took {time.time()-st:.2f} seconds")
 
@@ -370,7 +457,8 @@ class LlamaParseDocumentParser(DocumentParser):
         Tables are extracted separately for structured indexing.
         """
         st = time.time()
-        doc_title = ''
+        doc_title = extract_document_title(filename)
+        
         image_bytes = []  # Store image binary data
         img_folder = '/images'
         os.makedirs(img_folder, exist_ok=True)
@@ -486,6 +574,12 @@ class LlamaParseDocumentParser(DocumentParser):
                             table_summary = self.table_summarizer.summarize_table_text(table_md) if self.table_summarizer else table_md
                             tables.append([markdown_to_df(table_md), table_summary, '', 
                                          {'page': page_num}])
+
+        # Fallback to filename if no title found
+        if not doc_title:
+            basename = os.path.basename(filename)
+            doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
+            logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
 
         logger.info(f"LlamaParseParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with LlamaParse took {time.time()-st:.2f} seconds")
@@ -629,7 +723,12 @@ class DoclingDocumentParser(DocumentParser):
             }
         ).convert(filename)
         doc = res.document
-        doc_title = doc.name
+        doc_title = extract_document_title(filename)
+        
+        # Fallback to Docling document name if no document metadata title found
+        if not doc_title and doc.name:
+            doc_title = doc.name
+            logger.info(f"Using Docling document name: '{doc_title}' from file {filename}")
 
         # Build content stream with position-based ordering
         positioned_elements = []  # List of (position, content, metadata) tuples
@@ -757,6 +856,12 @@ class DoclingDocumentParser(DocumentParser):
                 tables = list(self.get_tables_with_gmft(filename))
             else:
                 tables = list(self._get_tables(doc.tables))
+
+        # Fallback to filename if no title found
+        if not doc_title:
+            basename = os.path.basename(filename)
+            doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
+            logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
 
         logger.info(f"DoclingParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
@@ -1127,18 +1232,22 @@ class UnstructuredDocumentParser(DocumentParser):
                 type_counts[etype] = type_counts.get(etype, 0) + 1
             logger.info(f"Final element distribution: {type_counts}")
         
-        # Find document title from raw or regular elements
-        title_elements = raw_tables_images if is_chunking else elements
-        titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x).strip()) > 2]
-        doc_title = titles[0] if len(titles) > 0 else ''
+        # Find document title with priority: Document metadata > Title elements > filename
+        doc_title = extract_document_title(filename)
+        
+        # For files without metadata title, look for Title elements (except PDF/DOCX/PPTX which skip Title elements)
+        if not doc_title and not filename.endswith(('.pdf', '.docx', '.pptx')):
+            title_elements = raw_tables_images if is_chunking else elements
+            titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x).strip()) > 3]
+            if titles:
+                doc_title = titles[0]
+                logger.info(f"Extracted document title from Title element: '{doc_title}' from file {filename}")
         
         # Fallback: use filename if no title found
         if not doc_title:
             basename = os.path.basename(filename)
             doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
             logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
-        else:
-            logger.info(f"Extracted document title: '{doc_title}' from file {filename}")
 
         # Process tables separately for structured indexing
         tables = []
