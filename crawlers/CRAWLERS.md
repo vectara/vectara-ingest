@@ -587,10 +587,39 @@ sharepoint_crawler:
 
 This Python crawler ingests documents from SharePoint sites and indexes them into Vectara. It supports both cloud and on-premises SharePoint instances with multiple authentication methods and crawling modes.
 
-**Crawling Modes:**
-- **`site`**: Crawls all document libraries in the SharePoint site, automatically discovering and processing all accessible libraries while excluding system libraries
-- **`folder`**: Crawls a specific SharePoint folder and its contents (requires `target_folder`)
-- **`list`**: Crawls a SharePoint list and indexes its attachments (requires `target_list`)
+**Crawling Modes - Linear Explanation:**
+
+**1. Site Mode (`mode: "site"`)**
+- **What it does**: Discovers and crawls ALL document libraries in the SharePoint site
+- **How it works**: 
+  1. Connects to the SharePoint site
+  2. Queries the Lists API to find all document libraries (BaseTemplate = 101)
+  3. Filters out system libraries (Form Templates, Style Library, etc.)
+  4. Crawls each library recursively (if `recursive: true`)
+  5. Processes all files in each library
+- **Use when**: You want to index everything in a SharePoint site
+- **Configuration**: Only requires `team_site_url` and `mode: "site"`
+
+**2. Folder Mode (`mode: "folder"`)**
+- **What it does**: Crawls a specific SharePoint folder and its contents
+- **How it works**:
+  1. Connects to the SharePoint site
+  2. Navigates to the specified `target_folder` path
+  3. Lists all files in that folder (and subfolders if `recursive: true`)
+  4. Downloads and processes each file
+- **Use when**: You want to index only a specific folder (e.g., "Shared Documents/Project Files")
+- **Configuration**: Requires `target_folder` path (e.g., "Shared Documents/MyFolder")
+
+**3. List Mode (`mode: "list"`)**
+- **What it does**: Crawls a SharePoint list and processes file attachments from list items
+- **How it works**:
+  1. Connects to the SharePoint site
+  2. Queries the specified `target_list` for all items
+  3. For each list item, checks if it has file attachments
+  4. Downloads and processes each attachment file
+  5. Extracts metadata from list item properties
+- **Use when**: Your files are stored as attachments to list items (not in document libraries)
+- **Configuration**: Requires `target_list` name and `list_item_metadata_properties`
 
 **Authentication Options:**
 - **`user_credentials`**: Username and password authentication (supports NTLM for on-premises)

@@ -44,7 +44,7 @@ class SharepointCrawler(Crawler):
     with 'table' and 'element' modes.
     """
     
-    # SharePoint system document libraries/folders to skip (built-in libraries)
+    # SharePoint system components to skip
     SYSTEM_LIBRARIES = {
         'Form Templates', 'Style Library', 'Site Assets', 'Site Pages',
         'Master Page Gallery', 'Theme Gallery', 'Solution Gallery',
@@ -52,7 +52,14 @@ class SharepointCrawler(Crawler):
         'Translation Management Library', 'Converted Forms',
         'Site Collection Documents', 'Site Collection Images',
         'Customized Reports', 'Pages', 'Reusable Content', 'Images',
-        'SiteAssets', 'Forms', '_catalogs', '_layouts', '_vti_bin'
+        'SiteAssets', '_catalogs', '_layouts', '_vti_bin'
+    }
+    
+    # SharePoint system files to skip (individual files within libraries)
+    SYSTEM_FILES = {
+        'Forms', 'AllItems.aspx', 'DispForm.aspx', 'EditForm.aspx', 
+        'NewForm.aspx', 'Upload.aspx', 'WebPartPages', 'repair.aspx',
+        'Combine.aspx', 'Thumbnails.aspx', 'template.dotx'
     }
 
     def __init__(self, cfg, *args, **kwargs):
@@ -313,7 +320,7 @@ class SharepointCrawler(Crawler):
                     metadata=df_metadata
                 )
                 
-            elif file_type == 'xls':
+            elif file_type in ['xls', 'xlsx']:
                 xls = pd.ExcelFile(file_path)
                 sheet_names = df_config.get("sheet_names")
                 
@@ -365,13 +372,7 @@ class SharepointCrawler(Crawler):
             return True
         
         # Skip common SharePoint system files
-        system_file_patterns = {
-            'Forms', 'AllItems.aspx', 'DispForm.aspx', 'EditForm.aspx', 
-            'NewForm.aspx', 'Upload.aspx', 'WebPartPages', 'repair.aspx',
-            'Combine.aspx', 'Thumbnails.aspx', 'template.dotx'
-        }
-        
-        if file_name in system_file_patterns:
+        if file_name in self.SYSTEM_FILES:
             logger.debug(f"Skipping system file: {file_name}")
             return True
         
