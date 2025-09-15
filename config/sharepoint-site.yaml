@@ -1,0 +1,35 @@
+vectara:
+  corpus_key: ingest_sharepoint
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: sharepoint
+
+doc_processing:
+  model: "openai"
+  doc_parser: docling
+  parse_tables: true
+  enable_gmft: true
+  do_ocr: true
+  summarize_images: true
+
+  unstructured_config:
+    chunking_strategy: by_title
+    chunk_size: 512
+
+  use_core_indexing: true
+
+sharepoint_crawler:
+  team_site_url: "http://your-site/sites/docs"
+  mode: "site"
+  recursive: true
+  auth_type: "user_credentials"
+  allow_ntlm: true
+
+  dataframe_processing:
+    enabled: true
+    mode: "element"
+    doc_id_columns: [Season, Episode]
+    text_columns: [Name, Sentence]
+    metadata_columns: ["Season", "Episode", "Episode Title"]

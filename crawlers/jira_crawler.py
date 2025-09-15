@@ -14,11 +14,18 @@ class JiraCrawler(Crawler):
         session = create_session_with_retries()
         configure_session_for_ssl(session, self.cfg.jira_crawler)
 
+        # Get configurable parameters with defaults
+        api_version = getattr(self.cfg.jira_crawler, 'api_version', '3')
+        api_endpoint = getattr(self.cfg.jira_crawler, 'api_endpoint', 'search')
+        fields = getattr(self.cfg.jira_crawler, 'fields', '*all')
+        max_results = getattr(self.cfg.jira_crawler, 'max_results', 100)
+        initial_start_at = getattr(self.cfg.jira_crawler, 'start_at', 0)
+
         issue_count = 0
-        startAt = 0
-        res_cnt = 100
+        startAt = initial_start_at
+        res_cnt = max_results
         while True:
-            jira_query_url = f"{self.cfg.jira_crawler.jira_base_url}/rest/api/3/search?jql={self.cfg.jira_crawler.jira_jql}&fields=*all&maxResults={res_cnt}&startAt={startAt}"
+            jira_query_url = f"{self.cfg.jira_crawler.jira_base_url}/rest/api/{api_version}/{api_endpoint}?jql={self.cfg.jira_crawler.jira_jql}&fields={fields}&maxResults={res_cnt}&startAt={startAt}"
 
             jira_response = session.get(jira_query_url, headers=self.jira_headers, auth=self.jira_auth)
             jira_response.raise_for_status()
