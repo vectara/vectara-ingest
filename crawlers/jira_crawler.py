@@ -7,18 +7,31 @@ from core.utils import create_session_with_retries, configure_session_for_ssl
 class JiraCrawler(Crawler):
 
     def crawl(self) -> None:
-        self.jira_headers = { "Accept": "application/json" }
-        self.jira_auth = (self.cfg.jira_crawler.jira_username, self.cfg.jira_crawler.jira_password)
+        base_url = self.cfg.jira_crawler.jira_base_url.rstrip("/")
+        jql = self.cfg.jira_crawler.jira_jql
+        jira_headers = { "Accept": "application/json" }
+        jira_auth = (self.cfg.jira_crawler.jira_username, self.cfg.jira_crawler.jira_password)
         session = create_session_with_retries()
         configure_session_for_ssl(session, self.cfg.jira_crawler)
 
+        wanted_fields = [
+            "summary","project","issuetype","status","priority","reporter","assignee",
+            "created","updated","resolutiondate","labels","comment","description"
+        ]
+
         issue_count = 0
-        startAt = 0
+        start_at = 0
         res_cnt = 100
         while True:
-            jira_query_url = f"{self.cfg.jira_crawler.jira_base_url}/rest/api/3/search?jql={self.cfg.jira_crawler.jira_jql}&fields=*all&maxResults={res_cnt}&startAt={startAt}"
+            params = {
+                "jql": jql,                       # let requests encode
+                "fields": ",".join(wanted_fields),
+                "maxResults": res_cnt,
+                "startAt": start_at,
+            }
+            url = f"{base_url}/rest/api/3/search/jql"
 
-            jira_response = session.get(jira_query_url, headers=self.jira_headers, auth=self.jira_auth)
+            jira_response = session.get(url, headers=jira_headers, auth=jira_auth, params=params)
             jira_response.raise_for_status()
             jira_data = jira_response.json()
 
