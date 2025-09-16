@@ -1,12 +1,13 @@
 vectara:
   corpus_key: s3
   reindex: false
-  create_corpus: true
+  create_corpus: false
+  ssl_verify: false  # Set to false for S3 services with self-signed certificates
 
 crawling:
   crawler_type: s3
 
 s3_crawler:
-  s3_path: s3://ofer-pdfs
-  extensions: ['.pdf']
-
+  endpoint_url: 'https://s3.amazonaws.com'
+  s3_path: s3://my-data-bucket/
+  extensions: ['*']
