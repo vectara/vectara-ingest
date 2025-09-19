@@ -10,3 +10,10 @@ jira_crawler:
   jira_base_url: "https://vectara.atlassian.net/"
   jira_username: ofer@vectara.com
   jira_jql: "created > -365d"
+  
+  # Optional API configuration parameters (uncomment to override defaults)
+  # api_version: "3"           # Default: "3" (Jira REST API version)
+  # api_endpoint: "search"     # Default: "search" (API endpoint)
+  # fields: "*all"             # Default: "*all" (fields to retrieve)
+  # max_results: 100           # Default: 100 (results per page)
+  # start_at: 0                # Default: 0 (starting index for pagination)
