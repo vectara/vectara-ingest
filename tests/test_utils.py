@@ -536,12 +536,13 @@ class TestUtils(unittest.TestCase):
     def test_setup_logging_default(self, mock_stdout, mock_handler, mock_get_logger):
         """Test logging setup with default level."""
         mock_root_logger = Mock()
+        mock_root_logger.handlers = []  # Empty handlers list to trigger handler setup
         mock_get_logger.return_value = mock_root_logger
         mock_handler_instance = Mock()
         mock_handler.return_value = mock_handler_instance
-        
+
         setup_logging()
-        
+
         mock_root_logger.setLevel.assert_called_once()
         mock_handler_instance.setLevel.assert_called_once()
         mock_root_logger.addHandler.assert_called_once()

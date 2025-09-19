@@ -1,6 +1,10 @@
 import unittest
 import os
-from unittest.mock import Mock, patch
+import sys
+from unittest.mock import Mock, patch, MagicMock
+
+# Mock cairosvg before it's imported by other modules
+sys.modules['cairosvg'] = MagicMock()
 
 
 class TestDocumentTitleExtraction(unittest.TestCase):
@@ -8,7 +12,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pdf_title_extraction_from_metadata(self):
         """Test that PDF metadata title is extracted when available"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # Mock PdfReader and metadata
             mock_reader = Mock()
             mock_metadata = Mock()
@@ -28,7 +32,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pdf_title_extraction_with_whitespace(self):
         """Test that PDF title with whitespace is properly trimmed"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # Mock PdfReader with title containing whitespace
             mock_reader = Mock()
             mock_metadata = Mock()
@@ -46,7 +50,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pdf_title_extraction_empty_metadata(self):
         """Test fallback when PDF metadata title is empty"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # Mock PdfReader with empty title
             mock_reader = Mock()
             mock_metadata = Mock()
@@ -54,17 +58,17 @@ class TestDocumentTitleExtraction(unittest.TestCase):
             mock_reader.metadata = mock_metadata
             mock_pdf_reader_class.return_value = mock_reader
             
-            from core.doc_parser import extract_pdf_title
+            from core.doc_parser import extract_document_title
             
             filename = "my_test_document.pdf"
-            doc_title = extract_pdf_title(filename)
+            doc_title = extract_document_title(filename)
             
             # Should remain empty for fallback to filename
             self.assertEqual(doc_title, "")
     
     def test_pdf_title_extraction_none_metadata(self):
         """Test fallback when PDF metadata title is None"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # Mock PdfReader with None title
             mock_reader = Mock()
             mock_metadata = Mock()
@@ -82,7 +86,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pdf_title_extraction_no_metadata(self):
         """Test fallback when PDF has no metadata"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # Mock PdfReader with no metadata
             mock_reader = Mock()
             mock_reader.metadata = None
@@ -98,7 +102,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pdf_title_extraction_error_handling(self):
         """Test error handling when PDF reading fails"""
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             # PdfReader raises exception
             mock_pdf_reader_class.side_effect = Exception("PDF processing error")
             
@@ -127,7 +131,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_docx_title_extraction_from_metadata(self):
         """Test that DOCX document title is extracted when available"""
-        with patch('core.doc_parser.Document') as mock_document_class:
+        with patch('docx.Document') as mock_document_class:
             # Mock Document and core_properties
             mock_doc = Mock()
             mock_core_props = Mock()
@@ -146,7 +150,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pptx_title_extraction_from_metadata(self):
         """Test that PPTX presentation title is extracted when available"""
-        with patch('core.doc_parser.Presentation') as mock_presentation_class:
+        with patch('pptx.Presentation') as mock_presentation_class:
             # Mock Presentation and core_properties
             mock_prs = Mock()
             mock_core_props = Mock()
@@ -165,7 +169,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_docx_title_extraction_import_error(self):
         """Test DOCX title extraction when python-docx is not available"""
-        with patch('core.doc_parser.Document') as mock_document_class:
+        with patch('docx.Document') as mock_document_class:
             # Mock ImportError when trying to import docx.Document
             mock_document_class.side_effect = ImportError("No module named 'docx'")
             
@@ -179,7 +183,7 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     
     def test_pptx_title_extraction_import_error(self):
         """Test PPTX title extraction when python-pptx is not available"""
-        with patch('core.doc_parser.Presentation') as mock_presentation_class:
+        with patch('pptx.Presentation') as mock_presentation_class:
             # Mock ImportError when trying to import pptx.Presentation
             mock_presentation_class.side_effect = ImportError("No module named 'pptx'")
             
@@ -225,7 +229,7 @@ class TestIntegratedTitleExtraction(unittest.TestCase):
         filename = "research_paper.pdf"
         
         # Case 1: PDF has metadata title
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             mock_reader = Mock()
             mock_metadata = Mock()
             mock_metadata.title = "Advanced AI Research"
@@ -249,7 +253,7 @@ class TestIntegratedTitleExtraction(unittest.TestCase):
         """Test the complete title extraction flow with all fallbacks"""
         
         # Test with PDF that has no metadata - should use filename
-        with patch('core.doc_parser.PdfReader') as mock_pdf_reader_class:
+        with patch('pypdf.PdfReader') as mock_pdf_reader_class:
             mock_reader = Mock()
             mock_reader.metadata = None
             mock_pdf_reader_class.return_value = mock_reader
