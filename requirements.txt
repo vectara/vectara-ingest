@@ -57,7 +57,7 @@ backoff==2.2.1
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-http
     #   unstructured
-banks==2.1.2
+banks==2.2.0
     # via llama-index-core
 beautifulsoup4==4.12.3
     # via
@@ -152,6 +152,7 @@ deprecated==1.2.18
     # via
     #   banks
     #   llama-index-core
+    #   llama-index-instrumentation
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
     #   pikepdf
@@ -382,13 +383,21 @@ latex2mathml==3.78.0
     # via docling-core
 lazy-loader==0.4
     # via scikit-image
-llama-cloud==0.1.37
+llama-cloud==0.1.42
     # via llama-cloud-services
-llama-cloud-services==0.6.63
-    # via llama-parse
-llama-index-core==0.12.40
-    # via llama-cloud-services
-llama-parse==0.6.63
+llama-cloud-services==0.6.68
+    # via
+    #   -r requirements.in
+    #   llama-parse
+llama-index-core==0.14.2
+    # via
+    #   -r requirements.in
+    #   llama-cloud-services
+llama-index-instrumentation==0.4.1
+    # via llama-index-workflows
+llama-index-workflows==2.2.2
+    # via llama-index-core
+llama-parse==0.6.68
     # via -r requirements.in
 llvmlite==0.44.0
     # via numba
@@ -657,6 +666,7 @@ platformdirs==4.3.8
     #   banks
     #   jupyter-core
     #   llama-cloud-services
+    #   llama-index-core
 playwright==1.49.1
     # via -r requirements.in
 pluggy==1.6.0
@@ -719,6 +729,8 @@ pydantic==2.11.5
     #   llama-cloud
     #   llama-cloud-services
     #   llama-index-core
+    #   llama-index-instrumentation
+    #   llama-index-workflows
     #   openai
     #   pydantic-settings
     #   unstructured-client
@@ -1057,6 +1069,7 @@ typing-extensions==4.14.0
     #   gmft
     #   huggingface-hub
     #   llama-index-core
+    #   llama-index-workflows
     #   mypy
     #   office365-rest-python-client
     #   onnx

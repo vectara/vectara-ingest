@@ -70,6 +70,7 @@ Pillow==10.4.0
 docling==2.50.0
 llama-parse==0.6.68
 llama-cloud-services==0.6.68
+llama-index-core==0.14.2
 gmft==0.4.2
 pypdf >= 3.0.0
 furl==2.1.3
