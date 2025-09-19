@@ -71,7 +71,7 @@ class SAMLAuthManager:
         
         try:
             playwright = sync_playwright().start()
-            browser = playwright.firefox.launch(headless=True)
+            browser = playwright.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
             context = browser.new_context()
             page = context.new_page()
             

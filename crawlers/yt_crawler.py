@@ -2,7 +2,6 @@ import logging
 logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import os
-import json
 
 from pytube import Playlist, YouTube
 from pydub import AudioSegment

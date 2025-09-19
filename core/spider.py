@@ -19,7 +19,7 @@ from scrapy.spiders.sitemap import iterloc
 
 
 from core.indexer import Indexer
-from core.utils import img_extensions, doc_extensions, archive_extensions, url_matches_patterns
+from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def recursive_crawl(url: str, depth: int,
     parsed_url = urlparse(url)
     current_path_lower = parsed_url.path.lower()
     
-    if any([current_path_lower.endswith(ext) for ext in (archive_extensions + img_extensions)]):
+    if any([current_path_lower.endswith(ext) for ext in (archive_extensions + img_extensions + audio_extensions + video_extensions)]):
         return visited
     
     # add the current URL
@@ -140,12 +140,12 @@ class LinkSpider(scrapy.Spider):
             logger.error(f"Invalid regex pattern provided: {e.pattern} - {e.msg}")
             raise ValueError(f"Invalid regex pattern: {e.pattern} - {e.msg}") from e
 
-    def start_requests(self):
+    async def start(self):
         """Generate initial requests with cookies if available"""
         for url in self.start_urls:
             if self.cookies:
                 # Create request with cookies for SAML authentication
-                yield scrapy.Request(
+                request = scrapy.Request(
                     url,
                     callback=self.parse,
                     cookies=self.cookies,
@@ -153,11 +153,12 @@ class LinkSpider(scrapy.Spider):
                 )
             else:
                 # Standard request without cookies
-                yield scrapy.Request(
+                request = scrapy.Request(
                     url,
                     callback=self.parse,
                     meta={'depth': 0}
                 )
+            yield request
     
     def is_valid_by_regex(self, url: str) -> bool:
         if any(p.match(url) for p in self.negative_patterns):
@@ -172,7 +173,7 @@ class LinkSpider(scrapy.Spider):
         parsed_url = urlparse(url)
         path_lower = parsed_url.path.lower()
 
-        if any([path_lower.endswith(ext) for ext in (doc_extensions + archive_extensions + img_extensions)]):
+        if any([path_lower.endswith(ext) for ext in (doc_extensions + archive_extensions + img_extensions + audio_extensions + video_extensions)]):
             return False
 
         if not parsed_url.scheme.lower() in ['http', 'https']:
@@ -184,7 +185,7 @@ class LinkSpider(scrapy.Spider):
         parsed_response_url = urlparse(response.url)
         response_path_lower = parsed_response_url.path.lower() # Get lowercase path
 
-        if any([response_path_lower.endswith(ext) for ext in (archive_extensions + img_extensions)]):
+        if any([response_path_lower.endswith(ext) for ext in (archive_extensions + img_extensions + audio_extensions + video_extensions)]):
             return
         
         # For document files, yield the URL but do not attempt to extract links.

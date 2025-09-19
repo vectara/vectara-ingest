@@ -73,13 +73,13 @@ sudo yum install -y liberation-fonts dejavu-sans-fonts
 sudo yum install -y libcanberra-gtk3 atk || true
 ```
 
-3. Install Firefox Browser
+3. Install Chromium Browser
 
-vectara-ingest uses Firefox for web crawling. Install it using:
+vectara-ingest uses Chromium for web crawling. Install it using:
 
 ```bash
-# Install Firefox for Playwright
-playwright install firefox
+# Install Chromium for Playwright
+playwright install chromium
 ```
 
 4. Known Issues
@@ -185,7 +185,7 @@ The workflow will:
 The workflow builds specifically for Red Hat-based Linux distributions (CentOS, RHEL, Amazon Linux):
 
 - Built using a CentOS Stream 9 container for compatibility with Red Hat systems
-- Includes all necessary system dependencies for Playwright and Firefox
+- Includes all necessary system dependencies for Playwright and Chromium
 - Can be installed with: `conda install vectara::vectara-ingest -c conda-forge`
 
 This Red Hat-focused build ensures compatibility with Red Hat-based systems, which is the recommended Linux platform for this package. The build process installs all the required system dependencies mentioned in the "Running on Red Hat Linux" section above, so you don't need to install them separately when using the conda package.

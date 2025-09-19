@@ -3,7 +3,6 @@ logger = logging.getLogger(__name__)
 import markdown
 from core.crawler import Crawler
 from core.utils import html_to_text
-import json
 
 import synapseclient
 

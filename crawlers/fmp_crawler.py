@@ -43,7 +43,7 @@ class FmpCrawler(Crawler):
             logger.info(f"Error during indexing of {document['id']}: {e}")
             return False
 
-    def index_10k(self, ticker: str, company_name: str, year: int) -> None:
+    def index_10k(self, ticker: str, company_name: str) -> None:
         """
         Index 10-Ks for a ticker in a given year range
         Args:
@@ -159,7 +159,7 @@ class FmpCrawler(Crawler):
             # index 10-K for ticker in date range
             if self.cfg.fmp_crawler.get("index_10k", False):
                 logger.info("Getting 10-Ks and indexing content into Vectara")
-                self.index_10k(ticker, company_name, self.start_year)
+                self.index_10k(ticker, company_name)
 
             # Index earnings call transcript
             if self.cfg.fmp_crawler.get("index_call_transcripts", True):

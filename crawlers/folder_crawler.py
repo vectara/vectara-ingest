@@ -8,7 +8,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import setup_logging, get_docker_or_local_path
+from core.utils import setup_logging, get_docker_or_local_path, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -36,7 +36,7 @@ class FileCrawlWorker(object):
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix
         try:
-            if extension in [".mp3", ".mp4"]:
+            if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
                 self.indexer.index_media_file(file_path, metadata=metadata)
             
             elif supported_by_dataframe_parser(file_path):
@@ -143,6 +143,7 @@ class FolderCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), files_to_process))
+            ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
             crawl_worker.setup()

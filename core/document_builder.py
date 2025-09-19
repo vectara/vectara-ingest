@@ -61,18 +61,19 @@ class DocumentBuilder:
         # Build document structure
         document = {}
         document["id"] = self._generate_doc_id(doc_id)
+        document["metadata"] = {}
         
         # Build tables structure
         tables_array = self._build_tables_array(tables) if tables else []
         
         if use_core_indexing:
-            document = self._build_core_document(document, texts, metadatas, tables_array)
+            document = self._build_core_document(document, texts, metadatas, doc_title, tables_array)
         else:
             document = self._build_structured_document(document, texts, titles, metadatas, doc_title, tables_array)
         
         if doc_metadata:
-            document["metadata"] = doc_metadata
-            
+            document["metadata"].update(doc_metadata)
+
         return document
     
     def _normalize_value(self, value):
@@ -122,6 +123,7 @@ class DocumentBuilder:
         document: Dict[str, Any],
         texts: List[str],
         metadatas: List[Dict[str, Any]],
+        doc_title: str,
         tables_array: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Build document for core indexing"""
@@ -138,6 +140,9 @@ class DocumentBuilder:
         if tables_array:
             document["tables"] = tables_array
             
+        if doc_title:
+            document["metadata"] = {"title": doc_title}
+
         return document
     
     def _build_structured_document(

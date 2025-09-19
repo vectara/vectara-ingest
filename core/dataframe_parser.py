@@ -295,9 +295,13 @@ class DataframeParser:
 
         for column in metadata_columns:
             if len(df_chunk[column].unique()) == 1 and not pd.isnull(df_chunk[column].iloc[0]):
-                doc_metadata[column] = df_chunk[column].iloc[0]
+                value = df_chunk[column].iloc[0]
+                # Convert numpy types to native Python types for JSON serialization
+                if hasattr(value, 'item'):
+                    value = value.item()
+                doc_metadata[column] = value
         
-        final_title = titles[0] if titles else ""
+        final_title = titles[0] if titles else doc_title
         logger.debug(f"Indexing {len(df_chunk)} rows for doc_id '{doc_id}'")
 
         self.indexer.index_segments(

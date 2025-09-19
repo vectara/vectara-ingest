@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
 from typing import List, Set, Any, Dict
-from urllib.parse import urlparse, urlunparse, ParseResult, urljoin
+from urllib.parse import urlparse, urlunparse, ParseResult, urljoin, unquote
 
 # Third-party imports
 import magic
@@ -32,14 +32,16 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # File extensions
-IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".mp3", ".mp4", ".png", ".svg", ".bmp", ".eps", ".ico"]
+IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico"]
+AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"]
+VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".webm", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg", ".m4v", ".3gp", ".f4v"]
 DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
 ARCHIVE_EXTENSIONS = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
-BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + DOC_EXTENSIONS
+BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + DOC_EXTENSIONS
 SPREADSHEET_EXTENSIONS = {".csv", ".xls", ".xlsx"}
 
 # HTTP configurations
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
@@ -80,6 +82,8 @@ except ImportError:
 
 # Legacy constants for backward compatibility
 img_extensions = IMG_EXTENSIONS
+audio_extensions = AUDIO_EXTENSIONS
+video_extensions = VIDEO_EXTENSIONS
 doc_extensions = DOC_EXTENSIONS
 archive_extensions = ARCHIVE_EXTENSIONS
 binary_extensions = BINARY_EXTENSIONS
@@ -136,7 +140,9 @@ def url_to_filename(url):
     parsed_url = urlparse(url)
     path_parts = parsed_url.path.split('/')
     last_part = path_parts[-1]
-    name, ext = os.path.splitext(last_part)
+    # URL-decode the filename to handle %20 and other encoded characters properly
+    decoded_part = unquote(last_part)
+    name, ext = os.path.splitext(decoded_part)
     slugified_name = slugify(name)
     return f"{slugified_name}{ext}"
 
@@ -968,4 +974,45 @@ def get_headers(cfg):
     headers = DEFAULT_HEADERS.copy()
     headers["User-Agent"] = user_agent
     return headers
+
+
+def normalize_vectara_endpoint(endpoint_config: str, default_host: str = "api.vectara.io") -> str:
+    """
+    Normalize Vectara API endpoint configuration to a valid URL.
+    
+    Handles various input formats:
+    - Full URLs: "https://api.vectara.dev" -> "https://api.vectara.dev"
+    - Hostnames: "api.vectara.dev" -> "https://api.vectara.dev"
+    - Empty/None: None -> "https://api.vectara.io"
+    
+    Args:
+        endpoint_config: Endpoint from config (can be URL or hostname)
+        default_host: Default hostname if endpoint_config is empty
+        
+    Returns:
+        str: Normalized HTTPS URL
+        
+    Raises:
+        ValueError: If the resulting URL is invalid
+    """
+    from urllib.parse import urlparse
+    
+    # Use default if not provided
+    if not endpoint_config:
+        endpoint_config = default_host
+    
+    # If it already looks like a URL, validate and return
+    if endpoint_config.startswith(("http://", "https://")):
+        parsed = urlparse(endpoint_config)
+        if not all([parsed.scheme in ("http", "https"), parsed.netloc]):
+            raise ValueError(f"Invalid endpoint URL: {endpoint_config}")
+        return endpoint_config
+    
+    # Otherwise treat as hostname and add https://
+    normalized = f"https://{endpoint_config}"
+    parsed = urlparse(normalized)
+    if not parsed.netloc or parsed.netloc != endpoint_config:
+        raise ValueError(f"Invalid endpoint hostname: {endpoint_config}")
+    
+    return normalized
 

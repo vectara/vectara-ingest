@@ -25,6 +25,7 @@ website_crawler:
     num_per_second: 10
     pages_source: crawl
     crawl_method: internal  # "internal" (default) or "scrapy"
+    scrape_method: playwright  # "playwright" (default) or "scrapy" - for web content extraction
     max_depth: 3            # only needed if pages_source is set to 'crawl'
     html_processing:
       ids_to_remove: [td-123]
@@ -59,6 +60,10 @@ The `html_processing` configuration defines a set of special instructions that c
 
 `ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
+
+`scrape_method` defines the extraction backend for processing web content ("playwright" or "scrapy"):
+- `playwright` (default): Uses Playwright browser automation for JavaScript-heavy sites, SPAs, and dynamic content
+- `scrapy`: Uses Scrapy for faster, lightweight extraction of static HTML content
 
 
 ### Database crawler
@@ -185,6 +190,7 @@ This bulk upload crawler has no parameters.
 ...
 rss_crawler:
   source: bbc
+  scrape_method: playwright  # "playwright" (default) or "scrapy" - for article content extraction
   rss_pages: [
     "http://feeds.bbci.co.uk/news/rss.xml", "http://feeds.bbci.co.uk/news/world/rss.xml", "http://feeds.bbci.co.uk/news/uk/rss.xml",
     "http://feeds.bbci.co.uk/news/business/rss.xml", "http://feeds.bbci.co.uk/news/politics/rss.xml", 
@@ -203,6 +209,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `rss_pages` defines one or more RSS feed locations. 
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds to wait between news articles, so as to make the crawl more friendly to the hosting site.
+- `scrape_method` defines the extraction backend for processing article content ("playwright" or "scrapy").
 
 ### Hackernews crawler
 
@@ -231,6 +238,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
     crawl_method: internal  # "internal" (default) or "scrapy"
+    scrape_method: playwright  # "playwright" (default) or "scrapy" - for docs content extraction
     remove_code: true
     html_processing:
       ids_to_remove: []
@@ -258,7 +266,8 @@ The `html_processing` configuration defines a set of special instructions that c
 - `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
 - `classes_to_remove` defines an (optional) list of CSS class names that are ignored when extracting text from the page.
 - `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
-- 
+- `scrape_method` defines the extraction backend for processing documentation content ("playwright" or "scrapy").
+
 <br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
 
 ### Discourse crawler
@@ -716,9 +725,39 @@ sharepoint_crawler:
 
 
 
+### PMC Crawler
+
+```yaml
+pmc_crawler:
+  n_pmc_papers: 100
+  search_query: "covid-19 treatment"
+  num_per_second: 3
+  scrape_method: playwright  # "playwright" (default) or "scrapy" - for web content extraction
+```
+
+The PMC (PubMed Central) crawler indexes medical research articles from PubMed Central into Vectara:
+- `n_pmc_papers`: Maximum number of papers to index
+- `search_query`: Search query to find relevant papers
+- `num_per_second`: Rate limiting for API calls (default: 3)
+- `scrape_method`: Extraction backend for processing article content ("playwright" or "scrapy")
+
+### Arxiv Crawler
+
+```yaml
+arxiv_crawler:
+  query_terms: "machine learning"
+  n_papers: 50
+  start_year: 2020
+  scrape_method: scrapy  # "playwright" (default) or "scrapy" - for metadata extraction
+```
+
+The Arxiv crawler indexes academic papers from arXiv.org into Vectara:
+- `query_terms`: Search terms to find relevant papers
+- `n_papers`: Maximum number of papers to index
+- `start_year`: Only index papers published after this year
+- `scrape_method`: Extraction backend for processing web content ("playwright" or "scrapy")
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
 - `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
-- `PMC` crawler: crawls medical articles from PubMed Central and indexes them into Vectara.
-- `Arxiv` crawler: crawls the top (most cited or latest) Arxiv articles about a topic and indexes them into Vectara.

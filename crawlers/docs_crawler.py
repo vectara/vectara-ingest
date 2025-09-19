@@ -15,7 +15,6 @@ from core.utils import (
     configure_session_for_ssl, get_docker_or_local_path, get_headers
 )
 from core.spider import run_link_spider_isolated
-from typing import Tuple, Set
 from core.indexer import Indexer
 
 import ray
@@ -29,6 +28,11 @@ class UrlCrawlWorker(object):
     def setup(self):
         self.indexer.setup()
         setup_logging()
+    
+    def cleanup(self):
+        """Cleanup resources when worker is done"""
+        if hasattr(self, 'indexer'):
+            self.indexer.cleanup()
 
     def process(self, url: str, source: str):
         if url is None:
@@ -52,6 +56,18 @@ class UrlCrawlWorker(object):
         return 0
 
 class DocsCrawler(Crawler):
+    
+    def __init__(self, cfg, *args, **kwargs):
+        super().__init__(cfg, *args, **kwargs)
+        # Get scrape_method from docs_crawler config if available
+        scrape_method = self.cfg.docs_crawler.get('scrape_method')
+        if scrape_method:
+            # Recreate indexer with the scrape_method
+            from core.indexer import Indexer
+            endpoint = args[0] if args else kwargs.get('endpoint')
+            corpus_key = args[1] if len(args) > 1 else kwargs.get('corpus_key')
+            api_key = args[2] if len(args) > 2 else kwargs.get('api_key')
+            self.indexer = Indexer(cfg, endpoint, corpus_key, api_key, scrape_method=scrape_method)
 
     def concat_url_and_href(self, url: str, href: str) -> str:
         if href.startswith('http'):
@@ -69,7 +85,7 @@ class DocsCrawler(Crawler):
             wait = int(retry_after) if retry_after and retry_after.isdigit() else 60
             logger.warning(f"429 on {url}, sleeping for {wait}s")
             time.sleep(wait)
-            response = self.session.get(url, headers=self.headers)
+            response = self.session.get(url, headers=get_headers(self.cfg))
         if response.status_code != 200:
             logger.warning(f"Failed to crawl {url}, response code is {response.status_code}")
             return None, None
@@ -80,7 +96,7 @@ class DocsCrawler(Crawler):
         if meta_refresh:
             href = meta_refresh['content'].split('url=')[-1]            # type: ignore
             url = self.concat_url_and_href(url, href)
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=get_headers(self.cfg))
             if response.status_code != 200:
                 logger.warning(f"Failed to crawl redirect {url}, response code is {response.status_code}")
                 return None, None
@@ -192,6 +208,10 @@ class DocsCrawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), all_urls))
+            # Cleanup Ray workers
+            for a in actors:
+                ray.get(a.cleanup.remote())
+            ray.shutdown()
 
         else:
             crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
@@ -199,6 +219,8 @@ class DocsCrawler(Crawler):
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
                 crawl_worker.process(url, source=source)
+            # Cleanup worker
+            crawl_worker.cleanup()
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list

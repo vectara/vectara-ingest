@@ -1,13 +1,13 @@
 import logging
 import os
 import tempfile
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Tuple
 from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
 from core.utils import get_file_size_in_MB
 from core.doc_parser import (
     UnstructuredDocumentParser, DoclingDocumentParser, 
-    LlamaParseDocumentParser, DocupandaDocumentParser
+    LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument
 )
 from core.contextual import ContextualChunker
 from core.summary import get_attributes_from_text
@@ -31,6 +31,8 @@ class FileProcessor:
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
+        self.inline_images = cfg.doc_processing.get("inline_images", True)
+        self.image_context = cfg.doc_processing.get("image_context", {'num_previous_chunks': 1, 'num_next_chunks': 1})
         
         # Parser configurations
         self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
@@ -99,16 +101,19 @@ class FileProcessor:
                 **base_dict,
                 chunking_strategy='by_title',
                 chunk_size=1024,
+                image_context=self.image_context,
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
             return LlamaParseDocumentParser(
                 **base_dict,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
+                image_context=self.image_context,
             )
         elif self.doc_parser == "docupanda":
             return DocupandaDocumentParser(
                 **base_dict,
                 docupanda_api_key=self.cfg.get("docupanda_api_key", None),
+                image_context=self.image_context,
             )
         elif self.doc_parser == "docling":
             return DoclingDocumentParser(
@@ -117,12 +122,14 @@ class FileProcessor:
                 chunk_size=self.docling_config.get('chunk_size', 1024),
                 do_ocr=self.do_ocr,
                 image_scale=self.docling_config.get('image_scale', 2.0),
+                image_context=self.image_context,
             )
         else:
             return UnstructuredDocumentParser(
                 **base_dict,
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
+                image_context=self.image_context,
             )
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -163,20 +170,19 @@ class FileProcessor:
         
         return cc.parallel_transform(chunks)
     
-    def process_file(self, filename: str, uri: str) -> Tuple[str, List[Tuple[str, Dict]], List, List]:
+    def process_file(self, filename: str, uri: str) -> ParsedDocument:
         """
         Process file and return parsed content
         
         Returns:
-            Tuple of (title, texts, tables, images)
+            ParsedDocument with unified content stream
         """
         if not os.path.exists(filename):
             raise FileNotFoundError(f"File {filename} does not exist")
         
         try:
             dp = self.create_document_parser()
-            title, texts, tables, images = dp.parse(filename, uri)
-            return title, texts, tables, images
+            return dp.parse(filename, uri)
         except Exception as e:
             logger.error(f"Failed to parse {filename}: {e}")
             raise
