@@ -138,6 +138,13 @@ class HubspotcrmCrawler(Crawler):
             deals, involved_company_ids, involved_contact_ids = self._fetch_deals_and_extract_relationships()
             logger.info(f"Found {len(deals)} deals involving {len(involved_company_ids)} companies and {len(involved_contact_ids)} contacts")
 
+            # Initialize Ray once if we're using it
+            if ray_workers > 0:
+                self.indexer.p = self.indexer.browser = None
+                if not ray.is_initialized():
+                    ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+                    logger.info(f"Initialized Ray with {ray_workers} workers")
+
             # Only fetch and index companies that are involved in deals
             logger.info("Step 2: Fetching and indexing deal-related companies...")
             self._fetch_and_index_relevant_companies(involved_company_ids, ray_workers)
@@ -161,6 +168,11 @@ class HubspotcrmCrawler(Crawler):
             logger.info("Step 6: Crawling and indexing engagements...")
             self._crawl_engagements(ray_workers)
             logger.info(f"✓ Engagements indexed: {self.stats['engagements_indexed']}")
+
+            # Shutdown Ray if it was initialized
+            if ray_workers > 0 and ray.is_initialized():
+                ray.shutdown()
+                logger.info("Ray shutdown complete")
 
             # Log final statistics
             logger.info("=" * 50)
@@ -434,16 +446,17 @@ class HubspotcrmCrawler(Crawler):
             companies_with_associations: List of (company, associations) tuples
             ray_workers: Number of Ray workers to use
         """
-        self.indexer.p = self.indexer.browser = None
-        ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         logger.info(f"Using {ray_workers} ray workers to process {len(companies_with_associations)} companies")
 
         # Put shared data in Ray object store
-        companies_cache_id = ray.put(self.companies_cache)
+        logger.info(f"About to put companies_cache in Ray. Cache size: {len(self.companies_cache)}")
+        companies_cache_id = ray.put(self.companies_cache if self.companies_cache else {})
+        logger.info(f"Type of companies_cache_id: {type(companies_cache_id)}, value: {companies_cache_id}")
 
         # Create actor pool
         actors = [ray.remote(HubspotObjectProcessor).remote(self.cfg, self.indexer, 'company') for _ in range(ray_workers)]
         for a in actors:
+            logger.info(f"Calling setup with companies_cache_id type: {type(companies_cache_id)}")
             a.setup.remote(companies_cache_id, None, None)
         pool = ray.util.ActorPool(actors)
 
@@ -459,8 +472,6 @@ class HubspotcrmCrawler(Crawler):
                 self.stats['companies_indexed'] += 1
             if errors:
                 self.stats['total_errors'] += errors
-
-        ray.shutdown()
 
     def _cache_contacts(self, ray_workers: int = 0) -> None:
         """Cache contact data for denormalization and index contacts with optional Ray support."""
@@ -520,8 +531,6 @@ class HubspotcrmCrawler(Crawler):
             contacts_with_associations: List of (contact, associations) tuples
             ray_workers: Number of Ray workers to use
         """
-        self.indexer.p = self.indexer.browser = None
-        ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         logger.info(f"Using {ray_workers} ray workers to process {len(contacts_with_associations)} contacts")
 
         # Put shared data in Ray object store
@@ -546,8 +555,6 @@ class HubspotcrmCrawler(Crawler):
                 self.stats['contacts_indexed'] += 1
             if errors:
                 self.stats['total_errors'] += errors
-
-        ray.shutdown()
 
     def _crawl_deals(self, ray_workers: int = 0) -> None:
         """Crawl and index all deals with optional Ray support."""
@@ -589,8 +596,6 @@ class HubspotcrmCrawler(Crawler):
             contacts_cache: Contacts cache dictionary
             ray_workers: Number of Ray workers to use
         """
-        self.indexer.p = self.indexer.browser = None
-        ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         logger.info(f"Using {ray_workers} ray workers to process {len(deals_with_associations)} deals")
 
         # Put shared data into Ray object store
@@ -622,8 +627,6 @@ class HubspotcrmCrawler(Crawler):
                 self.stats['deals_indexed'] += 1
             if errors:
                 self.stats['total_errors'] += errors
-
-        ray.shutdown()
 
 
 
@@ -668,8 +671,6 @@ class HubspotcrmCrawler(Crawler):
 
     def _process_engagements_with_ray(self, engagements: List[Dict], engagement_type: str, ray_workers: int) -> None:
         """Process engagements using Ray for parallel processing."""
-        self.indexer.p = self.indexer.browser = None
-        ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         logger.info(f"Using {ray_workers} ray workers for {engagement_type}")
 
         # Put shared data in Ray object store
@@ -692,8 +693,6 @@ class HubspotcrmCrawler(Crawler):
                 self.stats['engagements_indexed'] += 1
             if errors:
                 self.stats['total_errors'] += errors
-
-        ray.shutdown()
 
     def _get_engagement_properties(self, engagement_type: str) -> List[str]:
         """Get the relevant properties for each engagement type."""
@@ -1012,8 +1011,6 @@ class HubspotcrmCrawler(Crawler):
 
     def _process_tickets_with_ray(self, tickets: List[Dict], ray_workers: int) -> None:
         """Process tickets using Ray for parallel processing."""
-        self.indexer.p = self.indexer.browser = None
-        ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         logger.info(f"Using {ray_workers} ray workers for tickets")
 
         # Put shared data in Ray object store
@@ -1036,8 +1033,6 @@ class HubspotcrmCrawler(Crawler):
                 self.stats['tickets_indexed'] += 1
             if errors:
                 self.stats['total_errors'] += errors
-
-        ray.shutdown()
 
     def _build_deal_document(self, deal: Dict, associations: Dict) -> Dict:
         """Build a simplified deal document with denormalized data."""
@@ -1639,19 +1634,48 @@ class HubspotObjectProcessor:
         """Setup the processor with shared caches from Ray object store."""
         self.indexer.setup()
         setup_logging()
-        # Get caches from Ray object store - only call ray.get() if we have actual ObjectRefs
+
+        # Get caches from Ray object store - handle both ObjectRefs and direct values
         if companies_cache_id is not None:
-            self.companies_cache = ray.get(companies_cache_id)
+            # Check if it's already a dict (shouldn't happen, but defensive programming)
+            if isinstance(companies_cache_id, dict):
+                self.logger.warning(f"companies_cache_id is already a dict, not an ObjectRef!")
+                self.companies_cache = companies_cache_id
+            else:
+                # It should be an ObjectRef
+                try:
+                    self.companies_cache = ray.get(companies_cache_id)
+                except Exception as e:
+                    self.logger.error(f"Failed to get companies_cache from Ray: {e}")
+                    self.logger.error(f"Type was: {type(companies_cache_id)}")
+                    self.companies_cache = {}
         else:
             self.companies_cache = {}
 
         if contacts_cache_id is not None:
-            self.contacts_cache = ray.get(contacts_cache_id)
+            if isinstance(contacts_cache_id, dict):
+                self.logger.warning(f"contacts_cache_id is already a dict, not an ObjectRef!")
+                self.contacts_cache = contacts_cache_id
+            else:
+                try:
+                    self.contacts_cache = ray.get(contacts_cache_id)
+                except Exception as e:
+                    self.logger.error(f"Failed to get contacts_cache from Ray: {e}")
+                    self.contacts_cache = {}
         else:
             self.contacts_cache = {}
 
         if date_filters_id is not None:
-            self.start_date, self.end_date = ray.get(date_filters_id)
+            if isinstance(date_filters_id, tuple):
+                self.logger.warning(f"date_filters_id is already a tuple, not an ObjectRef!")
+                self.start_date, self.end_date = date_filters_id
+            else:
+                try:
+                    self.start_date, self.end_date = ray.get(date_filters_id)
+                except Exception as e:
+                    self.logger.error(f"Failed to get date_filters from Ray: {e}")
+                    self.start_date = None
+                    self.end_date = None
         else:
             self.start_date = None
             self.end_date = None
