@@ -19,18 +19,24 @@ class JiraCrawler(Crawler):
             "created","updated","resolutiondate","labels","comment","description"
         ]
 
+        api_version = getattr(self.cfg.jira_crawler, 'api_version', '3')
+        api_endpoint = getattr(self.cfg.jira_crawler, 'api_endpoint', 'search')
+        fields = getattr(self.cfg.jira_crawler, 'fields', wanted_fields)
+        max_results = getattr(self.cfg.jira_crawler, 'max_results', 100)
+        initial_start_at = getattr(self.cfg.jira_crawler, 'start_at', 0)
+
+
         issue_count = 0
-        start_at = 0
-        res_cnt = 100
+        start_at = initial_start_at
+        res_cnt = max_results
         while True:
             params = {
                 "jql": jql,                       # let requests encode
-                "fields": ",".join(wanted_fields),
+                "fields": ",".join(fields),
                 "maxResults": res_cnt,
                 "startAt": start_at,
             }
-            url = f"{base_url}/rest/api/3/search/jql"
-
+            url = f"{base_url}/rest/api/{api_version}/{api_endpoint}/jql"
             jira_response = session.get(url, headers=jira_headers, auth=jira_auth, params=params)
             jira_response.raise_for_status()
             jira_data = jira_response.json()
