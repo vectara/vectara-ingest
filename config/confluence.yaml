@@ -1,0 +1,17 @@
+vectara:
+  corpus_key: confluence
+  reindex: true
+  create_corpus: false
+  
+crawling:
+  crawler_type: confluence
+
+confluence_crawler:
+  # Confluence instance URL - replace with your actual Confluence URL
+  confluence_base_url: "https://username.atlassian.net/wiki"
+  
+  # Confluence Query Language (CQL) query - customize based on your needs
+  confluence_cql: 'space = "Test" and type IN (page)'
+  
+  # Whether to include attachments in the crawl
+  confluence_include_attachments: true

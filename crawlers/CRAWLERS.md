@@ -326,14 +326,25 @@ It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file unde
     jira_base_url: "https://vectara.atlassian.net/"
     jira_username: ofer@vectara.com
     jira_jql: "created > -365d"
+    
+    # Optional API configuration parameters
+    api_version: "3"           # Default: "3" (Jira REST API version)
+    api_endpoint: "search"     # Default: "search" (API endpoint)
+    fields: "*all"             # Default: "*all" (fields to retrieve)
+    max_results: 100           # Default: 100 (results per page)
+    start_at: 0                # Default: 0 (starting index for pagination)
 ```
 
 The JIRA crawler indexes issues and comments into Vectara. 
 - `jira_base_url`: the Jira base_url
 - `jira_username`: the user name that the crawler should use (`JIRA_PASSWORD` should be separately defined in the `secrets.toml` file)
 - `jira_jql`: a Jira JQL condition on the issues identified; in this example it is configured to only include items from the last year.
-- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
-- 
+- `api_version`: (optional) Jira REST API version to use (default: "3")
+- `api_endpoint`: (optional) API endpoint to use for searching (default: "search")
+- `fields`: (optional) Fields to retrieve from Jira issues (default: "*all" for all fields)
+- `max_results`: (optional) Maximum number of results per API request (default: 100)
+- `start_at`: (optional) Starting index for pagination (default: 0)
+- `ssl_verify`: If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used. 
 ### Confluence crawler
 
 ```yaml
@@ -388,6 +399,38 @@ For this crawler, you need to specify `NOTION_API_KEY` (which is associated with
 The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` that needs to be specified in the `secrets.toml` file. The crawler will index the emails on your Hubspot instance. The crawler also uses `clean_email_text()` module which takes the email message as a parameter and cleans it to make it more presentable. This function in `core/utils.py` is taking care of indentation character `>`. 
 
 The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
+
+### Hubspot CRM crawler
+
+```yaml
+...
+crawling:
+  crawler_type: hubspotcrm
+
+hubspot_crawler:
+  hubspot_customer_id: "YOUR_HUBSPOT_CUSTOMER_ID"
+...
+```
+
+The HubSpot CRM crawler extracts deals, companies, contacts, and tickets from your HubSpot CRM instance and indexes them in Vectara with rich denormalized data optimized for RAG (Retrieval-Augmented Generation) applications.
+
+**Key Features:**
+- **Comprehensive Data Extraction**: Crawls deals, companies, contacts, and support tickets
+- **Denormalized Structure**: Each document includes associated entity information for better context
+- **Hierarchical References**: Links between objects are preserved for easy navigation
+- **Sales-Optimized Content**: Documents are structured with sales teams in mind
+
+**Configuration Parameters:**
+- `hubspot_customer_id`: Your HubSpot customer/portal ID (found in your HubSpot account URL)
+- `HUBSPOT_API_KEY`: Must be specified in the `secrets.toml` file
+
+**Document Structure:**
+- **Deals**: Include associated company and contact information, deal progression details
+- **Companies**: Include associated deals and contacts, business intelligence data
+- **Contacts**: Include associated companies and deals, contact profile information
+- **Tickets**: Include customer context and resolution status
+
+Each document is structured with multiple sections containing natural language summaries optimized for semantic search and RAG applications.
 
 ### Google Drive crawler
 
@@ -452,6 +495,8 @@ The S3 crawler indexes all content that's in a specified S3 bucket path.
 - `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
 - `metadata_file`: an optional CSV file for metadata. Each row should have a `filename` column as key to match the file in the folder, and 1 or more additional columns used as metadata. This file should be in the same `s3_path` folder, but will be ignored for indexing purposes.
 
+**Note**: The S3 crawler respects the `ssl_verify` setting from the `vectara` configuration section. If `ssl_verify: false` is set in your configuration, SSL certificate verification will be disabled for S3 connections as well. This is useful when connecting to S3-compatible services with self-signed certificates.
+
 ### Youtube crawler
 
 ```yaml
@@ -512,36 +557,171 @@ attachment API and index them in Vectara as well.
 - **[Attachment API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_AttachmentAPI)**  
   Covers how to list and download attachments from ServiceNow records.
 
-### Sharepoint Crawler
+### SharePoint Crawler
 
 ```yaml
 sharepoint_crawler:
   team_site_url: "https://yoursharepointdomain.sharepoint.com/sites/YourTeamSite"
-  target_folder: "Shared Documents/TargetFolder"
+  mode: "site"  # Options: 'site', 'folder', 'list'
   recursive: true
-  mode: "folder" # Currently supports 'folder' mode only.
   auth_type: "user_credentials" # Options: 'user_credentials', 'client_credentials', 'client_certificate'
-  username: "your.username@example.com"
-  password: "your_password"
-  client_id: "<your_client_id>"
-  client_secret: "<your_client_secret>"
-  tenant_id: "<your_tenant_id>"
-  cert_thumbprint: "<certificate_thumbprint>"
-  cert_path: "/path/to/certificate.pem"
-  cert_passphrase: "<certificate_passphrase>" # optional
+  allow_ntlm: true  # Enable NTLM authentication for on-premises SharePoint
+  
+  # Mode-specific configuration
+  target_folder: "Shared Documents/TargetFolder"  # Required for 'folder' mode
+  target_list: "MySharePointList"  # Required for 'list' mode
+  
+  # Library filtering (for 'site' mode)
+  exclude_libraries: ["Form Templates", "Style Library"]
+  
+  # CSV/Excel processing configuration
+  dataframe_processing:
+    mode: "element"  # Options: 'element', 'table'
+    # Element mode configuration (for row-by-row processing)
+    doc_id_columns: ["Season", "Episode"]
+    text_columns: ["Name", "Sentence"]
+    metadata_columns: ["Season", "Episode", "Episode Title"]
+    csv_encoding: "utf-8"
+    sheet_names: ["Sheet1", "Data"]  # For Excel files, leave empty for all sheets
+    
+    # Table mode requires only the mode setting:
+    # mode: "table"  # Processes entire CSV/Excel as single table document
+  
+  # Processing options
+  cleanup_temp_files: true
+  retry_attempts: 3
+  retry_delay: 5
+  list_item_metadata_properties: ["Title", "Author", "Modified"]
 ```
 
-This Python crawler ingests documents from a SharePoint site and indexes them into Vectara. It authenticates to SharePoint using either user credentials, client credentials, or a client certificate. The crawler recursively scans folders, downloads supported file types (.pdf, .md, .odt, .doc, .docx, .ppt, .pptx, .txt, .html, .htm, .lxml, .rtf, .epub), and submits these files for indexing along with associated metadata.
--	`team_site_url`: The URL of your SharePoint site.
--	`target_folder`: The path to the SharePoint folder you wish to crawl.
--	`recursive`: Set to true if subfolders should be crawled recursively.
--	`mode`: Determines crawling behavior; currently supports "folder" only.
--	`auth_type`: Authentication method for SharePoint (user_credentials, client_credentials, or client_certificate).
--	For user_credentials: provide username and password.
--	For client_credentials: provide client_id, client_secret.
--	For client_certificate: provide client_id, tenant_id, cert_thumbprint, cert_path, and optionally cert_passphrase.
+This Python crawler ingests documents from SharePoint sites and indexes them into Vectara. It supports both cloud and on-premises SharePoint instances with multiple authentication methods and crawling modes.
 
-Ensure that sensitive information such as credentials and certificates are stored securely, and avoid disabling SSL verification in production environments.
+**Crawling Modes - Linear Explanation:**
+
+**1. Site Mode (`mode: "site"`)**
+- **What it does**: Discovers and crawls ALL document libraries in the SharePoint site
+- **How it works**: 
+  1. Connects to the SharePoint site
+  2. Queries the Lists API to find all document libraries (BaseTemplate = 101)
+  3. Filters out system libraries (Form Templates, Style Library, etc.)
+  4. Crawls each library recursively (if `recursive: true`)
+  5. Processes all files in each library
+- **Use when**: You want to index everything in a SharePoint site
+- **Configuration**: Only requires `team_site_url` and `mode: "site"`
+
+**2. Folder Mode (`mode: "folder"`)**
+- **What it does**: Crawls a specific SharePoint folder and its contents
+- **How it works**:
+  1. Connects to the SharePoint site
+  2. Navigates to the specified `target_folder` path
+  3. Lists all files in that folder (and subfolders if `recursive: true`)
+  4. Downloads and processes each file
+- **Use when**: You want to index only a specific folder (e.g., "Shared Documents/Project Files")
+- **Configuration**: Requires `target_folder` path (e.g., "Shared Documents/MyFolder")
+
+**3. List Mode (`mode: "list"`)**
+- **What it does**: Crawls a SharePoint list and processes file attachments from list items
+- **How it works**:
+  1. Connects to the SharePoint site
+  2. Queries the specified `target_list` for all items
+  3. For each list item, checks if it has file attachments
+  4. Downloads and processes each attachment file
+  5. Extracts metadata from list item properties
+- **Use when**: Your files are stored as attachments to list items (not in document libraries)
+- **Configuration**: Requires `target_list` name and `list_item_metadata_properties`
+
+**Authentication Options:**
+- **`user_credentials`**: Username and password authentication (supports NTLM for on-premises)
+- **`client_credentials`**: App-only authentication using client_id and client_secret
+- **`client_certificate`**: Certificate-based authentication for enhanced security. Provide client_id, tenant_id, cert_thumbprint, cert_path, and optionally cert_passphrase
+
+**Document Processing:**
+- **Supported file types**: `.pdf`, `.md`, `.odt`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.txt`, `.html`, `.htm`, `.lxml`, `.rtf`, `.epub`, `.csv`, `.xlsx`, `.xls`
+- **System file filtering**: Automatically skips SharePoint system files, forms, and temporary files
+- **CSV/Excel processing**: Special handling for structured data files with configurable column mapping
+
+**CSV/Excel Processing Features:**
+
+The SharePoint crawler provides two distinct modes for processing CSV and Excel files:
+
+**Element Mode (`mode: "element"`):**
+- Each row in the CSV/Excel file becomes a separate document in Vectara
+- Configurable column mapping for document IDs, text content, and metadata
+- Ideal for datasets where each row represents a distinct entity (e.g., customer records, product catalogs)
+- Column configuration options:
+  - `doc_id_columns`: Columns used to create unique document IDs (combines multiple columns if specified)
+  - `text_columns`: Columns containing the main text content to be indexed
+  - `metadata_columns`: Columns to be stored as document metadata
+- Example: A customer database where each row becomes a separate customer document
+
+**Table Mode (`mode: "table"`):**
+- The entire CSV/Excel file (or individual sheets) is indexed as a single table document
+- Preserves the tabular structure and relationships between data
+- Requires `doc_processing` configuration with table parsing enabled
+- Ideal for structured data where relationships between rows/columns are important
+- Table size limitations: 10,000 rows and 100 columns maximum
+- **Required configuration for table mode:**
+  ```yaml
+  doc_processing:
+    parse_tables: true
+    model: "openai"
+    model_config:
+      text: "gpt-4"
+  ```
+
+**Complete Configuration Examples:**
+
+*Element Mode Configuration:*
+```yaml
+doc_processing:
+  model: "openai"
+  model_config:
+    text: "gpt-4"
+
+sharepoint_crawler:
+  dataframe_processing:
+    mode: "element"
+    doc_id_columns: ["CustomerID"]
+    text_columns: ["Name", "Description", "Notes"]
+    metadata_columns: ["Category", "Region", "Date"]
+```
+
+*Table Mode Configuration:*
+```yaml
+doc_processing:
+  parse_tables: true
+  model: "openai"
+  model_config:
+    text: "gpt-4"
+
+sharepoint_crawler:
+  dataframe_processing:
+    mode: "table"
+    # No additional column configuration needed for table mode
+```
+
+**Library Management:**
+- **System library exclusion**: Automatically skips built-in SharePoint libraries (Form Templates, Style Library, etc.)
+- **Custom exclusions**: Configure additional libraries to exclude via `exclude_libraries`
+- **Hidden library filtering**: Automatically skips hidden document libraries
+
+**Configuration Parameters:**
+- `team_site_url`: The URL of your SharePoint site
+- `mode`: Crawling behavior - must be explicitly specified ('site', 'folder', or 'list')
+- `recursive`: Set to true if subfolders should be crawled recursively
+- `allow_ntlm`: Enable NTLM authentication for on-premises SharePoint instances
+- `target_folder`: SharePoint folder path (required for 'folder' mode)
+- `target_list`: SharePoint list name (required for 'list' mode)
+- `exclude_libraries`: List of additional document libraries to skip during site crawling
+- `cleanup_temp_files`: Remove temporary downloaded files after processing (default: true)
+- `retry_attempts`: Number of retry attempts for failed SharePoint operations (default: 3)
+- `retry_delay`: Delay in seconds between retry attempts (default: 5)
+
+**Requirements:**
+- **For element mode**: Requires `doc_processing` configuration with model settings
+- **For table mode**: Requires `doc_processing` with `parse_tables: true` and model configuration
+- Sensitive credentials should be stored in `secrets.toml`
+- SSL verification should remain enabled in production environments
 
 
 

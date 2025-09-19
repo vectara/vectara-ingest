@@ -32,6 +32,29 @@ def create_s3_client(cfg):
     else:
         raise ValueError("No AWS credentials found!")
     
+    # Handle SSL verification based on vectara config
+    ssl_verify = cfg.vectara.get("ssl_verify", None)
+    if ssl_verify is False or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("false", "0")):
+        logger.warning("Disabling SSL verification for S3 client.")
+        client_kwargs['verify'] = False
+    elif ssl_verify is True or (isinstance(ssl_verify, str) and ssl_verify.lower() in ("true", "1")):
+        # Use default SSL verification - no need to set verify parameter
+        logger.debug("Using default SSL verification for S3 client.")
+    elif isinstance(ssl_verify, str):
+        # If ssl_verify is a string and not true/false, treat it as a path to certificate file
+        if os.path.exists(ssl_verify):
+            logger.info(f"Using certificate path for S3 client: {ssl_verify}")
+            client_kwargs['verify'] = ssl_verify
+        else:
+            # Try expanded path (handles ~ in paths)
+            ca_path = os.path.expanduser(ssl_verify)
+            if os.path.exists(ca_path):
+                logger.info(f"Using expanded certificate path for S3 client: {ca_path}")
+                client_kwargs['verify'] = ca_path
+            else:
+                logger.warning(f"Certificate path '{ssl_verify}' not found. Using default SSL verification for S3 client.")
+    # If ssl_verify is None or any other value, use default SSL verification (don't set verify parameter)
+    
     return boto3.client('s3', **client_kwargs)
 
 class FileCrawlWorker(object):
