@@ -1,7 +1,6 @@
 """
 Unit tests for context extraction utilities.
 """
-import pytest
 from core.context_utils import extract_image_context
 
 
