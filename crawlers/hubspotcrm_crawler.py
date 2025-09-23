@@ -3,13 +3,14 @@ import logging
 import requests
 import ray
 import psutil
-from datetime import datetime
+import datetime
+from datetime import datetime as dt
 from omegaconf import OmegaConf
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import clean_email_text, setup_logging
+from core.utils import clean_email_text, mask_pii, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,11 @@ class HubspotcrmCrawler(Crawler):
         super().__init__(cfg, endpoint, corpus_key, api_key)
         self.hubspot_api_key = self.cfg.hubspot_crawler.hubspot_api_key
         self.hubspot_customer_id = self.cfg.hubspot_crawler.hubspot_customer_id
+
+        # Determine crawler mode
+        self.mode = self.cfg.hubspot_crawler.get('mode', 'crm')  # 'crm' or 'emails'
+
+        # API configuration
         self.api_base_url = "https://api.hubapi.com/crm/v3/objects"
         self.headers = {
             "Authorization": f"Bearer {self.hubspot_api_key}",
@@ -44,11 +50,12 @@ class HubspotcrmCrawler(Crawler):
             'contacts_indexed': 0,
             'tickets_indexed': 0,
             'engagements_indexed': 0,
+            'emails_indexed': 0,  # Added for email-only mode
             'total_errors': 0,
             'filtered_by_date': 0
         }
 
-    def _parse_date_filters(self) -> Tuple[Optional[datetime], Optional[datetime]]:
+    def _parse_date_filters(self) -> Tuple[Optional[dt], Optional[dt]]:
         """Parse start and end date filters from configuration."""
         start_date = None
         end_date = None
@@ -71,18 +78,18 @@ class HubspotcrmCrawler(Crawler):
         else:
             # Default to today at end of day if start_date is set but end_date is not
             if start_date:
-                end_date = datetime.now().replace(hour=23, minute=59, second=59)
+                end_date = dt.now().replace(hour=23, minute=59, second=59)
                 logger.info(f"End date defaulted to today: {end_date.strftime('%Y-%m-%d')}")
 
         return start_date, end_date
 
-    def _parse_date_string(self, date_str: str) -> Optional[datetime]:
+    def _parse_date_string(self, date_str: str) -> Optional[dt]:
         """Parse a date string in YYYY-MM-DD format."""
         if not date_str:
             return None
 
         try:
-            return datetime.strptime(date_str, '%Y-%m-%d')
+            return dt.strptime(date_str, '%Y-%m-%d')
         except ValueError:
             logger.warning(f"Invalid date format: {date_str}. Expected format: YYYY-MM-DD")
             return None
@@ -100,10 +107,10 @@ class HubspotcrmCrawler(Crawler):
             # Remove timezone info to make it naive for comparison
             if 'T' in date_str:
                 # ISO format with time
-                item_date = datetime.fromisoformat(date_str.replace('Z', '+00:00').split('+')[0])
+                item_date = dt.fromisoformat(date_str.replace('Z', '+00:00').split('+')[0])
             else:
                 # Just date
-                item_date = datetime.strptime(date_str, '%Y-%m-%d')
+                item_date = dt.strptime(date_str, '%Y-%m-%d')
 
             # Check against date range
             if self.start_date and item_date < self.start_date:
@@ -118,11 +125,111 @@ class HubspotcrmCrawler(Crawler):
             return True
 
     def crawl(self) -> None:
-        """Main crawl orchestration method with Ray support.
+        """Main crawl orchestration method with mode support.
 
-        New approach: Fetch deals first, then only index companies/contacts that are involved in deals.
+        Supports two modes:
+        - 'emails': Lightweight email-only crawling (original behavior)
+        - 'crm': Full CRM crawling with all object types
         """
-        logger.info("Starting Deal-Focused HubSpot CRM Crawler with Ray support.")
+        if self.mode == 'emails':
+            logger.info("Starting HubSpot Email-Only Crawler.")
+            self._crawl_emails_only()
+        else:
+            logger.info("Starting Deal-Focused HubSpot CRM Crawler with Ray support.")
+            self._crawl_full_crm()
+
+    def _crawl_emails_only(self) -> None:
+        """Lightweight email-only crawling mode.
+
+        This mode only fetches contacts and their email engagements,
+        similar to the original hubspot_crawler.py implementation.
+        """
+        logger.info("Running in email-only mode with PII masking enabled")
+
+        # API endpoint for fetching contacts
+        api_endpoint_contacts = "https://api.hubapi.com/crm/v3/objects/contacts"
+
+        query_params_contacts = {
+            "limit": 100
+        }
+
+        after_contact = 1  # For pagination
+        email_count = 0
+
+        while after_contact:
+            if after_contact and after_contact != 1:
+                query_params_contacts["after"] = after_contact
+
+            response_contacts = requests.get(api_endpoint_contacts, headers=self.headers, params=query_params_contacts)
+
+            if response_contacts.status_code == 200:
+                contacts_data = response_contacts.json()
+                contacts = contacts_data["results"]
+
+                if not contacts:
+                    break
+
+                for contact in contacts:
+                    contact_id = contact["id"]
+                    engagements, engagements_per_contact = self._get_contact_engagements_legacy(contact_id)
+                    logger.info(f"NUMBER OF ENGAGEMENTS: {engagements_per_contact} FOR CONTACT ID: {contact_id}")
+
+                    for engagement in engagements:
+                        engagement_type = engagement["engagement"].get("type", "UNKNOWN")
+                        if engagement_type == "EMAIL" and "text" in engagement["metadata"] and "subject" in engagement["metadata"]:
+                            email_subject = engagement["metadata"]["subject"]
+                            email_text = engagement["metadata"]["text"]
+                            email_url = self._get_email_url(contact_id, engagement["engagement"]["id"])
+                        else:
+                            continue
+
+                        # Skip indexing if email text is empty or None
+                        if email_text is None or email_text.strip() == "":
+                            logger.info(f"Email '{email_subject}' has no text. Skipping indexing.")
+                            continue
+
+                        # Apply PII masking
+                        email_text = mask_pii(email_text)
+
+                        # Clean email text
+                        cleaned_email_text = clean_email_text(email_text)
+
+                        # Build and index the email document
+                        doc = self._build_email_only_document(
+                            contact_id,
+                            engagement,
+                            email_subject,
+                            cleaned_email_text,
+                            email_url
+                        )
+
+                        if self._index_document(doc):
+                            logger.info(f"Email with doc_id '{doc['id']}' and subject '{email_subject}' indexed successfully.")
+                            email_count += 1
+                            self.stats['emails_indexed'] += 1
+                        else:
+                            logger.error(f"Failed to index email '{email_subject}'.")
+                            self.stats['total_errors'] += 1
+
+                paging_info = contacts_data.get("paging", {})
+                after_contact = paging_info.get("next", {}).get("after")
+
+                logger.info(f"Crawled and indexed {email_count} emails successfully")
+
+            else:
+                logger.error(f"Error: {response_contacts.status_code} - {response_contacts.text}")
+                break
+
+        # Log final statistics for email-only mode
+        logger.info("=" * 50)
+        logger.info("FINAL EMAIL CRAWL STATISTICS:")
+        logger.info(f"  Emails indexed: {self.stats['emails_indexed']}")
+        logger.info(f"  Total errors: {self.stats['total_errors']}")
+        logger.info("=" * 50)
+
+    def _crawl_full_crm(self) -> None:
+        """Full CRM crawling with all object types."""
+        logger.info("Starting full CRM crawl mode.")
 
         if self.start_date or self.end_date:
             logger.info(f"Date filtering enabled: {self.start_date.strftime('%Y-%m-%d') if self.start_date else 'no start'} to {self.end_date.strftime('%Y-%m-%d') if self.end_date else 'no end'}")
@@ -659,8 +766,13 @@ class HubspotcrmCrawler(Crawler):
                         # Get associations
                         associations = self._get_engagement_associations(engagement["id"], engagement_type)
 
-                        # Build and index document
+                        # Build document
                         doc = self._build_engagement_document(engagement, engagement_type, associations)
+
+                        # Skip empty engagements
+                        if self._is_engagement_empty(doc, engagement_type):
+                            logger.debug(f"Skipping empty {engagement_type} {engagement['id']}")
+                            continue
 
                         if self._index_document(doc):
                                 self.stats['engagements_indexed'] += 1
@@ -893,6 +1005,8 @@ class HubspotcrmCrawler(Crawler):
             
             # Clean and truncate email text if needed
             if text:
+                # Apply PII masking
+                text = mask_pii(text)
                 text = clean_email_text(text)[:1000]  # Limit to 1000 chars
             
             content = f"Email {direction}: {subject}. Status: {status}. "
@@ -912,6 +1026,8 @@ class HubspotcrmCrawler(Crawler):
             if duration:
                 content += f". Duration: {duration} seconds"
             if body:
+                # Apply PII masking to call notes
+                body = mask_pii(body)
                 content += f". Notes: {body}"
             return content
             
@@ -930,11 +1046,16 @@ class HubspotcrmCrawler(Crawler):
             if outcome:
                 content += f"Outcome: {outcome}. "
             if body:
+                # Apply PII masking to meeting notes
+                body = mask_pii(body)
                 content += f"Notes: {body}"
             return content
             
         elif engagement_type == "notes":
             body = properties.get("hs_note_body", "No content")
+            # Apply PII masking to notes
+            if body and body != "No content":
+                body = mask_pii(body)
             return f"Note: {body}"
             
         elif engagement_type == "tasks":
@@ -952,12 +1073,64 @@ class HubspotcrmCrawler(Crawler):
             if due_date:
                 content += f"Due: {due_date}. "
             if body:
+                # Apply PII masking to task details
+                body = mask_pii(body)
                 content += f"Details: {body}"
             return content
         
         return "No content available."
 
-    def _generate_engagement_context(self, engagement_type: str, properties: Dict, 
+    def _is_engagement_empty(self, doc: Dict, engagement_type: str) -> bool:
+        """Check if an engagement document has meaningful content.
+
+        Returns True if the engagement should be skipped due to lack of content.
+        """
+        # Check the main content section
+        sections = doc.get("sections", [])
+        if not sections:
+            return True
+
+        # Get the main content text (usually first section)
+        main_content = ""
+        for section in sections:
+            if section.get("title") == "Engagement Details":
+                main_content = section.get("text", "")
+                break
+
+        # Type-specific empty checks
+        if engagement_type == "emails":
+            # For emails, check if there's actual email text beyond the subject
+            if "No content available" in main_content or "Content:" not in main_content:
+                return True
+            # Extract content after "Content:" and check if it's meaningful
+            if "Content:" in main_content:
+                email_content = main_content.split("Content:")[-1].strip()
+                if not email_content or len(email_content) < 10:
+                    return True
+
+        elif engagement_type == "notes":
+            # For notes, check if there's actual note body
+            if "Note: No content" in main_content or len(main_content) < 20:
+                return True
+
+        elif engagement_type == "meetings":
+            # For meetings, check if there's meeting body/notes
+            if "Notes:" not in main_content or "Meeting:" in main_content and len(main_content) < 50:
+                return True
+
+        elif engagement_type == "calls":
+            # For calls, having just direction and duration might be okay, but check for notes
+            if "Notes:" not in main_content and len(main_content) < 30:
+                return True
+
+        elif engagement_type == "tasks":
+            # For tasks, check if there's actual task details
+            if "Details:" not in main_content and len(main_content) < 40:
+                return True
+
+        return False
+
+    def _generate_engagement_context(self, engagement_type: str, properties: Dict,
                                     companies: List[str], contacts: List[str]) -> str:
         """Generate context information for the engagement."""
         timestamp = properties.get("hs_timestamp", "")
@@ -1469,6 +1642,84 @@ class HubspotcrmCrawler(Crawler):
         
         return info
 
+    # Email-only mode helper methods
+    def _get_contact_engagements_legacy(self, contact_id: str) -> Tuple[List[Dict], int]:
+        """Get contact engagements using legacy V1 API (for email-only mode).
+
+        This method is used in email-only mode to maintain compatibility
+        with the original hubspot_crawler.py implementation.
+        """
+        api_endpoint_engagements = f"https://api.hubapi.com/engagements/v1/engagements/associated/contact/{contact_id}/paged"
+        headers = {
+            "Authorization": f"Bearer {self.hubspot_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        all_engagements = []
+
+        while True:
+            response_engagements = requests.get(api_endpoint_engagements, headers=headers)
+
+            if response_engagements.status_code == 200:
+                engagements_data = response_engagements.json()
+                engagements = engagements_data.get("results", [])
+                all_engagements.extend(engagements)
+
+                # Check if there are more engagements to fetch
+                if engagements_data.get("hasMore"):
+                    offset = engagements_data.get("offset")
+                    api_endpoint_engagements = f"https://api.hubapi.com/engagements/v1/engagements/associated/contact/{contact_id}/paged?offset={offset}"
+                else:
+                    break
+            else:
+                logger.error(f"Error: {response_engagements.status_code} - {response_engagements.text}")
+                break
+
+        return all_engagements, len(all_engagements)
+
+    def _get_email_url(self, contact_id: str, engagement_id: str) -> str:
+        """Generate HubSpot URL for an email engagement."""
+        return f"https://app.hubspot.com/contacts/{self.hubspot_customer_id}/contact/{contact_id}/?engagement={engagement_id}"
+
+    def _build_email_only_document(self, contact_id: str, engagement: Dict,
+                                   email_subject: str, cleaned_text: str,
+                                   email_url: str) -> Dict:
+        """Build document structure for email-only mode.
+
+        This creates a simpler document structure focused on email content,
+        similar to the original hubspot_crawler.py implementation.
+        """
+        # Generate unique doc_id
+        doc_id = f"{contact_id}_{engagement['engagement']['id']}"
+
+        # Build metadata
+        metadata = {
+            "source": engagement['engagement'].get('source', 'hubspot'),
+            "createdAt": datetime.datetime.utcfromtimestamp(
+                int(engagement['engagement'].get('createdAt', 0))/1000
+            ).strftime("%Y-%m-%d") if engagement['engagement'].get('createdAt') else "",
+            "object_type": "email",
+            "contact_id": contact_id,
+            "engagement_id": engagement['engagement']['id'],
+            "hubspot_url": email_url
+        }
+
+        # Build document
+        doc = {
+            "type": "structured",
+            "id": doc_id,
+            "title": email_subject,
+            "metadata": metadata,
+            "sections": [
+                {
+                    "title": "Email Content",
+                    "text": cleaned_text
+                }
+            ]
+        }
+
+        return doc
+
     # Utility methods
     def _fetch_all_objects(self, object_type: str, properties: List[str], date_field: str = None) -> List[Dict[str, Any]]:
         """Fetch all records for a given HubSpot CRM object type with pagination and optional date filtering.
@@ -1831,6 +2082,11 @@ class HubspotObjectProcessor:
             # Build document
             doc = self._build_engagement_document(engagement, engagement_type, associations)
 
+            # Skip empty engagements
+            if self._is_engagement_empty(doc, engagement_type):
+                self.logger.debug(f"Skipping empty {engagement_type} {engagement['id']}")
+                return False, 0
+
             # Index document
             indexed = self.indexer.index_document(doc)
 
@@ -2155,6 +2411,56 @@ class HubspotObjectProcessor:
         info += f"Associated with {deal_count} deals. "
 
         return info
+
+    def _is_engagement_empty(self, doc: Dict, engagement_type: str) -> bool:
+        """Check if an engagement document has meaningful content.
+
+        Returns True if the engagement should be skipped due to lack of content.
+        """
+        # Check the main content section
+        sections = doc.get("sections", [])
+        if not sections:
+            return True
+
+        # Get the main content text (usually first section)
+        main_content = ""
+        for section in sections:
+            if section.get("title") == "Engagement Details":
+                main_content = section.get("text", "")
+                break
+
+        # Type-specific empty checks
+        if engagement_type == "emails":
+            # For emails, check if there's actual email text beyond the subject
+            if "No content available" in main_content or "Content:" not in main_content:
+                return True
+            # Extract content after "Content:" and check if it's meaningful
+            if "Content:" in main_content:
+                email_content = main_content.split("Content:")[-1].strip()
+                if not email_content or len(email_content) < 10:
+                    return True
+
+        elif engagement_type == "notes":
+            # For notes, check if there's actual note body
+            if "Note: No content" in main_content or len(main_content) < 20:
+                return True
+
+        elif engagement_type == "meetings":
+            # For meetings, check if there's meeting body/notes
+            if "Notes:" not in main_content or "Meeting:" in main_content and len(main_content) < 50:
+                return True
+
+        elif engagement_type == "calls":
+            # For calls, having just direction and duration might be okay, but check for notes
+            if "Notes:" not in main_content and len(main_content) < 30:
+                return True
+
+        elif engagement_type == "tasks":
+            # For tasks, check if there's actual task details
+            if "Details:" not in main_content and len(main_content) < 40:
+                return True
+
+        return False
 
     def _get_engagement_properties(self, engagement_type: str) -> List[str]:
         """Get the relevant properties for each engagement type."""
