@@ -4,7 +4,7 @@ vectara:
   create_corpus: false
 
 crawling:
-  crawler_type: hubspotcrm  # Using the unified HubSpotCRM crawler
+  crawler_type: hubspot
 
 hubspot_crawler:
   # HubSpot configuration (HUBSPOT_API_KEY must be in secrets.toml)

@@ -385,9 +385,9 @@ The notion crawler indexes notion pages into Vectara:
 For this crawler, you need to specify `NOTION_API_KEY` (which is associated with your custom integration) in the `secrets.toml` file. 
 
 
-### HubSpot CRM crawler
+### HubSpot crawler
 
-The unified HubSpot CRM crawler supports two modes for different use cases:
+The unified HubSpot crawler supports two modes for different use cases:
 - **Email mode** (`emails`): Lightweight crawling of email engagements only
 - **CRM mode** (`crm`): Comprehensive crawling of all CRM data
 
@@ -395,7 +395,7 @@ The unified HubSpot CRM crawler supports two modes for different use cases:
 
 ```yaml
 crawling:
-  crawler_type: hubspotcrm
+  crawler_type: hubspot
 
 hubspot_crawler:
   hubspot_customer_id: "YOUR_CUSTOMER_ID"  # Required: Your HubSpot account ID
