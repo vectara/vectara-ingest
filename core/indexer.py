@@ -25,7 +25,7 @@ from core.summary import TableSummarizer, get_attributes_from_text
 from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, df_cols_to_headers, html_table_to_header_and_rows,
+    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
     doc_extensions, get_headers, normalize_text, normalize_value
 )
@@ -36,7 +36,7 @@ from core.contextual import ContextualChunker
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
     handle_file_upload_response, handle_document_upload_response,
-    safe_file_cleanup, prepare_file_metadata, store_file, url_to_filename
+    safe_file_cleanup, prepare_file_metadata, store_file
 )
 from core.web_content_extractor import WebContentExtractor
 from core.file_processor import FileProcessor
