@@ -25,7 +25,7 @@ from core.summary import TableSummarizer, get_attributes_from_text
 from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, get_file_size_in_MB, create_session_with_retries,
-    mask_pii, safe_remove_file, url_to_filename, df_cols_to_headers, html_table_to_header_and_rows,
+    mask_pii, safe_remove_file, df_cols_to_headers, html_table_to_header_and_rows,
     get_file_path_from_url, create_row_items, configure_session_for_ssl, get_docker_or_local_path,
     doc_extensions, get_headers, normalize_text, normalize_value
 )
@@ -34,8 +34,9 @@ from core.doc_parser import UnstructuredDocumentParser, DoclingDocumentParser, L
     DocupandaDocumentParser
 from core.contextual import ContextualChunker
 from core.indexer_utils import (
-    get_chunking_config, extract_last_modified, create_upload_files_dict, 
-    handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file
+    get_chunking_config, extract_last_modified, create_upload_files_dict,
+    handle_file_upload_response, handle_document_upload_response,
+    safe_file_cleanup, prepare_file_metadata, store_file, url_to_filename
 )
 from core.web_content_extractor import WebContentExtractor
 from core.file_processor import FileProcessor
@@ -368,47 +369,13 @@ class Indexer:
 
         response = upload_file()
 
-        # Handle response codes directly for consistency with index_document
-        if response.status_code == 201:
-            # Success - file was uploaded
-            logger.info(f"REST upload for {uri} successful")
-            if self.store_docs:
-                store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
-            return True
+        # Use the helper function to handle the response
+        success = handle_file_upload_response(response, uri, self.reindex, self.delete_doc, upload_file)
 
-        elif response.status_code == 409:
-            # File already exists - check if we should reindex
-            if self.reindex:
-                # Extract document ID from error message
-                match = re.search(r"document id '([^']+)'", response.text)
-                if match:
-                    doc_id = match.group(1)
-                    logger.info(f"Document {doc_id} already exists, deleting then reindexing")
-                    if self.delete_doc(doc_id):
-                        # Retry upload after successful deletion
-                        response = upload_file()
-                        if response.status_code == 201:
-                            logger.info(f"Successfully reindexed file {uri}")
-                            if self.store_docs:
-                                store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
-                            return True
-                        else:
-                            logger.error(f"Failed to reindex file {uri} with code {response.status_code}: {response.text}")
-                            return False
-                    else:
-                        logger.error(f"Failed to delete document {doc_id} for reindexing")
-                        return False
-                else:
-                    logger.error(f"Failed to extract document id from error: {response.text}")
-                    return False
-            else:
-                logger.info(f"Document {uri} already indexed, skipping")
-                return False
+        if success and self.store_docs:
+            store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
 
-        else:
-            # Other error
-            logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
-            return False
+        return success
 
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
         """
@@ -454,56 +421,33 @@ class Indexer:
             logger.info(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
+        # Define upload function for potential retry
+        def upload_document():
+            try:
+                return self.session.post(api_endpoint, data=data, headers=post_headers)
+            except Exception as e:
+                logger.info(f"Exception {e} while indexing document {document['id']}")
+                return None
+
         # Attempt to index the document directly (optimistic approach)
-        try:
-            response = self.session.post(api_endpoint, data=data, headers=post_headers)
-        except Exception as e:
-            logger.info(f"Exception {e} while indexing document {document['id']}")
+        response = upload_document()
+        if response is None:
             return False
 
-        # Handle the response
-        if response.status_code == 201:
-            # Success - document was indexed
-            logger.debug(f"Successfully indexed document {document['id']}")
-            if self.store_docs:
-                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
-                    json.dump(document, f)
-            return True
+        # Use the helper function to handle the response
+        success = handle_document_upload_response(
+            response,
+            document['id'],
+            self.reindex,
+            self.delete_doc,
+            upload_document
+        )
 
-        elif response.status_code in [409, 412]:
-            # Document already exists - check if we should reindex
-            if self.reindex:
-                logger.info(f"Document {document['id']} already exists, deleting then reindexing")
-                if self.delete_doc(document['id']):
-                    # Retry indexing after successful deletion
-                    try:
-                        response = self.session.post(api_endpoint, data=data, headers=post_headers)
-                        if response.status_code == 201:
-                            logger.info(f"Successfully reindexed document {document['id']}")
-                            if self.store_docs:
-                                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
-                                    json.dump(document, f)
-                            return True
-                        else:
-                            logger.error(f"Failed to reindex document {document['id']} with code {response.status_code}: {response.text}")
-                            return False
-                    except Exception as e:
-                        logger.error(f"Exception {e} while reindexing document {document['id']}")
-                        return False
-                else:
-                    logger.error(f"Failed to delete document {document['id']} for reindexing")
-                    return False
-            else:
-                logger.info(f"Document {document['id']} already exists, skipping")
-                return False
+        if success and self.store_docs:
+            with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
+                json.dump(document, f)
 
-        else:
-            # Other error
-            logger.error("REST upload failed with code %d, reason %s, text %s",
-                         response.status_code,
-                         response.reason,
-                         response.text)
-            return False
+        return success
 
 
 
