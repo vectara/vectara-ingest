@@ -417,7 +417,7 @@ class SharepointCrawler(Crawler):
                     continue
                     
                 logger.info(f"Processing {file}")
-                filename, file_extension = os.path.splitext(file.name)
+                filename, file_extension = os.path.splitext(file.name.strip())
                 
                 if file_extension.lower() == ".zip":
                     metadata = {'url': self.download_url(file)}
@@ -435,7 +435,7 @@ class SharepointCrawler(Crawler):
                     metadata = {'url': self.download_url(file)}
                     if library_name:
                         metadata['library'] = library_name
-                    metadata['file_name'] = file.name
+                    metadata['file_name'] = file.name.strip()
                     
                     server_relative_url = self._get_sharepoint_property(file, 'ServerRelativeUrl')
                     if server_relative_url:

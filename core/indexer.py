@@ -914,21 +914,34 @@ class Indexer:
 
             if self.file_processor.needs_pdf_splitting(filename):
                 # Split large PDF into smaller chunks
-                pdf_parts = self.file_processor.split_pdf(filename, metadata)
-                error_count = 0
-                
-                for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                try:
+                    pdf_parts = self.file_processor.split_pdf(filename, metadata)
+                    error_count = 0
+                    
+                    for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                        try:
+                            part_success = self._index_file(pdf_path, uri, pdf_metadata, pdf_id)
+                            if not part_success:
+                                error_count += 1
+                        finally:
+                            safe_file_cleanup(pdf_path)
+                            
+                    succeeded = error_count == 0
+                except Exception as e:
+                    logger.error(f"Failed to split PDF {filename}: {e}")
+                    # Fallback: try to index the original file
                     try:
-                        part_success = self._index_file(pdf_path, uri, pdf_metadata, pdf_id)
-                        if not part_success:
-                            error_count += 1
-                    finally:
-                        safe_file_cleanup(pdf_path)
-                        
-                succeeded = error_count == 0
+                        succeeded = self._index_file(filename, uri, metadata, id)
+                    except Exception as fallback_e:
+                        logger.error(f"Fallback indexing also failed for {filename}: {fallback_e}")
+                        succeeded = False
             else:
                 # index the file within Vectara (use FILE UPLOAD API)
-                succeeded = self._index_file(filename, uri, metadata, id)
+                try:
+                    succeeded = self._index_file(filename, uri, metadata, id)
+                except Exception as e:
+                    logger.error(f"Failed to index file {filename} via Vectara API: {e}")
+                    succeeded = False
 
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and images:
