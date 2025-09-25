@@ -51,6 +51,9 @@ class FileProcessor:
     
     def needs_pdf_splitting(self, filename: str) -> bool:
         """Check if PDF needs to be split due to size"""
+        # Only PDFs can be split
+        if not filename.lower().endswith('.pdf'):
+            return False
         max_pdf_size = int(self.cfg.doc_processing.get('max_pdf_size', 50))
         filesize_mb = get_file_size_in_MB(filename)
         return filesize_mb > max_pdf_size
