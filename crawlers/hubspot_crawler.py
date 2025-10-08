@@ -128,108 +128,17 @@ class HubspotCrawler(Crawler):
         """Main crawl orchestration method with mode support.
 
         Supports two modes:
-        - 'emails': Lightweight email-only crawling (original behavior)
+        - 'emails': Only crawl email engagements
         - 'crm': Full CRM crawling with all object types
         """
+        logger.info(f"Starting HubSpot Crawler in '{self.mode}' mode.")
         if self.mode == 'emails':
-            logger.info("Starting HubSpot Email-Only Crawler.")
-            self._crawl_emails_only()
-        else:
-            logger.info("Starting Deal-Focused HubSpot CRM Crawler with Ray support.")
-            self._crawl_full_crm()
+            logger.info("Email-only mode: Will only index email engagements.")
+        self._crawl_crm()  # Use the same method for both modes
 
-    def _crawl_emails_only(self) -> None:
-        """Lightweight email-only crawling mode.
-
-        This mode only fetches contacts and their email engagements,
-        similar to the original hubspot_crawler.py implementation.
-        """
-        logger.info("Running in email-only mode with PII masking enabled")
-
-        # API endpoint for fetching contacts
-        api_endpoint_contacts = "https://api.hubapi.com/crm/v3/objects/contacts"
-
-        query_params_contacts = {
-            "limit": 100
-        }
-
-        after_contact = 1  # For pagination
-        email_count = 0
-
-        while after_contact:
-            if after_contact and after_contact != 1:
-                query_params_contacts["after"] = after_contact
-
-            response_contacts = requests.get(api_endpoint_contacts, headers=self.headers, params=query_params_contacts)
-
-            if response_contacts.status_code == 200:
-                contacts_data = response_contacts.json()
-                contacts = contacts_data["results"]
-
-                if not contacts:
-                    break
-
-                for contact in contacts:
-                    contact_id = contact["id"]
-                    engagements, engagements_per_contact = self._get_contact_engagements_legacy(contact_id)
-                    logger.info(f"NUMBER OF ENGAGEMENTS: {engagements_per_contact} FOR CONTACT ID: {contact_id}")
-
-                    for engagement in engagements:
-                        engagement_type = engagement["engagement"].get("type", "UNKNOWN")
-                        if engagement_type == "EMAIL" and "text" in engagement["metadata"] and "subject" in engagement["metadata"]:
-                            email_subject = engagement["metadata"]["subject"]
-                            email_text = engagement["metadata"]["text"]
-                            email_url = self._get_email_url(contact_id, engagement["engagement"]["id"])
-                        else:
-                            continue
-
-                        # Skip indexing if email text is empty or None
-                        if email_text is None or email_text.strip() == "":
-                            logger.info(f"Email '{email_subject}' has no text. Skipping indexing.")
-                            continue
-
-                        # Apply PII masking
-                        email_text = mask_pii(email_text)
-
-                        # Clean email text
-                        cleaned_email_text = clean_email_text(email_text)
-
-                        # Build and index the email document
-                        doc = self._build_email_only_document(
-                            contact_id,
-                            engagement,
-                            email_subject,
-                            cleaned_email_text,
-                            email_url
-                        )
-
-                        if self._index_document(doc):
-                            logger.info(f"Email with doc_id '{doc['id']}' and subject '{email_subject}' indexed successfully.")
-                            email_count += 1
-                            self.stats['emails_indexed'] += 1
-                        else:
-                            logger.error(f"Failed to index email '{email_subject}'.")
-                            self.stats['total_errors'] += 1
-
-                paging_info = contacts_data.get("paging", {})
-                after_contact = paging_info.get("next", {}).get("after")
-
-                logger.info(f"Crawled and indexed {email_count} emails successfully")
-
-            else:
-                logger.error(f"Error: {response_contacts.status_code} - {response_contacts.text}")
-                break
-
-        # Log final statistics for email-only mode
-        logger.info("=" * 50)
-        logger.info("FINAL EMAIL CRAWL STATISTICS:")
-        logger.info(f"  Emails indexed: {self.stats['emails_indexed']}")
-        logger.info(f"  Total errors: {self.stats['total_errors']}")
-        logger.info("=" * 50)
-
-    def _crawl_full_crm(self) -> None:
-        """Full CRM crawling with all object types."""
-        logger.info("Starting full CRM crawl mode.")
+    def _crawl_crm(self) -> None:
+        """CRM crawling with support for filtering by mode."""
+        logger.info("PII masking will be applied to all engagement content.")
 
         if self.start_date or self.end_date:
             logger.info(f"Date filtering enabled: {self.start_date.strftime('%Y-%m-%d') if self.start_date else 'no start'} to {self.end_date.strftime('%Y-%m-%d') if self.end_date else 'no end'}")
@@ -252,27 +161,38 @@ class HubspotCrawler(Crawler):
                     ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
                     logger.info(f"Initialized Ray with {ray_workers} workers")
 
-            # Only fetch and index companies that are involved in deals
-            logger.info("Step 2: Fetching and indexing deal-related companies...")
-            self._fetch_and_index_relevant_companies(involved_company_ids, ray_workers)
-            logger.info(f"✓ Companies indexed: {self.stats['companies_indexed']}")
+            # Skip companies, contacts, deals, and tickets in email-only mode
+            if self.mode != 'emails':
+                # Only fetch and index companies that are involved in deals
+                logger.info("Step 2: Fetching and indexing deal-related companies...")
+                self._fetch_and_index_relevant_companies(involved_company_ids, ray_workers)
+                logger.info(f"✓ Companies indexed: {self.stats['companies_indexed']}")
 
-            # Only fetch and index contacts that are involved in deals
-            logger.info("Step 3: Fetching and indexing deal-related contacts...")
-            self._fetch_and_index_relevant_contacts(involved_contact_ids, ray_workers)
-            logger.info(f"✓ Contacts indexed: {self.stats['contacts_indexed']}")
+                # Only fetch and index contacts that are involved in deals
+                logger.info("Step 3: Fetching and indexing deal-related contacts...")
+                self._fetch_and_index_relevant_contacts(involved_contact_ids, ray_workers)
+                logger.info(f"✓ Contacts indexed: {self.stats['contacts_indexed']}")
 
-            # Now index the deals with cached company/contact data
-            logger.info("Step 4: Indexing deals with enriched data...")
-            self._index_deals(deals, ray_workers)
-            logger.info(f"✓ Deals indexed: {self.stats['deals_indexed']}")
+                # Now index the deals with cached company/contact data
+                logger.info("Step 4: Indexing deals with enriched data...")
+                self._index_deals(deals, ray_workers)
+                logger.info(f"✓ Deals indexed: {self.stats['deals_indexed']}")
 
-            # Optionally still index tickets and engagements
-            logger.info("Step 5: Crawling and indexing tickets...")
-            self._crawl_tickets(ray_workers)
-            logger.info(f"✓ Tickets indexed: {self.stats['tickets_indexed']}")
+                # Optionally still index tickets and engagements
+                logger.info("Step 5: Crawling and indexing tickets...")
+                self._crawl_tickets(ray_workers)
+                logger.info(f"✓ Tickets indexed: {self.stats['tickets_indexed']}")
+            else:
+                # In email-only mode, still cache companies and contacts for context
+                logger.info("Step 2: Caching companies for email context...")
+                self._cache_companies_for_context(involved_company_ids)
 
-            logger.info("Step 6: Crawling and indexing engagements...")
+                logger.info("Step 3: Caching contacts for email context...")
+                self._cache_contacts_for_context(involved_contact_ids)
+
+            # Process engagement objects (emails only in email mode, all types otherwise)
+            step_num = "4" if self.mode == 'emails' else "6"
+            logger.info(f"Step {step_num}: Crawling and indexing {'emails' if self.mode == 'emails' else 'engagements'}...")
             self._crawl_engagements(ray_workers)
             logger.info(f"✓ Engagements indexed: {self.stats['engagements_indexed']}")
 
@@ -738,14 +658,17 @@ class HubspotCrawler(Crawler):
 
 
     def _crawl_engagements(self, ray_workers: int = 0) -> None:
-        """Crawl and index all engagements (emails, calls, meetings, notes, tasks) with optional Ray support."""
-        logger.info("Starting to fetch all engagements.")
+        """Crawl and index engagements with optional Ray support."""
+        logger.info("Starting to fetch engagements.")
 
         # HubSpot Engagements API v3 endpoint
         api_endpoint = "https://api.hubapi.com/crm/v3/objects"
 
-        # Define engagement types to crawl
-        engagement_types = ["emails", "calls", "meetings", "notes", "tasks"]
+        # Define engagement types to crawl based on mode
+        if self.mode == 'emails':
+            engagement_types = ["emails"]  # Only process emails in email-only mode
+        else:
+            engagement_types = ["emails", "calls", "meetings", "notes", "tasks"]  # All types in CRM mode
 
         for engagement_type in engagement_types:
             logger.info(f"Crawling {engagement_type}...")
@@ -866,8 +789,8 @@ class HubspotCrawler(Crawler):
         
         # Get company names
         if "companies" in associations and associations["companies"]:
-            company_ids = [f"company_{cid}" for cid in associations["companies"][:5]]
-            for comp_id in associations["companies"][:5]:
+            company_ids = [f"company_{cid}" for cid in associations["companies"]]
+            for comp_id in associations["companies"]:
                 if comp_id in self.companies_cache:
                     company_names.append(self.companies_cache[comp_id].get("name", ""))
         
@@ -891,10 +814,12 @@ class HubspotCrawler(Crawler):
         
         # Build the title based on engagement type
         title = self._get_engagement_title(engagement_type, properties, company_names, contact_names)
-        
+
         # Build document structure
+        # Use 'core' for shorter engagements (calls, tasks), 'structured' for longer content (emails, meetings, notes)
+        doc_type = "core" if engagement_type in ["calls", "tasks"] else "structured"
         doc = {
-            "type": "structured",
+            "type": doc_type,
             "id": f"{engagement_type.rstrip('s')}_{engagement_id}",  # e.g., "email_123", "call_456"
             "title": title,
             "metadata": {
@@ -1007,7 +932,7 @@ class HubspotCrawler(Crawler):
             if text:
                 # Apply PII masking
                 text = mask_pii(text)
-                text = clean_email_text(text)[:1000]  # Limit to 1000 chars
+                text = clean_email_text(text)  # Full email content
             
             content = f"Email {direction}: {subject}. Status: {status}. "
             if text:
@@ -1142,10 +1067,10 @@ class HubspotCrawler(Crawler):
             context += f"occurred on {timestamp}. "
         
         if companies:
-            context += f"Related to companies: {', '.join(companies[:3])}. "
+            context += f"Related to companies: {', '.join(companies)}. "
         
         if contacts:
-            context += f"Involves contacts: {', '.join(contacts[:5])}. "
+            context += f"Involves contacts: {', '.join(contacts)}. "
         
         if owner:
             context += f"Assigned to: {owner}."
@@ -1219,7 +1144,7 @@ class HubspotCrawler(Crawler):
         primary_company_industry = None
         
         if "companies" in associations:
-            for comp_id in associations["companies"][:5]:  # Limit to 5 companies
+            for comp_id in associations["companies"]:
                 company_ids.append(f"company_{comp_id}")
                 if comp_id in self.companies_cache:
                     comp_data = self.companies_cache[comp_id]
@@ -1254,10 +1179,10 @@ class HubspotCrawler(Crawler):
         # Basic deal metrics
         amount = float(properties.get("amount", 0) or 0)
         probability = float(properties.get("hs_forecast_probability", 0) or 0)
-        
+
         # Build document structure
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"deal_{deal_id}",
             "title": f"{properties.get('dealname', 'Unnamed Deal')} - {primary_company_name or 'No Company'} ({properties.get('dealstage', 'Unknown Stage')})",
             "metadata": {
@@ -1311,12 +1236,22 @@ class HubspotCrawler(Crawler):
         """Build a simplified company document."""
         properties = company.get("properties", {})
         company_id = company["id"]
-        
+
+        # Get associated contact names
+        contact_names = []
+        contact_ids = []
+        for cont_id in associations.get("contacts", [])[:20]:  # Limit to 20 contacts
+            contact_ids.append(f"contact_{cont_id}")
+            if cont_id in self.contacts_cache:
+                cont_data = self.contacts_cache[cont_id]
+                full_name = f"{cont_data.get('firstname', '')} {cont_data.get('lastname', '')}".strip()
+                if full_name:
+                    contact_names.append(full_name)
+
         # Get associated IDs
         deal_ids = [f"deal_{did}" for did in associations.get("deals", [])][:20]  # Limit to 20 deals
-        contact_ids = [f"contact_{cid}" for cid in associations.get("contacts", [])][:20]  # Limit to 20 contacts
         ticket_ids = [f"ticket_{tid}" for tid in associations.get("tickets", [])][:10]  # Limit to 10 tickets
-        
+
         deal_count = len(associations.get("deals", []))
         contact_count = len(associations.get("contacts", []))
         
@@ -1325,7 +1260,7 @@ class HubspotCrawler(Crawler):
         employee_count = int(properties.get("numberofemployees", 0) or 0)
         
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"company_{company_id}",
             "title": f"{properties.get('name', 'Unnamed Company')} - {properties.get('industry', 'Unknown Industry')}",
             "metadata": {
@@ -1342,7 +1277,8 @@ class HubspotCrawler(Crawler):
                 "lifecyclestage": properties.get("lifecyclestage", ""),
                 "associated_deals_count": deal_count,
                 "associated_contacts_count": contact_count,
-                
+                "contact_names": contact_names,  # Names of associated contacts
+
                 # Hierarchical Reference Structure
                 "linked_deal_ids": deal_ids,
                 "linked_contact_ids": contact_ids,
@@ -1371,22 +1307,27 @@ class HubspotCrawler(Crawler):
         """Build a simplified contact document."""
         properties = contact.get("properties", {})
         contact_id = contact["id"]
-        
-        # Get associated company
-        company_name = None
+
+        # Get associated company names
+        company_names = []
         company_ids = []
+        company_name = None  # Primary company for display
         if "companies" in associations and associations["companies"]:
-            company_ids = [f"company_{cid}" for cid in associations["companies"][:5]]  # Limit to 5 companies
-            comp_id = associations["companies"][0]
-            if comp_id in self.companies_cache:
-                company_name = self.companies_cache[comp_id].get("name", "")
+            for comp_id in associations["companies"]:
+                company_ids.append(f"company_{comp_id}")
+                if comp_id in self.companies_cache:
+                    comp_name = self.companies_cache[comp_id].get("name", "")
+                    if comp_name:
+                        company_names.append(comp_name)
+                        if not company_name:  # Set first as primary
+                            company_name = comp_name
         
         # Get associated deals and tickets
         deal_ids = [f"deal_{did}" for did in associations.get("deals", [])][:10]  # Limit to 10 deals
         ticket_ids = [f"ticket_{tid}" for tid in associations.get("tickets", [])][:10]  # Limit to 10 tickets
         
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"contact_{contact_id}",
             "title": f"{properties.get('firstname', '')} {properties.get('lastname', '')} - {properties.get('jobtitle', 'Unknown Role')}",
             "metadata": {
@@ -1397,7 +1338,8 @@ class HubspotCrawler(Crawler):
                 "email": properties.get("email", ""),
                 "phone": properties.get("phone", ""),
                 "jobtitle": properties.get("jobtitle", ""),
-                "company_name": company_name or properties.get("company", ""),
+                "company_name": company_name or properties.get("company", ""),  # Primary company for display
+                "company_names": company_names,  # All associated companies
                 "lifecyclestage": properties.get("lifecyclestage", ""),
                 "lead_status": properties.get("hs_lead_status", ""),
                 
@@ -1433,31 +1375,41 @@ class HubspotCrawler(Crawler):
         ticket_id = ticket["id"]
         
         # Get associated company and contact
-        company_name = None
-        contact_name = None
+        company_names = []
+        contact_names = []
+        company_name = None  # Primary company name for display
+        contact_name = None  # Primary contact name for display
         company_ids = []
         contact_ids = []
         deal_ids = []
-        
+
         if "companies" in associations and associations["companies"]:
-            company_ids = [f"company_{cid}" for cid in associations["companies"][:5]]
-            comp_id = associations["companies"][0]
-            if comp_id in self.companies_cache:
-                company_name = self.companies_cache[comp_id].get("name", "")
-        
+            company_ids = [f"company_{cid}" for cid in associations["companies"]]
+            for comp_id in associations["companies"]:
+                if comp_id in self.companies_cache:
+                    comp_name = self.companies_cache[comp_id].get("name", "")
+                    if comp_name:
+                        company_names.append(comp_name)
+                        if not company_name:  # Set first as primary
+                            company_name = comp_name
+
         # Get contact details
         if "contacts" in associations and associations["contacts"]:
             contact_ids = [f"contact_{cid}" for cid in associations["contacts"][:10]]
-            cont_id = associations["contacts"][0]
-            if cont_id in self.contacts_cache:
-                cont_data = self.contacts_cache[cont_id]
-                contact_name = f"{cont_data.get('firstname', '')} {cont_data.get('lastname', '')}".strip()
+            for cont_id in associations["contacts"][:10]:
+                if cont_id in self.contacts_cache:
+                    cont_data = self.contacts_cache[cont_id]
+                    full_name = f"{cont_data.get('firstname', '')} {cont_data.get('lastname', '')}".strip()
+                    if full_name:
+                        contact_names.append(full_name)
+                        if not contact_name:  # Set first as primary
+                            contact_name = full_name
         
         if "deals" in associations:
             deal_ids = [f"deal_{did}" for did in associations["deals"][:10]]
         
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"ticket_{ticket_id}",
             "title": f"Ticket: {properties.get('subject', 'No Subject')} - {company_name or 'Unknown Company'}",
             "metadata": {
@@ -1466,9 +1418,11 @@ class HubspotCrawler(Crawler):
                 "subject": properties.get("subject", ""),
                 "priority": properties.get("hs_ticket_priority", ""),
                 "stage": properties.get("hs_pipeline_stage", ""),
-                "company_name": company_name,
-                "contact_name": contact_name,
-                
+                "company_name": company_name,  # Primary company for display
+                "contact_name": contact_name,  # Primary contact for display
+                "company_names": company_names,  # All associated companies
+                "contact_names": contact_names,  # All associated contacts
+
                 # Hierarchical Reference Structure
                 "linked_company_ids": company_ids,
                 "linked_contact_ids": contact_ids,
@@ -1531,10 +1485,10 @@ class HubspotCrawler(Crawler):
             info += f"Forecast probability: {probability}%. "
         
         if companies:
-            info += f"Associated companies: {', '.join(companies[:3])}. "
+            info += f"Associated companies: {', '.join(companies)}. "
         
         if contacts:
-            info += f"Key contacts: {', '.join(contacts[:5])}. "
+            info += f"Key contacts: {', '.join(contacts)}. "
         
         return info if info else "No additional information available."
 
@@ -1643,82 +1597,37 @@ class HubspotCrawler(Crawler):
         return info
 
     # Email-only mode helper methods
-    def _get_contact_engagements_legacy(self, contact_id: str) -> Tuple[List[Dict], int]:
-        """Get contact engagements using legacy V1 API (for email-only mode).
+    def _cache_companies_for_context(self, company_ids: Set[str]) -> None:
+        """Cache company data for context in email-only mode."""
+        if not company_ids:
+            return
 
-        This method is used in email-only mode to maintain compatibility
-        with the original hubspot_crawler.py implementation.
-        """
-        api_endpoint_engagements = f"https://api.hubapi.com/engagements/v1/engagements/associated/contact/{contact_id}/paged"
-        headers = {
-            "Authorization": f"Bearer {self.hubspot_api_key}",
-            "Content-Type": "application/json"
-        }
+        properties = ["name", "domain", "industry"]
+        for comp_id in company_ids:
+            try:
+                url = f"{self.api_base_url}/companies/{comp_id}"
+                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)})
+                if response.status_code == 200:
+                    company = response.json()
+                    self.companies_cache[comp_id] = company.get("properties", {})
+            except Exception as e:
+                logger.debug(f"Failed to cache company {comp_id}: {e}")
 
-        all_engagements = []
+    def _cache_contacts_for_context(self, contact_ids: Set[str]) -> None:
+        """Cache contact data for context in email-only mode."""
+        if not contact_ids:
+            return
 
-        while True:
-            response_engagements = requests.get(api_endpoint_engagements, headers=headers)
-
-            if response_engagements.status_code == 200:
-                engagements_data = response_engagements.json()
-                engagements = engagements_data.get("results", [])
-                all_engagements.extend(engagements)
-
-                # Check if there are more engagements to fetch
-                if engagements_data.get("hasMore"):
-                    offset = engagements_data.get("offset")
-                    api_endpoint_engagements = f"https://api.hubapi.com/engagements/v1/engagements/associated/contact/{contact_id}/paged?offset={offset}"
-                else:
-                    break
-            else:
-                logger.error(f"Error: {response_engagements.status_code} - {response_engagements.text}")
-                break
-
-        return all_engagements, len(all_engagements)
-
-    def _get_email_url(self, contact_id: str, engagement_id: str) -> str:
-        """Generate HubSpot URL for an email engagement."""
-        return f"https://app.hubspot.com/contacts/{self.hubspot_customer_id}/contact/{contact_id}/?engagement={engagement_id}"
-
-    def _build_email_only_document(self, contact_id: str, engagement: Dict,
-                                   email_subject: str, cleaned_text: str,
-                                   email_url: str) -> Dict:
-        """Build document structure for email-only mode.
-
-        This creates a simpler document structure focused on email content,
-        similar to the original hubspot_crawler.py implementation.
-        """
-        # Generate unique doc_id
-        doc_id = f"{contact_id}_{engagement['engagement']['id']}"
-
-        # Build metadata
-        metadata = {
-            "source": engagement['engagement'].get('source', 'hubspot'),
-            "createdAt": datetime.datetime.utcfromtimestamp(
-                int(engagement['engagement'].get('createdAt', 0))/1000
-            ).strftime("%Y-%m-%d") if engagement['engagement'].get('createdAt') else "",
-            "object_type": "email",
-            "contact_id": contact_id,
-            "engagement_id": engagement['engagement']['id'],
-            "hubspot_url": email_url
-        }
-
-        # Build document
-        doc = {
-            "type": "structured",
-            "id": doc_id,
-            "title": email_subject,
-            "metadata": metadata,
-            "sections": [
-                {
-                    "title": "Email Content",
-                    "text": cleaned_text
-                }
-            ]
-        }
-
-        return doc
+        properties = ["firstname", "lastname", "email", "jobtitle"]
+        for cont_id in contact_ids:
+            try:
+                url = f"{self.api_base_url}/contacts/{cont_id}"
+                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)})
+                if response.status_code == 200:
+                    contact = response.json()
+                    self.contacts_cache[cont_id] = contact.get("properties", {})
+            except Exception as e:
+                logger.debug(f"Failed to cache contact {cont_id}: {e}")
 
     # Utility methods
     def _fetch_all_objects(self, object_type: str, properties: List[str], date_field: str = None) -> List[Dict[str, Any]]:
@@ -2173,7 +2082,7 @@ class HubspotObjectProcessor:
         employee_count = int(properties.get("numberofemployees", 0) or 0)
 
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"company_{company_id}",
             "title": f"{properties.get('name', 'Unnamed Company')} - {properties.get('industry', 'Unknown Industry')}",
             "metadata": {
@@ -2224,7 +2133,7 @@ class HubspotObjectProcessor:
         company_name = None
         company_ids = []
         if "companies" in associations and associations["companies"]:
-            company_ids = [f"company_{cid}" for cid in associations["companies"][:5]]  # Limit to 5 companies
+            company_ids = [f"company_{cid}" for cid in associations["companies"]]
             comp_id = associations["companies"][0]
             if comp_id in self.companies_cache:
                 company_name = self.companies_cache[comp_id].get("name", "")
@@ -2234,7 +2143,7 @@ class HubspotObjectProcessor:
         ticket_ids = [f"ticket_{tid}" for tid in associations.get("tickets", [])][:10]  # Limit to 10 tickets
 
         doc = {
-            "type": "structured",
+            "type": "core",
             "id": f"contact_{contact_id}",
             "title": f"{properties.get('firstname', '')} {properties.get('lastname', '')} - {properties.get('jobtitle', 'Unknown Role')}",
             "metadata": {
@@ -2245,7 +2154,8 @@ class HubspotObjectProcessor:
                 "email": properties.get("email", ""),
                 "phone": properties.get("phone", ""),
                 "jobtitle": properties.get("jobtitle", ""),
-                "company_name": company_name or properties.get("company", ""),
+                "company_name": company_name or properties.get("company", ""),  # Primary company for display
+                "company_names": company_names,  # All associated companies
                 "lifecyclestage": properties.get("lifecyclestage", ""),
                 "lead_status": properties.get("hs_lead_status", ""),
 
@@ -2286,11 +2196,11 @@ class HubspotObjectProcessor:
 
         # Create a minimal crawler instance just for the method call
         # We pass empty strings for unused parameters to avoid initializing unnecessary components
-        temp_crawler = object.__new__(HubspotCrawler)
-        temp_crawler.companies_cache = self.companies_cache
-        temp_crawler.contacts_cache = self.contacts_cache
-        temp_crawler.hubspot_customer_id = self.hubspot_customer_id
-        return temp_crawler._build_deal_document(deal, associations)
+        deal_crawler = object.__new__(HubspotCrawler)
+        deal_crawler.companies_cache = self.companies_cache
+        deal_crawler.contacts_cache = self.contacts_cache
+        deal_crawler.hubspot_customer_id = self.hubspot_customer_id
+        return deal_crawler._build_deal_document(deal, associations)
 
     def _build_ticket_document(self, ticket: Dict, associations: Dict) -> Dict:
         """Build a simplified ticket document."""
@@ -2300,11 +2210,11 @@ class HubspotObjectProcessor:
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
         from crawlers.hubspot_crawler import HubspotCrawler
 
-        temp_crawler = object.__new__(HubspotCrawler)
-        temp_crawler.companies_cache = self.companies_cache
-        temp_crawler.contacts_cache = self.contacts_cache
-        temp_crawler.hubspot_customer_id = self.hubspot_customer_id
-        return temp_crawler._build_ticket_document(ticket, associations)
+        ticket_crawler = object.__new__(HubspotCrawler)
+        ticket_crawler.companies_cache = self.companies_cache
+        ticket_crawler.contacts_cache = self.contacts_cache
+        ticket_crawler.hubspot_customer_id = self.hubspot_customer_id
+        return ticket_crawler._build_ticket_document(ticket, associations)
 
     def _build_engagement_document(self, engagement: Dict, engagement_type: str, associations: Dict) -> Dict:
         """Build an engagement document."""
@@ -2314,11 +2224,11 @@ class HubspotObjectProcessor:
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
         from crawlers.hubspot_crawler import HubspotCrawler
 
-        temp_crawler = object.__new__(HubspotCrawler)
-        temp_crawler.companies_cache = self.companies_cache
-        temp_crawler.contacts_cache = self.contacts_cache
-        temp_crawler.hubspot_customer_id = self.hubspot_customer_id
-        return temp_crawler._build_engagement_document(engagement, engagement_type, associations)
+        engagement_crawler = object.__new__(HubspotCrawler)
+        engagement_crawler.companies_cache = self.companies_cache
+        engagement_crawler.contacts_cache = self.contacts_cache
+        engagement_crawler.hubspot_customer_id = self.hubspot_customer_id
+        return engagement_crawler._build_engagement_document(engagement, engagement_type, associations)
 
     def _generate_company_overview_text(self, properties: Dict) -> str:
         """Generate natural language company overview."""
