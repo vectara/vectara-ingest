@@ -37,8 +37,10 @@ class JiraCrawler(Crawler):
             }
             if api_version == 2:
                 url = f"{base_url}/rest/api/{api_version}/{api_endpoint}"
-            else:
+            elif api_version == 3:
                 url = f"{base_url}/rest/api/{api_version}/{api_endpoint}/jql"
+            else:
+                raise ValueError(f"Unsupported Jira API version {api_version}")
             jira_response = session.get(url, headers=jira_headers, auth=jira_auth, params=params)
             jira_response.raise_for_status()
             jira_data = jira_response.json()
