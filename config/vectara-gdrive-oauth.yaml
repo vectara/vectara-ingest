@@ -7,7 +7,9 @@ crawling:
   crawler_type: gdrive
 
 gdrive_crawler:
-  # Use OAuth authentication
+  # Use OAuth authentication (single user only)
+  # Note: OAuth mode does not require 'delegated_users' field
+  # For multi-user crawling, use service account authentication instead
   auth_type: oauth
 
   # Path to OAuth credentials file
@@ -18,6 +20,7 @@ gdrive_crawler:
   credentials_file: credentials.json
 
   # Days back to crawl (files modified in last N days)
+  # Default: 7 days if not specified
   days_back: 7
 
   # Permission filtering

@@ -1,27 +1,28 @@
-import os
-from core.crawler import Crawler
-from omegaconf import OmegaConf
-import logging
-logger = logging.getLogger(__name__)
 import io
-from datetime import datetime, timedelta
+import json
+import logging
+import os
 import requests
+from datetime import datetime, timedelta
+from typing import List, Optional
 
+import ray
+from omegaconf import OmegaConf
+from slugify import slugify
+
+from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
-from google.auth.transport.requests import Request
 
-from slugify import slugify
-from typing import List, Optional
-
-import ray
-
+from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import setup_logging, safe_remove_file, get_docker_or_local_path
+
+logger = logging.getLogger(__name__)
 
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
@@ -60,8 +61,6 @@ def get_oauth_credentials(credentials_file: str) -> Credentials:
     Returns:
         OAuth credentials object
     """
-    import json
-
     try:
         # Read the token file
         with open(credentials_file, 'r') as f:
