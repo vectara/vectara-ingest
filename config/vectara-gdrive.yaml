@@ -7,7 +7,31 @@ crawling:
   crawler_type: gdrive
 
 gdrive_crawler:
+  # Use service account authentication with domain-wide delegation
+  auth_type: service_account
+
+  # List of users to crawl files for (only used with service_account auth_type)
+  # For OAuth mode, this field is not required
   delegated_users:
     - <add email id>
     - <add email id>
+
+  # Path to service account credentials file
+  # This should contain the service account JSON from Google Cloud Console
+  # For OAuth mode, use vectara-gdrive-oauth.yaml instead
   credentials_file: /path/to/credentials.json
+
+  # Days back to crawl (files modified in last N days)
+  # Default: 7 days if not specified
+  days_back: 7
+
+  # Permission filtering
+  # Files must be shared with at least one of these to be crawled
+  # Default: ['Vectara', 'all'] - only files shared with 'Vectara' group or 'all' (public)
+  permissions:
+    - Vectara
+    - all
+
+  # Optional: Ray workers for parallel processing (default: 0)
+  # 0 = no parallelization, >0 = number of workers
+  ray_workers: 0

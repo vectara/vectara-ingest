@@ -134,7 +134,7 @@ fi
 
 if [[ "$crawler_type" == "gdrive" ]]; then
   if [[ -f credentials.json ]]; then
-    DOCKER_RUN_ARGS+=(-v "$(pwd)/credentials.json:/home/vectara/env/credentials.json:ro")
+    DOCKER_RUN_ARGS+=(-v "$(pwd)/credentials.json:/home/vectara/env/credentials.json:rw")
   fi
 fi
 
