@@ -25,7 +25,6 @@ class JiraCrawler(Crawler):
         max_results = getattr(self.cfg.jira_crawler, 'max_results', 100)
         initial_start_at = getattr(self.cfg.jira_crawler, 'start_at', 0)
 
-
         issue_count = 0
         start_at = initial_start_at
         res_cnt = max_results
@@ -36,7 +35,12 @@ class JiraCrawler(Crawler):
                 "maxResults": res_cnt,
                 "startAt": start_at,
             }
-            url = f"{base_url}/rest/api/{api_version}/{api_endpoint}/jql"
+            if api_version == 2:
+                url = f"{base_url}/rest/api/{api_version}/{api_endpoint}"
+            elif api_version == 3:
+                url = f"{base_url}/rest/api/{api_version}/{api_endpoint}/jql"
+            else:
+                raise ValueError(f"Unsupported Jira API version {api_version}")
             jira_response = session.get(url, headers=jira_headers, auth=jira_auth, params=params)
             jira_response.raise_for_status()
             jira_data = jira_response.json()
@@ -103,7 +107,7 @@ class JiraCrawler(Crawler):
                         issue_count += 1
                     else:
                         logger.info(f"Error indexing issue {document['id']}")
-                startAt = startAt + actual_cnt
+                start_at = start_at + actual_cnt
             else:
                 break
 
