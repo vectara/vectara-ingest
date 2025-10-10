@@ -120,8 +120,9 @@ secrets.toml
 # certificate authority file
 ca.pem
 
-# GDrive credentials file
+# GDrive credentials files
 credentials.json
+scripts/gdrive/oauth_client_credentials.json
 
 # Temporary directory for crawler output files
 temp/

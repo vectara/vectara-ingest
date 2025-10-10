@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import requests
 
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
@@ -38,6 +40,7 @@ class SharedCache:
         return id in self.cache
 
 def get_credentials(delegated_user: str, config_path: str) -> service_account.Credentials:
+    """Get service account credentials with domain-wide delegation."""
     credentials_file = get_docker_or_local_path(
         docker_path=SERVICE_ACCOUNT_FILE,
         config_path=config_path
@@ -46,6 +49,59 @@ def get_credentials(delegated_user: str, config_path: str) -> service_account.Cr
         credentials_file, scopes=SCOPES)
     delegated_credentials = credentials.with_subject(delegated_user)
     return delegated_credentials
+
+def get_oauth_credentials(credentials_file: str) -> Credentials:
+    """
+    Get OAuth 2.0 credentials from token JSON file.
+
+    Args:
+        credentials_file: Path to the OAuth token JSON file
+
+    Returns:
+        OAuth credentials object
+    """
+    import json
+
+    try:
+        # Read the token file
+        with open(credentials_file, 'r') as f:
+            token_data = json.load(f)
+
+        # Create credentials from the token data
+        creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+
+        # Refresh if expired
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                logger.info("Refreshed OAuth token")
+
+                # Save the refreshed token back to the file
+                refreshed_token_data = {
+                    "token": creds.token,
+                    "refresh_token": creds.refresh_token,
+                    "token_uri": creds.token_uri,
+                    "client_id": creds.client_id,
+                    "client_secret": creds.client_secret,
+                    "scopes": creds.scopes
+                }
+                with open(credentials_file, 'w') as f:
+                    json.dump(refreshed_token_data, f, indent=2)
+                logger.info(f"Saved refreshed token to {credentials_file}")
+            except Exception as e:
+                logger.error(f"Error refreshing token: {e}")
+                raise
+
+        return creds
+    except FileNotFoundError:
+        logger.error(f"OAuth credentials file not found: {credentials_file}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid OAuth token JSON in {credentials_file}: {e}")
+        raise ValueError(f"Invalid OAuth token format in credentials file: {e}")
+    except Exception as e:
+        logger.error(f"Error creating OAuth credentials: {e}")
+        raise
 
 def get_gdrive_url(file_id: str, mime_type: str = '') -> str:
     if mime_type == 'application/vnd.google-apps.document':
@@ -225,7 +281,25 @@ class UserWorker(object):
 
     def process(self, user: str) -> None:
         logger.info(f"Processing files for user: {user}")
-        self.creds = get_credentials(user, config_path=self.cfg.gdrive_crawler.credentials_file)
+
+        # Determine authentication method based on configuration
+        auth_type = self.cfg.gdrive_crawler.get("auth_type", "service_account")
+
+        # Get credentials file path (same field name for both auth types)
+        credentials_file = get_docker_or_local_path(
+            docker_path=SERVICE_ACCOUNT_FILE,
+            config_path=self.cfg.gdrive_crawler.credentials_file
+        )
+
+        if auth_type == "oauth":
+            # Use OAuth authentication with token from credentials.json
+            logger.info("Using OAuth authentication")
+            self.creds = get_oauth_credentials(credentials_file)
+        else:
+            # Use service account with domain-wide delegation (default)
+            logger.info(f"Using service account authentication for user: {user}")
+            self.creds = get_credentials(user, config_path=self.cfg.gdrive_crawler.credentials_file)
+
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
 
         files = self.list_files(self.service, date_threshold=self.date_threshold.isoformat() + 'Z')
@@ -270,7 +344,14 @@ class GdriveCrawler(Crawler):
         super().__init__(cfg, endpoint, corpus_key, api_key)
         logger.info("Google Drive Crawler initialized")
 
-        self.delegated_users = cfg.gdrive_crawler.delegated_users
+        # Get auth type
+        auth_type = cfg.gdrive_crawler.get("auth_type", "service_account")
+
+        # For OAuth mode, use a dummy user; for service account, use delegated_users
+        if auth_type == "oauth":
+            self.delegated_users = ["oauth_user"]  # Dummy user for OAuth mode
+        else:
+            self.delegated_users = cfg.gdrive_crawler.delegated_users
 
     def crawl(self) -> None:
         N = self.cfg.gdrive_crawler.get("days_back", 7)

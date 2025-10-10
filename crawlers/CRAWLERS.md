@@ -477,29 +477,82 @@ Each document is structured with multiple sections containing natural language s
 ```yaml
 ...
   gdrive_crawler:
+    # Authentication type: "service_account" (default) or "oauth"
+    auth_type: service_account
+
+    # Path to credentials.json file (used for both auth types)
+    credentials_file: /path/to/credentials.json
+
+    # Configuration parameters
     permissions: ['Vectara', 'all']
     days_back: 365
     ray_workers: 0
-    delegated_users:
-      - ofer@vectara.com
-      - jana@vectara.com
-    credentials_file: /path/to/credential.json # In CLI version make sure that path points to credetianls.json
 
+    # For service_account mode only
+    delegated_users:
+      - user1@example.com
+      - user2@example.com
 ```
 
-The gdrive crawler indexes content of your Google Drive folder
-- `days_back`: include only files created within the last N days
+The gdrive crawler indexes content from Google Drive with support for two authentication methods:
+
+**Common Parameters:**
+- `days_back`: include only files modified within the last N days
 - `permissions`: list of `displayName` values to include. We recommend including your company name (e.g. `Vectara`) and `all` to include all non-restricted files.
-- `delegated_users`: list of user emails in your organization. 
 - `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
+- `credentials_file`: Path to credentials JSON file (format depends on auth_type)
 
-This crawler identifies Google Drive files based on the list of delegated users. For each user it looks at those files that the user either created or has access to, but
-limiting only to files that have "accessible by all" permissions (so that "restricted" files are not included)
+**Authentication Methods:**
 
-Note that this crawler uses a Google Drive service account mode to access files, 
-and you need to include a `credentials.json` file in the main vectara-ingest folder.
-For more information see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under 
-"Service account credentials".
+**1. Service Account Mode (`auth_type: service_account`)** - Default
+- Requires Google Workspace with domain-wide delegation
+- Supports multiple users via `delegated_users` list
+- `credentials.json` should contain service account credentials
+- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials"
+
+**2. OAuth Mode (`auth_type: oauth`)**
+- Use when you don't have Google Workspace domain-wide delegation
+- Supports single user only (the user who authorized the app)
+- `credentials.json` should contain OAuth token
+- The token will be automatically refreshed when it expires
+
+**OAuth Setup:**
+
+Your `credentials.json` file for OAuth should look like this:
+```json
+{
+  "token": "ya29.a0AfB_by...",
+  "refresh_token": "1//0gXYZ...",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "123456789-abc123def456.apps.googleusercontent.com",
+  "client_secret": "GOCSPX-AbCdEfGhIjKlMnOpQrStUvWx",
+  "scopes": ["https://www.googleapis.com/auth/drive.readonly"]
+}
+```
+
+To generate the OAuth token:
+1. Create OAuth 2.0 Client ID in Google Cloud Console (Desktop app type)
+2. Download and save as `scripts/gdrive/oauth_client_credentials.json`
+3. Run: `python scripts/gdrive/generate_oauth_token.py`
+4. Authorize in the browser
+5. The token is saved to `credentials.json` automatically
+
+For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`
+
+**OAuth Configuration Example:**
+```yaml
+gdrive_crawler:
+  auth_type: oauth
+  credentials_file: credentials.json
+  days_back: 7
+  permissions: ['Vectara', 'all']
+```
+
+**Important Notes:**
+- OAuth mode only supports a single user account
+- For multi-user crawling, use `service_account` mode
+- The OAuth token will auto-refresh and save itself when it expires
+- Both authentication modes use the same `credentials_file` field
 
 
 ### Folder crawler
