@@ -2,9 +2,10 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
+from pathlib import Path
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, configure_session_for_ssl
+from core.utils import create_session_with_retries, configure_session_for_ssl, IMG_EXTENSIONS, DOC_EXTENSIONS
 
 
 class JiraCrawler(Crawler):
@@ -43,9 +44,10 @@ class JiraCrawler(Crawler):
             logger.debug(f"Attachment processing disabled for issue {issue_key}")
             return
 
-        # Define supported file extensions
-        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.tiff', '.tif'}
-        document_extensions = {'.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.txt', '.md'}
+        # Use centralized file extension constants from utils
+        image_extensions = set(IMG_EXTENSIONS)
+        # Add additional text-based document extensions not in DOC_EXTENSIONS
+        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md'])
 
         attachment_count = 0
 
@@ -55,7 +57,7 @@ class JiraCrawler(Crawler):
                 logger.warning(f"Attachment without filename in issue {issue_key}, skipping")
                 continue
 
-            file_ext = os.path.splitext(filename)[1].lower()
+            file_ext = Path(filename).suffix.lower()
 
             # Determine if we should process this attachment
             is_image = file_ext in image_extensions
