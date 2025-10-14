@@ -26,6 +26,60 @@ NC='\033[0m'
 # retrieve the crawler type from the config file
 crawler_type=`python3 -c "import yaml; print(yaml.safe_load(open('$1'))['crawling']['crawler_type'])" | tr '[:upper:]' '[:lower:]'`
 
+# Check for custom crawler file in config
+custom_crawler=$(python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('vectara', {}).get('crawler_file', ''))" 2>/dev/null)
+
+if [[ -n "$custom_crawler" ]]; then
+  # Validate custom crawler file exists
+  if [[ ! -f "$custom_crawler" ]]; then
+    echo "Error: Custom crawler file not found at '$custom_crawler'"
+    exit 9
+  fi
+
+  # Validate crawler file naming convention
+  crawler_filename=$(basename "$custom_crawler")
+  expected_filename="${crawler_type}_crawler.py"
+
+  if [[ "$crawler_filename" != "$expected_filename" ]]; then
+    echo "Error: Crawler filename mismatch"
+    echo "Expected: $expected_filename"
+    echo "Actual: $crawler_filename"
+    echo ""
+
+    # Extract class name from the custom crawler file to suggest correct crawler_type
+    class_name=$(grep -E "^class [A-Z][a-zA-Z]*Crawler\(Crawler\)" "$custom_crawler" | sed 's/class \([^(]*\)Crawler.*/\1/' | head -1)
+
+    if [[ -n "$class_name" ]]; then
+      suggested_type=$(echo "$class_name" | tr '[:upper:]' '[:lower:]')
+      echo "Found class: ${class_name}Crawler"
+      echo "Suggested crawler_type: $suggested_type"
+      echo ""
+      echo "Fix: Update 'crawler_type: $suggested_type' in your config"
+      echo "Or: Rename file to '$expected_filename'"
+    else
+      echo "No Crawler class found in file."
+      echo "Fix: Rename file to '$expected_filename' or update crawler_type in config"
+    fi
+    exit 10
+  fi
+
+  # Copy the validated custom crawler
+  cp "$custom_crawler" "crawlers/$crawler_filename"
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to copy crawler file to crawlers/"
+    exit 8
+  fi
+  echo "Copied custom crawler: $crawler_filename"
+fi
+
+# Validate that the expected crawler file exists
+expected_crawler_file="crawlers/${crawler_type}_crawler.py"
+if [[ ! -f "$expected_crawler_file" ]]; then
+  echo "Error: Crawler file not found: $expected_crawler_file"
+  echo "Provide a custom crawler using 'crawler_file' in your config or check 'crawler_type' spelling"
+  exit 11
+fi
+
 # Mount secrets file and other files as needed into docker container
 
 # Build docker container
@@ -133,9 +187,15 @@ if [[ -d ssl ]]; then
 fi
 
 if [[ "$crawler_type" == "gdrive" ]]; then
-  if [[ -f credentials.json ]]; then
-    DOCKER_RUN_ARGS+=(-v "$(pwd)/credentials.json:/home/vectara/env/credentials.json:rw")
+  credentials_path=$(python3 -c "import yaml; print(yaml.safe_load(open('$1')).get('gdrive_crawler', {}).get('credentials_file', 'credentials.json'))" 2>/dev/null)
+  credentials_path="${credentials_path:-credentials.json}"
+
+  if [[ ! -f "$credentials_path" ]]; then
+    echo "Error: Google Drive credentials file not found at '$credentials_path'"
+    exit 7
   fi
+
+  DOCKER_RUN_ARGS+=(-v "$(realpath "$credentials_path"):/home/vectara/env/credentials.json:rw")
 fi
 
 if [[ -n "${LOGGING_LEVEL}" ]]; then
