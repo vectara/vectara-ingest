@@ -83,10 +83,11 @@ class JiraCrawler(Crawler):
                     continue
 
                 # Download attachment
+                # Note: Don't set Accept header for Jira attachment downloads
+                # Jira Cloud returns 406 if Accept header is too restrictive
                 download_response = session.get(
                     content_url,
                     auth=jira_auth,
-                    headers={"Accept": "application/octet-stream"},
                     stream=True
                 )
                 download_response.raise_for_status()
@@ -160,28 +161,44 @@ class JiraCrawler(Crawler):
             "created","updated","resolutiondate","labels","comment","description","attachment"
         ]
 
-        api_version = getattr(self.cfg.jira_crawler, 'api_version', '3')
+        api_version = getattr(self.cfg.jira_crawler, 'api_version', 3)
         api_endpoint = getattr(self.cfg.jira_crawler, 'api_endpoint', 'search')
         fields = getattr(self.cfg.jira_crawler, 'fields', wanted_fields)
         max_results = getattr(self.cfg.jira_crawler, 'max_results', 100)
-        initial_start_at = getattr(self.cfg.jira_crawler, 'start_at', 0)
 
         issue_count = 0
-        start_at = initial_start_at
         res_cnt = max_results
+
+        # API v3 uses token-based pagination, v2 uses offset-based
+        next_page_token = None
+        start_at = 0
+
         while True:
-            params = {
-                "jql": jql,                       # let requests encode
-                "fields": ",".join(fields),
-                "maxResults": res_cnt,
-                "startAt": start_at,
-            }
+            # Build request parameters based on API version
             if api_version == 2:
                 url = f"{base_url}/rest/api/{api_version}/{api_endpoint}"
+                params = {
+                    "jql": jql,
+                    "fields": ",".join(fields),
+                    "maxResults": res_cnt,
+                    "startAt": start_at,
+                }
+                logger.info(f"Fetching issues (API v2): startAt={start_at}, maxResults={res_cnt}")
             elif api_version == 3:
                 url = f"{base_url}/rest/api/{api_version}/{api_endpoint}/jql"
+                params = {
+                    "jql": jql,
+                    "fields": ",".join(fields),
+                    "maxResults": res_cnt,
+                }
+                if next_page_token:
+                    params["nextPageToken"] = next_page_token
+                    logger.info(f"Fetching issues (API v3): nextPageToken={next_page_token[:20]}..., maxResults={res_cnt}")
+                else:
+                    logger.info(f"Fetching issues (API v3): first page, maxResults={res_cnt}")
             else:
                 raise ValueError(f"Unsupported Jira API version {api_version}")
+
             jira_response = session.get(url, headers=jira_headers, auth=jira_auth, params=params)
             jira_response.raise_for_status()
             jira_data = jira_response.json()
@@ -190,17 +207,18 @@ class JiraCrawler(Crawler):
             if actual_cnt > 0:
                 for issue in jira_data["issues"]:
                     # Collect as much metadata as possible
+                    # Use safe navigation to handle None values
                     metadata = {}
-                    metadata["project"] = issue["fields"]["project"]["name"]
-                    metadata["issueType"] = issue["fields"]["issuetype"]["name"]
-                    metadata["status"] = issue["fields"]["status"]["name"]
-                    metadata["priority"] = issue["fields"]["priority"]["name"]
-                    metadata["reporter"] = issue["fields"]["reporter"]["displayName"]
-                    metadata["assignee"] = issue["fields"]["assignee"]["displayName"] if issue["fields"]["assignee"] else None
-                    metadata["created"] = issue["fields"]["created"]
-                    metadata["last_updated"] = issue["fields"]["updated"]
-                    metadata["resolved"] = issue["fields"]["resolutiondate"] if "resolutiondate" in issue["fields"] else None
-                    metadata["labels"] = issue["fields"]["labels"]
+                    metadata["project"] = issue["fields"]["project"]["name"] if issue["fields"].get("project") else None
+                    metadata["issueType"] = issue["fields"]["issuetype"]["name"] if issue["fields"].get("issuetype") else None
+                    metadata["status"] = issue["fields"]["status"]["name"] if issue["fields"].get("status") else None
+                    metadata["priority"] = issue["fields"]["priority"]["name"] if issue["fields"].get("priority") else None
+                    metadata["reporter"] = issue["fields"]["reporter"]["displayName"] if issue["fields"].get("reporter") else None
+                    metadata["assignee"] = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else None
+                    metadata["created"] = issue["fields"].get("created")
+                    metadata["last_updated"] = issue["fields"].get("updated")
+                    metadata["resolved"] = issue["fields"].get("resolutiondate")
+                    metadata["labels"] = issue["fields"].get("labels", [])
                     metadata["source"] = "jira"
                     metadata["url"] = f"{self.cfg.jira_crawler.jira_base_url}/browse/{issue['key']}"
 
@@ -262,7 +280,20 @@ class JiraCrawler(Crawler):
                                 logger.error(f"Error processing attachments for issue {issue['key']}: {e}")
                     else:
                         logger.info(f"Error indexing issue {document['id']}")
-                start_at = start_at + actual_cnt
+
+                # Handle pagination based on API version
+                if api_version == 2:
+                    start_at = start_at + actual_cnt
+                elif api_version == 3:
+                    # Check if there are more pages
+                    is_last = jira_data.get("isLast", True)
+                    if is_last:
+                        logger.info("Reached last page of results (isLast=true)")
+                        break
+                    next_page_token = jira_data.get("nextPageToken")
+                    if not next_page_token:
+                        logger.info("No nextPageToken found, stopping pagination")
+                        break
             else:
                 break
 

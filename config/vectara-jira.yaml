@@ -1,5 +1,5 @@
 vectara:
-  corpus_key: jira
+  corpus_key: oct-14-jira
   reindex: true
   create_corpus: false
 
@@ -28,7 +28,7 @@ jira_crawler:
   # Note: When include_image_attachments is enabled, image files will be downloaded and indexed
   # If doc_processing.summarize_images is also enabled, AI-generated descriptions will be created
   include_image_attachments: true   # Process image attachments (PNG, JPG, GIF, etc.)
-  include_document_attachments: false  # Process document attachments (PDF, DOCX, PPTX, etc.)
+  include_document_attachments: true  # Process document attachments (PDF, DOCX, PPTX, etc.)
 
   # Optional API configuration parameters (uncomment to override defaults)
   # api_version: "3"           # Default: "3" (Jira REST API version)
