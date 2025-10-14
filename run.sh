@@ -64,8 +64,7 @@ if [[ -n "$custom_crawler" ]]; then
   fi
 
   # Copy the validated custom crawler
-  cp "$custom_crawler" "crawlers/$crawler_filename"
-  if [ $? -ne 0 ]; then
+  if ! cp "$custom_crawler" "crawlers/$crawler_filename"; then
     echo "Error: Failed to copy crawler file to crawlers/"
     exit 8
   fi

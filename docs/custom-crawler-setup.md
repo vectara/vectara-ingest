@@ -92,7 +92,6 @@ If the custom crawler file is not found, the script will exit with an error:
 
 ```
 Error: Custom crawler file not found at '/path/to/crawler.py'
-Please ensure the file exists or remove 'crawler_file' from your config.
 ```
 
 Make sure:
