@@ -1,16 +1,35 @@
 vectara:
-  corpus_key: jira
+  corpus_key: oct-14-jira
   reindex: true
   create_corpus: false
 
 crawling:
   crawler_type: jira
 
+# Document processing configuration
+# Enable image summarization to generate AI descriptions for image attachments
+doc_processing:
+  # Image summarization uses vision models to describe images
+  summarize_images: false         # Set to true to enable AI-powered image descriptions
+  add_image_bytes: false          # Set to true to store image binary data with descriptions
+
+  # Vision model configuration (required if summarize_images is true)
+  model_config:
+    vision:
+      provider: openai            # or anthropic
+      model_name: gpt-4o          # or claude-3-5-sonnet-20241022
+
 jira_crawler:
   jira_base_url: "https://vectara.atlassian.net/"
   jira_username: ofer@vectara.com
   jira_jql: "created > -365d"
-  
+
+  # Attachment processing configuration
+  # Note: When include_image_attachments is enabled, image files will be downloaded and indexed
+  # If doc_processing.summarize_images is also enabled, AI-generated descriptions will be created
+  include_image_attachments: true   # Process image attachments (PNG, JPG, GIF, etc.)
+  include_document_attachments: true  # Process document attachments (PDF, DOCX, PPTX, etc.)
+
   # Optional API configuration parameters (uncomment to override defaults)
   # api_version: "3"           # Default: "3" (Jira REST API version)
   # api_endpoint: "search"     # Default: "search" (API endpoint)
