@@ -434,43 +434,108 @@ The notion crawler indexes notion pages into Vectara:
 For this crawler, you need to specify `NOTION_API_KEY` (which is associated with your custom integration) in the `secrets.toml` file. 
 
 
-### Hubspot crawler
+### HubSpot crawler
 
-The HubSpot crawler has no specific parameters, except the `HUBSPOT_API_KEY` that needs to be specified in the `secrets.toml` file. The crawler will index the emails on your Hubspot instance. The crawler also uses `clean_email_text()` module which takes the email message as a parameter and cleans it to make it more presentable. This function in `core/utils.py` is taking care of indentation character `>`. 
+The unified HubSpot crawler supports two modes for different use cases:
+- **Email mode** (`emails`): Lightweight crawling of email engagements only
+- **CRM mode** (`crm`): Comprehensive crawling of all CRM data
 
-The crawler leverages [Presidio Analyzer and Anonymizer](https://microsoft.github.io/presidio/analyzer/) to accomplish PII masking, achieving a notable degree of accuracy in anonymizing sensitive information with minimal error.
-
-### Hubspot CRM crawler
+#### Configuration
 
 ```yaml
-...
 crawling:
-  crawler_type: hubspotcrm
+  crawler_type: hubspot
 
 hubspot_crawler:
-  hubspot_customer_id: "YOUR_HUBSPOT_CUSTOMER_ID"
-...
+  hubspot_customer_id: "YOUR_CUSTOMER_ID"  # Required: Your HubSpot account ID
+  mode: crm                                 # 'emails' or 'crm' (default: 'crm')
+
+  # CRM mode specific options
+  ray_workers: 4                            # Parallel workers: -1 (all CPUs), 0 (disable), or specific number
+  start_date: "2024-01-01"                  # Optional: Filter data from this date (YYYY-MM-DD)
+  end_date: "2024-12-31"                    # Optional: Filter data until this date (YYYY-MM-DD)
 ```
 
-The HubSpot CRM crawler extracts deals, companies, contacts, and tickets from your HubSpot CRM instance and indexes them in Vectara with rich denormalized data optimized for RAG (Retrieval-Augmented Generation) applications.
+#### Configuration Options
 
-**Key Features:**
-- **Comprehensive Data Extraction**: Crawls deals, companies, contacts, and support tickets
-- **Denormalized Structure**: Each document includes associated entity information for better context
-- **Hierarchical References**: Links between objects are preserved for easy navigation
-- **Sales-Optimized Content**: Documents are structured with sales teams in mind
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `hubspot_customer_id` | string | required | Your HubSpot customer/portal ID (found in account URL) |
+| `mode` | string | `"crm"` | Crawling mode: `"emails"` for email-only, `"crm"` for full CRM |
+| `ray_workers` | integer | `0` | Number of parallel workers (CRM mode only):<br>• `-1`: Use all available CPUs<br>• `0`: Disable parallel processing<br>• `N`: Use N workers |
+| `start_date` | string | none | Filter data from this date (format: YYYY-MM-DD) |
+| `end_date` | string | none | Filter data until this date (format: YYYY-MM-DD) |
 
-**Configuration Parameters:**
-- `hubspot_customer_id`: Your HubSpot customer/portal ID (found in your HubSpot account URL)
-- `HUBSPOT_API_KEY`: Must be specified in the `secrets.toml` file
+#### Mode Comparison
 
-**Document Structure:**
-- **Deals**: Include associated company and contact information, deal progression details
-- **Companies**: Include associated deals and contacts, business intelligence data
-- **Contacts**: Include associated companies and deals, contact profile information
-- **Tickets**: Include customer context and resolution status
+**Email Mode** (`mode: "emails"`):
+- **Use Case**: Organizations only needing email communications indexed
+- **Data Indexed**: Email engagements from contacts only
+- **API Used**: Legacy Engagements V1 API for compatibility
+- **Performance**: Sequential processing, suitable for smaller datasets
 
-Each document is structured with multiple sections containing natural language summaries optimized for semantic search and RAG applications.
+**CRM Mode** (`mode: "crm"`):
+- **Use Case**: Organizations needing comprehensive CRM data for RAG applications
+- **Data Indexed**:
+  - Deals with associated company/contact context
+  - Companies with business intelligence
+  - Contacts with profile information
+  - Support tickets with resolution status
+  - All engagement types (emails, calls, meetings, notes, tasks)
+- **API Used**: Modern CRM v3 API
+- **Performance**: Ray-based parallel processing for large datasets
+- **Features**:
+  - Deal-focused extraction strategy
+  - Hierarchical references between objects
+  - Denormalized data for better search context
+  - Date range filtering for incremental updates
+
+#### Built-in Data Quality Features
+
+The crawler automatically ensures data quality by:
+
+**PII Protection**: All engagement content (emails, notes, meeting notes, call logs) is automatically processed through [Presidio](https://microsoft.github.io/presidio/analyzer/) to mask sensitive information including:
+- Phone numbers, credit cards, email addresses
+- Social security numbers, passport numbers
+- Personal names and locations
+
+**Smart Content Filtering**: Automatically skips empty or low-value content:
+- Emails without body text
+- Meeting invitations without notes or agenda
+- Call logs without notes (only direction/duration)
+- Tasks without description
+- Notes with less than 20 characters
+
+These features are always enabled to ensure high-quality, privacy-compliant data indexing.
+
+#### Authentication
+
+Both modes require `HUBSPOT_API_KEY` to be specified in the `secrets.toml` file:
+```toml
+HUBSPOT_API_KEY = "your-private-app-key"
+```
+
+#### Example Use Cases
+
+1. **Sales Team RAG System** (CRM mode):
+   ```yaml
+   mode: crm
+   ray_workers: 4
+   ```
+
+2. **Email Archive Search** (Email mode):
+   ```yaml
+   mode: emails
+   ```
+
+3. **Quarterly CRM Snapshot** (CRM mode with date filtering):
+   ```yaml
+   mode: crm
+   start_date: "2024-01-01"
+   end_date: "2024-03-31"
+   ray_workers: -1
+   ```
+
 
 ### Google Drive crawler
 

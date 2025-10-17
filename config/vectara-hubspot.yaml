@@ -2,9 +2,20 @@ vectara:
   corpus_key: hubspot
   reindex: true
   create_corpus: false
-  
+
 crawling:
   crawler_type: hubspot
-  
+
 hubspot_crawler:
+  # HubSpot configuration (HUBSPOT_API_KEY must be in secrets.toml)
   hubspot_customer_id: 21542831
+
+  # Mode selection - choose one:
+  # - 'emails': Lightweight email-only crawling (original behavior)
+  # - 'crm': Full CRM crawling with all object types (default)
+  mode: crm
+
+  # CRM mode specific options (ignored in email mode)
+  ray_workers: 0  # Number of Ray workers for parallel processing (-1 for all CPUs, 0 to disable)
+  # start_date: "2024-01-01"  # Optional: Filter data from this date (YYYY-MM-DD format)
+  # end_date: "2024-12-31"    # Optional: Filter data until this date (YYYY-MM-DD format)

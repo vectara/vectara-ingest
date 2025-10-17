@@ -77,8 +77,12 @@ try:
     from presidio_anonymizer import AnonymizerEngine
     analyzer = AnalyzerEngine()
     anonymizer = AnonymizerEngine()
+    PRESIDIO_AVAILABLE = True
 except ImportError:
-    logger.info("Presidio is not installed. if PII detection and masking is requested - it will not work.")
+    logger.info("Presidio is not installed. PII masking will be skipped.")
+    analyzer = None
+    anonymizer = None
+    PRESIDIO_AVAILABLE = False
 
 # Legacy constants for backward compatibility
 img_extensions = IMG_EXTENSIONS
@@ -451,20 +455,33 @@ def get_file_extension(url):
 def mask_pii(text: str) -> str:
     """
     Mask personally identifiable information (PII) in text using Presidio.
-    
+
+    If Presidio is not installed, returns the original text unchanged and logs a warning once.
+
     Args:
         text (str): Text to analyze and mask PII
-        
+
     Returns:
-        str: Text with PII masked
+        str: Text with PII masked if Presidio is available, otherwise original text
     """
-    # Analyze and anonymize PII data in the text
-    results = analyzer.analyze(
-        text=text,
-        entities=PII_ENTITIES,
-        language='en')
-    anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
-    return str(anonymized_text.text)
+    if not PRESIDIO_AVAILABLE:
+        # Log warning only once to avoid spamming logs
+        if not hasattr(mask_pii, '_warning_logged'):
+            logger.warning("Presidio is not installed. PII masking is disabled. Install presidio-analyzer and presidio-anonymizer to enable PII masking.")
+            mask_pii._warning_logged = True
+        return text
+
+    try:
+        # Analyze and anonymize PII data in the text
+        results = analyzer.analyze(
+            text=text,
+            entities=PII_ENTITIES,
+            language='en')
+        anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
+        return str(anonymized_text.text)
+    except Exception as e:
+        logger.error(f"Error during PII masking: {e}. Returning original text.")
+        return text
 
 
 def normalize_text(text: str, cfg: OmegaConf) -> str:
