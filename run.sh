@@ -241,6 +241,9 @@ if [[ "$crawler_type" == "gdrive" ]]; then
   credentials_path=$(read_yaml_nested "data.get('gdrive_crawler', {}).get('credentials_file', 'credentials.json')")
   credentials_path="${credentials_path:-credentials.json}"
 
+  # Expand tilde to home directory
+  credentials_path="${credentials_path/#\~/$HOME}"
+
   if [[ ! -f "$credentials_path" ]]; then
     echo "Error: Google Drive credentials file not found at '$credentials_path'" >&2
     exit "$ERR_MISSING_GDRIVE_CREDS"
