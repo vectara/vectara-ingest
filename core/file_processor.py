@@ -6,11 +6,12 @@ from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
 from core.utils import get_file_size_in_MB
 from core.doc_parser import (
-    UnstructuredDocumentParser, DoclingDocumentParser, 
+    UnstructuredDocumentParser, DoclingDocumentParser,
     LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument
 )
 from core.contextual import ContextualChunker
 from core.summary import get_attributes_from_text
+from core.image_stitcher import StitchConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,20 @@ class FileProcessor:
         self.image_context = cfg.doc_processing.get("image_context", {'num_previous_chunks': 1, 'num_next_chunks': 1})
         
         # Parser configurations
-        self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
+        self.unstructured_config = cfg.doc_processing.get("unstructured_config",
                                                           {'chunking_strategy': 'by_title', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", 
+        self.docling_config = cfg.doc_processing.get("docling_config",
                                                      {'chunking_strategy': 'none'})
+
+        # Multi-page image stitching configuration
+        stitch_cfg = cfg.doc_processing.get("multipage_image_stitching", {})
+        self.stitch_config = StitchConfig(
+            enabled=stitch_cfg.get("enabled", False),
+            width_tolerance_pct=stitch_cfg.get("width_tolerance_pct", 15.0),
+            alignment_tolerance_pts=stitch_cfg.get("alignment_tolerance_pts", 50.0),
+            min_overlap_pixels=stitch_cfg.get("min_overlap_pixels", 10),
+            max_pages_to_stitch=stitch_cfg.get("max_pages_to_stitch", 2)
+        )
         
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
@@ -105,6 +116,7 @@ class FileProcessor:
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 image_context=self.image_context,
+                stitch_config=self.stitch_config,
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
             return LlamaParseDocumentParser(
@@ -126,6 +138,7 @@ class FileProcessor:
                 do_ocr=self.do_ocr,
                 image_scale=self.docling_config.get('image_scale', 2.0),
                 image_context=self.image_context,
+                stitch_config=self.stitch_config,
             )
         else:
             return UnstructuredDocumentParser(
@@ -133,6 +146,7 @@ class FileProcessor:
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
                 image_context=self.image_context,
+                stitch_config=self.stitch_config,
             )
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
