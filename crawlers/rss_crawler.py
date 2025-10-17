@@ -20,6 +20,11 @@ class RssUrlWorker(object):
     def setup(self):
         self.indexer.setup()
         setup_logging()
+    
+    def cleanup(self):
+        """Cleanup resources when worker is done"""
+        if hasattr(self, 'indexer'):
+            self.indexer.cleanup()
 
     def process(self, url_data: tuple):
         url, title, pub_date = url_data
@@ -51,6 +56,18 @@ class RssUrlWorker(object):
             return -1
 
 class RssCrawler(Crawler):
+    
+    def __init__(self, cfg, *args, **kwargs):
+        super().__init__(cfg, *args, **kwargs)
+        # Get scrape_method from rss_crawler config if available
+        scrape_method = self.cfg.rss_crawler.get('scrape_method')
+        if scrape_method:
+            # Recreate indexer with the scrape_method
+            from core.indexer import Indexer
+            endpoint = args[0] if args else kwargs.get('endpoint')
+            corpus_key = args[1] if len(args) > 1 else kwargs.get('corpus_key')
+            api_key = args[2] if len(args) > 2 else kwargs.get('api_key')
+            self.indexer = Indexer(cfg, endpoint, corpus_key, api_key, scrape_method=scrape_method)
 
     def crawl(self) -> None:
         """
@@ -110,6 +127,11 @@ class RssCrawler(Crawler):
             failed = sum(1 for r in results if r == 0)
             errors = sum(1 for r in results if r == -1)
             logger.info(f"RSS crawling complete: {successful} successful, {failed} failed, {errors} errors")
+            
+            # Cleanup Ray workers
+            for a in actors:
+                ray.get(a.cleanup.remote())
+            ray.shutdown()
         else:
             # Sequential processing (original behavior)
             rss_worker = RssUrlWorker(self.cfg, self.indexer, source)
@@ -123,6 +145,8 @@ class RssCrawler(Crawler):
                     successful += 1
                 if delay_in_secs > 0:
                     time.sleep(delay_in_secs)
+            # Cleanup worker
+            rss_worker.cleanup()
             logger.info(f"RSS crawling complete: {successful} URLs successfully indexed")
 
         return

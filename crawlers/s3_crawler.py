@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging
+from core.utils import RateLimiter, setup_logging, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 from slugify import slugify
 import pandas as pd
@@ -73,20 +73,17 @@ class FileCrawlWorker(object):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
-        metadata = {"source": source, "url": s3_file}
         logger.info(f"Crawling and indexing {s3_file}")
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
                 url = f's3://{self.bucket}/{s3_file}'
-                metadata = {
-                    'source': 's3',
+                metadata.update({
+                    'source': source,
                     'title': s3_file,
                     'url': url
-                }
-                if s3_file in metadata:
-                    metadata.update(metadata.get(s3_file, {}))
-                if extension in ['.mp3', '.mp4']:
+                })
+                if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
@@ -184,6 +181,7 @@ class S3Crawler(Crawler):
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
+            ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)
             for inx, url in enumerate(files_to_process):

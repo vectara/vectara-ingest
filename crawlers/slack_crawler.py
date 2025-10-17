@@ -34,15 +34,16 @@ def get_timestamp(days_past):
     return epoch_time
 
 
-def construct_url_of_message(message, channel_id):
+def construct_url_of_message(message, channel_id, workspace_url="https://vectara.slack.com"):
     """
     Creates a link for of Slack message based on the channel id and message timestamp
     :param message: a Slack message
     :param channel_id: ID of the channel where message was sent
+    :param workspace_url: Base URL of the Slack workspace
     :return:
     """
     timestamp = message["ts"]
-    message_link = f"https://vectara.slack.com/archives/{channel_id}/p{timestamp}"
+    message_link = f"{workspace_url}/archives/{channel_id}/p{timestamp}"
     return message_link
 
 
@@ -57,7 +58,7 @@ def get_datetime_from_epoch(epoch_time):
     return datetime.datetime.fromtimestamp(float(epoch_time)).strftime('%Y-%m-%d %H:%M')
 
 
-def get_doc_metadata(channel, message, users_info):
+def get_doc_metadata(channel, message, users_info, workspace_url="https://vectara.slack.com"):
     """
     Creates a metadata for the document that would be indexed in the vectara.
 
@@ -73,6 +74,7 @@ def get_doc_metadata(channel, message, users_info):
     :param channel: contains a list of channels
     :param message: Slack message
     :param users_info: list of slack users for a workspace
+    :param workspace_url: Base URL of the Slack workspace
     :return:
     """
     metadata = {}
@@ -82,7 +84,7 @@ def get_doc_metadata(channel, message, users_info):
             "channel": channel["name"],
             "author": users_info.get(message.get("user"), "bot"),
             "message_time": get_datetime_from_epoch(message["ts"]),
-            "url": construct_url_of_message(message, channel["id"])
+            "url": construct_url_of_message(message, channel["id"], workspace_url)
         })
         if message.get("latest_reply"):
             metadata["latest_reply_time"] = get_datetime_from_epoch(message["latest_reply"])
@@ -118,7 +120,7 @@ def replace_user_id_with_user_handler(messages, users_info):
         logger.error(f"Error replacing user id's with user handlers: {e}")
 
 
-def get_document(channel, message, users_info):
+def get_document(channel, message, users_info, workspace_url="https://vectara.slack.com"):
     """
     Returns the document to be indexed in Vectara
 
@@ -136,6 +138,7 @@ def get_document(channel, message, users_info):
     :param channel:
     :param message:
     :param users_info:
+    :param workspace_url: Base URL of the Slack workspace
     :return:
     """
 
@@ -143,7 +146,7 @@ def get_document(channel, message, users_info):
     doc_id = f'vectara_{channel["id"]}_{message["ts"]}'
     message_date = datetime.datetime.fromtimestamp(float(message["ts"])).strftime('%Y-%m-%d')
     title = f'{users_info.get(message.get("user"), "bot")}@{channel["name"]} - {message_date}'
-    doc_metadata = get_doc_metadata(channel, message, users_info)
+    doc_metadata = get_doc_metadata(channel, message, users_info, workspace_url)
     sections = []
 
     if doc_text == '':
@@ -239,6 +242,7 @@ class SlackCrawler(Crawler):
         self.days_past = self.cfg.slack_crawler.get("days_past", None)
         self.channels_to_skip = self.cfg.slack_crawler.get("channels_to_skip", [])
         self.retries = self.cfg.slack_crawler.get("retries", 5)
+        self.workspace_url = self.cfg.slack_crawler.get("workspace_url", "https://vectara.slack.com")
 
     def get_users_info(self):
         """
@@ -400,6 +404,10 @@ class SlackCrawler(Crawler):
                     if inx % 100 == 0:
                         logger.info(f"Indexed {inx + 1} messages out of {len(messages)}")
                     msg_indexer.process(channel, msg, users_info)
+        
+        # Cleanup Ray workers if used
+        if ray_workers > 0:
+            ray.shutdown()
 
 
 class SlackMsgIndexer(object):
@@ -418,11 +426,10 @@ class SlackMsgIndexer(object):
         if contains_url(msg.get("text")):
             remove_duplicate_urls(msg)
         msg = self.slack_crawler.add_message_replies(msg, channel['id'], users_info)
-        document = get_document(channel, msg, users_info)
+        document = get_document(channel, msg, users_info, self.slack_crawler.workspace_url)
         if document is not None:
             self.indexer.index_document(document)
         else:
-            link = construct_url_of_message(msg, channel['id'])
+            link = construct_url_of_message(msg, channel['id'], self.slack_crawler.workspace_url)
             logger.info(f"Unable to find text for the message: {link}")
-            
 

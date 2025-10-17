@@ -34,6 +34,12 @@ class PmcCrawler(Crawler):
 
     def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         super().__init__(cfg, endpoint, corpus_key, api_key)
+        # Get scrape_method from pmc_crawler config if available
+        scrape_method = self.cfg.pmc_crawler.get('scrape_method')
+        if scrape_method:
+            # Recreate indexer with the scrape_method
+            from core.indexer import Indexer
+            self.indexer = Indexer(cfg, endpoint, corpus_key, api_key, scrape_method=scrape_method)
         self.site_urls: Set[str] = set()
         self.crawled_pmc_ids: Set[str] = set()
         self.rate_limiter = RateLimiter(self.cfg.pmc_crawler.get("num_per_second", 3))

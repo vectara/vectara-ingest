@@ -57,7 +57,7 @@ backoff==2.2.1
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-http
     #   unstructured
-banks==2.1.2
+banks==2.2.0
     # via llama-index-core
 beautifulsoup4==4.12.3
     # via
@@ -152,6 +152,7 @@ deprecated==1.2.18
     # via
     #   banks
     #   llama-index-core
+    #   llama-index-instrumentation
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
     #   pikepdf
@@ -166,16 +167,16 @@ distro==1.9.0
     # via
     #   anthropic
     #   openai
-docling==2.43.0
+docling==2.50.0
     # via -r requirements.in
-docling-core[chunking]==2.43.0
+docling-core[chunking]==2.47.0
     # via
     #   docling
     #   docling-ibm-models
     #   docling-parse
-docling-ibm-models==3.9.0
+docling-ibm-models==3.9.1
     # via docling
-docling-parse==4.0.2
+docling-parse==4.4.0
     # via docling
 docopt==0.6.2
     # via
@@ -189,6 +190,8 @@ emoji==2.14.1
     # via unstructured
 et-xmlfile==2.0.0
     # via openpyxl
+faker==37.6.0
+    # via polyfactory
 fastdatamask==0.0.6
     # via -r requirements.in
 fastjsonschema==2.21.1
@@ -380,13 +383,21 @@ latex2mathml==3.78.0
     # via docling-core
 lazy-loader==0.4
     # via scikit-image
-llama-cloud==0.1.37
+llama-cloud==0.1.42
     # via llama-cloud-services
-llama-cloud-services==0.6.56
-    # via llama-parse
-llama-index-core==0.12.40
-    # via llama-cloud-services
-llama-parse==0.6.57
+llama-cloud-services==0.6.68
+    # via
+    #   -r requirements.in
+    #   llama-parse
+llama-index-core==0.14.2
+    # via
+    #   -r requirements.in
+    #   llama-cloud-services
+llama-index-instrumentation==0.4.1
+    # via llama-index-workflows
+llama-index-workflows==2.2.2
+    # via llama-index-core
+llama-parse==0.6.68
     # via -r requirements.in
 llvmlite==0.44.0
     # via numba
@@ -655,9 +666,12 @@ platformdirs==4.3.8
     #   banks
     #   jupyter-core
     #   llama-cloud-services
+    #   llama-index-core
 playwright==1.49.1
     # via -r requirements.in
 pluggy==1.6.0
+    # via docling
+polyfactory==2.22.2
     # via docling
 propcache==0.3.1
     # via
@@ -715,6 +729,8 @@ pydantic==2.11.5
     #   llama-cloud
     #   llama-cloud-services
     #   llama-index-core
+    #   llama-index-instrumentation
+    #   llama-index-workflows
     #   openai
     #   pydantic-settings
     #   unstructured-client
@@ -1053,11 +1069,13 @@ typing-extensions==4.14.0
     #   gmft
     #   huggingface-hub
     #   llama-index-core
+    #   llama-index-workflows
     #   mypy
     #   office365-rest-python-client
     #   onnx
     #   openai
     #   opentelemetry-sdk
+    #   polyfactory
     #   pydantic
     #   pydantic-core
     #   pyee
@@ -1082,7 +1100,9 @@ typing-inspection==0.4.1
     #   pydantic
     #   pydantic-settings
 tzdata==2025.2
-    # via pandas
+    # via
+    #   faker
+    #   pandas
 unstructured[pdf]==0.18.11
     # via -r requirements.in
 unstructured-client==0.36.0

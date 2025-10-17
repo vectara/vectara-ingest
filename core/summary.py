@@ -116,7 +116,8 @@ class ImageSummarizer():
             self, 
             image_path: str, 
             image_url: str, 
-            previous_text: Optional[str] = None
+            previous_text: Optional[str] = None,
+            next_text: Optional[str] = None
     ) -> Optional[str]:
         """
         Summarize the image at the given path.
@@ -129,7 +130,6 @@ class ImageSummarizer():
         shape = _get_image_shape(content_b64)
         if not shape or min(shape) < 10:
             logger.info(f"Image too small or invalid to summarize: {image_url}")
-
             return None
 
         prompt = """
@@ -140,12 +140,16 @@ class ImageSummarizer():
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
             - Respond in complete sentences, and aim to provide a comprehensive and informative response.
-            - Any specific text that is shown in the image (with context).
             - For any schemas, or flowcharts describe them in a way that a human reading your description could recreate the diagram.
+            - Any specific text that is shown in the image (with context).
             If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
+        if previous_text or next_text:
+            prompt += "\nConsider the surrounding text context when summarizing the image."
         if previous_text:
-            prompt += f"The image came immediately following this text: '{previous_text}'"
+            prompt += f"\nThe text before the image is: '{previous_text}'"
+        if next_text:
+            prompt += f"\nThe text after the image is: '{next_text}'"
 
         try:
             return generate_image_summary(

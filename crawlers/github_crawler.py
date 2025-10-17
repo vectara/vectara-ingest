@@ -1,4 +1,3 @@
-import json
 from typing import List, Any
 from datetime import datetime
 import logging
@@ -235,7 +234,7 @@ class GithubCrawler(Crawler):
                 logger.info(f"No comments for repo {repo}, issue {issue.number}")
 
             issue_doc = clean_empty_sections(issue_doc)
-            if len(pr_doc['sections']) == 0:
+            if len(issue_doc['sections']) == 0:
                 logger.info(f"No text sections for repo {repo}, issue {issue.number}")
                 continue
 

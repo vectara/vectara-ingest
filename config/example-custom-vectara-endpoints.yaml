@@ -1,0 +1,109 @@
+# Example configurations showing custom Vectara API endpoints
+# This allows using different Vectara environments or customer-specific domains
+
+# ====================================================================
+# Example 1: Development Environment
+# ====================================================================
+vectara:
+  corpus_key: my-dev-corpus
+  api_key: ${VECTARA_API_KEY}
+  
+  # Use development environment 
+  endpoint: https://api.vectara.dev
+  auth_url: https://auth.vectara.dev
+  
+  # Other standard settings
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: docs_crawler
+
+docs_crawler:
+  base_urls: ["https://docs.example.com"]
+  scrape_method: playwright
+
+---
+
+# ====================================================================  
+# Example 2: Customer-specific Domain (Full URLs)
+# ====================================================================
+vectara:
+  corpus_key: customer-corpus
+  api_key: ${VECTARA_API_KEY}
+  
+  # Customer-specific API endpoints (full URLs)
+  endpoint: https://api.customer-domain.com
+  auth_url: https://auth.customer-domain.com
+
+crawling:
+  crawler_type: website_crawler
+  
+website_crawler:
+  scrape_method: scrapy
+  max_depth: 3
+
+---
+
+# ====================================================================
+# Example 3: Hostname-only Format (Legacy Support) 
+# ====================================================================
+vectara:
+  corpus_key: test-corpus
+  api_key: ${VECTARA_API_KEY}
+  
+  # Hostname-only format (will be normalized to https://)
+  endpoint: api.staging.vectara.io
+  auth_url: auth.staging.vectara.io
+
+crawling:
+  crawler_type: rss_crawler
+
+rss_crawler:
+  rss_urls:
+    - "https://example.com/feed.xml"
+
+---
+
+# ====================================================================
+# Example 4: On-Premises Installation
+# ====================================================================
+vectara:
+  corpus_key: onprem-corpus  
+  api_key: ${VECTARA_API_KEY}
+  
+  # On-premises Vectara installation
+  endpoint: https://vectara.internal.company.com
+  auth_url: https://vectara-auth.internal.company.com
+  
+  # Custom settings for on-prem
+  timeout: 120  # Longer timeout for internal networks
+  
+crawling:
+  crawler_type: docs_crawler
+
+docs_crawler:
+  base_urls: ["https://docs.internal.company.com"]
+  scrape_method: scrapy  # More stable for internal networks
+
+# ====================================================================
+# Notes on Endpoint Configuration:
+# ====================================================================
+#
+# Supported endpoint formats:
+# - Full HTTPS URLs: "https://api.vectara.dev" 
+# - Full HTTP URLs: "http://localhost:8080" (for development)
+# - Hostnames only: "api.vectara.dev" (auto-prefixed with https://)
+# - IPv4 addresses: "192.168.1.100:8080" (auto-prefixed with https://)
+#
+# Default values (when not specified):
+# - endpoint: "https://api.vectara.io"
+# - auth_url: "https://auth.vectara.io"
+#
+# The system will automatically:
+# - Add https:// prefix for hostname-only formats
+# - Validate URLs are properly formed
+# - Provide clear error messages for invalid configurations
+#
+# Both crawlers (website_crawler and docs_crawler) now handle 
+# custom endpoints consistently.

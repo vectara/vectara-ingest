@@ -10,3 +10,4 @@ slack_crawler:
   days_past: 30
   channels_to_skip: ["alerts"]
   retries: 5
+  workspace_url: "https://vectara.slack.com"  # Configure your Slack workspace URL here

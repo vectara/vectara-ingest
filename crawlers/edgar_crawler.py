@@ -199,6 +199,7 @@ class EdgarCrawler(Crawler):
                         filings_to_process,
                     )
                 )
+                ray.shutdown()
             else:
                 crawl_worker = EdgarWorker(self.indexer, self)
                 for inx, tup in enumerate(filings_to_process):
@@ -206,7 +207,7 @@ class EdgarCrawler(Crawler):
                         logger.info(
                             f"Crawling URL number {inx+1} out of {len(filings_to_process)}"
                         )
-                    file_path, url, title, file_metadata = tup
+                    file_path, url, _, file_metadata = tup
                     crawl_worker.process(file_path, url, file_metadata)
 
             folder.cleanup()

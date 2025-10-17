@@ -7,7 +7,7 @@ import os
 from core.crawler import Crawler
 from core.utils import (
     clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, 
-    setup_logging, get_docker_or_local_path, url_matches_patterns
+    setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint
 )
 from core.indexer import Indexer
 from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
@@ -27,6 +27,7 @@ class PageCrawlWorker(object):
         website_crawler_cfg = self.cfg.get('website_crawler', {})
         self.html_processing = website_crawler_cfg.get('html_processing', {})
         self.saml_config = website_crawler_cfg.get('saml_auth')
+        self.scrape_method = website_crawler_cfg.get('scrape_method', 'playwright')
 
     def setup(self):
         """
@@ -36,11 +37,11 @@ class PageCrawlWorker(object):
         setup_logging()
     
         vectara_cfg = self.cfg.get('vectara', {})
-        api_url = f"https://{vectara_cfg.get('endpoint', 'api.vectara.io')}"
+        api_url = normalize_vectara_endpoint(vectara_cfg.get('endpoint'))
         corpus_key = vectara_cfg['corpus_key']
         api_key = vectara_cfg['api_key']
         
-        self.indexer = Indexer(self.cfg, api_url, corpus_key, api_key)
+        self.indexer = Indexer(self.cfg, api_url, corpus_key, api_key, scrape_method=self.scrape_method)
         self.indexer.setup()
 
         # Initialize SAML session if configured
@@ -73,6 +74,11 @@ class PageCrawlWorker(object):
         else:
             logging.info(f"[Worker {os.getpid()}] SAML not configured. Using standard session.")
             # Indexer will use its default session
+    
+    def cleanup(self):
+        """Cleanup resources when worker is done"""
+        if hasattr(self, 'indexer'):
+            self.indexer.cleanup()
 
     def process(self, url: str, source: str):
         if not self.indexer:
@@ -375,6 +381,10 @@ class WebsiteCrawler(Crawler):
         ray.get([a.setup.remote() for a in actors])
         pool = ray.util.ActorPool(actors)
         _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), urls))
+        # Cleanup Ray workers
+        for a in actors:
+            ray.get(a.cleanup.remote())
+        ray.shutdown()
 
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str):
         """Process URLs sequentially in a single process."""
@@ -387,6 +397,8 @@ class WebsiteCrawler(Crawler):
             if inx % 100 == 0:
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
             crawl_worker.process(url, source=source)
+        # Cleanup worker
+        crawl_worker.cleanup()
 
     def _remove_old_content_if_needed(self, crawled_urls: list):
         """
@@ -394,27 +406,28 @@ class WebsiteCrawler(Crawler):
         """
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list
-        if self.cfg.website_crawler.get("remove_old_content", False):
-            existing_docs = self.indexer._list_docs()
-            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in crawled_urls]
-            for doc in docs_to_remove:
-                if doc['url']:
-                    self.indexer.delete_doc(doc['id'])
-            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
-            
-            if self.cfg.website_crawler.get("crawl_report", False):
-                output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
-                docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
-                filename = os.path.basename(docker_path)  # Extract just the filename
-                file_path = get_docker_or_local_path(
-                    docker_path=docker_path,
-                    output_dir=output_dir
-                )
-                self._generate_removal_report(docs_to_remove)
+        if not self.cfg.website_crawler.get("remove_old_content", False):
+            return
+        
+        existing_docs = self.indexer._list_docs()
+        docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in crawled_urls]
+        for doc in docs_to_remove:
+            if doc['url']:
+                self.indexer.delete_doc(doc['id'])
+        logger.info(f"Removed {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+        
+        if self.cfg.website_crawler.get("crawl_report", False):
+            output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
+            docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
+            filename = os.path.basename(docker_path)  # Extract just the filename
+            file_path = get_docker_or_local_path(
+                docker_path=docker_path,
+                output_dir=output_dir
+            )
 
-        if not file_path.endswith(filename):
-            file_path = os.path.join(file_path, filename)
+            if not file_path.endswith(filename):
+                file_path = os.path.join(file_path, filename)
 
-        with open(file_path, 'w') as f:
-            for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
-                f.write(url + '\n')
+            with open(file_path, 'w') as f:
+                for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                    f.write(url + '\n')

@@ -10,6 +10,7 @@ from core.utils import get_headers
 import base64
 import mimetypes
 import tempfile
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class ImageProcessor:
             )
         return self.image_summarizer
     
-    def process_web_images(self, images: List[Dict[str, str]], url: str, ex_metadata: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any]]]:
+    def process_web_images(self, images: List[Dict[str, str]], url: str, ex_metadata: Dict[str, Any]) -> Tuple[List[Tuple[str, str, Dict[str, Any]]], List[Tuple[str, bytes]]]:
         """
         Process images from web pages
         
@@ -45,19 +46,22 @@ class ImageProcessor:
             ex_metadata: Extra metadata to add to each image
             
         Returns:
-            List of (doc_id, image_summary, metadata) tuples
+            Tuple of (processed_images, image_bytes) where:
+            - processed_images: List of (doc_id, image_summary, metadata) tuples
+            - image_bytes: List of (image_id, binary_data) tuples
         """
         if not images:
-            return []
+            return [], []
         
         image_summarizer = self._get_image_summarizer()
         if not image_summarizer:
-            return []
+            return [], []
         
         if self.verbose:
             logger.info(f"Found {len(images)} images in {url}")
         
         processed_images = []
+        image_bytes = []
         image_filename = 'image.png'
         
         for inx, image in enumerate(images):
@@ -81,8 +85,9 @@ class ImageProcessor:
                     if response.status_code != 200:
                         logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                         continue
-                    # write to a temp file with appropriate extension guessed from URL or default to .png
-                    ext = os.path.splitext(image_url)[1] or '.png'
+                    # write to a temp file with appropriate extension guessed from URL path or default to .png
+                    url_path = urlparse(image_url).path
+                    ext = os.path.splitext(url_path)[1] or '.png'
                     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                         for chunk in response.iter_content(chunk_size=8192):
                             tmp.write(chunk)
@@ -92,6 +97,12 @@ class ImageProcessor:
                     logger.info(f"Image URL '{image_url}' is not valid, skipping")
                     continue
 
+                # Store binary data
+                with open(local_path, 'rb') as fp:
+                    image_binary = fp.read()
+                image_id = f"web_{slugify(url)}_image_{inx}"
+                image_bytes.append((image_id, image_binary))
+                
                 # Generate summary from local_path
                 image_summary = image_summarizer.summarize_image(local_path, image_url, None)
                 if not image_summary:
@@ -102,7 +113,8 @@ class ImageProcessor:
                 metadata = {
                     'element_type': 'image',
                     'url': image_url,
-                    'alt_text': image.get('alt', '')
+                    'alt_text': image.get('alt', ''),
+                    'image_id': image_id
                 }
                 if ex_metadata:
                     metadata.update(ex_metadata)
@@ -124,11 +136,11 @@ class ImageProcessor:
                 if 'local_path' in locals() and os.path.exists(local_path):
                     os.remove(local_path)
 
-        return processed_images
+        return processed_images, image_bytes
     
     def process_document_images(self, images: List[tuple], uri: str, ex_metadata: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any]]]:
         """
-        Process images from document parser
+        Process images from document parser (images already have summaries and metadata)
         
         Args:
             images: List of (image_summary, image_metadata) tuples
@@ -137,6 +149,9 @@ class ImageProcessor:
             
         Returns:
             List of (doc_id, image_summary, metadata) tuples
+            
+        Note: This method processes pre-summarized images from document parsers.
+        Binary data is handled separately via ParsedDocument.image_bytes field.
         """
         if not images:
             return []

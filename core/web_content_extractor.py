@@ -5,59 +5,149 @@ from typing import Dict, List, Optional
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from omegaconf import OmegaConf
 from core.utils import get_headers
+from core.web_extractor_base import WebExtractorBase
 
 logger = logging.getLogger(__name__)
 
 
-class WebContentExtractor:
+class WebContentExtractor(WebExtractorBase):
     """Handles web content extraction using Playwright"""
     
     def __init__(self, cfg: OmegaConf, timeout: int = 90, post_load_timeout: int = 5, browser=None):
-        self.cfg = cfg
-        self.timeout = timeout
-        self.post_load_timeout = post_load_timeout
-        self.browser_use_limit = 100
+        super().__init__(cfg, timeout, post_load_timeout)
+        # Reduce browser reuse limit to prevent memory buildup
+        self.browser_use_limit = 20  # Reduced from 100
         self.browser_use_count = 0
         self.browser = browser
         self.p = None
+        # Track consecutive failures for adaptive reset
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 3
         
         if browser is None:
+            self._setup_browser()
+    
+    def _ensure_browser_ready(self):
+        """Ensure browser is initialized and ready"""
+        if self.browser is None or self.p is None:
             self._setup_browser()
         
     def _setup_browser(self):
         """Initialize browser instance"""
-        self.p = sync_playwright().start()
-        self.browser = self.p.firefox.launch(headless=True)
-        
-    def _reset_browser_if_needed(self):
-        """Reset browser if usage limit reached"""
-        if self.browser_use_count >= self.browser_use_limit:
-            self.browser.close()
-            self.browser = self.p.firefox.launch(headless=True)
+        try:
+            # Clean up any existing browser/playwright instance
+            if self.browser:
+                try:
+                    self.browser.close()
+                except:
+                    pass
+            if self.p:
+                try:
+                    self.p.stop()
+                except:
+                    pass
+            
+            # Create fresh instances with better configuration
+            self.p = sync_playwright().start()
+            # Launch Chromium with stable configuration for Docker
+            self.browser = self.p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-setuid-sandbox',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-features=site-per-process',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-extensions',
+                    '--js-flags=--max-old-space-size=512',
+                    '--memory-pressure-off',
+                    '--max_old_space_size=512'
+                ]
+            )
             self.browser_use_count = 0
-            logger.info(f"Browser reset after {self.browser_use_limit} uses to avoid memory issues")
+            self.consecutive_failures = 0  # Reset failure counter on successful setup
+            logger.debug("Browser instance created successfully with memory limits")
+        except Exception as e:
+            logger.error(f"Failed to setup browser: {e}")
+            self.browser = None
+            self.p = None
+            raise
+        
+    def _reset_browser_if_needed(self, force_reset=False):
+        """Reset browser if usage limit reached or forced"""
+        should_reset = (
+            force_reset or 
+            self.browser_use_count >= self.browser_use_limit or
+            self.consecutive_failures >= self.max_consecutive_failures or
+            (self.browser and not self.browser.is_connected())
+        )
+        
+        if should_reset:
+            try:
+                if self.browser:
+                    self.browser.close()
+            except:
+                pass
+            
+            try:
+                if self.p:
+                    self.p.stop()
+            except:
+                pass
+            
+            # Reinitialize browser
+            self.p = None
+            self.browser = None
+            self._setup_browser()
+            reason = "forced" if force_reset else f"after {self.browser_use_limit} uses or {self.consecutive_failures} failures"
+            logger.info(f"Browser reset {reason} to avoid memory issues")
     
     def url_triggers_download(self, url: str) -> bool:
         """Check if URL triggers a download"""
+        self._ensure_browser_ready()
         download_triggered = False
-        context = self.browser.new_context()
-        
-        def on_download(download):
-            nonlocal download_triggered
-            download_triggered = True
-            
-        page = context.new_page()
-        page.set_extra_http_headers(get_headers(self.cfg))
-        page.on('download', on_download)
+        context = None
+        page = None
         
         try:
-            page.goto(url, wait_until="domcontentloaded")
-        except Exception:
-            pass
-        finally:
-            page.close()
-            context.close()
+            # Create context with resource limits
+            context = self.browser.new_context(
+                # Add viewport to prevent infinite page sizes
+                viewport={'width': 1920, 'height': 1080},
+                # Limit resources
+                ignore_https_errors=True,
+                java_script_enabled=True
+            )
             
+            def on_download(download):
+                nonlocal download_triggered
+                download_triggered = True
+                
+            page = context.new_page()
+            page.set_extra_http_headers(get_headers(self.cfg))
+            page.on('download', on_download)
+            
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)  # 30s timeout
+            except Exception as e:
+                logger.debug(f"Error checking download for {url}: {e}")
+                pass
+        except Exception as e:
+            logger.error(f"Failed to check download for {url}: {e}")
+        finally:
+            if page:
+                try:
+                    page.close()
+                except:
+                    pass
+            if context:
+                try:
+                    context.close()
+                except:
+                    pass
+                    
         return download_triggered
     
     def _scroll_to_bottom(self, page, max_scroll_time=20):
@@ -147,45 +237,38 @@ class WebContentExtractor:
     
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
+        # First remove unwanted elements, then extract text
+        remove_selectors = [
+            'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
+        ]
+        if remove_code:
+            remove_selectors.extend(['code', 'pre'])
+            
         return page.evaluate(f"""() => {{
-            let content = Array.from(document.body.childNodes)
-                .map(node => node.textContent || "")
-                .join(" ")
-                .trim();
-            
-            const elementsToRemove = [
-                'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
-            ];
-            
-            elementsToRemove.forEach(selector => {{
-                const elements = document.querySelectorAll(selector);
-                elements.forEach(el => {{
-                    content = content.replace(el.innerText, '');
-                }});
+            // Remove unwanted elements first
+            const selectorsToRemove = {remove_selectors};
+            selectorsToRemove.forEach(selector => {{
+                document.querySelectorAll(selector).forEach(el => el.remove());
             }});
             
+            // Extract text from remaining content
+            let content = document.body.innerText || '';
+            
+            // Extract shadow DOM content
             function extractShadowText(root) {{
                 let text = "";
                 if (root.shadowRoot) {{
-                    root.shadowRoot.childNodes.forEach(node => {{
-                        text += node.textContent + " ";
-                        text += extractShadowText(node);
+                    text += root.shadowRoot.textContent || '';
+                    root.shadowRoot.querySelectorAll('*').forEach(child => {{
+                        text += extractShadowText(child);
                     }});
                 }}
                 return text;
             }}
             
-            document.querySelectorAll("*").forEach(el => {{
+            document.querySelectorAll('*').forEach(el => {{
                 content += extractShadowText(el);
             }});
-            
-            {'// Remove code elements' if remove_code else ''}
-            {'''
-            const codeElements = document.querySelectorAll('code, pre');
-            codeElements.forEach(el => {
-                content = content.replace(el.innerText, '');
-            });
-            ''' if remove_code else ''}
             
             return content.replace(/\\s{{2,}}/g, ' ').trim();
         }}""")
@@ -286,14 +369,38 @@ class WebContentExtractor:
         }
         
         try:
-            context = self.browser.new_context()
+            self._ensure_browser_ready()
+            # Create context with resource limits
+            context = self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                ignore_https_errors=True,
+                java_script_enabled=True
+            )
             page = context.new_page()
             page.set_extra_http_headers(get_headers(self.cfg))
             
-            # Block image loading for performance
-            page.route("**/*", lambda route: route.abort()
-                      if route.request.resource_type == "image"
-                      else route.continue_())
+            # Block unnecessary resources for performance and stability
+            # Use a more selective approach to avoid breaking some sites
+            def route_handler(route):
+                try:
+                    resource_type = route.request.resource_type
+                    url = route.request.url
+                    # Block images, fonts, and media but allow critical resources
+                    if resource_type in ["image", "font", "media"]:
+                        route.abort()
+                    # Block known tracking/ad domains
+                    elif any(domain in url for domain in ["google-analytics", "doubleclick", "facebook.com/tr"]):
+                        route.abort()
+                    else:
+                        route.continue_()
+                except Exception as e:
+                    # If routing fails, continue to avoid breaking navigation
+                    try:
+                        route.continue_()
+                    except:
+                        pass
+            
+            page.route("**/*", route_handler)
             
             if debug:
                 page.on('console', lambda msg: logger.info(f"playwright debug: {msg.text}"))
@@ -321,15 +428,27 @@ class WebContentExtractor:
                 
         except PlaywrightTimeoutError:
             logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
+            self.consecutive_failures += 1
         except Exception as e:
             logger.info(f"Page loading failed for {url} with exception '{e}'")
-            if not self.browser.is_connected():
-                self.browser = self.p.firefox.launch(headless=True)
+            self.consecutive_failures += 1
+            # Force browser reset on crash-related errors
+            if "crashed" in str(e).lower() or (self.browser and not self.browser.is_connected()):
+                self._reset_browser_if_needed(force_reset=True)
+        else:
+            # Reset failure counter on success
+            self.consecutive_failures = 0
         finally:
             if page:
-                page.close()
+                try:
+                    page.close()
+                except:
+                    pass
             if context:
-                context.close()
+                try:
+                    context.close()
+                except:
+                    pass
             self.browser_use_count += 1
             self._reset_browser_if_needed()
         
@@ -338,9 +457,139 @@ class WebContentExtractor:
         
         return result
     
+    def check_download_or_pdf(self, url: str, headers: dict = None, timeout: int = 5000):
+        """Check if URL triggers download or serves PDF content directly"""
+        from playwright._impl._errors import TargetClosedError, Error as PlaywrightError
+        
+        if headers is None:
+            headers = get_headers(self.cfg)
+        
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            context = None
+            page = None
+            try:
+                self._ensure_browser_ready()
+                
+                # Create context and page with limits
+                context = self.browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    ignore_https_errors=True,
+                    java_script_enabled=True
+                )
+                page = context.new_page()
+                page.set_extra_http_headers(headers)
+                
+                try:
+                    # First try to catch an explicit download
+                    try:
+                        with page.expect_download(timeout=timeout) as dl_info:
+                            response = page.goto(url, wait_until="domcontentloaded")
+                        download = dl_info.value
+                        # Ensure we close resources before returning
+                        page.close()
+                        context.close()
+                        return {
+                            "type": "download",
+                            "url": download.url,
+                            "filename": download.suggested_filename,
+                            "download": download
+                        }
+                    except Exception as e:
+                        # If it's a page crash or browser error, bubble up for retry
+                        if isinstance(e, (TargetClosedError, PlaywrightError)) and "crashed" in str(e).lower():
+                            self.consecutive_failures += 1
+                            raise PlaywrightError(f"Page crashed: {e}")
+                        if isinstance(e, TargetClosedError):
+                            self.consecutive_failures += 1
+                            raise
+                        # No download triggered, check content type
+                        response = page.goto(url, wait_until="domcontentloaded")
+                        content_type = response.headers.get("content-type", "")
+                        if "application/pdf" in content_type:
+                            pdf_bytes = response.body()
+                            # Close resources before returning
+                            page.close()
+                            context.close()
+                            return {
+                                "type": "pdf",
+                                "url": response.url,
+                                "content": pdf_bytes,
+                                "headers": dict(response.headers)
+                            }
+                        else:
+                            # Close resources before returning
+                            page.close()
+                            context.close()
+                            # Success - reset failure counter
+                            self.consecutive_failures = 0
+                            return {"type": "html", "url": response.url, "response": response}
+                finally:
+                    # Cleanup already done in the try block before returns
+                    pass
+                    
+            except (TargetClosedError, PlaywrightError) as e:
+                # Clean up resources if they exist
+                if page:
+                    try:
+                        page.close()
+                    except:
+                        pass
+                if context:
+                    try:
+                        context.close()
+                    except:
+                        pass
+                        
+                if attempt < max_retries - 1:
+                    logger.warning(f"Browser error during navigation to {url}: {str(e)[:100]}, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    # Force browser reset for fresh instance
+                    self.consecutive_failures += 1
+                    self._reset_browser_if_needed(force_reset=True)
+                else:
+                    logger.error(f"Failed to navigate to {url} after {max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                # Clean up resources for any other error
+                if page:
+                    try:
+                        page.close()
+                    except:
+                        pass
+                if context:
+                    try:
+                        context.close()
+                    except:
+                        pass
+                logger.error(f"Unexpected error navigating to {url}: {e}")
+                raise
+    
     def cleanup(self):
         """Clean up browser resources"""
-        if hasattr(self, 'browser') and self.p is not None:
-            self.browser.close()
-        if hasattr(self, 'p') and self.p is not None:
-            self.p.stop()
+        # Browser cleanup without async lock
+        try:
+            if hasattr(self, 'browser') and self.browser is not None:
+                try:
+                    self.browser.close()
+                except Exception as e:
+                    logger.debug(f"Error closing browser: {e}")
+                finally:
+                    self.browser = None
+                    
+            if hasattr(self, 'p') and self.p is not None:
+                try:
+                    self.p.stop()
+                except Exception as e:
+                    logger.debug(f"Error stopping playwright: {e}")
+                finally:
+                    self.p = None
+                    
+            self.browser_use_count = 0
+            self.consecutive_failures = 0
+            logger.info("Browser resources cleaned up successfully")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")

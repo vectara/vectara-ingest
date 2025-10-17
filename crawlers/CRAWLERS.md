@@ -25,6 +25,7 @@ website_crawler:
     num_per_second: 10
     pages_source: crawl
     crawl_method: internal  # "internal" (default) or "scrapy"
+    scrape_method: playwright  # "playwright" (default) or "scrapy" - for web content extraction
     max_depth: 3            # only needed if pages_source is set to 'crawl'
     html_processing:
       ids_to_remove: [td-123]
@@ -43,11 +44,22 @@ The website crawler indexes the content of a given web site. It supports two mod
 
 Other parameters:
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
-- `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion.
-- `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion.
+- `pos_regex` defines one or more (optional) regex patterns for URL inclusion. URLs must match at least one positive pattern to be crawled. If the list is empty, all URLs are matched.
+  - **Important**: Patterns use Python's `.match()` method, which matches from the **beginning** of the string
+  - Examples:
+    - Match all URLs from domain: `[".*"]` or leave empty `[]`
+    - Match only blog pages: `[".*\/blog\/.*"]`
+    - Match exact domain only: `["^https:\/\/example\.com\/.*"]`
+    - Match multiple sections: `[".*\/blog\/.*", ".*\/news\/.*", ".*\/articles\/.*"]`
+- `neg_regex` defines one or more (optional) regex patterns for URL exclusion. URLs matching any negative pattern will be skipped.
+  - Examples:
+    - Exclude admin pages: `[".*\/admin\/.*"]`
+    - Exclude specific subdomain: `[".*care\.example\..*"]`
+    - Exclude PDFs and ZIPs: `[".*\.pdf$", ".*\.zip$"]`
+    - Exclude query parameters: `[".*\?.*"]`
 - `keep_query_params`: if true, maintains the full URL including query params in the URL. If false, then it removes query params from collected URLs.
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
-- `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
+- `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
 
 The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
@@ -55,10 +67,44 @@ The `html_processing` configuration defines a set of special instructions that c
 - `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
 - `classes_to_remove` defines an (optional) list of HTML "class" types that are ignored when extracting text from the page.
 
-<br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
+#### Important Notes on Regex Patterns
+
+**Best Practices for Regex Patterns:**
+1. **Use single quotes** in YAML files to avoid escape character issues: `pos_regex: ['.*\/blog\/.*']` instead of `pos_regex: [".*\/blog\/.*"]`
+2. **Escape dots** in domain names for exact matching: `\.com` instead of `.com`
+3. **Test your patterns** - Remember that `.match()` starts from the beginning of the URL string
+4. **URL format** - Patterns are matched against full URLs including protocol (e.g., `https://example.com/page`)
+
+**Common Pattern Examples:**
+```yaml
+# Match everything (equivalent to empty list)
+pos_regex: ['.*']
+
+# Match exact domain, excluding subdomains
+pos_regex: ['^https:\/\/example\.com\/.*']
+
+# Match domain with optional www
+pos_regex: ['^https:\/\/(www\.)?example\.com\/.*']
+
+# Match specific paths
+pos_regex: ['.*\/documentation\/.*', '.*\/guides\/.*']
+
+# Exclude file types
+neg_regex: ['.*\.(pdf|zip|tar|gz)$']
+```
+
+**Troubleshooting Regex Patterns:**
+- If your pattern isn't matching expected URLs, remember that `.match()` anchors to the start of the string
+- To debug patterns, test them in Python: `re.compile(pattern).match(url)`
+- An empty `pos_regex` list `[]` matches all URLs (no filtering)
+- URLs must match at least one positive pattern (if any defined) AND not match any negative patterns
 
 `ray_workers`, if defined, specifies the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 Note that ray with docker does not work on Mac M1/M2 machines.
+
+`scrape_method` defines the extraction backend for processing web content ("playwright" or "scrapy"):
+- `playwright` (default): Uses Playwright browser automation for JavaScript-heavy sites, SPAs, and dynamic content
+- `scrapy`: Uses Scrapy for faster, lightweight extraction of static HTML content
 
 
 ### Database crawler
@@ -185,6 +231,7 @@ This bulk upload crawler has no parameters.
 ...
 rss_crawler:
   source: bbc
+  scrape_method: playwright  # "playwright" (default) or "scrapy" - for article content extraction
   rss_pages: [
     "http://feeds.bbci.co.uk/news/rss.xml", "http://feeds.bbci.co.uk/news/world/rss.xml", "http://feeds.bbci.co.uk/news/uk/rss.xml",
     "http://feeds.bbci.co.uk/news/business/rss.xml", "http://feeds.bbci.co.uk/news/politics/rss.xml", 
@@ -203,6 +250,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `rss_pages` defines one or more RSS feed locations. 
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds to wait between news articles, so as to make the crawl more friendly to the hosting site.
+- `scrape_method` defines the extraction backend for processing article content ("playwright" or "scrapy").
 
 ### Hackernews crawler
 
@@ -231,6 +279,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     extensions_to_ignore: [".php", ".java", ".py", ".js"]
     docs_system: docusaurus
     crawl_method: internal  # "internal" (default) or "scrapy"
+    scrape_method: playwright  # "playwright" (default) or "scrapy" - for docs content extraction
     remove_code: true
     html_processing:
       ids_to_remove: []
@@ -243,8 +292,8 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
 The Docs crawler processes and indexes content published on different documentation systems.
 It has the following parameters:
 - `base_urls` defines one or more base URLS for the documentation content.
-- `pos_regex` defines one or more (optional) regex expressions defining URLs to match for inclusion
-- `neg_regex` defines one or more (optional) regex expressions defining URLs to match for exclusion
+- `pos_regex` defines one or more (optional) regex patterns for URL inclusion. Uses the same matching behavior as website crawler (see regex documentation above)
+- `neg_regex` defines one or more (optional) regex patterns for URL exclusion. Uses the same matching behavior as website crawler (see regex documentation above)
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
 - `docs_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
@@ -258,8 +307,8 @@ The `html_processing` configuration defines a set of special instructions that c
 - `tags_to_remove` defines an (optional) list of HTML semantic tags (like header, footer, nav, etc) that are ignored when extracting text from the page.
 - `classes_to_remove` defines an (optional) list of CSS class names that are ignored when extracting text from the page.
 - `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
-- 
-<br>**Note**: when specifying regular expressions it's recommended to use single quotes (as opposed to double quotes) to avoid issues with escape characters.
+- `scrape_method` defines the extraction backend for processing documentation content ("playwright" or "scrapy").
+
 
 ### Discourse crawler
 
@@ -493,29 +542,82 @@ HUBSPOT_API_KEY = "your-private-app-key"
 ```yaml
 ...
   gdrive_crawler:
+    # Authentication type: "service_account" (default) or "oauth"
+    auth_type: service_account
+
+    # Path to credentials.json file (used for both auth types)
+    credentials_file: /path/to/credentials.json
+
+    # Configuration parameters
     permissions: ['Vectara', 'all']
     days_back: 365
     ray_workers: 0
-    delegated_users:
-      - ofer@vectara.com
-      - jana@vectara.com
-    credentials_file: /path/to/credential.json # In CLI version make sure that path points to credetianls.json
 
+    # For service_account mode only
+    delegated_users:
+      - user1@example.com
+      - user2@example.com
 ```
 
-The gdrive crawler indexes content of your Google Drive folder
-- `days_back`: include only files created within the last N days
+The gdrive crawler indexes content from Google Drive with support for two authentication methods:
+
+**Common Parameters:**
+- `days_back`: include only files modified within the last N days
 - `permissions`: list of `displayName` values to include. We recommend including your company name (e.g. `Vectara`) and `all` to include all non-restricted files.
-- `delegated_users`: list of user emails in your organization. 
 - `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
+- `credentials_file`: Path to credentials JSON file (format depends on auth_type)
 
-This crawler identifies Google Drive files based on the list of delegated users. For each user it looks at those files that the user either created or has access to, but
-limiting only to files that have "accessible by all" permissions (so that "restricted" files are not included)
+**Authentication Methods:**
 
-Note that this crawler uses a Google Drive service account mode to access files, 
-and you need to include a `credentials.json` file in the main vectara-ingest folder.
-For more information see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under 
-"Service account credentials".
+**1. Service Account Mode (`auth_type: service_account`)** - Default
+- Requires Google Workspace with domain-wide delegation
+- Supports multiple users via `delegated_users` list
+- `credentials.json` should contain service account credentials
+- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials"
+
+**2. OAuth Mode (`auth_type: oauth`)**
+- Use when you don't have Google Workspace domain-wide delegation
+- Supports single user only (the user who authorized the app)
+- `credentials.json` should contain OAuth token
+- The token will be automatically refreshed when it expires
+
+**OAuth Setup:**
+
+Your `credentials.json` file for OAuth should look like this:
+```json
+{
+  "token": "ya29.a0AfB_by...",
+  "refresh_token": "1//0gXYZ...",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "123456789-abc123def456.apps.googleusercontent.com",
+  "client_secret": "GOCSPX-AbCdEfGhIjKlMnOpQrStUvWx",
+  "scopes": ["https://www.googleapis.com/auth/drive.readonly"]
+}
+```
+
+To generate the OAuth token:
+1. Create OAuth 2.0 Client ID in Google Cloud Console (Desktop app type)
+2. Download and save as `scripts/gdrive/oauth_client_credentials.json`
+3. Run: `python scripts/gdrive/generate_oauth_token.py`
+4. Authorize in the browser
+5. The token is saved to `credentials.json` automatically
+
+For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`
+
+**OAuth Configuration Example:**
+```yaml
+gdrive_crawler:
+  auth_type: oauth
+  credentials_file: credentials.json
+  days_back: 7
+  permissions: ['Vectara', 'all']
+```
+
+**Important Notes:**
+- OAuth mode only supports a single user account
+- For multi-user crawling, use `service_account` mode
+- The OAuth token will auto-refresh and save itself when it expires
+- Both authentication modes use the same `credentials_file` field
 
 
 ### Folder crawler
@@ -781,9 +883,39 @@ sharepoint_crawler:
 
 
 
+### PMC Crawler
+
+```yaml
+pmc_crawler:
+  n_pmc_papers: 100
+  search_query: "covid-19 treatment"
+  num_per_second: 3
+  scrape_method: playwright  # "playwright" (default) or "scrapy" - for web content extraction
+```
+
+The PMC (PubMed Central) crawler indexes medical research articles from PubMed Central into Vectara:
+- `n_pmc_papers`: Maximum number of papers to index
+- `search_query`: Search query to find relevant papers
+- `num_per_second`: Rate limiting for API calls (default: 3)
+- `scrape_method`: Extraction backend for processing article content ("playwright" or "scrapy")
+
+### Arxiv Crawler
+
+```yaml
+arxiv_crawler:
+  query_terms: "machine learning"
+  n_papers: 50
+  start_year: 2020
+  scrape_method: scrapy  # "playwright" (default) or "scrapy" - for metadata extraction
+```
+
+The Arxiv crawler indexes academic papers from arXiv.org into Vectara:
+- `query_terms`: Search terms to find relevant papers
+- `n_papers`: Maximum number of papers to index
+- `start_year`: Only index papers published after this year
+- `scrape_method`: Extraction backend for processing web content ("playwright" or "scrapy")
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
 - `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
-- `PMC` crawler: crawls medical articles from PubMed Central and indexes them into Vectara.
-- `Arxiv` crawler: crawls the top (most cited or latest) Arxiv articles about a topic and indexes them into Vectara.
