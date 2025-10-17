@@ -124,9 +124,8 @@ ca.pem
 credentials.json
 scripts/gdrive/oauth_client_credentials.json
 
-# Custom/private crawler files (copied by run.sh from custom_crawler_file config)
-crawlers/*_custom_crawler.py
-crawlers/custom_*.py
+# Custom/private crawler files (copied by run.sh from crawler_file config)
+crawlers/custom/
 
 # Temporary directory for crawler output files
 temp/
