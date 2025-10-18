@@ -150,7 +150,6 @@ class MultiPageImageStitcher:
             has_caption = any(indicator in caption_lower for indicator in CAPTION_INDICATORS)
 
             if has_caption and frag2.is_first_on_page and width_diff < 0.25:
-                logger.info(f"Caption match: pages {frag1.page_num}->{frag2.page_num}")
                 return True
 
         # Positional continuity check
@@ -165,11 +164,9 @@ class MultiPageImageStitcher:
         if widths_similar:
             alignment_diff = abs(frag1.horizontal_alignment() - frag2.horizontal_alignment())
             if alignment_diff < self.config.alignment_tolerance_pts:
-                logger.info(f"Strong match: pages {frag1.page_num}->{frag2.page_num}")
                 return True
 
             # Medium match: positional + width only
-            logger.info(f"Medium match: pages {frag1.page_num}->{frag2.page_num}")
             return True
 
         # Lenient match: Full-page diagrams (both first and last on their pages)
@@ -177,7 +174,6 @@ class MultiPageImageStitcher:
                        frag2.is_first_on_page and frag2.is_last_on_page
 
         if only_content and width_diff < 0.25:
-            logger.info(f"Lenient match: pages {frag1.page_num}->{frag2.page_num}")
             return True
 
         return False
@@ -306,8 +302,6 @@ class MultiPageImageStitcher:
 
         if not stitch_groups:
             return fragments, []
-
-        logger.info(f"Detected {len(stitch_groups)} multi-page image group(s)")
 
         # Track which fragments are used in stitching
         stitched_indices = set()

@@ -116,7 +116,6 @@ class FileProcessor:
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 image_context=self.image_context,
-                stitch_config=self.stitch_config,
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
             return LlamaParseDocumentParser(
@@ -146,7 +145,6 @@ class FileProcessor:
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
                 image_context=self.image_context,
-                stitch_config=self.stitch_config,
             )
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:

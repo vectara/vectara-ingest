@@ -109,7 +109,7 @@ Stitched images include metadata:
 
 - Stitching happens before image summarization
 - Context is extracted from the first fragment's position
-- Image IDs use format: `docling_stitched_pages_44_45`
+- Image IDs use semantic format based on captions (e.g., `figure_3.1_pages_44_45` for multi-page or `figure_3.1_page_44` for single images) or generic format without parser prefix (e.g., `image_pages_44_45` or `image_page_44_idx_2`)
 
 ## Troubleshooting
 

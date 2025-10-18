@@ -86,7 +86,6 @@ def _extract_pdf_title(filename: str) -> str:
         if reader.metadata and reader.metadata.title:
             title = reader.metadata.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted PDF metadata title: '{title}' from file {filename}")
                 return title
     except Exception as e:
         logger.warning(f"Failed to extract PDF metadata title from {filename}: {e}")
@@ -101,7 +100,6 @@ def _extract_docx_title(filename: str) -> str:
         if doc.core_properties.title:
             title = doc.core_properties.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted DOCX document title: '{title}' from file {filename}")
                 return title
     except ImportError:
         logger.debug(f"python-docx not available, skipping DOCX title extraction for {filename}")
@@ -118,7 +116,6 @@ def _extract_pptx_title(filename: str) -> str:
         if prs.core_properties.title:
             title = prs.core_properties.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted PPTX presentation title: '{title}' from file {filename}")
                 return title
     except ImportError:
         logger.debug(f"python-pptx not available, skipping PPTX title extraction for {filename}")
@@ -593,6 +590,9 @@ class LlamaParseDocumentParser(DocumentParser):
         )
 
 class DoclingDocumentParser(DocumentParser):
+    # Default page dimensions (US Letter size in points)
+    DEFAULT_PAGE_HEIGHT = 792.0  # 11 inches * 72 points/inch
+    DEFAULT_PAGE_WIDTH = 612.0   # 8.5 inches * 72 points/inch
 
     def __init__(
         self,
@@ -664,6 +664,255 @@ class DoclingDocumentParser(DocumentParser):
             except ValueError as err:
                 logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
+
+    def _create_image_fragment(self, image, item, page_no, idx, all_items) -> ImageFragment:
+        """Create an ImageFragment for stitching detection"""
+        # Get bounding box if available
+        bbox = None
+        page_height = self.DEFAULT_PAGE_HEIGHT
+        page_width = self.DEFAULT_PAGE_WIDTH
+
+        if hasattr(item, 'prov') and item.prov and hasattr(item.prov[0], 'bbox'):
+            bbox_obj = item.prov[0].bbox
+            # Docling bbox is (x0, y0, x1, y1)
+            bbox = (bbox_obj.l, bbox_obj.t, bbox_obj.r, bbox_obj.b)
+            # Use actual page dimensions if available, otherwise keep defaults
+            page_height = bbox_obj.coord_origin.height if hasattr(bbox_obj.coord_origin, 'height') else self.DEFAULT_PAGE_HEIGHT
+            page_width = bbox_obj.coord_origin.width if hasattr(bbox_obj.coord_origin, 'width') else self.DEFAULT_PAGE_WIDTH
+
+        # Determine position and extract caption for stitching detection
+        try:
+            from docling_core.types.doc.labels import DocItemLabel
+            EXCLUDE_LABELS = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
+        except ImportError:
+            EXCLUDE_LABELS = set()
+
+        is_first = True
+        is_last = True
+        next_text = None
+
+        # Check elements before this image
+        for i in range(idx):
+            other_item = all_items[i]
+            if other_item['page_no'] == page_no:
+                other = other_item['item']
+                if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
+                    continue
+                if hasattr(other, 'text') or hasattr(other, 'get_image'):
+                    is_first = False
+                    break
+
+        # Check elements after this image and extract caption
+        for i in range(idx + 1, len(all_items)):
+            other_item = all_items[i]
+            if other_item['page_no'] != page_no:
+                break
+            other = other_item['item']
+            if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
+                continue
+            if hasattr(other, 'text'):
+                next_text = other.text
+                is_last = False
+                break
+            if hasattr(other, 'get_image'):
+                is_last = False
+                break
+
+        return ImageFragment(
+            image=image,
+            page_num=page_no,
+            bbox=bbox,
+            position=idx,
+            width=image.width,
+            height=image.height,
+            page_height=page_height,
+            page_width=page_width,
+            is_last_on_page=is_last,
+            is_first_on_page=is_first,
+            next_text=next_text
+        )
+
+    def _generate_image_id(self, caption_text: Optional[str], page_no: int, image_index: int, is_multipage: bool = False, pages: List[int] = None) -> str:
+        """
+        Generate a semantic image ID, preferring caption-based names.
+
+        Args:
+            caption_text: Caption or next_text from the image context
+            page_no: Page number (for single images)
+            image_index: Index of this image in the collection
+            is_multipage: Whether this is a stitched multi-page image
+            pages: List of page numbers for multi-page images
+
+        Returns:
+            A descriptive image ID
+        """
+        # Try to extract semantic identifier from caption
+        if caption_text:
+            caption_lower = caption_text.lower().strip()
+            # Look for figure/table references
+            import re
+            # Match patterns like "Figure 3.2", "Fig 1", "Table 2", etc.
+            match = re.search(r'(figure|fig\.?|table|diagram)\s*(\d+\.?\d*)', caption_lower)
+            if match:
+                fig_type = match.group(1).replace('.', '')
+                fig_num = match.group(2)
+                if is_multipage and pages:
+                    return f"{fig_type}_{fig_num}_pages_{'_'.join(map(str, pages))}"
+                return f"{fig_type}_{fig_num}_page_{page_no}"
+
+        # Fallback to generic naming without parser prefix
+        if is_multipage and pages:
+            return f"image_pages_{'_'.join(map(str, pages))}"
+        return f"image_page_{page_no}_idx_{image_index}"
+
+    def _process_single_image(self, image, idx, page_no, position, all_items,
+                             source_url, positioned_elements, image_bytes):
+        """Process a single image without stitching"""
+        # Extract context
+        previous_text, next_text = extract_image_context(
+            [i['item'] for i in all_items],
+            idx,
+            num_previous=self.image_context['num_previous_chunks'],
+            num_next=self.image_context['num_next_chunks'],
+            text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+        )
+
+        # Save image
+        image_path = 'image.png'
+        with open(image_path, 'wb') as fp:
+            image.save(fp, 'PNG')
+
+        # Store image binary data
+        with open(image_path, 'rb') as fp:
+            image_binary = fp.read()
+
+        # Generate semantic image ID
+        image_id = self._generate_image_id(next_text, page_no, len(image_bytes))
+        image_bytes.append((image_id, image_binary))
+
+        # Summarize image
+        image_summary = self.image_summarizer.summarize_image(
+            image_path, source_url, previous_text, next_text
+        )
+        if image_summary:
+            metadata = {
+                'element_type': 'image',
+                'page': page_no,
+                'image_id': image_id
+            }
+            positioned_elements.append((position + 0.5, image_summary, metadata))
+
+            if self.verbose:
+                logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+    def _apply_image_stitching(self, image_fragments, all_items, source_url,
+                               positioned_elements, image_bytes):
+        """Apply multi-page image stitching to collected fragments"""
+        stitcher = MultiPageImageStitcher(self.stitch_config)
+        fragments_only = [f for _, f, _ in image_fragments]
+        single_fragments, stitched_results = stitcher.process_fragments(fragments_only)
+
+        # Track which fragments were stitched
+        stitched_fragment_indices = set()
+        for _, _, group_indices in stitched_results:
+            stitched_fragment_indices.update(group_indices)
+
+        # Process stitched images
+        for stitched_img, stitch_metadata, group_indices in stitched_results:
+            # Get the first fragment's info for context and position
+            first_idx = group_indices[0]
+            orig_idx, first_fragment, first_item_info = image_fragments[first_idx]
+            position = first_item_info['position']
+            pages = stitch_metadata['pages']
+
+            # Extract context for stitched image (use caption from first fragment)
+            previous_text, next_text = extract_image_context(
+                [i['item'] for i in all_items],
+                orig_idx,
+                num_previous=self.image_context['num_previous_chunks'],
+                num_next=self.image_context['num_next_chunks'],
+                text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+            )
+
+            # Use caption from first fragment for semantic naming
+            caption_text = first_fragment.next_text
+
+            # Save stitched image
+            image_path = 'image_stitched.png'
+            with open(image_path, 'wb') as fp:
+                stitched_img.save(fp, 'PNG')
+
+            # Store image binary data
+            with open(image_path, 'rb') as fp:
+                image_binary = fp.read()
+
+            # Generate semantic image ID using caption
+            image_id = self._generate_image_id(
+                caption_text, pages[0], len(image_bytes),
+                is_multipage=True, pages=pages
+            )
+            image_bytes.append((image_id, image_binary))
+
+            # Summarize stitched image
+            image_summary = self.image_summarizer.summarize_image(
+                image_path, source_url, previous_text, next_text
+            )
+            if image_summary:
+                metadata = {
+                    'element_type': 'image',
+                    'pages': pages,
+                    'is_multipage': True,
+                    'image_id': image_id
+                }
+                positioned_elements.append((position + 0.5, image_summary, metadata))
+
+                if self.verbose:
+                    logger.info(f"Stitched image from pages {pages} (ID: {image_id}): {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+        # Process remaining single-page images
+        for frag_idx, (orig_idx, fragment, item_info) in enumerate(image_fragments):
+            if frag_idx in stitched_fragment_indices:
+                continue  # Skip fragments that were stitched
+
+            position = item_info['position']
+            page_no = item_info['page_no']
+
+            # Extract context
+            previous_text, next_text = extract_image_context(
+                [i['item'] for i in all_items],
+                orig_idx,
+                num_previous=self.image_context['num_previous_chunks'],
+                num_next=self.image_context['num_next_chunks'],
+                text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+            )
+
+            # Save image
+            image_path = 'image.png'
+            with open(image_path, 'wb') as fp:
+                fragment.image.save(fp, 'PNG')
+
+            # Store image binary data
+            with open(image_path, 'rb') as fp:
+                image_binary = fp.read()
+
+            # Generate semantic image ID using caption from fragment
+            image_id = self._generate_image_id(fragment.next_text, page_no, len(image_bytes))
+            image_bytes.append((image_id, image_binary))
+
+            # Summarize image
+            image_summary = self.image_summarizer.summarize_image(
+                image_path, source_url, previous_text, next_text
+            )
+            if image_summary:
+                metadata = {
+                    'element_type': 'image',
+                    'page': page_no,
+                    'image_id': image_id
+                }
+                positioned_elements.append((position + 0.5, image_summary, metadata))
+
+                if self.verbose:
+                    logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
@@ -761,7 +1010,8 @@ class DoclingDocumentParser(DocumentParser):
             })
             element_index += 1
 
-        # Second pass: process items, collecting image fragments
+        # Second pass: process items
+        # For stitching: collect image fragments; otherwise process images directly
         for idx, item_info in enumerate(all_items):
             item = item_info['item']
             page_no = item_info['page_no']
@@ -782,214 +1032,28 @@ class DoclingDocumentParser(DocumentParser):
                 positioned_elements.append((position, item.text, metadata))
 
             elif hasattr(item, 'get_image') and self.summarize_images:
-                # Picture element - collect as fragment for potential stitching
+                # Picture element
                 image = item.get_image(doc)
                 if image:
-                    # Get bounding box if available
-                    bbox = None
-                    page_height = 792.0  # Default letter size
-                    page_width = 612.0
-
-                    if hasattr(item, 'prov') and item.prov and hasattr(item.prov[0], 'bbox'):
-                        bbox_obj = item.prov[0].bbox
-                        # Docling bbox is (x0, y0, x1, y1)
-                        bbox = (bbox_obj.l, bbox_obj.t, bbox_obj.r, bbox_obj.b)
-                        page_height = bbox_obj.coord_origin.height if hasattr(bbox_obj.coord_origin, 'height') else page_height
-                        page_width = bbox_obj.coord_origin.width if hasattr(bbox_obj.coord_origin, 'width') else page_width
-
-                    # Determine position and extract caption for stitching detection
-                    try:
-                        from docling_core.types.doc.labels import DocItemLabel
-                        EXCLUDE_LABELS = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
-                    except ImportError:
-                        EXCLUDE_LABELS = set()
-
-                    is_first = True
-                    is_last = True
-                    next_text = None
-
-                    # Check elements before this image
-                    for i in range(idx):
-                        other_item = all_items[i]
-                        if other_item['page_no'] == page_no:
-                            other = other_item['item']
-                            if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
-                                continue
-                            if hasattr(other, 'text') or hasattr(other, 'get_image'):
-                                is_first = False
-                                break
-
-                    # Check elements after this image and extract caption
-                    for i in range(idx + 1, len(all_items)):
-                        other_item = all_items[i]
-                        if other_item['page_no'] != page_no:
-                            break
-                        other = other_item['item']
-                        if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
-                            continue
-                        if hasattr(other, 'text'):
-                            next_text = other.text
-                            is_last = False
-                            break
-                        if hasattr(other, 'get_image'):
-                            is_last = False
-                            break
-
-                    fragment = ImageFragment(
-                        image=image,
-                        page_num=page_no,
-                        bbox=bbox,
-                        position=idx,
-                        width=image.width,
-                        height=image.height,
-                        page_height=page_height,
-                        page_width=page_width,
-                        is_last_on_page=is_last,
-                        is_first_on_page=is_first,
-                        next_text=next_text
-                    )
-                    image_fragments.append((idx, fragment, item_info))
+                    if self.stitch_config.enabled:
+                        # Collect as fragment for stitching
+                        fragment = self._create_image_fragment(image, item, page_no, idx, all_items)
+                        image_fragments.append((idx, fragment, item_info))
+                    else:
+                        # Process image directly without stitching
+                        self._process_single_image(
+                            image, idx, page_no, position, all_items,
+                            source_url, positioned_elements, image_bytes
+                        )
                 else:
                     logger.info("Failed to retrieve image")
 
-        # Apply multi-page image stitching if enabled
+        # Apply multi-page image stitching if enabled (fragments were collected above)
         if self.stitch_config.enabled and image_fragments:
-            stitcher = MultiPageImageStitcher(self.stitch_config)
-            fragments_only = [f for _, f, _ in image_fragments]
-            single_fragments, stitched_results = stitcher.process_fragments(fragments_only)
-
-            # Track which fragments were stitched
-            stitched_fragment_indices = set()
-            for _, _, group_indices in stitched_results:
-                stitched_fragment_indices.update(group_indices)
-
-            # Process stitched images
-            for stitched_img, stitch_metadata, group_indices in stitched_results:
-                # Get the first fragment's info for context and position
-                first_idx = group_indices[0]
-                orig_idx, first_fragment, first_item_info = image_fragments[first_idx]
-                position = first_item_info['position']
-                pages = stitch_metadata['pages']
-
-                # Extract context for stitched image
-                previous_text, next_text = extract_image_context(
-                    [i['item'] for i in all_items],
-                    orig_idx,
-                    num_previous=self.image_context['num_previous_chunks'],
-                    num_next=self.image_context['num_next_chunks'],
-                    text_extractor=lambda x: x.text if hasattr(x, 'text') else None
-                )
-
-                # Save stitched image
-                image_path = 'image_stitched.png'
-                with open(image_path, 'wb') as fp:
-                    stitched_img.save(fp, 'PNG')
-
-                # Store image binary data
-                with open(image_path, 'rb') as fp:
-                    image_binary = fp.read()
-                image_id = f"docling_stitched_pages_{'_'.join(map(str, pages))}"
-                image_bytes.append((image_id, image_binary))
-
-                # Summarize stitched image
-                image_summary = self.image_summarizer.summarize_image(
-                    image_path, source_url, previous_text, next_text
-                )
-                if image_summary:
-                    metadata = {
-                        'element_type': 'image',
-                        'pages': pages,
-                        'is_multipage': True,
-                        'image_id': image_id
-                    }
-                    positioned_elements.append((position + 0.5, image_summary, metadata))
-
-                    if self.verbose:
-                        logger.info(f"Stitched image from pages {pages}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-            # Process remaining single-page images
-            for frag_idx, (orig_idx, fragment, item_info) in enumerate(image_fragments):
-                if frag_idx in stitched_fragment_indices:
-                    continue  # Skip fragments that were stitched
-
-                position = item_info['position']
-                page_no = item_info['page_no']
-
-                # Extract context
-                previous_text, next_text = extract_image_context(
-                    [i['item'] for i in all_items],
-                    orig_idx,
-                    num_previous=self.image_context['num_previous_chunks'],
-                    num_next=self.image_context['num_next_chunks'],
-                    text_extractor=lambda x: x.text if hasattr(x, 'text') else None
-                )
-
-                # Save image
-                image_path = 'image.png'
-                with open(image_path, 'wb') as fp:
-                    fragment.image.save(fp, 'PNG')
-
-                # Store image binary data
-                with open(image_path, 'rb') as fp:
-                    image_binary = fp.read()
-                image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
-                image_bytes.append((image_id, image_binary))
-
-                # Summarize image
-                image_summary = self.image_summarizer.summarize_image(
-                    image_path, source_url, previous_text, next_text
-                )
-                if image_summary:
-                    metadata = {
-                        'element_type': 'image',
-                        'page': page_no,
-                        'image_id': image_id
-                    }
-                    positioned_elements.append((position + 0.5, image_summary, metadata))
-
-                    if self.verbose:
-                        logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-        elif image_fragments:
-            # No stitching - process images normally
-            for orig_idx, fragment, item_info in image_fragments:
-                position = item_info['position']
-                page_no = item_info['page_no']
-
-                # Extract context
-                previous_text, next_text = extract_image_context(
-                    [i['item'] for i in all_items],
-                    orig_idx,
-                    num_previous=self.image_context['num_previous_chunks'],
-                    num_next=self.image_context['num_next_chunks'],
-                    text_extractor=lambda x: x.text if hasattr(x, 'text') else None
-                )
-
-                # Save image
-                image_path = 'image.png'
-                with open(image_path, 'wb') as fp:
-                    fragment.image.save(fp, 'PNG')
-
-                # Store image binary data
-                with open(image_path, 'rb') as fp:
-                    image_binary = fp.read()
-                image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
-                image_bytes.append((image_id, image_binary))
-
-                # Summarize image
-                image_summary = self.image_summarizer.summarize_image(
-                    image_path, source_url, previous_text, next_text
-                )
-                if image_summary:
-                    metadata = {
-                        'element_type': 'image',
-                        'page': page_no,
-                        'image_id': image_id
-                    }
-                    positioned_elements.append((position + 0.5, image_summary, metadata))
-
-                    if self.verbose:
-                        logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+            self._apply_image_stitching(
+                image_fragments, all_items, source_url,
+                positioned_elements, image_bytes
+            )
         
         # Apply chunking if needed
         if self.chunking_strategy in ['hybrid', 'hierarchical']:
@@ -1051,7 +1115,6 @@ class DoclingDocumentParser(DocumentParser):
         )
 
 
-
 class UnstructuredDocumentParser(DocumentParser):
     def __init__(
         self,
@@ -1063,8 +1126,7 @@ class UnstructuredDocumentParser(DocumentParser):
         parse_tables: bool = False,
         enable_gmft: bool = False,
         summarize_images: bool = False,
-        image_context: dict = None,
-        stitch_config: Optional[StitchConfig] = None
+        image_context: dict = None
     ):
         super().__init__(
             cfg=cfg,
@@ -1078,11 +1140,8 @@ class UnstructuredDocumentParser(DocumentParser):
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
-        self.stitch_config = stitch_config or StitchConfig(enabled=False)  # Disabled by default
         if self.verbose:
             logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
-            if self.stitch_config.enabled:
-                logger.info(f"Multi-page image stitching enabled")
 
     def _get_elements(
         self,
@@ -1186,7 +1245,20 @@ class UnstructuredDocumentParser(DocumentParser):
             
             # Pass 2: Get chunked text elements
             chunked_elements = self._get_elements(filename, override_chunking=False)
-
+            
+            # Log what we found
+            chunked_types = {}
+            for e in chunked_elements:
+                etype = type(e).__name__
+                chunked_types[etype] = chunked_types.get(etype, 0) + 1
+            logger.info(f"Chunked element types: {chunked_types}")
+            
+            raw_types = {}
+            for e in raw_elements:
+                etype = type(e).__name__
+                raw_types[etype] = raw_types.get(etype, 0) + 1
+            logger.info(f"Raw element types: {raw_types}")
+            
             elements = chunked_elements  # Use chunked for text processing
             raw_tables_images = raw_elements  # Keep raw for table/image extraction
         else:
@@ -1194,92 +1266,76 @@ class UnstructuredDocumentParser(DocumentParser):
             elements = self._get_elements(filename)
             raw_tables_images = elements  # Same elements for everything
             raw_positions = None  # Not needed when not chunking
+            
+            # Log element types
+            element_types = {}
+            for e in elements:
+                etype = type(e).__name__
+                element_types[etype] = element_types.get(etype, 0) + 1
+            logger.info(f"Element types found: {element_types}")
         
         # Build list of positioned elements
         positioned_elements = []  # List of (position, content, metadata) tuples
         image_bytes = []  # Store image binary data
-        image_fragments = []  # Collect image fragments for stitching
-
-
+        
         if not is_chunking:
-            # When not chunking, collect image fragments first
+            # When not chunking, process everything inline with simple positioning
             for idx, element in enumerate(elements):
                 page_num = getattr(element.metadata, 'page_number', 1) or 1
                 base_position = page_num * 1000
-
+                
                 if isinstance(element, us.documents.elements.Image):
-                    # Collect image as fragment for potential stitching
+                    # Process image inline when not chunking
                     if self.summarize_images:
                         has_valid_coords = (
-                            element.metadata.coordinates and
-                            element.metadata.coordinates.system.width > 50 and
+                            element.metadata.coordinates and 
+                            element.metadata.coordinates.system.width > 50 and 
                             element.metadata.coordinates.system.height > 50
                         )
                         has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
-
+                        
                         if has_image_path or has_valid_coords:
                             try:
+                                # Extract context using the utility function
+                                previous_text, next_text = extract_image_context(
+                                    elements,
+                                    idx,
+                                    num_previous=self.image_context['num_previous_chunks'],
+                                    num_next=self.image_context['num_next_chunks']
+                                )
+                                
                                 # Try to get image path
                                 image_path = getattr(element.metadata, 'image_path', None)
                                 if not image_path and hasattr(element, 'image'):
                                     image_path = element.image
-
-                                if image_path and os.path.exists(image_path):
-                                    # Load PIL image
-                                    pil_image = Image.open(image_path)
-
-                                    # Determine if this is first/last element on the page
-                                    # Exclude headers/footers from consideration
-                                    is_first = True
-                                    is_last = True
-
-                                    # Check if there are other Text/Image elements before this on the same page
-                                    # Skip headers and footers
-                                    for i in range(idx):
-                                        other = elements[i]
-                                        other_page = getattr(other.metadata, 'page_number', 1) or 1
-                                        if other_page == page_num:
-                                            # Skip headers and footers
-                                            if isinstance(other, (us.documents.elements.Header, us.documents.elements.Footer)):
-                                                continue
-                                            # Only count Text and Image elements (not Tables)
-                                            if not isinstance(other, us.documents.elements.Table):
-                                                is_first = False
-                                                break
-
-                                    # Check if there are other Text/Image elements after this on the same page
-                                    # Skip headers and footers
-                                    for i in range(idx + 1, len(elements)):
-                                        other = elements[i]
-                                        other_page = getattr(other.metadata, 'page_number', 1) or 1
-                                        if other_page != page_num:
-                                            break  # Moved to next page
-                                        # Skip headers and footers
-                                        if isinstance(other, (us.documents.elements.Header, us.documents.elements.Footer)):
-                                            continue
-                                        # Only count Text and Image elements (not Tables)
-                                        if not isinstance(other, us.documents.elements.Table):
-                                            is_last = False
-                                            break
-
-                                    # Create ImageFragment
-                                    fragment = ImageFragment(
-                                        image=pil_image,
-                                        page_num=page_num,
-                                        bbox=None,  # Unstructured doesn't provide reliable bbox
-                                        position=idx,
-                                        width=pil_image.width,
-                                        height=pil_image.height,
-                                        page_height=792.0,  # Default letter size
-                                        page_width=612.0,
-                                        is_last_on_page=is_last,
-                                        is_first_on_page=is_first
+                                
+                                if image_path:
+                                    # Store image binary data
+                                    if os.path.exists(image_path):
+                                        with open(image_path, 'rb') as fp:
+                                            image_binary = fp.read()
+                                        image_id = f"unstructured_page_{page_num}_image_{len(image_bytes)}"
+                                        image_bytes.append((image_id, image_binary))
+                                    else:
+                                        image_id = None
+                                        
+                                    image_summary = self.image_summarizer.summarize_image(
+                                        image_path, source_url, previous_text, next_text
                                     )
-                                    image_fragments.append((idx, fragment, element, image_path))
+                                    if image_summary:
+                                        position = base_position + idx + 0.5  # Images get +0.5 offset
+                                        metadata = {
+                                            'element_type': 'image', 
+                                            'page': page_num,
+                                            'image_id': image_id
+                                        }
+                                        positioned_elements.append((position, image_summary, metadata))
+                                        if self.verbose:
+                                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                                 else:
                                     logger.warning("Image element found but no valid image path available")
                             except Exception as exc:
-                                logger.error(f"Error processing image fragment: {exc}")
+                                logger.error(f"Error summarizing image: {exc}")
                             
                 elif isinstance(element, us.documents.elements.Table):
                     # Tables are processed separately for structured indexing, not added inline
@@ -1289,143 +1345,6 @@ class UnstructuredDocumentParser(DocumentParser):
                     position = base_position + idx
                     metadata = {'element_type': 'text', 'page': page_num}
                     positioned_elements.append((position, str(element), metadata))
-
-            # Apply multi-page image stitching if enabled
-            if self.stitch_config.enabled and image_fragments:
-                stitcher = MultiPageImageStitcher(self.stitch_config)
-                fragments_only = [f for _, f, _, _ in image_fragments]
-                single_fragments, stitched_results = stitcher.process_fragments(fragments_only)
-
-                # Track which fragments were stitched
-                stitched_fragment_indices = set()
-                for _, _, group_indices in stitched_results:
-                    stitched_fragment_indices.update(group_indices)
-
-                # Process stitched images
-                for stitched_img, stitch_metadata, group_indices in stitched_results:
-                    # Get the first fragment's info for context and position
-                    first_idx = group_indices[0]
-                    orig_idx, first_fragment, first_element, _ = image_fragments[first_idx]
-                    page_num = first_fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-                    pages = stitch_metadata['pages']
-
-                    # Extract context for stitched image
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        orig_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Save stitched image
-                    image_path = 'image_stitched.png'
-                    with open(image_path, 'wb') as fp:
-                        stitched_img.save(fp, 'PNG')
-
-                    # Store image binary data
-                    with open(image_path, 'rb') as fp:
-                        image_binary = fp.read()
-                    image_id = f"unstructured_stitched_pages_{'_'.join(map(str, pages))}"
-                    image_bytes.append((image_id, image_binary))
-
-                    # Summarize stitched image
-                    image_summary = self.image_summarizer.summarize_image(
-                        image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'pages': pages,
-                            'is_multipage': True,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Stitched image from pages {pages}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-                # Process remaining single-page images
-                for frag_idx, (orig_idx, fragment, element, orig_image_path) in enumerate(image_fragments):
-                    if frag_idx in stitched_fragment_indices:
-                        continue  # Skip fragments that were stitched
-
-                    page_num = fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-
-                    # Extract context
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        orig_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Store image binary data
-                    if os.path.exists(orig_image_path):
-                        with open(orig_image_path, 'rb') as fp:
-                            image_binary = fp.read()
-                        image_id = f"unstructured_page_{page_num}_image_{len(image_bytes)}"
-                        image_bytes.append((image_id, image_binary))
-                    else:
-                        image_id = None
-
-                    # Summarize image
-                    image_summary = self.image_summarizer.summarize_image(
-                        orig_image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_num,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-            elif image_fragments:
-                # No stitching - process images normally
-                for orig_idx, fragment, element, orig_image_path in image_fragments:
-                    page_num = fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-
-                    # Extract context
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        orig_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Store image binary data
-                    if os.path.exists(orig_image_path):
-                        with open(orig_image_path, 'rb') as fp:
-                            image_binary = fp.read()
-                        image_id = f"unstructured_page_{page_num}_image_{len(image_bytes)}"
-                        image_bytes.append((image_id, image_binary))
-                    else:
-                        image_id = None
-
-                    # Summarize image
-                    image_summary = self.image_summarizer.summarize_image(
-                        orig_image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_num,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
         else:
             # When chunking, process chunked text with position mapping
             chunk_position_counter = {}
@@ -1448,267 +1367,95 @@ class UnstructuredDocumentParser(DocumentParser):
                 metadata = {'element_type': 'text', 'page': page_num}
                 positioned_elements.append((position, str(element), metadata))
         
-            # Collect image fragments from raw extraction
+            # Now process tables and images from raw extraction with proper positioning
             for idx, element in enumerate(raw_tables_images):
                 page_num = getattr(element.metadata, 'page_number', 1) or 1
-
+                base_position = page_num * 1000
+                
                 if isinstance(element, us.documents.elements.Image):
-                    # Collect image as fragment for potential stitching
+                    # Process image element - ALWAYS log for debugging
+                    logger.info(f"Found Image element on page {page_num}")
+                    logger.info(f"  Has coordinates: {hasattr(element.metadata, 'coordinates')}")
+                    if hasattr(element.metadata, 'coordinates') and element.metadata.coordinates:
+                        logger.info(f"  Coords dimensions: {element.metadata.coordinates.system.width}x{element.metadata.coordinates.system.height}")
+                    logger.info(f"  Has image_path: {hasattr(element.metadata, 'image_path')}")
+                    if hasattr(element.metadata, 'image_path'):
+                        logger.info(f"  Image path: {element.metadata.image_path}")
+                    
                     if self.summarize_images:
+                        # More lenient image detection
                         has_valid_coords = (
-                            element.metadata.coordinates and
-                            element.metadata.coordinates.system.width > 50 and
+                            element.metadata.coordinates and 
+                            element.metadata.coordinates.system.width > 50 and 
                             element.metadata.coordinates.system.height > 50
                         )
                         has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
-
+                        
                         if has_image_path or has_valid_coords:
                             try:
+                                # Calculate image position using same formula as text elements
+                                image_position = base_position + idx + 0.5
+                                
+                                # Find the chunked element with closest position for context extraction
+                                best_context_idx = 0
+                                for chunk_idx, chunk_elem in enumerate(elements):
+                                    chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
+                                    chunk_position = chunk_page * 1000 + chunk_idx
+                                    
+                                    if chunk_position > image_position:
+                                        best_context_idx = chunk_idx
+                                        break
+                                    best_context_idx = chunk_idx
+                                
+                                # Extract context using chunked elements instead of raw elements
+                                previous_text, next_text = extract_image_context(
+                                    elements,
+                                    best_context_idx,
+                                    num_previous=self.image_context['num_previous_chunks'],
+                                    num_next=self.image_context['num_next_chunks']
+                                )
+                                
                                 # Try to get image path
                                 image_path = getattr(element.metadata, 'image_path', None)
                                 if not image_path and hasattr(element, 'image'):
                                     image_path = element.image
-
-                                if image_path and os.path.exists(image_path):
-                                    # Load PIL image
-                                    pil_image = Image.open(image_path)
-
-                                    # Determine if this is first/last element on the page
-                                    # Exclude headers/footers from consideration
-                                    is_first = True
-                                    is_last = True
-
-                                    # Check if there are other Text/Image elements before this on the same page
-                                    # Skip headers and footers
-                                    for i in range(idx):
-                                        other = raw_tables_images[i]
-                                        other_page = getattr(other.metadata, 'page_number', 1) or 1
-                                        if other_page == page_num:
-                                            # Skip headers and footers
-                                            if isinstance(other, (us.documents.elements.Header, us.documents.elements.Footer)):
-                                                continue
-                                            # Only count Text and Image elements (not Tables)
-                                            if not isinstance(other, us.documents.elements.Table):
-                                                is_first = False
-                                                break
-
-                                    # Check if there are other Text/Image elements after this on the same page
-                                    # Skip headers and footers
-                                    for i in range(idx + 1, len(raw_tables_images)):
-                                        other = raw_tables_images[i]
-                                        other_page = getattr(other.metadata, 'page_number', 1) or 1
-                                        if other_page != page_num:
-                                            break  # Moved to next page
-                                        # Skip headers and footers
-                                        if isinstance(other, (us.documents.elements.Header, us.documents.elements.Footer)):
-                                            continue
-                                        # Only count Text and Image elements (not Tables)
-                                        if not isinstance(other, us.documents.elements.Table):
-                                            is_last = False
-                                            break
-
-                                    # Create ImageFragment
-                                    fragment = ImageFragment(
-                                        image=pil_image,
-                                        page_num=page_num,
-                                        bbox=None,  # Unstructured doesn't provide reliable bbox
-                                        position=idx,
-                                        width=pil_image.width,
-                                        height=pil_image.height,
-                                        page_height=792.0,  # Default letter size
-                                        page_width=612.0,
-                                        is_last_on_page=is_last,
-                                        is_first_on_page=is_first
+                                
+                                if image_path:
+                                    # Store image binary data
+                                    if os.path.exists(image_path):
+                                        with open(image_path, 'rb') as fp:
+                                            image_binary = fp.read()
+                                        image_id = f"unstructured_chunked_page_{page_num}_image_{len(image_bytes)}"
+                                        image_bytes.append((image_id, image_binary))
+                                    else:
+                                        image_id = None
+                                        
+                                    image_summary = self.image_summarizer.summarize_image(
+                                        image_path, source_url, previous_text, next_text
                                     )
-                                    image_fragments.append((idx, fragment, element, image_path))
+                                    if image_summary:
+                                        # Use position from raw element + 0.5 for images
+                                        position = base_position + idx + 0.5
+                                        metadata = {
+                                            'element_type': 'image', 
+                                            'page': page_num,
+                                            'image_id': image_id
+                                        }
+                                        positioned_elements.append((position, image_summary, metadata))
+                                        
+                                        if self.verbose:
+                                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                                
                                 else:
                                     logger.warning("Image element found but no valid image path available")
                             except Exception as exc:
-                                logger.error(f"Error processing image fragment: {exc}")
+                                logger.error(f"Error summarizing image: {exc}")
                                 continue
-
+                            
                 elif isinstance(element, us.documents.elements.Table):
                     # Tables are processed separately for structured indexing, not added inline
                     if self.verbose:
                         logger.info(f"Table found on page {page_num} - will be processed for structured indexing")
-
-            # Apply multi-page image stitching if enabled
-            if self.stitch_config.enabled and image_fragments:
-                stitcher = MultiPageImageStitcher(self.stitch_config)
-                fragments_only = [f for _, f, _, _ in image_fragments]
-                single_fragments, stitched_results = stitcher.process_fragments(fragments_only)
-
-                # Track which fragments were stitched
-                stitched_fragment_indices = set()
-                for _, _, group_indices in stitched_results:
-                    stitched_fragment_indices.update(group_indices)
-
-                # Process stitched images
-                for stitched_img, stitch_metadata, group_indices in stitched_results:
-                    # Get the first fragment's info for context and position
-                    first_idx = group_indices[0]
-                    orig_idx, first_fragment, first_element, _ = image_fragments[first_idx]
-                    page_num = first_fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-                    pages = stitch_metadata['pages']
-
-                    # Calculate image position for context extraction
-                    image_position = base_position + orig_idx + 0.5
-
-                    # Find the chunked element with closest position for context extraction
-                    best_context_idx = 0
-                    for chunk_idx, chunk_elem in enumerate(elements):
-                        chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
-                        chunk_position = chunk_page * 1000 + chunk_idx
-
-                        if chunk_position > image_position:
-                            best_context_idx = chunk_idx
-                            break
-                        best_context_idx = chunk_idx
-
-                    # Extract context using chunked elements
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        best_context_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Save stitched image
-                    image_path = 'image_stitched.png'
-                    with open(image_path, 'wb') as fp:
-                        stitched_img.save(fp, 'PNG')
-
-                    # Store image binary data
-                    with open(image_path, 'rb') as fp:
-                        image_binary = fp.read()
-                    image_id = f"unstructured_stitched_pages_{'_'.join(map(str, pages))}"
-                    image_bytes.append((image_id, image_binary))
-
-                    # Summarize stitched image
-                    image_summary = self.image_summarizer.summarize_image(
-                        image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'pages': pages,
-                            'is_multipage': True,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Stitched image from pages {pages}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-                # Process remaining single-page images
-                for frag_idx, (orig_idx, fragment, element, orig_image_path) in enumerate(image_fragments):
-                    if frag_idx in stitched_fragment_indices:
-                        continue  # Skip fragments that were stitched
-
-                    page_num = fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-
-                    # Calculate image position for context extraction
-                    image_position = base_position + orig_idx + 0.5
-
-                    # Find the chunked element with closest position for context extraction
-                    best_context_idx = 0
-                    for chunk_idx, chunk_elem in enumerate(elements):
-                        chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
-                        chunk_position = chunk_page * 1000 + chunk_idx
-
-                        if chunk_position > image_position:
-                            best_context_idx = chunk_idx
-                            break
-                        best_context_idx = chunk_idx
-
-                    # Extract context using chunked elements
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        best_context_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Store image binary data
-                    if os.path.exists(orig_image_path):
-                        with open(orig_image_path, 'rb') as fp:
-                            image_binary = fp.read()
-                        image_id = f"unstructured_chunked_page_{page_num}_image_{len(image_bytes)}"
-                        image_bytes.append((image_id, image_binary))
-                    else:
-                        image_id = None
-
-                    # Summarize image
-                    image_summary = self.image_summarizer.summarize_image(
-                        orig_image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_num,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-
-            elif image_fragments:
-                # No stitching - process images normally
-                for orig_idx, fragment, element, orig_image_path in image_fragments:
-                    page_num = fragment.page_num
-                    base_position = page_num * 1000
-                    position = base_position + orig_idx + 0.5
-
-                    # Calculate image position for context extraction
-                    image_position = base_position + orig_idx + 0.5
-
-                    # Find the chunked element with closest position for context extraction
-                    best_context_idx = 0
-                    for chunk_idx, chunk_elem in enumerate(elements):
-                        chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
-                        chunk_position = chunk_page * 1000 + chunk_idx
-
-                        if chunk_position > image_position:
-                            best_context_idx = chunk_idx
-                            break
-                        best_context_idx = chunk_idx
-
-                    # Extract context using chunked elements
-                    previous_text, next_text = extract_image_context(
-                        elements,
-                        best_context_idx,
-                        num_previous=self.image_context['num_previous_chunks'],
-                        num_next=self.image_context['num_next_chunks']
-                    )
-
-                    # Store image binary data
-                    if os.path.exists(orig_image_path):
-                        with open(orig_image_path, 'rb') as fp:
-                            image_binary = fp.read()
-                        image_id = f"unstructured_chunked_page_{page_num}_image_{len(image_bytes)}"
-                        image_bytes.append((image_id, image_binary))
-                    else:
-                        image_id = None
-
-                    # Summarize image
-                    image_summary = self.image_summarizer.summarize_image(
-                        orig_image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_num,
-                            'image_id': image_id
-                        }
-                        positioned_elements.append((position, image_summary, metadata))
-
-                        if self.verbose:
-                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
         # Sort all positioned elements by position to create final document order
         positioned_elements.sort(key=lambda x: x[0])
@@ -1761,4 +1508,3 @@ class UnstructuredDocumentParser(DocumentParser):
             tables=tables,
             image_bytes=image_bytes
         )
-
