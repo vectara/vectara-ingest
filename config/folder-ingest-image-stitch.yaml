@@ -1,0 +1,91 @@
+# Example configuration for multi-page image stitching
+# This config demonstrates how to enable and configure automatic detection
+# and stitching of images/diagrams that span multiple pages in PDF documents
+
+vectara:
+  corpus_key: folder
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/Users/adeel/Downloads/semiconductor/"
+  extensions: ['.pdf']
+  source: 'pdf-folder'
+
+doc_processing:
+  # REQUIRED: Multi-page stitching only works with Docling parser
+  doc_parser: docling
+
+  # REQUIRED: Image summarization must be enabled for stitching to work
+  summarize_images: true
+
+  # Optional: Enable table parsing if needed
+  parse_tables: true
+
+  # Docling-specific configuration
+  docling_config:
+    chunking_strategy: none  # Options: none, hierarchical, hybrid
+
+  # Core indexing settings
+  use_core_indexing: true
+  process_locally: true
+  contextual_chunking: false
+
+  # Model configuration for image and text processing
+  model_config:
+    text:
+      provider: openai
+      base_url: https://api.openai.com/v1
+      model_name: "gpt-4o"
+    vision:
+      provider: openai
+      base_url: https://api.openai.com/v1
+      model_name: "gpt-4o"
+
+  # ============================================================================
+  # MULTI-PAGE IMAGE STITCHING CONFIGURATION
+  # ============================================================================
+  # Automatically detects and stitches images that span multiple pages using:
+  # 1. Caption detection (e.g., "Figure 3-1" continued across pages)
+  # 2. Positional continuity (last element → first element on next page)
+  # 3. Visual similarity (width and alignment matching)
+  # ============================================================================
+
+  multipage_image_stitching:
+    # Enable or disable the feature entirely
+    # Default: true
+    enabled: true
+
+    # Maximum number of consecutive pages to stitch together
+    # Prevents excessive stitching across many pages
+    # Example: 2 means at most pages (N, N+1) will be stitched
+    # Default: 2
+    # Recommended range: 2 - 3
+    max_pages_to_stitch: 2
+
+    # -------------------------------------------------------------------------
+    # ADVANCED SETTINGS (Usually don't need to change)
+    # -------------------------------------------------------------------------
+
+    # Width tolerance for matching images (percentage)
+    # Images with width difference within this tolerance are considered similar
+    # Example: 15.0 means widths can differ by up to 15%
+    # Default: 15.0
+    # Recommended range: 10.0 - 20.0
+    width_tolerance_pct: 15.0
+
+    # Horizontal alignment tolerance (points)
+    # Images with X-position difference within this tolerance are aligned
+    # Example: 50.0 means images can be offset by up to 50 points horizontally
+    # Default: 50.0
+    # Recommended range: 30.0 - 100.0
+    alignment_tolerance_pts: 50.0
+
+    # Minimum overlap in pixels to detect when combining images
+    # Used to find duplicate content at page boundaries
+    # Default: 10
+    # Recommended range: 5 - 20
+    min_overlap_pixels: 10

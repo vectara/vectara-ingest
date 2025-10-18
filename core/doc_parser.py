@@ -1,6 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
-from typing import List, Tuple, Iterator, Dict, Any
+from typing import List, Tuple, Iterator, Dict, Any, Optional
 import time
 import pandas as pd
 import os
@@ -15,6 +15,7 @@ from pdf2image import convert_from_bytes
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
 from core.context_utils import extract_image_context
+from core.image_stitcher import MultiPageImageStitcher, ImageFragment, StitchConfig
 
 import unstructured as us
 from unstructured.partition.pdf import partition_pdf
@@ -34,7 +35,7 @@ import nltk
 nltk.download('punkt_tab', quiet=True)
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 
-from PIL import ImageFile
+from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 MAX_VERBOSE_LENGTH = 1000
@@ -85,7 +86,6 @@ def _extract_pdf_title(filename: str) -> str:
         if reader.metadata and reader.metadata.title:
             title = reader.metadata.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted PDF metadata title: '{title}' from file {filename}")
                 return title
     except Exception as e:
         logger.warning(f"Failed to extract PDF metadata title from {filename}: {e}")
@@ -100,7 +100,6 @@ def _extract_docx_title(filename: str) -> str:
         if doc.core_properties.title:
             title = doc.core_properties.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted DOCX document title: '{title}' from file {filename}")
                 return title
     except ImportError:
         logger.debug(f"python-docx not available, skipping DOCX title extraction for {filename}")
@@ -117,7 +116,6 @@ def _extract_pptx_title(filename: str) -> str:
         if prs.core_properties.title:
             title = prs.core_properties.title.strip()
             if title:  # Only return non-empty titles
-                logger.info(f"Extracted PPTX presentation title: '{title}' from file {filename}")
                 return title
     except ImportError:
         logger.debug(f"python-pptx not available, skipping PPTX title extraction for {filename}")
@@ -592,6 +590,9 @@ class LlamaParseDocumentParser(DocumentParser):
         )
 
 class DoclingDocumentParser(DocumentParser):
+    # Default page dimensions (US Letter size in points)
+    DEFAULT_PAGE_HEIGHT = 792.0  # 11 inches * 72 points/inch
+    DEFAULT_PAGE_WIDTH = 612.0   # 8.5 inches * 72 points/inch
 
     def __init__(
         self,
@@ -605,7 +606,8 @@ class DoclingDocumentParser(DocumentParser):
         do_ocr: bool = False,
         summarize_images: bool = False,
         image_scale: float = 1.0,
-        image_context: dict = None
+        image_context: dict = None,
+        stitch_config: Optional[StitchConfig] = None
     ):
         super().__init__(
             cfg=cfg,
@@ -620,8 +622,11 @@ class DoclingDocumentParser(DocumentParser):
         self.chunk_size = chunk_size
         self.image_scale = image_scale
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
+        self.stitch_config = stitch_config or StitchConfig(enabled=False)  # Disabled by default
         if self.verbose:
             logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}")
+            if self.stitch_config.enabled:
+                logger.info(f"Multi-page image stitching enabled")
 
     @staticmethod
     def _lazy_load_docling():
@@ -659,6 +664,255 @@ class DoclingDocumentParser(DocumentParser):
             except ValueError as err:
                 logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
+
+    def _create_image_fragment(self, image, item, page_no, idx, all_items) -> ImageFragment:
+        """Create an ImageFragment for stitching detection"""
+        # Get bounding box if available
+        bbox = None
+        page_height = self.DEFAULT_PAGE_HEIGHT
+        page_width = self.DEFAULT_PAGE_WIDTH
+
+        if hasattr(item, 'prov') and item.prov and hasattr(item.prov[0], 'bbox'):
+            bbox_obj = item.prov[0].bbox
+            # Docling bbox is (x0, y0, x1, y1)
+            bbox = (bbox_obj.l, bbox_obj.t, bbox_obj.r, bbox_obj.b)
+            # Use actual page dimensions if available, otherwise keep defaults
+            page_height = bbox_obj.coord_origin.height if hasattr(bbox_obj.coord_origin, 'height') else self.DEFAULT_PAGE_HEIGHT
+            page_width = bbox_obj.coord_origin.width if hasattr(bbox_obj.coord_origin, 'width') else self.DEFAULT_PAGE_WIDTH
+
+        # Determine position and extract caption for stitching detection
+        try:
+            from docling_core.types.doc.labels import DocItemLabel
+            EXCLUDE_LABELS = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
+        except ImportError:
+            EXCLUDE_LABELS = set()
+
+        is_first = True
+        is_last = True
+        next_text = None
+
+        # Check elements before this image
+        for i in range(idx):
+            other_item = all_items[i]
+            if other_item['page_no'] == page_no:
+                other = other_item['item']
+                if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
+                    continue
+                if hasattr(other, 'text') or hasattr(other, 'get_image'):
+                    is_first = False
+                    break
+
+        # Check elements after this image and extract caption
+        for i in range(idx + 1, len(all_items)):
+            other_item = all_items[i]
+            if other_item['page_no'] != page_no:
+                break
+            other = other_item['item']
+            if hasattr(other, 'label') and other.label in EXCLUDE_LABELS:
+                continue
+            if hasattr(other, 'text'):
+                next_text = other.text
+                is_last = False
+                break
+            if hasattr(other, 'get_image'):
+                is_last = False
+                break
+
+        return ImageFragment(
+            image=image,
+            page_num=page_no,
+            bbox=bbox,
+            position=idx,
+            width=image.width,
+            height=image.height,
+            page_height=page_height,
+            page_width=page_width,
+            is_last_on_page=is_last,
+            is_first_on_page=is_first,
+            next_text=next_text
+        )
+
+    def _generate_image_id(self, caption_text: Optional[str], page_no: int, image_index: int, is_multipage: bool = False, pages: List[int] = None) -> str:
+        """
+        Generate a semantic image ID, preferring caption-based names.
+
+        Args:
+            caption_text: Caption or next_text from the image context
+            page_no: Page number (for single images)
+            image_index: Index of this image in the collection
+            is_multipage: Whether this is a stitched multi-page image
+            pages: List of page numbers for multi-page images
+
+        Returns:
+            A descriptive image ID
+        """
+        # Try to extract semantic identifier from caption
+        if caption_text:
+            caption_lower = caption_text.lower().strip()
+            # Look for figure/table references
+            import re
+            # Match patterns like "Figure 3.2", "Fig 1", "Table 2", etc.
+            match = re.search(r'(figure|fig\.?|table|diagram)\s*(\d+\.?\d*)', caption_lower)
+            if match:
+                fig_type = match.group(1).replace('.', '')
+                fig_num = match.group(2)
+                if is_multipage and pages:
+                    return f"{fig_type}_{fig_num}_pages_{'_'.join(map(str, pages))}"
+                return f"{fig_type}_{fig_num}_page_{page_no}"
+
+        # Fallback to generic naming without parser prefix
+        if is_multipage and pages:
+            return f"image_pages_{'_'.join(map(str, pages))}"
+        return f"image_page_{page_no}_idx_{image_index}"
+
+    def _process_single_image(self, image, idx, page_no, position, all_items,
+                             source_url, positioned_elements, image_bytes):
+        """Process a single image without stitching"""
+        # Extract context
+        previous_text, next_text = extract_image_context(
+            [i['item'] for i in all_items],
+            idx,
+            num_previous=self.image_context['num_previous_chunks'],
+            num_next=self.image_context['num_next_chunks'],
+            text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+        )
+
+        # Save image
+        image_path = 'image.png'
+        with open(image_path, 'wb') as fp:
+            image.save(fp, 'PNG')
+
+        # Store image binary data
+        with open(image_path, 'rb') as fp:
+            image_binary = fp.read()
+
+        # Generate semantic image ID
+        image_id = self._generate_image_id(next_text, page_no, len(image_bytes))
+        image_bytes.append((image_id, image_binary))
+
+        # Summarize image
+        image_summary = self.image_summarizer.summarize_image(
+            image_path, source_url, previous_text, next_text
+        )
+        if image_summary:
+            metadata = {
+                'element_type': 'image',
+                'page': page_no,
+                'image_id': image_id
+            }
+            positioned_elements.append((position + 0.5, image_summary, metadata))
+
+            if self.verbose:
+                logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+    def _apply_image_stitching(self, image_fragments, all_items, source_url,
+                               positioned_elements, image_bytes):
+        """Apply multi-page image stitching to collected fragments"""
+        stitcher = MultiPageImageStitcher(self.stitch_config)
+        fragments_only = [f for _, f, _ in image_fragments]
+        single_fragments, stitched_results = stitcher.process_fragments(fragments_only)
+
+        # Track which fragments were stitched
+        stitched_fragment_indices = set()
+        for _, _, group_indices in stitched_results:
+            stitched_fragment_indices.update(group_indices)
+
+        # Process stitched images
+        for stitched_img, stitch_metadata, group_indices in stitched_results:
+            # Get the first fragment's info for context and position
+            first_idx = group_indices[0]
+            orig_idx, first_fragment, first_item_info = image_fragments[first_idx]
+            position = first_item_info['position']
+            pages = stitch_metadata['pages']
+
+            # Extract context for stitched image (use caption from first fragment)
+            previous_text, next_text = extract_image_context(
+                [i['item'] for i in all_items],
+                orig_idx,
+                num_previous=self.image_context['num_previous_chunks'],
+                num_next=self.image_context['num_next_chunks'],
+                text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+            )
+
+            # Use caption from first fragment for semantic naming
+            caption_text = first_fragment.next_text
+
+            # Save stitched image
+            image_path = 'image_stitched.png'
+            with open(image_path, 'wb') as fp:
+                stitched_img.save(fp, 'PNG')
+
+            # Store image binary data
+            with open(image_path, 'rb') as fp:
+                image_binary = fp.read()
+
+            # Generate semantic image ID using caption
+            image_id = self._generate_image_id(
+                caption_text, pages[0], len(image_bytes),
+                is_multipage=True, pages=pages
+            )
+            image_bytes.append((image_id, image_binary))
+
+            # Summarize stitched image
+            image_summary = self.image_summarizer.summarize_image(
+                image_path, source_url, previous_text, next_text
+            )
+            if image_summary:
+                metadata = {
+                    'element_type': 'image',
+                    'pages': pages,
+                    'is_multipage': True,
+                    'image_id': image_id
+                }
+                positioned_elements.append((position + 0.5, image_summary, metadata))
+
+                if self.verbose:
+                    logger.info(f"Stitched image from pages {pages} (ID: {image_id}): {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+        # Process remaining single-page images
+        for frag_idx, (orig_idx, fragment, item_info) in enumerate(image_fragments):
+            if frag_idx in stitched_fragment_indices:
+                continue  # Skip fragments that were stitched
+
+            position = item_info['position']
+            page_no = item_info['page_no']
+
+            # Extract context
+            previous_text, next_text = extract_image_context(
+                [i['item'] for i in all_items],
+                orig_idx,
+                num_previous=self.image_context['num_previous_chunks'],
+                num_next=self.image_context['num_next_chunks'],
+                text_extractor=lambda x: x.text if hasattr(x, 'text') else None
+            )
+
+            # Save image
+            image_path = 'image.png'
+            with open(image_path, 'wb') as fp:
+                fragment.image.save(fp, 'PNG')
+
+            # Store image binary data
+            with open(image_path, 'rb') as fp:
+                image_binary = fp.read()
+
+            # Generate semantic image ID using caption from fragment
+            image_id = self._generate_image_id(fragment.next_text, page_no, len(image_bytes))
+            image_bytes.append((image_id, image_binary))
+
+            # Summarize image
+            image_summary = self.image_summarizer.summarize_image(
+                image_path, source_url, previous_text, next_text
+            )
+            if image_summary:
+                metadata = {
+                    'element_type': 'image',
+                    'page': page_no,
+                    'image_id': image_id
+                }
+                positioned_elements.append((position + 0.5, image_summary, metadata))
+
+                if self.verbose:
+                    logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
@@ -734,7 +988,8 @@ class DoclingDocumentParser(DocumentParser):
         positioned_elements = []  # List of (position, content, metadata) tuples
         all_items = []  # Collect all items for context extraction
         image_bytes = []  # Store image binary data
-        
+        image_fragments = []  # Collect image fragments for stitching
+
         # First pass: collect all items for context extraction
         element_index = 0
         for item, _ in doc.iterate_items():
@@ -742,10 +997,10 @@ class DoclingDocumentParser(DocumentParser):
             page_no = 0
             if hasattr(item, 'prov') and item.prov:
                 page_no = item.prov[0].page_no
-            
+
             base_position = page_no * 1000
             position = base_position + element_index
-            
+
             # Store item with its position and page info
             all_items.append({
                 'item': item,
@@ -754,19 +1009,20 @@ class DoclingDocumentParser(DocumentParser):
                 'index': element_index
             })
             element_index += 1
-        
-        # Second pass: process items with context
+
+        # Second pass: process items
+        # For stitching: collect image fragments; otherwise process images directly
         for idx, item_info in enumerate(all_items):
             item = item_info['item']
             page_no = item_info['page_no']
             position = item_info['position']
-            
+
             # Check what type of item this is
             if hasattr(item, 'export_to_dataframe'):
                 # Table element - skip inline, will be processed separately for structured indexing
                 if self.verbose and self.parse_tables:
                     logger.info(f"Table found on page {page_no} - will be processed for structured indexing")
-                
+
             elif hasattr(item, 'text'):
                 # Text element
                 metadata = {
@@ -774,45 +1030,30 @@ class DoclingDocumentParser(DocumentParser):
                     'page': page_no
                 }
                 positioned_elements.append((position, item.text, metadata))
-                
+
             elif hasattr(item, 'get_image') and self.summarize_images:
-                # Picture element - extract context from surrounding items
-                previous_text, next_text = extract_image_context(
-                    [i['item'] for i in all_items],
-                    idx,
-                    num_previous=self.image_context['num_previous_chunks'],
-                    num_next=self.image_context['num_next_chunks'],
-                    text_extractor=lambda x: x.text if hasattr(x, 'text') else None
-                )
-                
+                # Picture element
                 image = item.get_image(doc)
                 if image:
-                    image_path = 'image.png'
-                    with open(image_path, 'wb') as fp:
-                        image.save(fp, 'PNG')
-                    
-                    # Store image binary data
-                    with open(image_path, 'rb') as fp:
-                        image_binary = fp.read()
-                    image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
-                    image_bytes.append((image_id, image_binary))
-                    
-                    image_summary = self.image_summarizer.summarize_image(
-                        image_path, source_url, previous_text, next_text
-                    )
-                    if image_summary:
-                        metadata = {
-                            'element_type': 'image',
-                            'page': page_no,
-                            'image_id': image_id
-                        }
-                        # Images get +0.5 offset to appear right after preceding element
-                        positioned_elements.append((position + 0.5, image_summary, metadata))
-                        
-                        if self.verbose:
-                            logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+                    if self.stitch_config.enabled:
+                        # Collect as fragment for stitching
+                        fragment = self._create_image_fragment(image, item, page_no, idx, all_items)
+                        image_fragments.append((idx, fragment, item_info))
+                    else:
+                        # Process image directly without stitching
+                        self._process_single_image(
+                            image, idx, page_no, position, all_items,
+                            source_url, positioned_elements, image_bytes
+                        )
                 else:
                     logger.info("Failed to retrieve image")
+
+        # Apply multi-page image stitching if enabled (fragments were collected above)
+        if self.stitch_config.enabled and image_fragments:
+            self._apply_image_stitching(
+                image_fragments, all_items, source_url,
+                positioned_elements, image_bytes
+            )
         
         # Apply chunking if needed
         if self.chunking_strategy in ['hybrid', 'hierarchical']:
@@ -872,7 +1113,6 @@ class DoclingDocumentParser(DocumentParser):
             tables=tables,
             image_bytes=image_bytes
         )
-
 
 
 class UnstructuredDocumentParser(DocumentParser):
@@ -1268,4 +1508,3 @@ class UnstructuredDocumentParser(DocumentParser):
             tables=tables,
             image_bytes=image_bytes
         )
-
