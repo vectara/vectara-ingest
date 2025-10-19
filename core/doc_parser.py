@@ -1213,6 +1213,120 @@ class UnstructuredDocumentParser(DocumentParser):
                     logger.error(f"Error parsing HTML table: {err}. Skipping...")
                     continue
 
+    def _calculate_element_position(self, element: Any, index: int = 0) -> Tuple[int, int]:
+        """
+        Calculate position for an element based on page number and index.
+
+        Args:
+            element: Element with metadata containing page_number
+            index: Element index within the page (default: 0)
+
+        Returns:
+            Tuple of (page_num, position) where position = page_num * 1000 + index
+        """
+        page_num = getattr(element.metadata, 'page_number', 1) or 1
+        position = page_num * 1000 + index
+        return page_num, position
+
+    def _save_and_store_image(self, image_path: str, page_num: int, image_bytes: List, id_prefix: str = "unstructured") -> Optional[str]:
+        """
+        Read image from disk and store its binary data.
+
+        Args:
+            image_path: Path to the image file
+            page_num: Page number where image appears
+            image_bytes: List to append (image_id, binary_data) tuple to
+            id_prefix: Prefix for image ID (default: "unstructured")
+
+        Returns:
+            image_id if successful, None otherwise
+        """
+        if os.path.exists(image_path):
+            with open(image_path, 'rb') as fp:
+                image_binary = fp.read()
+            image_id = f"{id_prefix}_page_{page_num}_image_{len(image_bytes)}"
+            image_bytes.append((image_id, image_binary))
+            return image_id
+        return None
+
+    def _process_image_element(
+        self,
+        element: us.documents.elements.Image,
+        idx: int,
+        page_num: int,
+        base_position: int,
+        elements: List,
+        source_url: str,
+        positioned_elements: List,
+        image_bytes: List,
+        id_prefix: str = "unstructured"
+    ) -> None:
+        """
+        Process a single image element: extract context, summarize, and add to positioned elements.
+
+        Args:
+            element: The Unstructured Image element to process
+            idx: Index of the element in the elements list
+            page_num: Page number where image appears
+            base_position: Base position for this page (page_num * 1000)
+            elements: List of all elements (for context extraction)
+            source_url: Source URL for context
+            positioned_elements: List to append positioned content to
+            image_bytes: List to append image binary data to
+            id_prefix: Prefix for image ID (default: "unstructured")
+        """
+        # Validate image element
+        has_valid_coords = (
+            element.metadata.coordinates and
+            element.metadata.coordinates.system.width > self.MIN_IMAGE_DIMENSION and
+            element.metadata.coordinates.system.height > self.MIN_IMAGE_DIMENSION
+        )
+        has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
+
+        if not (has_image_path or has_valid_coords):
+            return
+
+        try:
+            # Extract context
+            previous_text, next_text = extract_image_context(
+                elements,
+                idx,
+                num_previous=self.image_context['num_previous_chunks'],
+                num_next=self.image_context['num_next_chunks']
+            )
+
+            # Get image path
+            image_path = getattr(element.metadata, 'image_path', None)
+            if not image_path and hasattr(element, 'image'):
+                image_path = element.image
+
+            if not image_path:
+                logger.warning("Image element found but no valid image path available")
+                return
+
+            # Store image binary data
+            image_id = self._save_and_store_image(image_path, page_num, image_bytes, id_prefix)
+
+            # Summarize image
+            image_summary = self.image_summarizer.summarize_image(
+                image_path, source_url, previous_text, next_text
+            )
+
+            if image_summary:
+                position = base_position + idx + 0.5  # Images get +0.5 offset
+                metadata = {
+                    'element_type': 'image',
+                    'page': page_num,
+                    'image_id': image_id
+                }
+                positioned_elements.append((position, image_summary, metadata))
+
+                if self.verbose:
+                    logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+        except Exception as exc:
+            logger.error(f"Error summarizing image: {exc}")
+
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
         Parse a document and return unified content stream with images inline.
@@ -1275,61 +1389,16 @@ class UnstructuredDocumentParser(DocumentParser):
         if not is_chunking:
             # When not chunking, process everything inline with simple positioning
             for idx, element in enumerate(elements):
-                page_num = getattr(element.metadata, 'page_number', 1) or 1
-                base_position = page_num * 1000
-                
+                page_num, base_position = self._calculate_element_position(element)
+
                 if isinstance(element, us.documents.elements.Image):
                     # Process image inline when not chunking
                     if self.summarize_images:
-                        has_valid_coords = (
-                            element.metadata.coordinates and
-                            element.metadata.coordinates.system.width > self.MIN_IMAGE_DIMENSION and
-                            element.metadata.coordinates.system.height > self.MIN_IMAGE_DIMENSION
+                        self._process_image_element(
+                            element, idx, page_num, base_position,
+                            elements, source_url, positioned_elements, image_bytes,
+                            id_prefix="unstructured"
                         )
-                        has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
-                        
-                        if has_image_path or has_valid_coords:
-                            try:
-                                # Extract context using the utility function
-                                previous_text, next_text = extract_image_context(
-                                    elements,
-                                    idx,
-                                    num_previous=self.image_context['num_previous_chunks'],
-                                    num_next=self.image_context['num_next_chunks']
-                                )
-                                
-                                # Try to get image path
-                                image_path = getattr(element.metadata, 'image_path', None)
-                                if not image_path and hasattr(element, 'image'):
-                                    image_path = element.image
-                                
-                                if image_path:
-                                    # Store image binary data
-                                    if os.path.exists(image_path):
-                                        with open(image_path, 'rb') as fp:
-                                            image_binary = fp.read()
-                                        image_id = f"unstructured_page_{page_num}_image_{len(image_bytes)}"
-                                        image_bytes.append((image_id, image_binary))
-                                    else:
-                                        image_id = None
-                                        
-                                    image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, previous_text, next_text
-                                    )
-                                    if image_summary:
-                                        position = base_position + idx + 0.5  # Images get +0.5 offset
-                                        metadata = {
-                                            'element_type': 'image', 
-                                            'page': page_num,
-                                            'image_id': image_id
-                                        }
-                                        positioned_elements.append((position, image_summary, metadata))
-                                        if self.verbose:
-                                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-                                else:
-                                    logger.warning("Image element found but no valid image path available")
-                            except Exception as exc:
-                                logger.error(f"Error summarizing image: {exc}")
                             
                 elif isinstance(element, us.documents.elements.Table):
                     # Tables are processed separately for structured indexing, not added inline
@@ -1363,9 +1432,8 @@ class UnstructuredDocumentParser(DocumentParser):
         
             # Now process tables and images from raw extraction with proper positioning
             for idx, element in enumerate(raw_tables_images):
-                page_num = getattr(element.metadata, 'page_number', 1) or 1
-                base_position = page_num * 1000
-                
+                page_num, base_position = self._calculate_element_position(element)
+
                 if isinstance(element, us.documents.elements.Image):
                     # Process image element - ALWAYS log for debugging
                     logger.info(f"Found Image element on page {page_num}")
@@ -1375,75 +1443,26 @@ class UnstructuredDocumentParser(DocumentParser):
                     logger.info(f"  Has image_path: {hasattr(element.metadata, 'image_path')}")
                     if hasattr(element.metadata, 'image_path'):
                         logger.info(f"  Image path: {element.metadata.image_path}")
-                    
+
                     if self.summarize_images:
-                        # More lenient image detection
-                        has_valid_coords = (
-                            element.metadata.coordinates and
-                            element.metadata.coordinates.system.width > self.MIN_IMAGE_DIMENSION and
-                            element.metadata.coordinates.system.height > self.MIN_IMAGE_DIMENSION
+                        # Calculate image position using same formula as text elements
+                        image_position = base_position + idx + 0.5
+
+                        # Find the chunked element with closest position for context extraction
+                        best_context_idx = len(elements) - 1 if elements else 0  # Default to last element
+                        for chunk_idx, chunk_elem in enumerate(elements):
+                            _, chunk_position = self._calculate_element_position(chunk_elem, chunk_idx)
+
+                            if chunk_position > image_position:
+                                best_context_idx = chunk_idx
+                                break
+
+                        # Process image using chunked elements for context
+                        self._process_image_element(
+                            element, best_context_idx, page_num, base_position,
+                            elements, source_url, positioned_elements, image_bytes,
+                            id_prefix="unstructured_chunked"
                         )
-                        has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
-                        
-                        if has_image_path or has_valid_coords:
-                            try:
-                                # Calculate image position using same formula as text elements
-                                image_position = base_position + idx + 0.5
-
-                                # Find the chunked element with closest position for context extraction
-                                best_context_idx = len(elements) - 1 if elements else 0  # Default to last element
-                                for chunk_idx, chunk_elem in enumerate(elements):
-                                    chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
-                                    chunk_position = chunk_page * 1000 + chunk_idx
-
-                                    if chunk_position > image_position:
-                                        best_context_idx = chunk_idx
-                                        break
-                                
-                                # Extract context using chunked elements instead of raw elements
-                                previous_text, next_text = extract_image_context(
-                                    elements,
-                                    best_context_idx,
-                                    num_previous=self.image_context['num_previous_chunks'],
-                                    num_next=self.image_context['num_next_chunks']
-                                )
-                                
-                                # Try to get image path
-                                image_path = getattr(element.metadata, 'image_path', None)
-                                if not image_path and hasattr(element, 'image'):
-                                    image_path = element.image
-                                
-                                if image_path:
-                                    # Store image binary data
-                                    if os.path.exists(image_path):
-                                        with open(image_path, 'rb') as fp:
-                                            image_binary = fp.read()
-                                        image_id = f"unstructured_chunked_page_{page_num}_image_{len(image_bytes)}"
-                                        image_bytes.append((image_id, image_binary))
-                                    else:
-                                        image_id = None
-                                        
-                                    image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, previous_text, next_text
-                                    )
-                                    if image_summary:
-                                        # Use position from raw element + 0.5 for images
-                                        position = base_position + idx + 0.5
-                                        metadata = {
-                                            'element_type': 'image', 
-                                            'page': page_num,
-                                            'image_id': image_id
-                                        }
-                                        positioned_elements.append((position, image_summary, metadata))
-                                        
-                                        if self.verbose:
-                                            logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-                                
-                                else:
-                                    logger.warning("Image element found but no valid image path available")
-                            except Exception as exc:
-                                logger.error(f"Error summarizing image: {exc}")
-                                continue
                             
                 elif isinstance(element, us.documents.elements.Table):
                     # Tables are processed separately for structured indexing, not added inline
