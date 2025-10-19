@@ -8,6 +8,7 @@ from io import StringIO
 import base64
 import requests
 from dataclasses import dataclass
+import re
 
 import pathlib
 from pdf2image import convert_from_bytes
@@ -750,7 +751,6 @@ class DoclingDocumentParser(DocumentParser):
         if caption_text:
             caption_lower = caption_text.lower().strip()
             # Look for figure/table references
-            import re
             # Match patterns like "Figure 3.2", "Fig 1", "Table 2", etc.
             match = re.search(r'(figure|fig\.?|table|diagram)\s*(\d+\.?\d*)', caption_lower)
             if match:
@@ -1116,6 +1116,9 @@ class DoclingDocumentParser(DocumentParser):
 
 
 class UnstructuredDocumentParser(DocumentParser):
+    # Minimum image dimensions for processing (in pixels or points)
+    MIN_IMAGE_DIMENSION = 50
+
     def __init__(
         self,
         cfg: OmegaConf,
@@ -1234,15 +1237,7 @@ class UnstructuredDocumentParser(DocumentParser):
             
             # Pass 1: Get raw elements without chunking to establish positions
             raw_elements = self._get_elements(filename, override_chunking=True)
-            
-            # Create position map for raw elements
-            raw_positions = {}
-            for idx, element in enumerate(raw_elements):
-                page_num = getattr(element.metadata, 'page_number', 1) or 1
-                # Position formula: page_num * 1000 + element_index
-                position = page_num * 1000 + idx
-                raw_positions[id(element)] = (position, page_num, idx)
-            
+
             # Pass 2: Get chunked text elements
             chunked_elements = self._get_elements(filename, override_chunking=False)
             
@@ -1265,7 +1260,6 @@ class UnstructuredDocumentParser(DocumentParser):
             # Single pass when not chunking
             elements = self._get_elements(filename)
             raw_tables_images = elements  # Same elements for everything
-            raw_positions = None  # Not needed when not chunking
             
             # Log element types
             element_types = {}
@@ -1288,9 +1282,9 @@ class UnstructuredDocumentParser(DocumentParser):
                     # Process image inline when not chunking
                     if self.summarize_images:
                         has_valid_coords = (
-                            element.metadata.coordinates and 
-                            element.metadata.coordinates.system.width > 50 and 
-                            element.metadata.coordinates.system.height > 50
+                            element.metadata.coordinates and
+                            element.metadata.coordinates.system.width > self.MIN_IMAGE_DIMENSION and
+                            element.metadata.coordinates.system.height > self.MIN_IMAGE_DIMENSION
                         )
                         has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
                         
@@ -1385,9 +1379,9 @@ class UnstructuredDocumentParser(DocumentParser):
                     if self.summarize_images:
                         # More lenient image detection
                         has_valid_coords = (
-                            element.metadata.coordinates and 
-                            element.metadata.coordinates.system.width > 50 and 
-                            element.metadata.coordinates.system.height > 50
+                            element.metadata.coordinates and
+                            element.metadata.coordinates.system.width > self.MIN_IMAGE_DIMENSION and
+                            element.metadata.coordinates.system.height > self.MIN_IMAGE_DIMENSION
                         )
                         has_image_path = hasattr(element.metadata, 'image_path') and element.metadata.image_path
                         
@@ -1395,17 +1389,16 @@ class UnstructuredDocumentParser(DocumentParser):
                             try:
                                 # Calculate image position using same formula as text elements
                                 image_position = base_position + idx + 0.5
-                                
+
                                 # Find the chunked element with closest position for context extraction
-                                best_context_idx = 0
+                                best_context_idx = len(elements) - 1 if elements else 0  # Default to last element
                                 for chunk_idx, chunk_elem in enumerate(elements):
                                     chunk_page = getattr(chunk_elem.metadata, 'page_number', 1) or 1
                                     chunk_position = chunk_page * 1000 + chunk_idx
-                                    
+
                                     if chunk_position > image_position:
                                         best_context_idx = chunk_idx
                                         break
-                                    best_context_idx = chunk_idx
                                 
                                 # Extract context using chunked elements instead of raw elements
                                 previous_text, next_text = extract_image_context(
