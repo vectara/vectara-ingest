@@ -632,6 +632,17 @@ class Indexer:
                 text = res['text']
                 doc_title = res['title']
                 metadata['url'] = normalize_url_for_metadata(res['url'])
+
+                # Call metadata extraction callback if provided
+                if '_extract_metadata_callback' in metadata:
+                    callback = metadata.pop('_extract_metadata_callback')
+                    try:
+                        extracted_metadata = callback(html)
+                        if extracted_metadata:
+                            metadata.update(extracted_metadata)
+                            logger.info(f"Extracted {len(extracted_metadata)} metadata fields from HTML via callback")
+                    except Exception as e:
+                        logger.warning(f"Metadata extraction callback failed: {e}")
                 if text is None or len(text) < 3:
                     return False
 

@@ -124,8 +124,15 @@ ca.pem
 credentials.json
 scripts/gdrive/oauth_client_credentials.json
 
-# Custom/private crawler files (copied by run.sh from crawler_file config)
-crawlers/custom/
+# Box credentials files
+box_config.json
+box_oauth_credentials.json
+.box_credentials.json
+
+# Custom/private crawler files (mounted by run.sh via Docker volume from crawler_file config)
+# Ignore all Python files in crawlers/custom/ except __init__.py
+crawlers/custom/*_crawler.py
+crawlers/custom/__pycache__/
 
 # Temporary directory for crawler output files
 temp/

@@ -78,3 +78,4 @@ office365-rest-python-client==2.6.2
 cairosvg==2.8.2
 scrapy==2.13.3
 typer==0.15.4
+boxsdk[jwt]==3.10.0

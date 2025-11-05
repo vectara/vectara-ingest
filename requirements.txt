@@ -1151,6 +1151,12 @@ zope-interface==7.2
     # via
     #   scrapy
     #   twisted
+boxsdk[jwt]==3.10.0
+    # via -r requirements.in
+pyjwt==2.10.1
+    # via boxsdk
+redis==5.2.1
+    # via boxsdk
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
