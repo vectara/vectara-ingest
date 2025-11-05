@@ -1,0 +1,54 @@
+vectara:
+  # Corpus key in Vectara platform (must be created first)
+  corpus_key: support-notifications
+
+  # Whether to reindex existing documents
+  reindex: false
+
+  # Whether to create corpus if it doesn't exist (set to false, create manually)
+  create_corpus: false
+
+crawling:
+  # Crawler type must match the crawler class name pattern
+  crawler_type: supportnotifications
+
+supportnotifications_crawler:
+  # Path to CSV file containing support notifications
+  # When running in Docker, this will be mounted to /home/vectara/data/support-notifications.csv
+  csv_path: /Users/adeel/Downloads/support-notifications.csv
+
+  # DataframeParser configuration - use 'element' mode
+  # Each row becomes a separate document
+  mode: element
+
+  # Use notification_id as the document ID
+  doc_id_columns:
+    - notification_id
+
+  # Title column for each document
+  title_column: title
+
+  # Text columns to include in document content
+  # Note: email_content_cleaned is created during preprocessing
+  text_columns:
+    - email_content_cleaned
+
+  # Metadata columns to include with each document
+  # Using underscore naming for consistency and readability
+  metadata_columns:
+    - notification_id
+    - document_id
+    - url
+    - product_code
+    - product_names
+    - product_ids
+    - component_name
+    - release_version
+    - title
+    - source
+    - notification_type
+    - state
+    - is_deleted
+
+  # Process one row per document (each notification is separate)
+  rows_per_chunk: 1
