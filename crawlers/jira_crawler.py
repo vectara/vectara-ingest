@@ -10,6 +10,95 @@ from core.utils import create_session_with_retries, configure_session_for_ssl, I
 
 class JiraCrawler(Crawler):
 
+    def extract_adf_text(self, adf_content):
+        """
+        Extract full text from Atlassian Document Format (ADF).
+        Handles nested content, paragraphs, lists, links, etc.
+
+        Args:
+            adf_content: ADF content structure (dict or list)
+
+        Returns:
+            str: Extracted plain text with preserved structure
+        """
+        if not adf_content:
+            return ""
+
+        if isinstance(adf_content, str):
+            return adf_content
+
+        if isinstance(adf_content, dict):
+            content_type = adf_content.get("type", "")
+
+            # Handle different ADF node types
+            if content_type == "text":
+                return adf_content.get("text", "")
+
+            elif content_type == "paragraph":
+                # Extract all text from paragraph content
+                paragraph_text = []
+                for item in adf_content.get("content", []):
+                    paragraph_text.append(self.extract_adf_text(item))
+                return "".join(paragraph_text) + "\n\n"
+
+            elif content_type == "heading":
+                # Extract heading text
+                heading_text = []
+                for item in adf_content.get("content", []):
+                    heading_text.append(self.extract_adf_text(item))
+                return "".join(heading_text) + "\n\n"
+
+            elif content_type in ["bulletList", "orderedList"]:
+                # Extract list items
+                list_text = []
+                for item in adf_content.get("content", []):
+                    list_text.append("• " + self.extract_adf_text(item).strip())
+                return "\n".join(list_text) + "\n\n"
+
+            elif content_type == "listItem":
+                # Extract list item content
+                item_text = []
+                for item in adf_content.get("content", []):
+                    item_text.append(self.extract_adf_text(item))
+                return "".join(item_text)
+
+            elif content_type == "codeBlock":
+                # Extract code block
+                code_text = []
+                for item in adf_content.get("content", []):
+                    code_text.append(self.extract_adf_text(item))
+                return "[CODE: " + "".join(code_text) + "]\n\n"
+
+            elif content_type == "inlineCard":
+                # Extract link URL
+                url = adf_content.get("attrs", {}).get("url", "")
+                return f"[{url}] "
+
+            elif content_type == "doc":
+                # Root document - process all content
+                doc_text = []
+                for item in adf_content.get("content", []):
+                    doc_text.append(self.extract_adf_text(item))
+                return "".join(doc_text)
+
+            # Generic handler: recursively process "content" array
+            elif "content" in adf_content:
+                result = []
+                for item in adf_content.get("content", []):
+                    result.append(self.extract_adf_text(item))
+                return "".join(result)
+
+            return ""
+
+        if isinstance(adf_content, list):
+            # Process array of content items
+            result = []
+            for item in adf_content:
+                result.append(self.extract_adf_text(item))
+            return "".join(result)
+
+        return ""
+
     def process_attachments(
         self,
         issue_key: str,
@@ -232,20 +321,34 @@ class JiraCrawler(Crawler):
                         "metadata": metadata,
                         "sections": []
                     }
+                    # Extract comments using ADF parser
                     comments_data = issue["fields"]["comment"]["comments"]
                     comments = []
                     for comment in comments_data:
                         author = comment["author"]["displayName"]
                         try:
-                            comment_body = comment["body"]["content"][0]["content"][0]["text"]
-                            comments.append(f'{author}: {comment_body}')
+                            # Use ADF parser to extract full comment text
+                            comment_body = self.extract_adf_text(comment.get("body", {}))
+                            if comment_body.strip():
+                                comments.append(f'{author}: {comment_body.strip()}')
                         except Exception as e:
+                            logger.debug(f"Failed to extract comment for {issue['key']}: {e}")
                             continue
 
+                    # Extract description using ADF parser
                     try:
-                        description = issue["fields"]["description"]["content"][0]["content"][0]["text"]
+                        description_content = issue["fields"].get("description")
+                        if description_content:
+                            description = self.extract_adf_text(description_content)
+                        else:
+                            description = ""
                     except Exception as e:
-                        description = str(issue['key'])
+                        logger.warning(f"Failed to extract description for {issue['key']}: {e}")
+                        description = ""
+
+                    # Fallback if description is empty
+                    if not description.strip():
+                        description = f"Issue: {issue['key']}"
 
                     document["sections"] = [
                         {
