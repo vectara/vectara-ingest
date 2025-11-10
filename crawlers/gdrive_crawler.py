@@ -120,14 +120,18 @@ DEFAULT_PERMISSIONS = ['Vectara', 'all']
 
 class UserWorker(object):
     def __init__(
-            self, 
+            self,
             cfg: dict,
             indexer: Indexer, crawler: Crawler,
             shared_cache: SharedCache,
             date_threshold: datetime,
             permissions: List = DEFAULT_PERMISSIONS,
             use_ray: bool = False) -> None:
-        self.cfg = cfg
+        # Convert cfg back to OmegaConf if it's a dict (from Ray serialization)
+        if isinstance(cfg, dict):
+            self.cfg = OmegaConf.create(cfg)
+        else:
+            self.cfg = cfg
         self.crawler = crawler
         self.indexer = indexer
         self.creds = None
@@ -365,7 +369,9 @@ class GdriveCrawler(Crawler):
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             shared_cache = ray.remote(SharedCache).remote()
-            actors = [ray.remote(UserWorker).remote(self.cfg, self.indexer, self, shared_cache, date_threshold, permissions, use_ray=True) for _ in range(ray_workers)]
+            # Convert OmegaConf to dict for proper Ray serialization
+            cfg_dict = OmegaConf.to_container(self.cfg, resolve=True)
+            actors = [ray.remote(UserWorker).remote(cfg_dict, self.indexer, self, shared_cache, date_threshold, permissions, use_ray=True) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)

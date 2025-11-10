@@ -1,6 +1,7 @@
 import logging
 logger = logging.getLogger(__name__)
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -9,6 +10,27 @@ from core.utils import create_session_with_retries, configure_session_for_ssl, I
 
 
 class JiraCrawler(Crawler):
+
+    def clean_text(self, text):
+        """
+        Remove paragraph breaks and normalize whitespace.
+        Replaces multiple newlines with single spaces to avoid chunking at paragraph boundaries.
+
+        Args:
+            text: Input text string
+
+        Returns:
+            str: Cleaned text with normalized whitespace
+        """
+        if not text:
+            return ""
+        # Replace multiple newlines (paragraph breaks) with single space
+        text = re.sub(r'\n\n+', ' ', text)
+        # Replace single newlines with space
+        text = re.sub(r'\n', ' ', text)
+        # Normalize multiple spaces to single space
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
 
     def extract_adf_text(self, adf_content):
         """
@@ -329,8 +351,10 @@ class JiraCrawler(Crawler):
                         try:
                             # Use ADF parser to extract full comment text
                             comment_body = self.extract_adf_text(comment.get("body", {}))
-                            if comment_body.strip():
-                                comments.append(f'{author}: {comment_body.strip()}')
+                            # Clean text: remove paragraph breaks within this comment
+                            comment_body = self.clean_text(comment_body)
+                            if comment_body:
+                                comments.append(f'{author}: {comment_body}')
                         except Exception as e:
                             logger.debug(f"Failed to extract comment for {issue['key']}: {e}")
                             continue
@@ -340,6 +364,8 @@ class JiraCrawler(Crawler):
                         description_content = issue["fields"].get("description")
                         if description_content:
                             description = self.extract_adf_text(description_content)
+                            # Clean text: remove paragraph breaks from description
+                            description = self.clean_text(description)
                         else:
                             description = ""
                     except Exception as e:
@@ -347,13 +373,14 @@ class JiraCrawler(Crawler):
                         description = ""
 
                     # Fallback if description is empty
-                    if not description.strip():
+                    if not description:
                         description = f"Issue: {issue['key']}"
 
                     document["sections"] = [
                         {
                             "title": "Comments",
-                            "text": "\n\n".join(comments)
+                            # Use " | " separator to keep each comment distinct without creating paragraph boundaries
+                            "text": " | ".join(comments)
                         },
                         {
                             "title": "Description",

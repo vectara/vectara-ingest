@@ -48,18 +48,24 @@ def list_all_pages(notion: Any):
     results = []
     start_cursor = None
     while True:
-        response = notion.search(
-            filter={
+        # Build search parameters
+        search_params = {
+            "filter": {
                 "property": "object",
                 "value": "page"
             },
-            query="",
-            sort={
+            "query": "",
+            "sort": {
                 "direction": "ascending",
                 "timestamp": "last_edited_time",
-            },
-            start_cursor=start_cursor
-        )
+            }
+        }
+
+        # Only include start_cursor if it has a value
+        if start_cursor:
+            search_params["start_cursor"] = start_cursor
+
+        response = notion.search(**search_params)
 
         results.extend(response.get("results"))
         start_cursor = response.get("next_cursor")
