@@ -673,6 +673,27 @@ class Indexer:
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
+                # Call custom metadata extraction callback if provided
+                if '_extract_metadata_callback' in metadata:
+                    callback = metadata.pop('_extract_metadata_callback')  # Remove callback from metadata
+                    if callable(callback):
+                        try:
+                            # Preserve the original page URL before calling callback
+                            original_url = metadata.get('url')
+                            extracted_metadata = callback(html)
+                            if extracted_metadata:
+                                # Don't let callback overwrite the page URL
+                                if 'url' in extracted_metadata:
+                                    extracted_metadata.pop('url')
+                                metadata.update(extracted_metadata)
+                            # Restore original URL
+                            if original_url:
+                                metadata['url'] = original_url
+                            if self.verbose:
+                                logger.info(f"Extracted metadata from HTML callback: {list(extracted_metadata.keys())}")
+                        except Exception as e:
+                            logger.warning(f"Failed to execute metadata extraction callback for {url}: {e}")
+
                 # Detect language if needed
                 if self.detected_language is None:
                     self.detected_language = detect_language(text)
