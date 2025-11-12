@@ -632,6 +632,17 @@ class Indexer:
                 text = res['text']
                 doc_title = res['title']
                 metadata['url'] = normalize_url_for_metadata(res['url'])
+
+                # Call metadata extraction callback if provided
+                if '_extract_metadata_callback' in metadata:
+                    callback = metadata.pop('_extract_metadata_callback')
+                    try:
+                        extracted_metadata = callback(html)
+                        if extracted_metadata:
+                            metadata.update(extracted_metadata)
+                            logger.info(f"Extracted {len(extracted_metadata)} metadata fields from HTML via callback")
+                    except Exception as e:
+                        logger.warning(f"Metadata extraction callback failed: {e}")
                 if text is None or len(text) < 3:
                     return False
 
@@ -661,6 +672,27 @@ class Indexer:
                 last_modified = ext_res.get('last_modified', None)
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
+
+                # Call custom metadata extraction callback if provided
+                if '_extract_metadata_callback' in metadata:
+                    callback = metadata.pop('_extract_metadata_callback')  # Remove callback from metadata
+                    if callable(callback):
+                        try:
+                            # Preserve the original page URL before calling callback
+                            original_url = metadata.get('url')
+                            extracted_metadata = callback(html)
+                            if extracted_metadata:
+                                # Don't let callback overwrite the page URL
+                                if 'url' in extracted_metadata:
+                                    extracted_metadata.pop('url')
+                                metadata.update(extracted_metadata)
+                            # Restore original URL
+                            if original_url:
+                                metadata['url'] = original_url
+                            if self.verbose:
+                                logger.info(f"Extracted metadata from HTML callback: {list(extracted_metadata.keys())}")
+                        except Exception as e:
+                            logger.warning(f"Failed to execute metadata extraction callback for {url}: {e}")
 
                 # Detect language if needed
                 if self.detected_language is None:

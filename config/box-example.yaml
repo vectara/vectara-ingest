@@ -1,0 +1,53 @@
+vectara:
+  corpus_key: box
+  reindex: true
+  create_corpus: false
+
+crawling:
+  crawler_type: box
+
+box_crawler:
+  # Authentication method: "jwt" or "oauth"
+  auth_type: jwt
+
+  # ===== JWT Authentication (Recommended for Production) =====
+  # Path to Box JWT config file (downloaded from Box Developer Console)
+  # This file contains all necessary credentials including client ID, secret, keys, etc.
+  # Can use relative path (e.g., box_config.json) or absolute path
+  jwt_config_file: box_config.json
+
+  # ===== OAuth Authentication (Good for Testing) =====
+  # Option 1: Use a credentials file (recommended)
+  # Can use relative path (e.g., box_oauth_credentials.json) or absolute path
+  # oauth_credentials_file: box_oauth_credentials.json
+
+  # Option 2: Specify credentials directly in config (not recommended for security)
+  # client_id: YOUR_CLIENT_ID
+  # client_secret: YOUR_CLIENT_SECRET
+  # access_token: YOUR_ACCESS_TOKEN
+
+  # List of folder IDs to crawl
+  # "0" represents the root folder
+  # You can add multiple folder IDs as a list
+  folder_ids:
+    - "0"  # Root folder
+
+  # Local directory where files will be downloaded
+  # Default: /tmp/box_downloads
+  download_path: /tmp/box_downloads
+
+  # Filter files by extension (leave empty to download all file types)
+  # Example: [".pdf", ".docx", ".txt", ".xlsx", ".pptx"]
+  file_extensions: []
+
+  # Maximum number of files to download (0 = no limit)
+  max_files: 0
+
+  # Recursively crawl subfolders
+  # true = crawl all subfolders, false = only specified folders
+  recursive: true
+
+  # Skip indexing to Vectara (for testing download only)
+  # true = only download files without indexing to Vectara
+  # false = download and index files to Vectara
+  skip_indexing: true
