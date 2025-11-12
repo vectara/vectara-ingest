@@ -526,13 +526,19 @@ class Indexer:
 
 
 
-    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
+    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None,
+                  metadata_extractor: callable = None) -> bool:
         """
-        Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
+        Index a url by rendering it, extracting content and metadata, then uploading to the Vectara corpus.
 
         Args:
             url (str): URL for where the document originated.
             metadata (dict): Metadata for the document.
+            html_processing (dict): HTML processing configuration for removing unwanted elements.
+            metadata_extractor (callable): Optional function to extract additional metadata from HTML.
+                Function signature: fn(html: str) -> Dict[str, Any]
+                The extractor receives the raw HTML and should return a dict of metadata fields.
+                Note: The 'url' field from extractor will be ignored to preserve the actual page URL.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
@@ -662,6 +668,25 @@ class Indexer:
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
+                # Call custom metadata extractor if provided
+                if metadata_extractor and callable(metadata_extractor):
+                    try:
+                        # Preserve the original page URL before calling extractor
+                        original_url = metadata.get('url')
+                        extracted_metadata = metadata_extractor(html)
+                        if extracted_metadata:
+                            # Don't let extractor overwrite the page URL
+                            if 'url' in extracted_metadata:
+                                extracted_metadata.pop('url')
+                            metadata.update(extracted_metadata)
+                        # Restore original URL
+                        if original_url:
+                            metadata['url'] = original_url
+                        if self.verbose:
+                            logger.info(f"Extracted metadata from HTML using custom extractor: {list(extracted_metadata.keys()) if extracted_metadata else []}")
+                    except Exception as e:
+                        logger.warning(f"Failed to execute metadata extractor for {url}: {e}")
+
                 # Detect language if needed
                 if self.detected_language is None:
                     self.detected_language = detect_language(text)
@@ -679,9 +704,9 @@ class Indexer:
                     ex_metadata = {}
 
                 #
-                # By default, 'text' is extracted above.
-                # If remove_boilerplate is True, then use it directly
-                # If no boilerplate remove but need to remove code, then we need to use html_to_text
+                # By default, 'text' is already extracted above in fetch_page_contents
+                # which applies html_processing (target_tag, target_class, preserve_links, etc.)
+                # Only re-extract if remove_boilerplate is explicitly enabled
                 #
                 if self.remove_boilerplate:
                     url = res['url']
@@ -689,8 +714,7 @@ class Indexer:
                         logger.info(
                             f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
-                else:
-                    text = html_to_text(html, self.remove_code, html_processing)
+                # else: use text already extracted from res['text'] - don't re-extract!
 
                 parts = [text]
                 metadatas = [{'element_type': 'text'}]
@@ -781,7 +805,7 @@ class Indexer:
                                 use_core_indexing=True
                             )
 
-                logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
+                # logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
                 logger.error(
