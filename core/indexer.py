@@ -537,8 +537,7 @@ class Indexer:
             html_processing (dict): HTML processing configuration for removing unwanted elements.
             metadata_extractor (callable): Optional function to extract additional metadata from HTML.
                 Function signature: fn(html: str) -> Dict[str, Any]
-                The extractor receives the raw HTML and should return a dict of metadata fields.
-                Note: The 'url' field from extractor will be ignored to preserve the actual page URL.
+                The extractor should return only metadata fields to be indexed.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
@@ -668,22 +667,12 @@ class Indexer:
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
-                # Call custom metadata extractor if provided
+                # Extract custom metadata if extractor provided
                 if metadata_extractor and callable(metadata_extractor):
                     try:
-                        # Preserve the original page URL before calling extractor
-                        original_url = metadata.get('url')
                         extracted_metadata = metadata_extractor(html)
                         if extracted_metadata:
-                            # Don't let extractor overwrite the page URL
-                            if 'url' in extracted_metadata:
-                                extracted_metadata.pop('url')
                             metadata.update(extracted_metadata)
-                        # Restore original URL
-                        if original_url:
-                            metadata['url'] = original_url
-                        if self.verbose:
-                            logger.info(f"Extracted metadata from HTML using custom extractor: {list(extracted_metadata.keys()) if extracted_metadata else []}")
                     except Exception as e:
                         logger.warning(f"Failed to execute metadata extractor for {url}: {e}")
 
