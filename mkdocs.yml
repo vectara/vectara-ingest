@@ -3,34 +3,53 @@ site_url: https://vectara.github.io/vectara-ingest/
 repo_url: https://github.com/vectara/vectara-ingest
 repo_name: vectara/vectara-ingest
 edit_uri: edit/main/docs/
-
 theme:
   name: material
   palette:
+    # Light Mode
     - scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    - scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: cyan
       toggle:
         icon: material/brightness-4
+        name: Switch to dark mode
+    # Dark Mode
+    - scheme: slate
+      primary: custom
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
         name: Switch to light mode
   features:
     - navigation.tabs
     - navigation.sections
     - navigation.expand
     - navigation.top
+    - navigation.path
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.select
+    - content.code.annotate
     - content.action.edit
+    - content.tabs.link
+    - content.tooltips
+    - toc.follow
+    - toc.integrate
+    - header.autohide
+  font:
+    text: Segoe UI
+    code: Fira Code
+  logo: https://assets.vectara.com/logo.png
+  favicon: https://assets.vectara.com/favicon.ico
 
 plugins:
-  - search
+  - search:
+      lang: en
   - mkdocstrings:
       handlers:
         python:
@@ -41,17 +60,28 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
             members_order: source
+            separate_signature: true
 
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
+      use_pygments: true
+      line_spans: __span
   - pymdownx.inlinehilite
-  - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: docs
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+      combine_header_slug: true
   - admonition
   - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -59,6 +89,7 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
+      toc_depth: 3
 
 nav:
   - Home: index.md
@@ -68,7 +99,6 @@ nav:
     - Base Configuration: configuration-base.md
     - Configuration Reference: configuration.md
     - Secrets Management: secrets-management.md
-
   - Authentication:
     - Overview: authentication/index.md
     - OAuth 2.0: authentication/oauth.md
@@ -76,7 +106,6 @@ nav:
     - Service Accounts: authentication/service-accounts.md
     - SAML: authentication/saml.md
     - Basic Auth: authentication/basic-auth.md
-
   - Crawlers:
     - Overview: crawlers/index.md
     - Content & Web:
@@ -116,7 +145,6 @@ nav:
       - Synapse: crawlers/synapse.md
     - Utilities:
       - Bulk Upload: crawlers/bulkupload.md
-
   - Features:
     - Document Processing: features/document-processing.md
     - Table Extraction: features/table-extraction.md
@@ -125,19 +153,16 @@ nav:
     - Contextual Chunking: features/contextual-chunking.md
     - Metadata Extraction: features/metadata-extraction.md
     - PII Masking: features/pii-masking.md
-
   - Deployment:
     - Docker: deployment/docker.md
     - Render Cloud: deployment/render.md
     - Cloud VM: deployment/cloud-vm.md
     - Troubleshooting: deployment/troubleshooting.md
-
   - Advanced:
     - Building Custom Crawlers: advanced/custom-crawler.md
     - SAML Authentication: advanced/saml-auth.md
     - Custom Certificates: advanced/custom-certificates.md
     - API Reference: advanced/api-reference.md
-
   - Contributing: contributing.md
 
 extra_css:
