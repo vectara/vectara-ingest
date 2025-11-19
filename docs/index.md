@@ -1,16 +1,22 @@
-# Welcome to Vectara Ingest
+<h1 class="hero-title">Welcome to Vectara Ingest</h1>
 
 <div class="badges">
-  <span class="badge">v2.0.0</span>
-  <span class="badge">Python</span>
-  <span class="badge">Apache 2.0</span>
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/vectara/vectara-ingest/graphs/commit-activity"><img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" alt="Maintained"></a>
+  <img src="https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue" alt="Python Versions">
 </div>
 
 <p class="subtitle">A powerful Python package for ingesting content from various sources into Vectara. Simple, fast, and reliable data ingestion made easy.</p>
 
 <div class="button-group">
-  <a href="getting-started.md" class="md-button md-button--primary">Get Started →</a>
-  <a href="https://github.com/vectara/vectara-ingest" class="md-button">📋 View on GitHub</a>
+  <a href="getting-started.md" class="md-button md-button--primary">
+    Get Started
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="button-icon"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+  </a>
+  <a href="https://github.com/vectara/vectara-ingest" class="md-button md-button--outline">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="button-icon"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></svg>
+    View on GitHub
+  </a>
 </div>
 
 ---
@@ -31,32 +37,50 @@ Whether you're working with websites, APIs, databases, or file systems, Vectara 
 
 <div class="feature-grid-clean">
   <div class="feature-card-clean">
-    <h3>30+ Pre-built Crawlers</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></svg>
+      30+ Pre-built Crawlers
+    </h3>
     <p>Ready-to-use crawlers for web scraping, APIs, databases, and more. Each crawler handles the specific requirements of its data source.</p>
   </div>
 
   <div class="feature-card-clean">
-    <h3>Intelligent Crawling</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+      Intelligent Crawling
+    </h3>
     <p>Respect robots.txt, handle rate limiting automatically, and follow sitemap guidelines for efficient web crawling.</p>
   </div>
 
   <div class="feature-card-clean">
-    <h3>Smart Processing</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+      Smart Processing
+    </h3>
     <p>Built-in text extraction, cleaning, and transformation with support for custom processing pipelines and filters.</p>
   </div>
 
   <div class="feature-card-clean">
-    <h3>Reliable Execution</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"></path><path d="m3 7 2 2 4-4"></path><path d="M13 6h8"></path><path d="M13 12h8"></path><path d="M13 18h8"></path></svg>
+      Reliable Execution
+    </h3>
     <p>Automatic retry mechanisms, graceful error handling, and comprehensive logging ensure robust data ingestion.</p>
   </div>
 
   <div class="feature-card-clean">
-    <h3>Flexible Deployment</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+      Flexible Deployment
+    </h3>
     <p>Run as CLI, as a library, or schedule via cron. Supports both one-time and incremental ingestion workflows.</p>
   </div>
 
   <div class="feature-card-clean">
-    <h3>Extensible Architecture</h3>
+    <h3>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      Extensible Architecture
+    </h3>
     <p>Easy to extend with custom crawlers, processors, and transformers. Plugin architecture supports third-party extensions.</p>
   </div>
 </div>
@@ -69,7 +93,7 @@ Whether you're working with websites, APIs, databases, or file systems, Vectara 
   <div class="source-card-clean">
     <h4>
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>
-      Content Management & Documentation
+      Knowledge Bases
     </h4>
     <ul>
       <li>Docusaurus 2.x</li>
@@ -155,7 +179,6 @@ Whether you're working with websites, APIs, databases, or file systems, Vectara 
 ```bash
 git clone https://github.com/vectara/vectara-ingest.git
 cd vectara-ingest
-poetry install
 ```
 
 ### 2. Set Up Authentication
@@ -198,30 +221,15 @@ For a detailed tutorial, see the [Getting Started Guide](getting-started.md).
 
 ## Architecture
 
-<div class="architecture-card" markdown="1">
-
-<div class="architecture-grid" markdown="1">
-
-<div class="architecture-code" markdown="1">
-
-```
-vectara_ingest/
+<div class="architecture-card">
+  <div class="architecture-code">
+    <pre><code>vectara_ingest/
 ├── core/         # Core ingestion logic
 ├── crawlers/     # Source-specific crawlers
 ├── processors/   # Data transformation
-└── utils/        # Shared utilities
-```
-
-</div>
-
-</div>
-
-<div class="architecture-link" markdown="1">
-
-Learn more about the architecture in our [Architecture Guide](advanced/custom-crawler.md).
-
-</div>
-
+└── utils/        # Shared utilities</code></pre>
+    <p>Learn more in our <a href="advanced/custom-crawler.md">Architecture Guide</a>.</p>
+  </div>
 </div>
 
 ---

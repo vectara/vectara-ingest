@@ -1,30 +1,35 @@
-# Base Configuration Reference
+# Configuration Reference
 
-Every vectara-ingest crawler configuration includes three main sections: **Vectara settings**, **Document processing settings**, and **Crawler-specific settings**. This guide covers the common configuration that applies to all crawlers.
+<p class="subtitle">Comprehensive reference for all configuration options in vectara-ingest. Learn how to configure Vectara connections, document processing, and crawler settings.</p>
 
-## Configuration File Structure
+---
 
-```yaml
-# Vectara platform configuration (common to all crawlers)
+## Overview
+
+Every vectara-ingest crawler configuration includes three main sections: **Vectara settings**, **Document processing settings**, and **Crawler-specific settings**. This guide covers the configuration that applies to all crawlers.
+
+<div class="config-structure">
+  <h3>Configuration File Structure</h3>
+  <pre><code class="language-yaml"># Vectara platform configuration
 vectara:
   # ... vectara settings ...
 
-# Document processing configuration (common to all crawlers)
+# Document processing configuration
 doc_processing:
   # ... processing settings ...
 
 # Crawler specification (required)
 crawling:
-  crawler_type: <crawler_name>
+  crawler_type: &lt;crawler_name&gt;
 
 # Crawler-specific configuration
-<crawler_name>_crawler:
+&lt;crawler_name&gt;_crawler:
   # ... crawler-specific settings ...
 
 # Optional: Static metadata for all documents
 metadata:
-  # ... custom metadata ...
-```
+  # ... custom metadata ...</code></pre>
+</div>
 
 ---
 
@@ -33,6 +38,8 @@ metadata:
 These settings control how vectara-ingest connects to Vectara and processes documents.
 
 ### Connection Settings
+
+Configure your Vectara API connection:
 
 ```yaml
 vectara:
@@ -46,7 +53,17 @@ vectara:
   corpus_key: my-corpus-key
 ```
 
+<div class="info-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Required Configuration</p>
+    <p>The <code>corpus_key</code> is required for all crawlers. Get your corpus key from the Vectara console.</p>
+  </div>
+</div>
+
 ### SSL/TLS Configuration
+
+Control SSL certificate verification:
 
 ```yaml
 vectara:
@@ -58,12 +75,15 @@ vectara:
 ```
 
 **Example with custom certificate:**
+
 ```yaml
 vectara:
   ssl_verify: /home/vectara/env/ca.pem
 ```
 
 ### Indexing Behavior
+
+Control how documents are indexed:
 
 ```yaml
 vectara:
@@ -88,11 +108,22 @@ vectara:
   chunk_size: 512
 ```
 
-**Chunking strategies:**
-- `sentence`: Intelligent sentence-based chunking (recommended)
-- `fixed`: Fixed-size character chunks
+**Available strategies:**
+
+<div class="option-list">
+  <div class="option-item">
+    <span class="option-name">sentence</span>
+    <span class="option-description">Intelligent sentence-based chunking (recommended)</span>
+  </div>
+  <div class="option-item">
+    <span class="option-name">fixed</span>
+    <span class="option-description">Fixed-size character chunks</span>
+  </div>
+</div>
 
 ### Content Processing
+
+Configure content extraction and cleaning:
 
 ```yaml
 vectara:
@@ -113,6 +144,8 @@ vectara:
 
 ### Timeouts
 
+Configure timeout settings for web crawling:
+
 ```yaml
 vectara:
   # URL crawling timeout in seconds
@@ -123,6 +156,8 @@ vectara:
 ```
 
 ### Storage & Output
+
+Configure where to store documents and logs:
 
 ```yaml
 vectara:
@@ -136,6 +171,8 @@ vectara:
 ```
 
 ### Debugging
+
+Enable verbose logging for troubleshooting:
 
 ```yaml
 vectara:
@@ -152,6 +189,8 @@ Advanced document processing features including table extraction, image summariz
 ### Model Configuration
 
 #### Simple Configuration (Legacy)
+
+Basic model configuration for all processing tasks:
 
 ```yaml
 doc_processing:
@@ -184,6 +223,8 @@ doc_processing:
 
 #### Private Model Endpoints
 
+Use custom or self-hosted model endpoints:
+
 ```yaml
 doc_processing:
   model_config:
@@ -193,8 +234,13 @@ doc_processing:
       model_name: "custom-model"
 ```
 
-!!! note "Private API Keys"
-    Add `PRIVATE_API_KEY` to your `secrets.toml` under the `[general]` profile.
+<div class="info-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Private API Keys</p>
+    <p>Add <code>PRIVATE_API_KEY</code> to your <code>secrets.toml</code> under the <code>[general]</code> profile.</p>
+  </div>
+</div>
 
 ### Document Parsers
 
@@ -206,13 +252,30 @@ doc_processing:
   doc_parser: docling
 ```
 
-**Parser options:**
-- `unstructured`: Unstructured.io parser (default)
-- `llama_parse`: LlamaIndex cloud parser (requires `LLAMA_CLOUD_API_KEY`)
-- `docupanda`: DocuPanda parser (requires `DOCUPANDA_API_KEY`)
-- `docling`: IBM Docling parser (recommended)
+**Available parsers:**
+
+<div class="option-list">
+  <div class="option-item">
+    <span class="option-name">unstructured</span>
+    <span class="option-description">Unstructured.io parser (default)</span>
+  </div>
+  <div class="option-item">
+    <span class="option-name">llama_parse</span>
+    <span class="option-description">LlamaIndex cloud parser (requires <code>LLAMA_CLOUD_API_KEY</code>)</span>
+  </div>
+  <div class="option-item">
+    <span class="option-name">docupanda</span>
+    <span class="option-description">DocuPanda parser (requires <code>DOCUPANDA_API_KEY</code>)</span>
+  </div>
+  <div class="option-item">
+    <span class="option-name">docling</span>
+    <span class="option-description">IBM Docling parser (recommended)</span>
+  </div>
+</div>
 
 #### Unstructured Parser Configuration
+
+Configure the Unstructured.io parser:
 
 ```yaml
 doc_processing:
@@ -227,6 +290,8 @@ doc_processing:
 ```
 
 #### Docling Parser Configuration
+
+Configure the IBM Docling parser (recommended):
 
 ```yaml
 doc_processing:
@@ -257,8 +322,13 @@ doc_processing:
   enable_gmft: true
 ```
 
-!!! warning "API Key Required"
-    Table summarization requires `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the `[general]` profile of `secrets.toml`.
+<div class="warning-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">API Key Required</p>
+    <p>Table summarization requires <code>OPENAI_API_KEY</code> or <code>ANTHROPIC_API_KEY</code> in the <code>[general]</code> profile of <code>secrets.toml</code>.</p>
+  </div>
+</div>
 
 ### Image Processing
 
@@ -300,6 +370,8 @@ doc_processing:
 
 #### Core Indexing
 
+Preserve chunks from document parsers:
+
 ```yaml
 doc_processing:
   # Preserve chunks from document parsers
@@ -309,12 +381,22 @@ doc_processing:
 
 #### Contextual Chunking
 
+Add contextual information to chunks for better retrieval:
+
 ```yaml
 doc_processing:
   # Add contextual information to chunks (PDF only)
   # Requires OpenAI or Anthropic API key
   contextual_chunking: false
 ```
+
+<div class="info-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Learn More</p>
+    <p>See our <a href="../features/contextual-chunking.md">Contextual Chunking Guide</a> for details on how this improves retrieval accuracy.</p>
+  </div>
+</div>
 
 #### Metadata Extraction
 
@@ -344,7 +426,7 @@ crawling:
   crawler_type: website
 ```
 
-Each crawler has its own configuration section. See individual crawler documentation for details.
+Each crawler has its own configuration section. See individual [crawler documentation](crawlers/index.md) for details.
 
 ---
 
@@ -370,7 +452,13 @@ metadata:
   indexed_by: vectara-ingest
 ```
 
-This metadata is merged with crawler-specific metadata. If conflicts occur, crawler metadata takes precedence.
+<div class="info-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Metadata Precedence</p>
+    <p>Static metadata is merged with crawler-specific metadata. If conflicts occur, crawler metadata takes precedence.</p>
+  </div>
+</div>
 
 ---
 
@@ -462,6 +550,14 @@ HF_ENDPOINT="http://localhost:9000"
 CUSTOM_VAR="value"
 ```
 
+<div class="info-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Environment File Location</p>
+    <p>Place the <code>.run-env</code> file in the root directory of your vectara-ingest installation.</p>
+  </div>
+</div>
+
 ---
 
 ## Secrets Management
@@ -484,22 +580,22 @@ JIRA_USERNAME = "user@example.com"
 JIRA_PASSWORD = "api-token"
 ```
 
-Reference these in your YAML config:
+Reference these in your YAML config using environment variable syntax:
 
 ```yaml
 notion_crawler:
   notion_api_key: "${NOTION_API_KEY}"
 ```
 
-See [Secrets Management](secrets-management.md) for details.
+<div class="warning-admonition">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="admonition-icon"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+  <div class="admonition-content">
+    <p class="admonition-title">Security Warning</p>
+    <p>Never commit <code>secrets.toml</code> to version control. Add it to your <code>.gitignore</code> file.</p>
+  </div>
+</div>
 
----
-
-## Next Steps
-
-- **Crawler-Specific Configs**: See individual [crawler documentation](crawlers/index.md)
-- **Advanced Features**: Learn about [table extraction](features/table-extraction.md), [image processing](features/image-processing.md)
-- **Deployment**: Check [deployment guides](deployment/docker.md)
+See [Secrets Management](secrets-management.md) for complete details.
 
 ---
 
@@ -546,9 +642,49 @@ vectara:
 ### Monitor Resource Usage
 
 Advanced features require more resources:
-- **Table summarization**: LLM API calls
-- **Image processing**: Vision model API calls
-- **OCR**: CPU/GPU intensive
-- **Large files**: More memory
+
+- **Table summarization:** LLM API calls
+- **Image processing:** Vision model API calls
+- **OCR:** CPU/GPU intensive
+- **Large files:** More memory
 
 Adjust Docker resources accordingly (recommend 4-8GB RAM).
+
+---
+
+## Next Steps
+
+<div class="next-steps-grid">
+  <a href="../crawlers/index.md" class="next-step-card">
+    <h3>Explore Crawlers →</h3>
+    <p>Learn about all 30+ available crawlers and their specific configurations</p>
+  </a>
+
+  <a href="../features/table-extraction.md" class="next-step-card">
+    <h3>Advanced Features →</h3>
+    <p>Discover table extraction, image processing, and contextual chunking</p>
+  </a>
+</div>
+
+---
+
+## Getting Help
+
+Need assistance with configuration? Here are your resources:
+
+<div class="help-grid">
+  <a href="https://github.com/vectara/vectara-ingest/issues" target="_blank" class="help-card">
+    <h4>GitHub Issues</h4>
+    <p>Report bugs or ask questions</p>
+  </a>
+
+  <a href="https://discord.gg/GFb8gMz6UH" target="_blank" class="help-card">
+    <h4>Discord Community</h4>
+    <p>Chat with other users</p>
+  </a>
+
+  <a href="https://docs.vectara.com" target="_blank" class="help-card">
+    <h4>Vectara Docs</h4>
+    <p>Platform documentation</p>
+  </a>
+</div>

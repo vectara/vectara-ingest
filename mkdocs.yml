@@ -65,8 +65,7 @@ nav:
   - Getting Started:
     - Installation: installation.md
     - Quick Start: getting-started.md
-    - Base Configuration: configuration-base.md
-    - Configuration Reference: configuration.md
+    - Configuration Reference: configuration-reference.md
     - Secrets Management: secrets-management.md
 
   - Authentication:
