@@ -78,43 +78,46 @@ nav:
 
   - Crawlers:
     - Overview: crawlers/index.md
-    - Content & Web:
-      - Website: crawlers/website.md
-      - Documentation Sites: crawlers/docs.md
-      - RSS Feeds: crawlers/rss.md
-    - Collaboration:
-      - Notion: crawlers/notion.md
-      - Confluence: crawlers/confluence.md
+    - Batch & Utility:
+      - Bulk Upload: crawlers/bulkupload.md
+    - Communication & Collaboration:
       - Slack: crawlers/slack.md
-    - Project Management:
-      - Jira: crawlers/jira.md
-      - ServiceNow: crawlers/servicenow.md
-      - GitHub: crawlers/github.md
+    - Content Feeds & News:
+      - RSS Feeds: crawlers/rss.md
+    - CRM & Sales:
+      - HubSpot CRM: crawlers/hubspot.md
     - File Storage & Data:
-      - Google Drive: crawlers/gdrive.md
       - Amazon S3: crawlers/s3.md
-      - Local Folder: crawlers/folder.md
-      - Database: crawlers/database.md
       - CSV: crawlers/csv.md
-    - Financial & Business:
+      - Database: crawlers/database.md
+      - Google Drive: crawlers/gdrive.md
+      - Local Folder: crawlers/folder.md
+    - Financial & Regulatory Data:
       - EDGAR: crawlers/edgar.md
       - Financial Modeling Prep: crawlers/fmp.md
-      - HubSpot CRM: crawlers/hubspot.md
+    - Knowledge Bases:
+      - Confluence: crawlers/confluence.md
+      - Documentation Sites: crawlers/docs.md
+      - MediaWiki: crawlers/mediawiki.md
+      - Notion: crawlers/notion.md
+    - Machine Learning & Data:
+      - Hugging Face Datasets: crawlers/hfdataset.md
+    - Media & Video:
+      - YouTube: crawlers/youtube.md
+    - Project Management & Development:
+      - GitHub: crawlers/github.md
+      - Jira: crawlers/jira.md
+      - ServiceNow: crawlers/servicenow.md
     - Research & Academic:
       - arXiv: crawlers/arxiv.md
       - PubMed Central: crawlers/pmc.md
-    - Social Media & Community:
-      - Twitter/X: crawlers/twitter.md
-      - Hacker News: crawlers/hackernews.md
+    - Social Media:
       - Discourse: crawlers/discourse.md
-    - Media & ML:
-      - YouTube: crawlers/youtube.md
-      - Hugging Face Datasets: crawlers/hfdataset.md
-    - Knowledge Bases:
-      - MediaWiki: crawlers/mediawiki.md
+      - Hacker News: crawlers/hackernews.md
+      - Twitter/X: crawlers/twitter.md
+    - Web:
       - Synapse: crawlers/synapse.md
-    - Utilities:
-      - Bulk Upload: crawlers/bulkupload.md
+      - Website: crawlers/website.md
 
   - Features:
     - Document Processing: features/document-processing.md

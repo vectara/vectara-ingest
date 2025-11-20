@@ -4,67 +4,433 @@ The Website crawler indexes content from any website with advanced features incl
 
 ## Overview
 
-- **Crawler Type**: `website`
-- **Crawl Methods**: Scrapy (fast, distributed) or Internal (memory-efficient, Playwright-based)
-- **Authentication**: SAML, Basic Auth, Custom Headers, or No Authentication
-- **Content Extraction**: Intelligent boilerplate removal, CSS selectors, or full page content
-- **Parallel Processing**: Ray workers for distributed crawling
-- **URL Discovery**: Sitemap parsing or recursive depth-limited crawling
-- **URL Filtering**: Positive/negative regex patterns with automatic exclusions
-- **Crawl Reports**: Optional reports of indexed and removed URLs
-- **Old Content Removal**: Automatic deletion of previously indexed URLs no longer in crawl scope
+<div class="crawler-info-cards">
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+      </div>
+      <strong>Crawler Type</strong>
+    </div>
+    <code>website</code>
+  </div>
 
-## Use Cases
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l4.2 4.2M23 12h-6m-6 0H5m13.2 5.2l-4.2-4.2m0-6l4.2-4.2"></path></svg>
+      </div>
+      <strong>Crawl Methods</strong>
+    </div>
+    <p>Scrapy (fast, distributed) or Internal (Playwright-based)</p>
+  </div>
 
-- Index company websites and marketing materials
-- Crawl product documentation and help sites
-- Archive blog content and news articles
-- Create searchable knowledge bases from web content
-- Index internal enterprise wikis and technical documentation
-- Crawl multi-domain properties with consistent filtering
-- Monitor and re-crawl sites for content updates
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      </div>
+      <strong>Authentication</strong>
+    </div>
+    <p>SAML, Basic Auth, Custom Headers</p>
+  </div>
 
-## Getting Started: Basic Website Crawl
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+      </div>
+      <strong>URL Discovery</strong>
+    </div>
+    <p>Sitemap parsing or recursive crawling</p>
+  </div>
 
-### Simplest Configuration
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+      </div>
+      <strong>URL Filtering</strong>
+    </div>
+    <p>Positive/negative regex patterns</p>
+  </div>
+
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+      </div>
+      <strong>Content Extraction</strong>
+    </div>
+    <p>CSS selectors or automatic boilerplate removal</p>
+  </div>
+</div>
+
+## How It Works
+
+<div class="use-cases-list">
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>URL Discovery</strong> - Collects URLs either by parsing XML sitemaps or recursively crawling links from starting URLs</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>URL Filtering</strong> - Applies positive and negative regex patterns to filter the URL list</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Authentication</strong> - Handles SAML, Basic Auth, or custom authentication if configured</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Content Fetching</strong> - Retrieves pages using either Scrapy (fast) or Playwright (JavaScript support)</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Content Extraction</strong> - Extracts text using CSS selectors or automatic boilerplate removal</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Indexing</strong> - Sends extracted content to Vectara for indexing</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Old Content Removal</strong> - Optionally removes previously indexed URLs that are no longer in scope</span>
+  </div>
+</div>
+
+## Crawl Methods
+
+<div class="crawl-methods-grid">
+  <div class="method-card">
+    <h3>Scrapy Method</h3>
+    <p>Fast, distributed crawling using the Scrapy framework.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  crawl_method: scrapy<br>  ray_workers: 4</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Best for:</h4>
+      <ul>
+        <li>Large websites (100+ pages)</li>
+        <li>Static HTML content</li>
+        <li>Speed-critical applications</li>
+        <li>Parallel processing with Ray</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Advantages:</h4>
+      <ul>
+        <li>Significantly faster than internal crawler</li>
+        <li>Built-in distributed crawling support</li>
+        <li>Mature, production-tested framework</li>
+        <li>Efficient resource usage</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Limitations:</h4>
+      <ul>
+        <li>JavaScript-rendered content may not be captured</li>
+        <li>Less flexible for complex HTML parsing</li>
+        <li>Requires Scrapy library installed</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="method-card">
+    <h3>Internal Method</h3>
+    <p>Browser-based crawling using Playwright for JavaScript support.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  crawl_method: internal<br>  ray_workers: 0</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Best for:</h4>
+      <ul>
+        <li>JavaScript-heavy websites</li>
+        <li>Complex authentication flows</li>
+        <li>Custom CSS selector extraction</li>
+        <li>Small to medium sites (< 1000 pages)</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Advantages:</h4>
+      <ul>
+        <li>Full JavaScript rendering support</li>
+        <li>More flexible content extraction</li>
+        <li>Better handling of dynamic content</li>
+        <li>Full SAML authentication support</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Limitations:</h4>
+      <ul>
+        <li>Slower than Scrapy (browser-based)</li>
+        <li>Higher memory usage</li>
+        <li>Less efficient for large-scale crawls</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+## Page Discovery Methods
+
+<div class="crawl-methods-grid">
+  <div class="method-card">
+    <h3>Sitemap Method <span class="recommended-badge">Recommended</span></h3>
+    <p>Discovers URLs by parsing XML sitemaps.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  pages_source: sitemap<br>  urls:<br>    - https://example.com/sitemap.xml</code>
+    </div>
+
+    <div class="method-section">
+      <h4>How it works:</h4>
+      <ol>
+        <li>Fetches XML sitemap(s) from specified URLs</li>
+        <li>Extracts all <code>&lt;loc&gt;</code> elements</li>
+        <li>Applies URL filters</li>
+        <li>Returns filtered URL list</li>
+      </ol>
+    </div>
+
+    <div class="method-section">
+      <h4>Advantages:</h4>
+      <ul>
+        <li>Most efficient method</li>
+        <li>Complete URL coverage</li>
+        <li>No recursive crawling overhead</li>
+        <li>Respects site structure</li>
+      </ul>
+    </div>
+
+    <div class="when-to-use">
+      <div class="when-to-use-icon">💡</div>
+      <div>
+        <h4>When to use</h4>
+        <p>Whenever a sitemap is available (check <code>robots.txt</code>)</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="method-card">
+    <h3>Crawl Method</h3>
+    <p>Discovers URLs by recursively following links.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  pages_source: crawl<br>  max_depth: 3<br>  urls:<br>    - https://example.com</code>
+    </div>
+
+    <div class="method-section">
+      <h4>How it works:</h4>
+      <ol>
+        <li>Starts from initial URLs</li>
+        <li>Extracts all links from each page</li>
+        <li>Follows links up to <code>max_depth</code></li>
+        <li>Applies URL filters</li>
+        <li>Returns deduplicated URL list</li>
+      </ol>
+    </div>
+
+    <div class="method-section">
+      <h4>Advantages:</h4>
+      <ul>
+        <li>Works without sitemap</li>
+        <li>Discovers unlisted pages</li>
+        <li>Flexible depth control</li>
+      </ul>
+    </div>
+
+    <div class="when-to-use">
+      <div class="when-to-use-icon">💡</div>
+      <div>
+        <h4>When to use</h4>
+        <p>When no sitemap exists or when discovery of dynamic pages is needed</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+## URL Filtering
+
+<div class="crawl-methods-grid">
+  <div class="method-card">
+    <h3>Positive Regex (Include Patterns)</h3>
+    <p>Include only URLs matching at least one pattern:</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  pos_regex:<br>    - "https://example\.com/docs/.*"<br>    - "https://example\.com/blog/.*"</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Common patterns:</h4>
+      <ul>
+        <li><code>"https://docs\.example\.com/.*"</code> - All docs subdomain pages</li>
+        <li><code>".*/api/.*"</code> - Any path containing /api/</li>
+        <li><code>".*\.example\.com/en/.*"</code> - English language only</li>
+        <li><code>".*/v[0-9]+/.*"</code> - Versioned content</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="method-card">
+    <h3>Negative Regex (Exclude Patterns)</h3>
+    <p>Exclude URLs matching any pattern:</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>website_crawler:<br>  neg_regex:<br>    - ".*\.(pdf|zip|exe)$"<br>    - ".*/admin/.*"<br>    - ".*/login.*"</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Common patterns:</h4>
+      <ul>
+        <li><code>".*\.(pdf|doc|xls)$"</code> - Document files</li>
+        <li><code>".*/admin/.*"</code> - Admin pages</li>
+        <li><code>".*\?.*"</code> - URLs with query parameters</li>
+        <li><code>".*/deprecated/.*"</code> - Deprecated content</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="filter-logic-box">
+  <div class="filter-logic-header">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+    <h4>Filter Logic</h4>
+  </div>
+  <ol>
+    <li>Start with all discovered URLs</li>
+    <li>Remove URLs matching any <code>neg_regex</code> pattern</li>
+    <li>If <code>pos_regex</code> is specified, keep only URLs matching at least one pattern</li>
+    <li>Result: Filtered URL list</li>
+  </ol>
+</div>
+
+## Authentication
+
+<div class="auth-card">
+  <h3>SAML Authentication</h3>
+  <p>For websites protected by SAML-based single sign-on:</p>
 
 ```yaml
-vectara:
-  endpoint: api.vectara.io
-  corpus_key: website-index
-
-crawling:
-  crawler_type: website
-
 website_crawler:
-  # Website to crawl
-  urls:
-    - https://example.com
+  saml_auth:
+    login_url: "https://idp.example.com/login"
+    username_field: "username"
+    password_field: "password"
+    login_failure_string: "Invalid credentials"
 
-  # How deep to crawl
-  max_depth: 3
-
-  # Discover pages from sitemap or by crawling links
-  pages_source: sitemap  # or "crawl"
+  saml_username: "${SAML_USERNAME}"
+  saml_password: "${SAML_PASSWORD}"
 ```
 
-### Set Environment Variables
+  <div class="method-section">
+    <h4>How it works:</h4>
+    <ol>
+      <li>Navigates to login URL</li>
+      <li>Fills in username and password fields</li>
+      <li>Submits form</li>
+      <li>Verifies login success</li>
+      <li>Uses authenticated session for all requests</li>
+    </ol>
+  </div>
 
-For SAML-protected sites, set credentials:
+  <div class="method-section">
+    <h4>Setting credentials:</h4>
 
-```bash
-export SAML_USERNAME="user@example.com"
-export SAML_PASSWORD="password"
+```toml
+# secrets.toml
+SAML_USERNAME = "user@example.com"
+SAML_PASSWORD = "password"
+```
+  </div>
+
+  <div class="info-box">
+    <div class="info-box-header">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      <strong>Info</strong>
+    </div>
+    <p>For detailed SAML authentication setup and troubleshooting, see <a href="../authentication/saml">SAML Authentication Guide</a>.</p>
+  </div>
+</div>
+
+<div class="auth-grid">
+  <div class="auth-card-small">
+    <h3>Basic Authentication</h3>
+    <p>For websites using HTTP Basic Auth:</p>
+
+```yaml
+website_crawler:
+  basic_auth:
+    username: "${WEBSITE_USERNAME}"
+    password: "${WEBSITE_PASSWORD}"
 ```
 
-For basic authentication:
+    <div class="method-section">
+      <h4>How it works:</h4>
+      <ol>
+        <li>Adds Authorization header to all requests</li>
+        <li>Encodes credentials in Base64</li>
+        <li>Works with standard HTTP 401 challenges</li>
+      </ol>
+    </div>
 
-```bash
-export WEBSITE_USERNAME="username"
-export WEBSITE_PASSWORD="password"
+    <div class="method-section">
+      <h4>Setting credentials:</h4>
+
+```toml
+# secrets.toml
+WEBSITE_USERNAME = "username"
+WEBSITE_PASSWORD = "password"
+```
+    </div>
+  </div>
+
+  <div class="auth-card-small">
+    <h3>Custom Headers</h3>
+    <p>For websites requiring custom authentication headers:</p>
+
+```yaml
+website_crawler:
+  custom_headers:
+    Authorization: "Bearer ${API_TOKEN}"
+    X-API-Key: "${API_KEY}"
 ```
 
-## Configuration
+    <div class="method-section">
+      <h4>How it works:</h4>
+      <ol>
+        <li>Adds specified headers to all requests</li>
+        <li>Supports environment variable substitution</li>
+        <li>Useful for API tokens, keys, or custom auth</li>
+      </ol>
+    </div>
+
+    <div class="method-section">
+      <h4>Setting credentials:</h4>
+
+```toml
+# secrets.toml
+API_TOKEN = "your-bearer-token"
+API_KEY = "your-api-key"
+```
+    </div>
+  </div>
+</div>
+
+## Getting Started
 
 ### Basic Configuration
 
@@ -104,6 +470,45 @@ metadata:
   source: website
   category: documentation
 ```
+
+### Configuration Parameters
+
+#### Crawler Settings
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `urls` | list | Yes | - | Starting URLs or sitemap URLs to crawl |
+| `pages_source` | string | No | `sitemap` | How to discover pages: `sitemap` or `crawl` |
+| `max_depth` | int | No | `3` | Maximum crawl depth (only for `pages_source: crawl`) |
+| `pos_regex` | list | No | `[]` | Regex patterns for URLs to include |
+| `neg_regex` | list | No | `[]` | Regex patterns for URLs to exclude |
+| `keep_query_params` | bool | No | `false` | Whether to keep query parameters in URLs |
+| `crawl_method` | string | No | `internal` | Crawling method: `scrapy` or `internal` |
+| `num_per_second` | int | No | `10` | Rate limiting: requests per second |
+| `ray_workers` | int | No | `0` | Parallel workers: 0=sequential, -1=all cores, N=N workers |
+| `source` | string | No | `website` | Source name for metadata |
+| `max_pages` | int | No | `10000` | Maximum number of pages to crawl |
+| `crawl_report` | bool | No | `false` | Generate report of indexed URLs |
+| `remove_old_content` | bool | No | `false` | Remove previously indexed URLs no longer in crawl list |
+
+#### Authentication Settings
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `saml_auth` | dict | No | - | SAML authentication configuration (login_url, username_field, password_field, login_failure_string) |
+| `saml_username` | string | No | - | SAML username (from secrets.toml: `SAML_USERNAME`) |
+| `saml_password` | string | No | - | SAML password (from secrets.toml: `SAML_PASSWORD`) |
+| `basic_auth` | dict | No | - | Basic authentication configuration (username, password) |
+| `basic_auth.username` | string | No | - | Basic auth username (from secrets.toml: `WEBSITE_USERNAME`) |
+| `basic_auth.password` | string | No | - | Basic auth password (from secrets.toml: `WEBSITE_PASSWORD`) |
+| `custom_headers` | dict | No | `{}` | Custom headers for authentication (e.g., Authorization, X-API-Key) |
+
+#### HTML Processing Settings
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `html_processing` | dict | No | `{}` | HTML processing options (extract_links, extract_metadata) |
+| `css_selectors` | list | No | `[]` | CSS selectors for content extraction |
 
 ### Advanced Configuration
 
@@ -189,418 +594,6 @@ metadata:
   environment: production
   sync_frequency: daily
 ```
-
-## Configuration Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `urls` | list | Yes | - | Starting URLs or sitemap URLs to crawl |
-| `pages_source` | string | No | `sitemap` | How to discover pages: `sitemap` or `crawl` |
-| `max_depth` | int | No | `3` | Maximum crawl depth (only for `pages_source: crawl`) |
-| `pos_regex` | list | No | `[]` | Regex patterns for URLs to include |
-| `neg_regex` | list | No | `[]` | Regex patterns for URLs to exclude |
-| `keep_query_params` | bool | No | `false` | Whether to keep query parameters in URLs |
-| `crawl_method` | string | No | `internal` | Crawling method: `scrapy` or `internal` |
-| `num_per_second` | int | No | `10` | Rate limiting: requests per second |
-| `ray_workers` | int | No | `0` | Parallel workers: 0=sequential, -1=all cores, N=N workers |
-| `source` | string | No | `website` | Source name for metadata |
-| `max_pages` | int | No | `10000` | Maximum number of pages to crawl |
-| `html_processing` | dict | No | `{}` | HTML processing options |
-| `css_selectors` | list | No | `[]` | CSS selectors for content extraction |
-| `saml_auth` | dict | No | - | SAML authentication configuration |
-| `crawl_report` | bool | No | `false` | Generate report of indexed URLs |
-| `remove_old_content` | bool | No | `false` | Remove previously indexed URLs no longer in crawl list |
-| `saml_username` | string | No (with SAML) | - | SAML username (from secrets) |
-| `saml_password` | string | No (with SAML) | - | SAML password (from secrets) |
-
-## Crawl Methods Comparison
-
-### Scrapy Method (Fast, Distributed)
-
-Best for: Large websites, distributed crawling, speed-critical applications
-
-```yaml
-website_crawler:
-  crawl_method: scrapy
-  ray_workers: 4  # Can use parallel workers
-```
-
-**Advantages**:
-- Significantly faster than internal crawler
-- Built-in support for distributed crawling
-- Better handling of large-scale sites
-- Mature, production-tested framework
-- Can process SAML-authenticated sites via Playwright
-
-**Disadvantages**:
-- Requires Scrapy library installed
-- Less flexible for complex HTML parsing
-- JavaScript-rendered content may not be captured
-- Cannot use custom CSS selectors as effectively
-
-**When to Use**:
-- Crawling large documentation sites (100+ pages)
-- Speed is critical
-- Pages are static HTML (not JavaScript-heavy)
-- Using parallel processing with Ray workers
-
-### Internal Method (Memory-Efficient, Flexible)
-
-Best for: Complex sites, JavaScript-heavy content, custom extraction
-
-```yaml
-website_crawler:
-  crawl_method: internal
-  ray_workers: 0  # Sequential processing
-```
-
-**Advantages**:
-- Uses Playwright for JavaScript rendering
-- More flexible content extraction
-- Handles complex authentication flows
-- Can apply custom CSS selectors
-- Better for dynamic content
-- SAML authentication fully supported
-
-**Disadvantages**:
-- Slower than Scrapy (browser-based)
-- Higher memory usage
-- Parallel processing with Ray requires more resources
-- Limited support for very large crawls (10000+ pages)
-
-**When to Use**:
-- Sites with JavaScript-rendered content
-- Need custom CSS selector extraction
-- SAML/complex authentication required
-- Small to medium websites (< 1000 pages)
-- Higher content extraction quality needed
-
-## Pages Source Methods
-
-### Sitemap Method (Recommended)
-
-The crawler fetches and parses XML sitemaps to discover URLs:
-
-```yaml
-website_crawler:
-  pages_source: sitemap
-  urls:
-    - https://example.com/sitemap.xml
-    - https://example.com/sitemap-docs.xml
-    - https://example.com/sitemap-blog.xml
-```
-
-**How it works**:
-1. Fetches XML sitemap(s) from specified URLs
-2. Parses `<loc>` elements to extract URLs
-3. Applies pos_regex and neg_regex filters
-4. Returns unique, filtered URL list
-
-**Advantages**:
-- Most efficient method (no recursive crawling needed)
-- Exact URL list from site maintainers
-- No risk of missing pages
-- Respects site structure via sitemap
-
-**Disadvantages**:
-- Requires site to have sitemap.xml
-- Only finds URLs in sitemap (might miss unlisted pages)
-- Must handle multi-level sitemaps manually
-
-**Best Practices**:
-- Always use sitemap if available
-- Check robots.txt for sitemap.xml location
-- Handle paginated sitemaps (sitemap_index.xml)
-- Test sitemap parsing before production crawl
-
-### Crawl Method (Discovery-Based)
-
-The crawler recursively discovers URLs by following links:
-
-```yaml
-website_crawler:
-  pages_source: crawl
-  max_depth: 3
-  urls:
-    - https://example.com
-```
-
-**How it works**:
-1. Fetches the starting URL
-2. Extracts all links from the page
-3. Filters by pos_regex and neg_regex
-4. Recursively crawls each new URL up to max_depth
-5. Deduplicates and returns complete URL list
-
-**Advantages**:
-- Works without sitemap
-- Discovers dynamically-generated pages
-- Can crawl hidden/unlisted pages
-- Flexible depth control
-
-**Disadvantages**:
-- Much slower than sitemap method
-- May discover unintended pages
-- Depth limits risk missing pages
-- Higher bandwidth usage
-
-**Best Practices**:
-- Start with small max_depth (2-3) for testing
-- Use positive regex to limit scope
-- Use negative regex to exclude admin pages
-- Monitor logs for URL explosion
-- Set reasonable max_pages limit as safety valve
-
-## URL Filtering with Examples
-
-### Positive Regex (Include Patterns)
-
-Only crawl URLs matching at least one positive pattern:
-
-```yaml
-website_crawler:
-  pos_regex:
-    # Match docs subpath
-    - "https://example\\.com/docs/.*"
-
-    # Match blog articles
-    - "https://example\\.com/blog/[0-9]{4}/[0-9]{2}/.*"
-
-    # Match knowledge base
-    - "https://kb\\.example\\.com/.*"
-
-    # Match pages with /en/ language prefix
-    - "https://example\\.com/en/.*"
-```
-
-**Examples**:
-- `"https://docs\\.example\\.com/.*"` - All docs subdomain pages
-- `"^https://.*\\.example\\.com/.*"` - All subdomains
-- `".*/api/.*"` - Any path containing /api/
-- `".*/v[0-9]+/.*"` - Versioned content paths
-- `".*\\.example\\.com/en/.*"` - English language only
-
-### Negative Regex (Exclude Patterns)
-
-Skip URLs matching any negative pattern:
-
-```yaml
-website_crawler:
-  neg_regex:
-    # Exclude PDFs and archives
-    - ".*\\.(pdf|zip|exe|dmg)$"
-
-    # Exclude admin areas
-    - ".*/admin/.*"
-    - ".*/dashboard/.*"
-
-    # Exclude authentication pages
-    - ".*/login.*"
-    - ".*/logout.*"
-    - ".*/signin.*"
-
-    # Exclude deprecated paths
-    - ".*/deprecated/.*"
-    - ".*/old/.*"
-    - ".*/legacy/.*"
-
-    # Exclude search and filters
-    - ".*/search.*"
-    - ".*\\?.*"  # URLs with query parameters
-
-    # Exclude media files
-    - ".*\\.(jpg|png|gif|webp|mp4|webm)$"
-
-    # Exclude user-specific pages
-    - ".*/users/.*"
-    - ".*/profile/.*"
-```
-
-**Common Patterns**:
-- `".*\\.(pdf|doc|xls)$"` - Document files
-- `.*/admin/.*` - Admin interface
-- `.*/account/.*` - User accounts
-- `.*/settings/.*` - Settings pages
-- `.*=.*` or `.*\\?.*` - URLs with parameters
-- `.*\\.jpg$`, `.*\\.png$` - Image files
-
-### Combined Filtering Example
-
-```yaml
-website_crawler:
-  urls:
-    - https://docs.example.com
-
-  # INCLUDE only documentation
-  pos_regex:
-    - "https://docs\\.example\\.com/en/.*"
-
-  # EXCLUDE everything else
-  neg_regex:
-    - ".*\\.pdf$"
-    - ".*/admin/.*"
-    - ".*/staging/.*"
-    - ".*\\?.*"
-    - ".*/search.*"
-    - ".*/media/.*"
-    - ".*/assets/.*"
-```
-
-**How filtering works**:
-1. Start with all discovered URLs
-2. Apply neg_regex - remove matching URLs
-3. Apply pos_regex - keep only matching URLs (if specified)
-4. Result: URLs matching no negative patterns AND (all positive patterns OR no positive patterns specified)
-
-### URL Deduplication
-
-Query parameters are handled based on configuration:
-
-```yaml
-website_crawler:
-  # Keep query parameters (may create duplicates)
-  keep_query_params: true
-
-  # Strip query parameters (default, deduplicates)
-  keep_query_params: false
-```
-
-**Examples**:
-- Keep: `/page?ref=header` and `/page?ref=footer` → 2 URLs
-- Strip: `/page?ref=header` and `/page?ref=footer` → 1 URL (`/page`)
-
-## SAML Authentication Setup
-
-For websites protected by SAML-based single sign-on:
-
-### Understanding SAML Flow
-
-1. Client requests protected page
-2. Site redirects to IdP (Identity Provider)
-3. User logs in at IdP
-4. IdP sends SAML assertion back to site
-5. Site sets authentication cookies
-6. Subsequent requests use cookies
-
-The Website crawler automates this entire flow.
-
-### Configuration
-
-```yaml
-website_crawler:
-  urls:
-    - https://app.example.com
-
-  # Enable SAML authentication
-  saml_auth:
-    # URL where authentication flow starts
-    login_url: "https://app.example.com/login"
-
-    # HTML form field name for username
-    username_field: "username"
-
-    # HTML form field name for password
-    password_field: "password"
-
-    # String that appears on page if login failed
-    login_failure_string: "Invalid username or password"
-
-    # Optional: Extra form data to submit
-    extra_form_data:
-      mfa_code: "123456"  # If MFA required
-
-  # SAML credentials (from secrets)
-  saml_username: "${SAML_USERNAME}"
-  saml_password: "${SAML_PASSWORD}"
-```
-
-### Setting Credentials
-
-Store SAML credentials securely in `secrets.toml`:
-
-```toml
-[default]
-api_key = "your-vectara-api-key"
-SAML_USERNAME = "user@example.com"
-SAML_PASSWORD = "your-password"
-```
-
-Or set environment variables:
-
-```bash
-export SAML_USERNAME="user@example.com"
-export SAML_PASSWORD="your-password"
-```
-
-### SAML Authentication Methods
-
-#### Method 1: Internal Crawler with Requests (Basic SAML)
-
-Works for standard form-based SAML:
-
-```yaml
-website_crawler:
-  crawl_method: internal
-  saml_auth:
-    login_url: "https://idp.example.com/login"
-    username_field: "username"
-    password_field: "password"
-```
-
-Best for: Simple SAML flows, basic form authentication
-
-#### Method 2: Scrapy with Playwright (Complex SAML)
-
-Uses browser automation for complex flows (Okta, Azure AD):
-
-```yaml
-website_crawler:
-  crawl_method: scrapy
-  saml_auth:
-    login_url: "https://okta.example.com/app/example/1234/sign-in"
-    username_field: "okta_username"
-    password_field: "okta_password"
-```
-
-Best for: JavaScript-heavy IdP, MFA, complex flows
-
-**Note**: Playwright-based auth is used automatically when needed with Scrapy method
-
-#### Method 3: Internal Crawler with Playwright (JavaScript-Heavy SAML)
-
-```yaml
-website_crawler:
-  crawl_method: internal
-  saml_auth:
-    login_url: "https://azure-ad.example.com/oauth2/v2.0/authorize"
-    username_field: "input[name='loginfmt']"
-    password_field: "input[name='passwd']"
-    login_failure_string: "Invalid credentials"
-```
-
-Best for: Complex IdP (Okta, Azure, OneLogin), dynamic forms
-
-### SAML Troubleshooting
-
-**Authentication succeeds but pages show "not authenticated"**:
-- SAML cookies may not be transferred to subsequent requests
-- Check that cookies are being set and sent
-- Verify authentication scope (same domain)
-
-**Form fields not found**:
-- Inspect browser dev tools to find correct field names
-- Some IdPs use dynamic IDs - use CSS selectors instead
-- Check `username_field` and `password_field` values
-
-**Login failure string not working**:
-- Verify exact string appears on failure page
-- May be case-sensitive or have extra whitespace
-- Remove or adjust if needed
-
-**Multi-factor authentication required**:
-- Add MFA code to `extra_form_data` if static
-- For time-based (TOTP), you'll need to provide current code
-- Some MFA flows require manual handling (not supported)
 
 ## Content Extraction
 

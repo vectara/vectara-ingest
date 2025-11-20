@@ -1,0 +1,50 @@
+/* ============================================
+   BASE STYLES - Variables, Typography, Global
+   ============================================ */
+
+:root {
+    --vectara-primary: #3f51b5;
+    --vectara-primary-dark: #303f9f;
+    --vectara-border: #e0e0e0;
+    --vectara-text-muted: #6b7280;
+    --vectara-card-bg: #ffffff;
+    --transition-smooth: all 0.2s ease;
+}
+
+[data-md-color-scheme="slate"] {
+    --vectara-border: #374151;
+    --vectara-text-muted: #9ca3af;
+    --vectara-card-bg: #1e293b;
+}
+
+/* Base typography */
+body {
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--md-default-bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--vectara-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vectara-text-muted);
+}
+
+/* Compact headings */
+.md-typeset h4 {
+    font-size: 0.8rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+}
