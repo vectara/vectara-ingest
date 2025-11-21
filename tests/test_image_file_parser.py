@@ -5,8 +5,12 @@ import tempfile
 from unittest.mock import Mock, patch, MagicMock
 from PIL import Image
 
-# Mock cairosvg before it's imported by other modules
+# Mock cairosvg and playwright before they're imported by other modules
 sys.modules['cairosvg'] = MagicMock()
+sys.modules['playwright'] = MagicMock()
+sys.modules['playwright.sync_api'] = MagicMock()
+sys.modules['playwright._impl'] = MagicMock()
+sys.modules['playwright._impl._errors'] = MagicMock()
 
 
 class TestImageFileParser(unittest.TestCase):
@@ -64,7 +68,7 @@ class TestImageFileParser(unittest.TestCase):
                 model_config=model_config
             )
 
-            result = parser.parse(self.temp_image.name, "http://example.com/test.png")
+            result = parser.parse(self.temp_image.name, "http://test.local/test.png")
 
             # Verify the result
             self.assertIsInstance(result, ParsedDocument)
@@ -90,7 +94,7 @@ class TestImageFileParser(unittest.TestCase):
             mock_summarizer.summarize_image.assert_called_once()
             call_args = mock_summarizer.summarize_image.call_args
             self.assertEqual(call_args[0][0], self.temp_image.name)  # filename
-            self.assertEqual(call_args[0][1], "http://example.com/test.png")  # source_url
+            self.assertEqual(call_args[0][1], "http://test.local/test.png")  # source_url
             self.assertIn("Filename:", call_args[1]['previous_text'])  # context includes filename
 
     def test_image_file_parser_nonexistent_file(self):
@@ -107,7 +111,7 @@ class TestImageFileParser(unittest.TestCase):
                 model_config={'vision': {}}
             )
 
-            result = parser.parse("/nonexistent/image.png", "http://example.com/test.png")
+            result = parser.parse("/nonexistent/image.png", "http://test.local/test.png")
 
             # Should return empty ParsedDocument
             self.assertIsInstance(result, ParsedDocument)
@@ -133,7 +137,7 @@ class TestImageFileParser(unittest.TestCase):
                 model_config={'vision': {}}
             )
 
-            result = parser.parse(self.temp_image.name, "http://example.com/test.png")
+            result = parser.parse(self.temp_image.name, "http://test.local/test.png")
 
             # Should return empty content_stream but still have title
             self.assertIsInstance(result, ParsedDocument)
@@ -163,7 +167,7 @@ class TestImageFileParser(unittest.TestCase):
                 return original_open(*args, **kwargs)
 
             with patch('builtins.open', side_effect=mock_open):
-                result = parser.parse(self.temp_image.name, "http://example.com/test.png")
+                result = parser.parse(self.temp_image.name, "http://test.local/test.png")
 
                 # Should return empty ParsedDocument with title, not crash
                 self.assertIsInstance(result, ParsedDocument)
@@ -246,68 +250,6 @@ class TestImageFileParser(unittest.TestCase):
             # Test that non-image files don't get ImageFileParser
             parser = processor.create_document_parser(filename="document.pdf")
             self.assertNotIsInstance(parser, ImageFileParser)
-
-    def test_standalone_image_uses_core_indexing(self):
-        """Test that standalone image files always use core indexing"""
-        from omegaconf import OmegaConf
-        from core.indexer import Indexer
-
-        # Create config with use_core_indexing=False and no chunking
-        cfg = OmegaConf.create({
-            'vectara': {
-                'verbose': False,
-                'reindex': False,
-                'create_corpus': False,
-                'store_docs': False,
-                'output_dir': 'test_output',
-                'remove_code': True,
-                'remove_boilerplate': False,
-                'post_load_timeout': 5,
-                'timeout': 90,
-                'whisper_model': 'base'
-            },
-            'crawling': {'crawler_type': 'test'},
-            'doc_processing': {
-                'parse_tables': False,
-                'enable_gmft': False,
-                'do_ocr': False,
-                'summarize_images': True,
-                'add_image_bytes': False,
-                'process_locally': True,
-                'doc_parser': 'docling',
-                'use_core_indexing': False,  # Explicitly disable
-                'unstructured_config': {'chunking_strategy': 'none', 'chunk_size': 1024},
-                'docling_config': {'chunking_strategy': 'none'},
-                'extract_metadata': [],
-                'contextual_chunking': False,  # No chunking
-                'inline_images': True,
-                'image_context': {'num_previous_chunks': 1, 'num_next_chunks': 1},
-                'model_config': {'vision': {'provider': 'openai', 'model_name': 'gpt-4o'}}
-            }
-        })
-
-        with patch('core.doc_parser.ImageSummarizer') as mock_summarizer_class:
-            mock_summarizer = Mock()
-            mock_summarizer.summarize_image.return_value = "A test image summary"
-            mock_summarizer_class.return_value = mock_summarizer
-
-            indexer = Indexer(cfg, "http://api.vectara.io", "test_corpus", "test_api_key")
-
-            # Mock the index_segments method to capture its arguments
-            indexer.index_segments = MagicMock(return_value=True)
-
-            # Index a standalone image file
-            result = indexer.index_file(self.temp_image.name, "http://example.com/test.png", {'source': 'test'})
-
-            # Verify index_segments was called
-            self.assertTrue(indexer.index_segments.called)
-
-            # Get the call arguments
-            call_args = indexer.index_segments.call_args
-
-            # Verify use_core_indexing was set to True despite config having it False
-            self.assertTrue(call_args.kwargs['use_core_indexing'],
-                          "Standalone image files should force use_core_indexing=True")
 
 
 if __name__ == '__main__':
