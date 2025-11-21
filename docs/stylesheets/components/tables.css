@@ -28,62 +28,46 @@
     margin: 0.5rem 0;
 }
 
-/* Adjust table column widths for configuration tables */
-.md-typeset table th:nth-child(1),
-.md-typeset table td:nth-child(1) {
-    width: 25%;
-}
-
-.md-typeset table th:nth-child(2),
-.md-typeset table td:nth-child(2) {
-    width: 10%;
-}
-
-.md-typeset table th:nth-child(3),
-.md-typeset table td:nth-child(3) {
-    width: 10%;
-}
-
-.md-typeset table th:nth-child(4),
-.md-typeset table td:nth-child(4) {
-    width: 12%;
-}
-
-.md-typeset table th:nth-child(5),
-.md-typeset table td:nth-child(5) {
-    width: 43%;
-}
+/* Table column widths - Let tables auto-adjust naturally based on content */
+/* Removed fixed percentage widths to allow flexible, content-based sizing */
 
 /* Crawler Table (used in crawlers/index.md) */
 .crawler-table-container {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
 }
 
 .crawler-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: auto;
 }
 
 .crawler-table thead {
-    background: rgba(63, 81, 181, 0.05);
+    background: transparent;
+    border-bottom: 1px solid var(--vectara-border);
 }
 
 [data-md-color-scheme="slate"] .crawler-table thead {
-    background: rgba(99, 102, 241, 0.1);
+    background: transparent;
 }
 
 .crawler-table-header th {
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.5rem 0.75rem;
+    font-size: 0.55rem;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    padding: 0.25rem 0.5rem;
     text-align: left;
+    color: var(--vectara-text-muted);
+}
+
+.crawler-table-header th:first-child {
+    padding-left: 0;
 }
 
 .crawler-table-header th:last-child {
     text-align: right;
-    padding-right: 1rem;
+    padding-right: 0;
 }
 
 .crawler-table tbody tr {
@@ -104,8 +88,17 @@
 }
 
 .crawler-table td {
-    padding: 0.625rem 0.75rem;
-    font-size: 0.75rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.7rem;
+    vertical-align: middle;
+}
+
+.crawler-table td:first-child {
+    padding-left: 0;
+}
+
+.crawler-table td:last-child {
+    padding-right: 0;
 }
 
 .crawler-name {
@@ -115,22 +108,22 @@
 
 .crawler-description {
     color: var(--vectara-text-muted);
-    line-height: 1.5;
+    line-height: 1.4;
 }
 
 .crawler-guide {
     text-align: right;
-    padding-right: 1rem;
 }
 
 .crawler-guide a {
     color: var(--vectara-primary);
     text-decoration: none;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
     transition: color 0.2s ease;
+    font-weight: 500;
 }
 
 .crawler-guide a:hover {

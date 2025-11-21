@@ -1,5 +1,12 @@
 /* ============================================
-   BASE STYLES - Variables, Typography, Global
+
+   BASE
+
+   ============================================ */
+
+
+/* ============================================
+   GLOBAL STYLES & TYPOGRAPHY
    ============================================ */
 
 :root {
@@ -10,6 +17,7 @@
     --vectara-card-bg: #ffffff;
     --transition-smooth: all 0.2s ease;
 }
+
 
 [data-md-color-scheme="slate"] {
     --vectara-border: #374151;
@@ -34,17 +42,238 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--vectara-border);
+    background: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.1);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--vectara-text-muted);
+    background: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.2);
 }
 
-/* Compact headings */
-.md-typeset h4 {
-    font-size: 0.8rem;
-    margin-top: 0.75rem;
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.1) var(--md-default-bg-color);
+}
+
+[data-md-color-scheme="slate"] * {
+    scrollbar-color: rgba(255, 255, 255, 0.1) var(--md-default-bg-color);
+}
+
+h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
     margin-bottom: 0.5rem;
+}
+
+h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+p {
+    margin-bottom: 0.75rem;
+    color: var(--vectara-text-muted);
+}
+
+
+/* ============================================
+   NAVIGATION STYLES
+   ============================================ */
+
+.md-nav__item--nested > .md-nav__link {
+    font-weight: 700;
+    color: var(--md-default-fg-color);
+    font-size: 0.7rem;
+    text-transform: none;
+    padding: 0.4rem 0;
+    padding-left: 0;
+}
+
+.md-nav__item--nested > .md-nav__link::after {
+    display: none;
+}
+
+.md-nav__item {
+    padding: 0.1rem 0;
+}
+
+.md-nav__link {
+    font-size: 0.7rem;
+    padding: 0.3rem 0;
+    padding-left: 1.2rem;
+}
+
+.md-nav__item--nested > .md-nav__link {
+    padding-left: 0;
+}
+
+.md-nav__item .md-nav__item {
+    padding-left: 0;
+}
+
+.md-nav__link:hover {
+    background-color: transparent;
+}
+
+/* Left Navigation Styling */
+.md-sidebar--primary .md-nav__item {
+    padding: 0;
+    margin: 0;
+    line-height: 1;
+}
+
+.md-sidebar--primary .md-nav__link {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.75rem;
+    border-radius: 0.25rem;
+    transition: var(--transition-smooth);
+    line-height: 1;
+}
+
+.md-sidebar--primary .md-nav__link:hover {
+    background-color: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.06);
+}
+
+.md-sidebar--primary .md-nav__link--active {
+    color: var(--vectara-primary);
+    font-weight: 600;
+    background-color: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.06);
+}
+
+[data-md-color-scheme="slate"] .md-sidebar--primary .md-nav__link:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-md-color-scheme="slate"] .md-sidebar--primary .md-nav__link--active {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.md-sidebar--primary .md-nav__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.5rem 0 0 0;
+    margin-bottom: 0.25rem;
+    margin-top: 0.75rem;
+    color: var(--md-default-fg-color) !important;
+}
+
+.md-sidebar--primary .md-nav__title:first-child {
+    margin-top: 0;
+}
+
+/* Section headings in nested navigation */
+.md-sidebar--primary .md-nav__item--section {
+    margin-top: 0.75rem !important;
+}
+
+.md-sidebar--primary .md-nav__item--section:first-child {
+    margin-top: 0 !important;
+}
+
+.md-sidebar--primary .md-nav__item--section > .md-nav__link {
+    font-size: 0.75rem !important;
+    font-weight: 700 !important;
+    padding: 0.5rem 0.75rem !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    color: var(--md-default-fg-color) !important;
+    pointer-events: none;
+}
+
+.md-sidebar--primary .md-nav__list {
+    padding: 0 0 0.5rem 0;
+    margin: 0;
+}
+
+/* Table of Contents Styling */
+.md-sidebar--secondary .md-nav__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
+}
+
+.md-sidebar--secondary .md-nav__list {
+    padding: 0;
+}
+
+.md-sidebar--secondary .md-nav__item {
+    padding: 0;
+    margin: 0;
+}
+
+.md-sidebar--secondary .md-nav__link {
+    font-size: 0.7rem;
+    padding: 0.05rem 0.75rem;
+    border-radius: 0.25rem;
+    transition: var(--transition-smooth);
+}
+
+.md-sidebar--secondary .md-nav__link:hover {
+    background-color: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.06);
+}
+
+.md-sidebar--secondary .md-nav__link--active {
+    color: var(--vectara-primary);
+    font-weight: 600;
+    background-color: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.06);
+}
+
+[data-md-color-scheme="slate"] .md-sidebar--secondary .md-nav__link:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-md-color-scheme="slate"] .md-sidebar--secondary .md-nav__link--active {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Hide sub-headings in TOC (h3, h4, etc.) */
+.md-sidebar--secondary .md-nav__item .md-nav {
+    display: none;
+}
+
+
+/* ============================================
+   CODE BLOCKS
+   ============================================ */
+
+.md-typeset pre {
+    font-size: 0.75rem;
+}
+
+.md-typeset code {
+    font-size: 0.75rem;
+}
+
+
+/* ============================================
+   HORIZONTAL RULES
+   ============================================ */
+
+hr {
+    margin: 2rem 0;
+    border-color: var(--vectara-border);
 }

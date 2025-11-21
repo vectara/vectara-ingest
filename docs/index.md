@@ -348,12 +348,10 @@ We welcome contributions! Whether it's bug fixes, new crawlers, documentation im
 
 ---
 
-## License
+## Author
 
 <div class="content-card" markdown="1">
 
-Vectara Ingest is released under the [Apache 2.0 License](https://opensource.org/licenses/Apache-2.0).
-
-Made with ❤️ by Vectara. For questions or commercial support inquiries, reach out to support@vectara.com.
+Made with ❤️ by [Vectara](https://www.vectara.com). For questions or commercial support inquiries, reach out to support@vectara.com.
 
 </div>

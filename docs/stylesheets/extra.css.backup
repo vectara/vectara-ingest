@@ -311,8 +311,7 @@ p {
    ============================================ */
 
 .subtitle {
-    font-size: 0.95rem;
-    line-height: 1.6;
+    font-size: 1rem;
     color: var(--vectara-text-muted);
     margin: 1rem 0;
     max-width: 48rem;

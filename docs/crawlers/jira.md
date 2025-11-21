@@ -2,27 +2,300 @@
 
 The Jira crawler indexes issues from Jira Cloud, Server, and Data Center instances with full support for issue descriptions, comments, attachments, and custom fields.
 
-## Overview
+<div class="crawler-info-cards">
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+      </div>
+      <strong>Crawler Type</strong>
+    </div>
+    <code>jira</code>
+  </div>
 
-- **Crawler Type**: `jira`
-- **Authentication**: Basic auth (username/password or API token)
-- **API Support**: Jira REST API v2 and v3
-- **Issue Content**: Descriptions, comments, attachments, and metadata
-- **Attachment Types**: Images and documents (PDFs, DOCX, XLSX, etc.)
-- **Format Support**: Atlassian Document Format (ADF) parsing for rich content
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      </div>
+      <strong>Authentication</strong>
+    </div>
+    <p>Basic auth (username/password or API token)</p>
+  </div>
 
-## Use Cases
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><filter id="filter0"><feFlood flood-color="#4B5563" result="bg" /><feMerge><feMergeNode in="bg"/><feMergeNode in="SourceGraphic"/></feMerge></filter><rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="none"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      </div>
+      <strong>Content Types</strong>
+    </div>
+    <p>Issues, descriptions, comments, attachments, custom fields</p>
+  </div>
 
-- Knowledge base from tracked issues
-- Bug tracking and resolution history
-- Feature request documentation
-- Technical specifications from Jira issues
-- Problem resolution archives
-- Team documentation from issue discussions
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      </div>
+      <strong>Filtering</strong>
+    </div>
+    <p>JQL (Jira Query Language) for advanced queries</p>
+  </div>
 
-## Getting Started: API Authentication
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+      </div>
+      <strong>Attachments</strong>
+    </div>
+    <p>Images and documents (PDF, DOCX, XLSX, etc.)</p>
+  </div>
 
-### Get Your Jira API Credentials
+  <div class="crawler-info-card">
+    <div class="crawler-info-header">
+      <div class="crawler-info-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      </div>
+      <strong>API Support</strong>
+    </div>
+    <p>Jira REST API v2 and v3</p>
+  </div>
+</div>
+
+---
+
+## How It Works
+
+<div class="use-cases-list">
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Authentication</strong> - Connects to Jira using API token or username/password</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Issue Discovery</strong> - Uses JQL queries to discover issues matching your criteria</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Content Extraction</strong> - Retrieves issue descriptions and comments in Atlassian Document Format (ADF)</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Metadata Capture</strong> - Extracts issue key, project, status, assignee, priority, and custom fields</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Attachment Processing</strong> - Optionally downloads and extracts text from image and document attachments</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Indexing</strong> - Sends extracted content to Vectara with all captured metadata</span>
+  </div>
+  <div class="use-case-item">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    <span><strong>Incremental Updates</strong> - Supports incremental crawling by only indexing new/updated issues</span>
+  </div>
+</div>
+
+---
+
+## Configuration Parameters
+
+### Instance and Query Configuration
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `jira_base_url` | string | Yes | - | Jira instance URL (https://your-company.atlassian.net) |
+| `jira_jql` | string | Yes | - | JQL query to filter issues |
+| `api_version` | int | No | `3` | Jira API version (2 or 3) |
+| `max_results` | int | No | `100` | Results per page for pagination |
+
+### Authentication
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `jira_username` | string | Yes | Email (Cloud) or username (Server) - loaded from `JIRA_USERNAME` |
+| `jira_password` | string | Yes | API token (Cloud) or password (Server) - loaded from `JIRA_PASSWORD` |
+
+**Note:** Authentication credentials should be stored in `secrets.toml` and loaded via environment variables.
+
+### Field Selection
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fields` | list | [default fields] | Fields to extract from issues (supports custom fields) |
+
+### Attachment Processing
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `include_image_attachments` | boolean | `true` | Index image attachments (PNG, JPG, etc.) |
+| `include_document_attachments` | boolean | `false` | Index document attachments (PDF, DOCX, XLSX, etc.) |
+
+---
+
+## Content Extraction
+
+<div class="content-extraction-grid">
+  <div class="extraction-card">
+    <h3>Issue Content</h3>
+    <p>The crawler extracts full issue content with rich text formatting.</p>
+
+<p><strong>Extracted data:</strong></p>
+<ul>
+  <li>Issue summary (title)</li>
+  <li>Description in ADF format</li>
+  <li>All comments with author info</li>
+  <li>Issue status and workflow state</li>
+  <li>Priority level</li>
+  <li>Direct links to Jira</li>
+</ul>
+  </div>
+
+  <div class="extraction-card">
+    <h3>Metadata</h3>
+    <p>All issue metadata is automatically extracted and indexed for filtering.</p>
+
+<p><strong>Captured metadata:</strong></p>
+<ul>
+  <li>Issue key (e.g., PROJ-123)</li>
+  <li>Project name and key</li>
+  <li>Issue type (Bug, Story, Task, etc.)</li>
+  <li>Status (Open, In Progress, Closed)</li>
+  <li>Priority level</li>
+  <li>Reporter and assignee</li>
+  <li>Creation and update timestamps</li>
+  <li>Resolution date</li>
+  <li>Labels/tags</li>
+</ul>
+  </div>
+
+  <div class="extraction-card">
+    <h3>Custom Fields</h3>
+    <p>Supports extraction of any custom fields configured in your Jira instance.</p>
+
+<p><strong>Custom field support:</strong></p>
+<ul>
+  <li>Text fields</li>
+  <li>Select fields (single/multi)</li>
+  <li>Number fields</li>
+  <li>Date fields</li>
+  <li>User picker fields</li>
+  <li>Specify by field ID (customfield_10001)</li>
+</ul>
+  </div>
+
+  <div class="extraction-card">
+    <h3>Image Attachments</h3>
+    <p>When enabled, the crawler processes image attachments with optional AI summarization.</p>
+
+<p><strong>Supported formats:</strong></p>
+<ul>
+  <li>PNG, JPG, JPEG</li>
+  <li>GIF, BMP, WEBP</li>
+  <li>SVG</li>
+</ul>
+
+<p><strong>Processing options:</strong></p>
+<ul>
+  <li>AI-powered image summarization</li>
+  <li>Metadata extraction</li>
+  <li>Parent issue linking</li>
+</ul>
+  </div>
+
+  <div class="extraction-card">
+    <h3>Document Attachments</h3>
+    <p>Extracts text content from various document formats.</p>
+
+<p><strong>Supported formats:</strong></p>
+<ul>
+  <li>PDF documents</li>
+  <li>Word: DOC, DOCX</li>
+  <li>Excel: XLS, XLSX</li>
+  <li>PowerPoint: PPT, PPTX</li>
+  <li>Text: TXT, MD</li>
+</ul>
+
+<p><strong>Processing features:</strong></p>
+<ul>
+  <li>Table extraction</li>
+  <li>Structured chunking</li>
+  <li>OCR support (optional)</li>
+</ul>
+  </div>
+
+  <div class="extraction-card">
+    <h3>Comments</h3>
+    <p>All issue comments are extracted with full author information and timestamps.</p>
+
+<p><strong>Comment data:</strong></p>
+<ul>
+  <li>Comment body (ADF format)</li>
+  <li>Author name and email</li>
+  <li>Creation timestamp</li>
+  <li>Update timestamp</li>
+  <li>Comment ID</li>
+  <li>Nested thread support</li>
+</ul>
+  </div>
+</div>
+
+## Getting Started
+
+<div class="info-box-prerequisites">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+  <div>
+    <p><strong>Before you begin:</strong></p>
+    <ul>
+      <li>Set up your Vectara account and create a corpus</li>
+      <li>Generate a Jira API token (see <a href="#getting-your-jira-api-credentials">below</a>)</li>
+      <li>Identify the projects or issues you want to index</li>
+    </ul>
+  </div>
+</div>
+
+<div class="quick-start-card">
+  <h3>Quick Start</h3>
+  <p>Here's the simplest way to index Jira issues:</p>
+
+```yaml
+vectara:
+  endpoint: api.vectara.io
+  corpus_key: jira-issues
+  remove_boilerplate: false
+
+crawling:
+  crawler_type: jira
+
+jira_crawler:
+  jira_base_url: "https://your-company.atlassian.net"
+  jira_jql: "project = MY AND resolution = Unresolved"
+  api_version: 3
+
+metadata:
+  source: jira
+```
+
+<p><strong>Add credentials to <code>secrets.toml</code>:</strong></p>
+
+```toml
+[default]
+JIRA_USERNAME = "your-email@example.com"
+JIRA_PASSWORD = "your-api-token"  # NOT your Jira password
+```
+
+<p><strong>Run:</strong></p>
+
+```bash
+bash run.sh config/jira-issues.yaml default
+```
+
+</div>
+
+### Getting Your Jira API Credentials
 
 #### For Jira Cloud
 
@@ -45,732 +318,307 @@ Server and Data Center use the same API endpoints but support different authenti
 - **Option 2**: Use your Jira username and password directly
 - **Option 3**: Contact your Jira administrator for service account credentials
 
-### Setting Environment Variables
+---
 
-Store your credentials securely as environment variables:
+## JQL Query Language
 
-```bash
-# For Jira Cloud
-export JIRA_USERNAME="your-email@example.com"
-export JIRA_PASSWORD="your-api-token"  # NOT your Jira password
+Jira Query Language (JQL) provides powerful filtering capabilities for selecting exactly the issues you want to index.
 
-# For Jira Server/Data Center
-export JIRA_USERNAME="jira_service_account"
-export JIRA_PASSWORD="your-jira-password"
-```
+### Basic Project Queries
 
-The crawler will automatically read these from your environment.
+<div class="cql-examples-grid">
 
-## Configuration
-
-### Basic Configuration
+<div class="cql-example-card">
+  <h4>Single project</h4>
 
 ```yaml
-vectara:
-  endpoint: api.vectara.io
-  corpus_key: jira-issues
-
-crawling:
-  crawler_type: jira
-
-jira_crawler:
-  # Jira instance URL (without trailing slash)
-  jira_base_url: "https://your-company.atlassian.net"
-
-  # Credentials (read from environment: JIRA_USERNAME, JIRA_PASSWORD)
-  jira_username: "${JIRA_USERNAME}"
-  jira_password: "${JIRA_PASSWORD}"
-
-  # JQL query to filter issues
-  jira_jql: "project = MY AND resolution = Unresolved"
-
-  # API version (2 or 3)
-  api_version: 3
-
-  # Maximum results per page
-  max_results: 100
+jira_jql: "project = MYPROJ"
 ```
 
-### Advanced Configuration
+<p>Indexes all issues in the MYPROJ project.</p>
+</div>
+
+<div class="cql-example-card">
+  <h4>Multiple projects</h4>
 
 ```yaml
-vectara:
-  endpoint: api.vectara.io
-  corpus_key: jira-kb
-  reindex: false
-  verbose: true
-
-crawling:
-  crawler_type: jira
-
-jira_crawler:
-  jira_base_url: "https://jira.example.com"
-  jira_username: "${JIRA_USERNAME}"
-  jira_password: "${JIRA_PASSWORD}"
-
-  # Advanced JQL query with multiple conditions
-  jira_jql: 'project = "Engineering" AND type = Bug AND created >= -30d'
-
-  # API version selection
-  api_version: 3  # Use v3 for Cloud (recommended), v2 for Server
-
-  # Custom field selection
-  fields:
-    - summary
-    - description
-    - comment
-    - attachment
-    - project
-    - issuetype
-    - status
-    - priority
-    - reporter
-    - assignee
-    - created
-    - updated
-    - resolutiondate
-    - labels
-    - customfield_10001  # Custom fields supported
-
-  # Pagination
-  max_results: 100  # Per page (max 100 for API v2, no limit for v3)
-
-  # Attachment processing
-  include_image_attachments: true   # PNG, JPG, GIF, etc.
-  include_document_attachments: true # PDF, DOCX, XLSX, etc.
-
-doc_processing:
-  # NOTE: This section applies ONLY to attachments
-  # Issue descriptions/comments use vectara.chunking_strategy
-
-  doc_parser: unstructured
-  do_ocr: false
-  parse_tables: true
-  summarize_images: true
-
-  use_core_indexing: false  # Use structured indexing for better chunking
-  process_locally: true
-
-metadata:
-  source: jira
-  environment: production
+jira_jql: "project IN (PROJ1, PROJ2, PROJ3)"
 ```
 
-## Configuration Parameters
+<p>Indexes issues from multiple projects.</p>
+</div>
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `jira_base_url` | string | Yes | - | Jira instance URL (https://your-company.atlassian.net) |
-| `jira_username` | string | Yes | - | Jira username or email (Cloud) |
-| `jira_password` | string | Yes | - | Jira password or API token |
-| `jira_jql` | string | Yes | - | JQL query to filter issues |
-| `api_version` | int | No | `3` | Jira API version (2 or 3) |
-| `fields` | list | No | [default fields] | Fields to extract from issues |
-| `max_results` | int | No | `100` | Results per page for pagination |
-| `include_image_attachments` | bool | No | `true` | Index image attachments |
-| `include_document_attachments` | bool | No | `false` | Index document attachments |
-
-## Default Fields Extracted
-
-If you don't specify custom `fields`, the crawler extracts:
-
-- `summary` - Issue title
-- `description` - Issue description (ADF format)
-- `comment` - Issue comments (ADF format)
-- `project` - Project information
-- `issuetype` - Issue type (Bug, Story, Task, etc.)
-- `status` - Current status (Open, In Progress, Closed, etc.)
-- `priority` - Issue priority
-- `reporter` - Who reported the issue
-- `assignee` - Assigned team member
-- `created` - Creation date
-- `updated` - Last update date
-- `resolutiondate` - Resolution date
-- `labels` - Issue labels
-- `attachment` - Attached files
-
-## How It Works
-
-### Issue Processing
-
-1. **Query Execution**: Fetches issues matching your JQL query
-2. **ADF Parsing**: Extracts text from Atlassian Document Format descriptions and comments
-3. **Metadata Extraction**: Collects project, status, assignee, and other fields
-4. **Comment Extraction**: Includes all comments with author information
-5. **Indexing**: Sends structured issue data to Vectara
-
-### Attachment Processing
-
-For each attachment:
-1. **Type Detection**: Identifies if it's an image or document
-2. **Download**: Fetches the attachment content from Jira
-3. **Processing**: Processes based on type:
-   - **Images**: Can be summarized by AI if `summarize_images: true`
-   - **Documents**: Extracted and chunked by unstructured parser
-4. **Metadata**: Indexes with parent issue information
-5. **Cleanup**: Removes temporary files
-
-### Metadata Captured
-
-The crawler automatically indexes:
-
-- **Issue Key**: Unique issue identifier (e.g., "PROJ-123")
-- **Summary**: Issue title
-- **Project**: Project name
-- **Type**: Issue type (Bug, Story, Task, Epic, etc.)
-- **Status**: Current workflow status
-- **Priority**: Issue priority level
-- **Reporter**: Issue creator name
-- **Assignee**: Currently assigned team member
-- **Created**: Issue creation timestamp
-- **Updated**: Last modification timestamp
-- **Resolved**: Resolution date (if closed)
-- **Labels**: Issue labels/tags
-- **URL**: Link to browse issue in Jira
-- **Source**: Always "jira"
-
-## JQL Query Examples
-
-### Basic Queries
+<div class="cql-example-card">
+  <h4>By status</h4>
 
 ```yaml
-# All unresolved issues in a project
 jira_jql: "project = MYPROJ AND resolution = Unresolved"
-
-# Issues closed in the last 30 days
-jira_jql: "project = MYPROJ AND updated >= -30d AND status = Closed"
-
-# All issues with a specific label
-jira_jql: "project = MYPROJ AND labels = documentation"
-
-# Issues assigned to specific team member
-jira_jql: "project = MYPROJ AND assignee = john@example.com"
 ```
+
+<p>Only unresolved (open) issues.</p>
+</div>
+
+<div class="cql-example-card">
+  <h4>By issue type</h4>
+
+```yaml
+jira_jql: "project = MYPROJ AND type IN (Bug, Story)"
+```
+
+<p>Only bugs and stories, excluding other issue types.</p>
+</div>
+
+</div>
+
+### Time-Based Queries
+
+<div class="cql-examples-grid">
+
+<div class="cql-example-card">
+  <h4>Recent updates</h4>
+
+```yaml
+jira_jql: "project = MYPROJ AND updated >= -30d"
+```
+
+<p><strong>Best for:</strong> Incremental crawls - only issues updated in last 30 days.</p>
+</div>
+
+<div class="cql-example-card">
+  <h4>Date range</h4>
+
+```yaml
+jira_jql: 'project = MYPROJ AND created >= "2024-01-01" AND created <= "2024-12-31"'
+```
+
+<p><strong>Best for:</strong> Indexing issues from a specific time period.</p>
+</div>
+
+<div class="cql-example-card">
+  <h4>Recently closed</h4>
+
+```yaml
+jira_jql: "project = MYPROJ AND status = Closed AND updated >= -7d"
+```
+
+<p><strong>Best for:</strong> Tracking recently resolved issues.</p>
+</div>
+
+<div class="cql-example-card">
+  <h4>Created this quarter</h4>
+
+```yaml
+jira_jql: "project = MYPROJ AND created >= startOfQuarter()"
+```
+
+<p><strong>Best for:</strong> Current quarter reporting and analytics.</p>
+</div>
+
+</div>
 
 ### Advanced Queries
 
-```yaml
-# Multiple projects, only certain types
-jira_jql: 'project in (PROJ1, PROJ2) AND type in (Bug, Epic) AND status != Closed'
+<div class="cql-examples-grid">
 
-# Issues with specific priority and recent activity
-jira_jql: 'priority >= High AND updated >= -7d'
-
-# Complex conditions with text search
-jira_jql: 'project = MYPROJ AND text ~ "performance" AND resolution = Unresolved'
-
-# Issues with attachments
-jira_jql: 'project = MYPROJ AND attachments > 0'
-
-# Issues updated in a date range
-jira_jql: 'project = MYPROJ AND updated >= "2024-01-01" AND updated <= "2024-12-31"'
-```
-
-### Documentation-Focused Queries
+<div class="cql-example-card">
+  <h4>Priority filtering</h4>
 
 ```yaml
-# Issues marked as documentation
-jira_jql: 'project = DOCS AND type = "Technical Documentation"'
-
-# Feature specifications
-jira_jql: 'project = PROJ AND type = Story AND labels = specification'
-
-# Design decisions and ADRs
-jira_jql: 'project = ARCH AND type = Decision'
-
-# API documentation from issues
-jira_jql: 'text ~ API AND labels = documentation'
+jira_jql: "project = MYPROJ AND priority >= High AND resolution = Unresolved"
 ```
 
-## Cloud vs Server/Data Center
+<p><strong>Use case:</strong> Focus on high-priority open issues.</p>
+</div>
 
-### Jira Cloud
-
-- **API Version**: Use API v3 (recommended)
-- **Authentication**: Email + API token
-- **Limitations**: Some advanced features may be Cloud-only
-- **Base URL**: `https://your-company.atlassian.net`
+<div class="cql-example-card">
+  <h4>Text search</h4>
 
 ```yaml
-jira_crawler:
-  jira_base_url: "https://your-company.atlassian.net"
-  jira_username: "your-email@example.com"
-  jira_password: "${JIRA_API_TOKEN}"  # NOT password
-  api_version: 3
+jira_jql: 'project = MYPROJ AND text ~ "performance optimization"'
 ```
 
-### Jira Server/Data Center
+<p><strong>Use case:</strong> Issues containing specific keywords in any field.</p>
+</div>
 
-- **API Version**: Use API v2 (Cloud supports both v2 and v3)
-- **Authentication**: Username + password (or service account)
-- **Self-Hosted**: Full control over configuration
-- **Base URL**: `https://jira.example.com` or internal domain
+<div class="cql-example-card">
+  <h4>With attachments</h4>
 
 ```yaml
-jira_crawler:
-  jira_base_url: "https://jira.example.com"
-  jira_username: "service_account"
-  jira_password: "${JIRA_PASSWORD}"
-  api_version: 2
+jira_jql: "project = MYPROJ AND attachments > 0"
 ```
 
-### API Version Differences
+<p><strong>Use case:</strong> Only issues that have file attachments.</p>
+</div>
 
-| Feature | API v2 | API v3 |
-|---------|--------|--------|
-| **Availability** | Server, Cloud | Cloud (recommended) |
-| **Pagination** | Offset-based (`startAt`) | Token-based (`nextPageToken`) |
-| **Fields** | Standard fields only | Support for custom fields |
-| **Performance** | Slightly slower | Optimized for speed |
-| **Modern Features** | Limited | Full support |
+<div class="cql-example-card">
+  <h4>Complex conditions</h4>
+
+```yaml
+jira_jql: 'project = TECH AND type = Bug AND (priority = Critical OR priority = Blocker) AND status != Closed'
+```
+
+<p><strong>Use case:</strong> Critical/blocker bugs that are still open.</p>
+</div>
+
+</div>
+
+---
+
+## API Version Comparison
+
+<div class="crawl-methods-grid">
+  <div class="method-card">
+    <h3>API v3 <span class="recommended-badge">Recommended</span></h3>
+    <p>Modern API for Jira Cloud with improved performance.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>jira_crawler:<br>  api_version: 3</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Best for:</h4>
+      <ul>
+        <li>Jira Cloud instances</li>
+        <li>New integrations</li>
+        <li>Better performance needs</li>
+        <li>Custom field support</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Features:</h4>
+      <ul>
+        <li>Token-based pagination</li>
+        <li>Full custom field support</li>
+        <li>Optimized for speed</li>
+        <li>Modern API design</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="method-card">
+    <h3>API v2</h3>
+    <p>Legacy API for Server/Data Center compatibility.</p>
+
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>jira_crawler:<br>  api_version: 2</code>
+    </div>
+
+    <div class="method-section">
+      <h4>Best for:</h4>
+      <ul>
+        <li>Jira Server instances</li>
+        <li>Jira Data Center</li>
+        <li>Legacy integrations</li>
+        <li>On-premise deployments</li>
+      </ul>
+    </div>
+
+    <div class="method-section">
+      <h4>Features:</h4>
+      <ul>
+        <li>Offset-based pagination</li>
+        <li>Standard field support</li>
+        <li>Proven stability</li>
+        <li>Wide compatibility</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+---
 
 ## Attachment Handling
 
-### Image Attachments
+<div class="crawl-methods-grid">
+  <div class="method-card">
+    <h3>Image Attachments</h3>
+    <p>Process image files attached to Jira issues.</p>
 
-Supported image types: PNG, JPG, JPEG, GIF, BMP, WEBP, SVG
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>jira_crawler:<br>  include_image_attachments: true<br><br>doc_processing:<br>  summarize_images: true</code>
+    </div>
 
-```yaml
-jira_crawler:
-  include_image_attachments: true
+    <div class="method-section">
+      <h4>Supported formats:</h4>
+      <ul>
+        <li>PNG, JPG, JPEG</li>
+        <li>GIF, BMP, WEBP</li>
+        <li>SVG</li>
+      </ul>
+    </div>
 
-doc_processing:
-  summarize_images: true  # Use AI to describe images
-```
+    <div class="method-section">
+      <h4>Processing options:</h4>
+      <ul>
+        <li>AI summarization with GPT-4</li>
+        <li>Metadata extraction</li>
+        <li>Parent issue linking</li>
+        <li>Searchable descriptions</li>
+      </ul>
+    </div>
 
-When enabled:
-- Images are downloaded from Jira
-- Optionally summarized by AI models
-- Indexed with parent issue metadata
-- Searchable through Vectara
+    <div class="when-to-use">
+      <div class="when-to-use-icon">💡</div>
+      <div>
+        <h4>When to use</h4>
+        <p>Enable when issues contain screenshots, diagrams, or visual documentation</p>
+      </div>
+    </div>
+  </div>
 
-### Document Attachments
+  <div class="method-card">
+    <h3>Document Attachments</h3>
+    <p>Extract text from document files attached to issues.</p>
 
-Supported document types: PDF, DOCX, XLSX, PPTX, TXT, MD, DOC, XLS, PPT
+    <div class="code-block">
+      <span class="code-label">yaml</span>
+      <code>jira_crawler:<br>  include_document_attachments: true<br><br>doc_processing:<br>  doc_parser: unstructured<br>  parse_tables: true</code>
+    </div>
 
-```yaml
-jira_crawler:
-  include_document_attachments: true
+    <div class="method-section">
+      <h4>Supported formats:</h4>
+      <ul>
+        <li>PDF documents</li>
+        <li>Word: DOC, DOCX</li>
+        <li>Excel: XLS, XLSX</li>
+        <li>PowerPoint: PPT, PPTX</li>
+        <li>Text: TXT, MD</li>
+      </ul>
+    </div>
 
-doc_processing:
-  doc_parser: unstructured  # Extract text from documents
-  parse_tables: true        # Parse tables in documents
-  use_core_indexing: false  # Structured indexing for better chunking
-```
+    <div class="method-section">
+      <h4>Processing features:</h4>
+      <ul>
+        <li>Text extraction</li>
+        <li>Table parsing</li>
+        <li>Structured chunking</li>
+        <li>OCR support (optional)</li>
+      </ul>
+    </div>
 
-When enabled:
-- Documents are downloaded and parsed
-- Tables are extracted and indexed
-- Proper chunking preserves document structure
-- Full metadata preserved
+    <div class="when-to-use">
+      <div class="when-to-use-icon">💡</div>
+      <div>
+        <h4>When to use</h4>
+        <p>Enable when issues have technical docs, specs, or reports attached</p>
+      </div>
+    </div>
+  </div>
+</div>
 
-### Disabling Attachments
+---
 
-To skip all attachment processing:
+## Configuration Examples
 
-```yaml
-jira_crawler:
-  include_image_attachments: false
-  include_document_attachments: false
-```
-
-This speeds up indexing if you only need issue text.
-
-### Attachment Metadata
-
-Each indexed attachment includes:
-
-- `attachment_id` - Unique Jira attachment ID
-- `filename` - Original file name
-- `mime_type` - File MIME type
-- `file_size` - File size in bytes
-- `created` - Upload date
-- `attachment_author` - Who uploaded it
-- `parent_issue` - Parent issue key
-- `attachment_type` - "image" or "document"
-- All parent issue metadata
-
-## Custom Field Extraction
-
-### Adding Custom Fields
-
-To index custom fields, specify them by their ID:
-
-```yaml
-jira_crawler:
-  fields:
-    # Standard fields
-    - summary
-    - description
-    - comment
-    - project
-    - status
-
-    # Custom fields (use their IDs)
-    - customfield_10001  # Custom select field
-    - customfield_10002  # Custom text area
-    - customfield_10003  # Custom date field
-```
-
-### Finding Custom Field IDs
-
-1. Go to your Jira instance
-2. Edit an issue and inspect the field ID in the HTML (e.g., `customfield_10001`)
-3. Or use the Jira REST API:
-
-```bash
-curl -u "username:password" \
-  "https://your-company.atlassian.net/rest/api/3/field"
-```
-
-### Custom Field Example
+<div class="example-section">
+  <h3>Example 1: Simple Bug Tracking</h3>
+  <p>Index all unresolved bugs for a knowledge base</p>
 
 ```yaml
-jira_crawler:
-  jira_base_url: "https://company.atlassian.net"
-  jira_jql: "project = TECH"
-  fields:
-    - summary
-    - description
-    - comment
-    - project
-    - issuetype
-    - status
-    - customfield_10001  # "Technical Debt Level"
-    - customfield_10002  # "API Endpoint"
-    - customfield_10003  # "Performance Impact"
-```
-
-## Performance Tips for Large Instances
-
-### 1. Use Targeted JQL Queries
-
-Instead of fetching all issues:
-
-```yaml
-# Bad: Fetches everything
-jira_jql: "project = MYPROJ"
-
-# Good: Only relevant issues
-jira_jql: "project = MYPROJ AND status != Backlog AND updated >= -90d"
-```
-
-### 2. Batch by Project or Status
-
-Create separate configs for different categories:
-
-```yaml
-# config/jira-bugs.yaml
-jira_crawler:
-  jira_jql: "project = MYPROJ AND type = Bug AND resolution = Unresolved"
-
-# config/jira-docs.yaml
-jira_crawler:
-  jira_jql: "project = DOCS AND type = Documentation"
-```
-
-### 3. Disable Unnecessary Attachments
-
-Skip attachments if you only need issue text:
-
-```yaml
-jira_crawler:
-  include_image_attachments: false
-  include_document_attachments: false
-```
-
-### 4. Tune Pagination
-
-Adjust `max_results` based on issue complexity:
-
-```yaml
-jira_crawler:
-  # Smaller batches for complex issues with many attachments
-  max_results: 50
-
-  # Larger batches for simple issues
-  max_results: 100
-```
-
-### 5. Use Efficient Chunking
-
-For attachments:
-
-```yaml
-doc_processing:
-  use_core_indexing: false  # Structured for better performance
-  unstructured_config:
-    chunking_strategy: by_title  # Semantic boundaries
-    chunk_size: 3000             # Reasonable chunk size
-```
-
-### 6. Schedule Off-Peak Runs
-
-Run large crawls during off-hours to minimize impact:
-
-```bash
-# Run daily at 2 AM
-0 2 * * * cd /path/to/vectara-ingest && bash run.sh config/jira-large.yaml default
-```
-
-### 7. Monitor Memory Usage
-
-For instances with thousands of issues:
-
-```yaml
-# Process locally to save memory
-doc_processing:
-  process_locally: true
-```
-
-### 8. Reindex Strategy
-
-On subsequent runs, use appropriate reindex settings:
-
-```yaml
-vectara:
-  # First run: create new corpus
-  reindex: true
-
-  # Subsequent runs: only index new/updated issues
-  reindex: false
-```
-
-## Troubleshooting
-
-### Authentication Failed
-
-**Error**: `401 Unauthorized`
-
-**Solutions**:
-1. Verify API token is correct (Cloud only)
-2. For Cloud, use email address, not username
-3. Ensure password is NOT your Jira password (use API token)
-4. Check credentials are set in environment variables:
-   ```bash
-   echo $JIRA_USERNAME
-   echo $JIRA_PASSWORD
-   ```
-5. Verify user has API access enabled
-
-### No Issues Found
-
-**Error**: Crawler runs but indexes 0 issues
-
-**Solutions**:
-1. Check JQL query syntax:
-   ```bash
-   # Test in Jira UI first
-   ```
-2. Verify project key is correct:
-   - Go to Project Settings > Details
-   - Confirm the project key
-3. Try simpler JQL:
-   ```yaml
-   jira_jql: "project = MYPROJ"
-   ```
-4. Check user has permission to see issues
-5. Verify issue status values (case-sensitive):
-   ```bash
-   # List available statuses
-   curl -u "user:token" "https://company.atlassian.net/rest/api/3/status"
-   ```
-
-### Attachment Download Fails
-
-**Error**: `Failed to process attachment`
-
-**Solutions**:
-1. Verify attachment file types are supported
-2. Check file size isn't too large
-3. Ensure user has attachment download permissions
-4. Try disabling attachments to verify issue content works:
-   ```yaml
-   include_image_attachments: false
-   include_document_attachments: false
-   ```
-
-### ADF Parsing Issues
-
-**Error**: `Failed to extract description for PROJ-123`
-
-**Solutions**:
-1. This is usually non-fatal; descriptions may be in plain text
-2. Check logs for specific ADF parsing errors
-3. Try a different sample issue to verify format
-4. Contact Jira support if issue seems malformed
-
-### SSL Certificate Errors
-
-**Error**: `SSL: CERTIFICATE_VERIFY_FAILED`
-
-**Solutions**:
-1. For self-signed certificates in dev:
-   ```yaml
-   jira_crawler:
-     ssl_verify: false
-   ```
-2. For proper certificates, update your CA bundle
-3. For on-prem Jira, work with IT to configure proper certs
-
-### Rate Limiting
-
-**Error**: `429 Too Many Requests`
-
-**Solutions**:
-1. Jira Cloud has rate limits (standard 10 requests/second)
-2. Reduce batch size:
-   ```yaml
-   jira_crawler:
-     max_results: 50  # Instead of 100
-   ```
-3. Add delays between API calls if doing multiple runs
-4. For Data Center, check with admin for rate limits
-
-## Best Practices
-
-### 1. Start with Small Crawls
-
-```yaml
-# Test with a single project first
-jira_jql: "project = TEST LIMIT 10"
-```
-
-Then expand to production:
-
-```yaml
-# Production query
-jira_jql: "project = PROD AND updated >= -30d"
-```
-
-### 2. Use Descriptive Metadata
-
-```yaml
-metadata:
-  source: jira
-  environment: production
-  jira_instance: "company.atlassian.net"
-  sync_frequency: "daily"
-```
-
-### 3. Organize By Project
-
-Create separate configs for large Jira instances:
-
-```
-config/
-  jira-engineering.yaml
-  jira-product.yaml
-  jira-operations.yaml
-```
-
-### 4. Document Your JQL
-
-Add comments to explain your query:
-
-```yaml
-jira_crawler:
-  # Fetch all open bugs and stories updated in last 90 days
-  # Excludes old/backlog items to focus on active work
-  jira_jql: |
-    project = MYPROJ
-    AND type in (Bug, Story)
-    AND status != Backlog
-    AND updated >= -90d
-```
-
-### 5. Version Your Configurations
-
-Track configuration changes:
-
-```yaml
-metadata:
-  version: "1.0"
-  created_date: "2024-01-15"
-  last_updated: "2024-11-18"
-  notes: "Initial Jira ingest setup"
-```
-
-### 6. Regular Reindexing
-
-For most cases, periodic fresh crawls work best:
-
-```bash
-# Weekly full reindex
-0 1 * * 0 cd /path && bash run.sh config/jira-prod.yaml default
-
-# Or use reindex flag for incremental updates
-vectara:
-  reindex: false  # Only new/updated issues
-```
-
-### 7. Monitor Indexing
-
-Watch logs for issues:
-
-```bash
-# Monitor crawler in real-time
-docker logs -f vingest
-
-# Or check specific errors
-grep "Error" logs/ingest.log
-```
-
-## Running the Crawler
-
-### Create Your Configuration
-
-```bash
-# Create config file
-vim config/jira-issues.yaml
-```
-
-Enter your configuration (see examples above).
-
-### Set Environment Variables
-
-```bash
-export JIRA_USERNAME="your-email@example.com"
-export JIRA_PASSWORD="your-api-token"
-```
-
-### Run the Crawler
-
-```bash
-# Run the crawler
-bash run.sh config/jira-issues.yaml default
-
-# Monitor progress
-docker logs -f vingest
-```
-
-### Scheduling Regular Crawls
-
-Use cron for scheduled indexing:
-
-```bash
-# Daily at 2 AM
-0 2 * * * cd /path/to/vectara-ingest && bash run.sh config/jira-issues.yaml default
-
-# Twice weekly
-0 2 * * 1,4 cd /path/to/vectara-ingest && bash run.sh config/jira-issues.yaml default
-```
-
-Or use your preferred scheduler (GitHub Actions, Jenkins, etc.).
-
-## Related Documentation
-
-- [Base Configuration](../configuration-base.md) - Common settings for all crawlers
-- [Crawlers Overview](index.md) - Other available crawlers
-- [Deployment](../deployment/docker.md) - Running in production
-- [Getting Started](../getting-started.md) - Initial setup guide
-
-## Complete Examples
-
-### Example 1: Simple Unresolved Issues
-
-```yaml
-# Simple config: Index all open bugs
 vectara:
   endpoint: api.vectara.io
   corpus_key: jira-bugs
@@ -783,23 +631,20 @@ jira_crawler:
   jira_username: "${JIRA_USERNAME}"
   jira_password: "${JIRA_PASSWORD}"
   jira_jql: "type = Bug AND resolution = Unresolved"
+  api_version: 3
   max_results: 50
 
 metadata:
+  source: jira
   issue_type: bug
-  priority: high
 ```
+</div>
 
-Save as `config/jira-bugs.yaml` and run:
-
-```bash
-bash run.sh config/jira-bugs.yaml default
-```
-
-### Example 2: Technical Documentation
+<div class="example-section">
+  <h3>Example 2: Technical Documentation</h3>
+  <p>Index documentation issues with attachments</p>
 
 ```yaml
-# Documentation from Jira
 vectara:
   endpoint: api.vectara.io
   corpus_key: jira-docs
@@ -814,23 +659,29 @@ jira_crawler:
   jira_password: "${JIRA_PASSWORD}"
   jira_jql: |
     project = "Technical Docs"
-    AND type in (Documentation, Specification)
+    AND type IN (Documentation, Specification)
     AND status = Published
   api_version: 3
-  max_results: 100
+  include_image_attachments: true
+  include_document_attachments: true
 
 doc_processing:
+  doc_parser: unstructured
+  parse_tables: true
+  summarize_images: true
   use_core_indexing: false
 
 metadata:
-  content_type: technical_documentation
   source: jira
+  content_type: documentation
 ```
+</div>
 
-### Example 3: Complete with Attachments
+<div class="example-section">
+  <h3>Example 3: Full-Featured with Custom Fields</h3>
+  <p>Complete configuration with all features</p>
 
 ```yaml
-# Full-featured config with attachments
 vectara:
   endpoint: api.vectara.io
   corpus_key: jira-knowledge-base
@@ -850,6 +701,27 @@ jira_crawler:
     AND updated >= -180d
   api_version: 3
   max_results: 100
+
+  # Custom field extraction
+  fields:
+    - summary
+    - description
+    - comment
+    - project
+    - issuetype
+    - status
+    - priority
+    - reporter
+    - assignee
+    - created
+    - updated
+    - resolutiondate
+    - labels
+    - attachment
+    - customfield_10001  # Technical Debt Level
+    - customfield_10002  # API Endpoint
+
+  # Attachment processing
   include_image_attachments: true
   include_document_attachments: true
 
@@ -877,34 +749,151 @@ metadata:
   source: jira
   environment: production
   sync_frequency: daily
-  content_types:
-    - issues
-    - attachments
-    - comments
+```
+</div>
+
+---
+
+## Troubleshooting
+
+<div class="troubleshoot-card">
+  <h3>Authentication Failed</h3>
+  <p><strong>Symptom:</strong> 401 Unauthorized errors</p>
+  <p><strong>Solutions:</strong></p>
+  <ul>
+    <li>Verify API token is correct (Cloud only)</li>
+    <li>For Cloud, use email address, not username</li>
+    <li>Ensure password is NOT your Jira password (use API token)</li>
+    <li>Check credentials in environment variables: <code>echo $JIRA_USERNAME</code></li>
+    <li>Verify user has API access enabled</li>
+  </ul>
+</div>
+
+<div class="troubleshoot-card">
+  <h3>No Issues Found</h3>
+  <p><strong>Symptom:</strong> Crawler runs but indexes 0 issues</p>
+  <p><strong>Solutions:</strong></p>
+  <ul>
+    <li>Test JQL query in Jira UI first</li>
+    <li>Verify project key is correct (check Project Settings > Details)</li>
+    <li>Try simpler JQL: <code>project = MYPROJ</code></li>
+    <li>Check user has permission to see issues</li>
+    <li>Verify status values are case-sensitive</li>
+  </ul>
+</div>
+
+<div class="troubleshoot-card">
+  <h3>Attachment Download Fails</h3>
+  <p><strong>Symptom:</strong> Failed to process attachment errors</p>
+  <p><strong>Solutions:</strong></p>
+  <ul>
+    <li>Verify attachment file types are supported</li>
+    <li>Check file size isn't too large</li>
+    <li>Ensure user has attachment download permissions</li>
+    <li>Try disabling attachments to verify issue content works</li>
+  </ul>
+</div>
+
+<div class="troubleshoot-card">
+  <h3>Rate Limiting (429)</h3>
+  <p><strong>Symptom:</strong> Too Many Requests errors</p>
+  <p><strong>Solutions:</strong></p>
+  <ul>
+    <li>Jira Cloud has rate limits (standard 10 requests/second)</li>
+    <li>Reduce batch size: <code>max_results: 50</code></li>
+    <li>Add delays between API calls if doing multiple runs</li>
+    <li>For Data Center, check with admin for rate limits</li>
+  </ul>
+</div>
+
+---
+
+## Best Practices
+
+<div class="best-practice-grid">
+
+  <div class="best-practice-card">
+    <h3>Start with Small Crawls</h3>
+    <p>Test with a limited query first:</p>
+
+```yaml
+jira_jql: "project = TEST LIMIT 10"
 ```
 
-Save as `config/jira-full.yaml` and run:
+<p>Then expand to production queries once verified.</p>
+  </div>
 
-```bash
-bash run.sh config/jira-full.yaml default
+  <div class="best-practice-card">
+    <h3>Use Targeted JQL Queries</h3>
+    <p>Instead of fetching all issues:</p>
+
+```yaml
+# Good: Only relevant issues
+jira_jql: "project = MYPROJ AND status != Backlog AND updated >= -90d"
+```
+  </div>
+
+  <div class="best-practice-card">
+    <h3>Organize By Project</h3>
+    <p>Create separate configs for large Jira instances:</p>
+
+```
+config/
+  jira-engineering.yaml
+  jira-product.yaml
+  jira-operations.yaml
+```
+  </div>
+
+  <div class="best-practice-card">
+    <h3>Document Your JQL</h3>
+    <p>Add comments to explain complex queries:</p>
+
+```yaml
+# Fetch all open bugs and stories updated in last 90 days
+# Excludes old/backlog items to focus on active work
+jira_jql: |
+  project = MYPROJ
+  AND type in (Bug, Story)
+  AND status != Backlog
+  AND updated >= -90d
+```
+  </div>
+
+  <div class="best-practice-card">
+    <h3>Regular Incremental Updates</h3>
+    <p>Schedule daily crawls with time-based filters:</p>
+
+```yaml
+jira_jql: "project = MYPROJ AND updated >= -1d"
 ```
 
-## API Reference
+<p>Schedule daily to keep index fresh.</p>
+  </div>
 
-### Supported Jira Instances
+  <div class="best-practice-card">
+    <h3>Monitor Indexing</h3>
+    <p>Enable verbose logging:</p>
 
-- **Jira Cloud**: Full support for API v2 and v3
-- **Jira Server**: Support for API v2 (legacy, no longer sold)
-- **Jira Data Center**: Support for API v2 and v3
+```yaml
+vectara:
+  verbose: true
+```
+  </div>
+</div>
 
-### JQL Resources
+---
+
+## Related Documentation
+
+- [Base Configuration](../configuration-base.md) - Common settings for all crawlers
+- [Crawlers Overview](index.md) - Other available crawlers
+- [Deployment](../deployment/docker.md) - Running in production
+- [Getting Started](../getting-started.md) - Initial setup guide
+
+## External Resources
 
 - [Jira Query Language (JQL) Documentation](https://support.atlassian.com/jira-service-desk-cloud/articles/reference-the-jira-query-language-jql/)
-- [JQL Field Names and Values](https://support.atlassian.com/jira-cloud-platform/articles/advanced-searching-using-jql/)
-- [JQL Functions](https://support.atlassian.com/jira-cloud-platform/articles/use-advanced-search-with-jql/)
-
-### Jira REST API
-
 - [Jira API v3 Documentation](https://developer.atlassian.com/cloud/jira/platform/rest/v3/)
 - [Jira API v2 Documentation](https://docs.atlassian.com/software/jira/docs/api/REST/2.0/)
 - [Atlassian Document Format (ADF)](https://developer.atlassian.com/cloud/jira/platform/apis/document/adf/)

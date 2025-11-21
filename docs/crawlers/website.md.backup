@@ -519,56 +519,129 @@ website_crawler:
 
 ## Getting Started
 
-<div class="info-box-prerequisites">
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-  <div>
-    <p><strong>Before you begin:</strong></p>
-    <ul>
-      <li>Set up your Vectara account and create a corpus</li>
-      <li>Configure your API credentials (see <a href="../getting-started.md">Quick Start</a>)</li>
-    </ul>
-  </div>
-</div>
-
-<div class="quick-start-card">
-  <h3>Quick Start</h3>
-  <p>Here's the simplest way to crawl a website:</p>
+### Basic Configuration
 
 ```yaml
 vectara:
   endpoint: api.vectara.io
-  corpus_key: my-website
+  corpus_key: website-content
+  reindex: false
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  # List of starting URLs or sitemaps
+  urls:
+    - https://example.com
+    - https://example.com/sitemap.xml
+
+  # Choose how to discover pages
+  pages_source: sitemap  # "sitemap" or "crawl"
+
+  # Maximum crawl depth (only for pages_source: crawl)
+  max_depth: 3
+
+  # URL patterns to include (regex)
+  pos_regex:
+    - "https://example\\.com/docs/.*"
+    - "https://example\\.com/blog/.*"
+
+  # URL patterns to exclude (regex)
+  neg_regex:
+    - ".*\\.pdf$"
+    - ".*/admin/.*"
+    - ".*/login.*"
+
+metadata:
+  source: website
+  category: documentation
+```
+
+### Advanced Configuration
+
+```yaml
+vectara:
+  endpoint: api.vectara.io
+  corpus_key: website-full
+  reindex: false
+  verbose: true
   remove_boilerplate: true
 
 crawling:
   crawler_type: website
 
 website_crawler:
+  # Starting URLs
   urls:
-    - https://example.com/sitemap.xml
-  pages_source: sitemap
+    - https://docs.example.com
+    - https://api.example.com/sitemap.xml
+
+  # Discovery method
+  pages_source: crawl
+  max_depth: 5
+
+  # URL filtering
+  pos_regex:
+    - "https://docs\\.example\\.com/.*"
+    - "https://api\\.example\\.com/.*"
+  neg_regex:
+    - ".*/deprecated/.*"
+    - ".*/internal/.*"
+    - ".*/admin.*"
+    - ".*\\.(pdf|zip|exe)$"
+
+  # Query parameter handling
+  keep_query_params: false
+
+  # Crawling method (scrapy or internal)
+  crawl_method: scrapy
+
+  # Rate limiting
+  num_per_second: 10
+
+  # Parallel processing
+  ray_workers: 0  # 0=sequential, -1=all CPU cores, N=N workers
+
+  # Page discovery source method
+  source: website
+
+  # Performance limits
+  max_pages: 5000
+
+  # HTML processing options
+  html_processing:
+    extract_links: true
+    extract_metadata: true
+
+  # SAML authentication (if required)
+  saml_auth:
+    login_url: "https://idp.example.com/login"
+    username_field: "username"
+    password_field: "password"
+    login_failure_string: "Invalid credentials"
+
+  # CSS selectors for content extraction
+  css_selectors:
+    - "article.main-content"
+    - "div.documentation"
+    - "main"
+
+  # Crawl reports
+  crawl_report: true
+
+  # Remove old content
+  remove_old_content: false
+
+doc_processing:
+  doc_parser: unstructured
+  process_locally: true
 
 metadata:
   source: website
+  environment: production
+  sync_frequency: daily
 ```
-
-<p><strong>Run:</strong></p>
-
-```bash
-bash run.sh config/website.yaml default
-```
-</div>
-
-<div class="example-references">
-  <h3>Need More?</h3>
-  <p>See complete examples below for:</p>
-  <ul>
-    <li><a href="#example-1-basic-auth-scrapy-fast-static-site">Basic Auth + Scrapy (Fast Static Site)</a></li>
-    <li><a href="#example-2-saml-playwright-javascript-heavy-site">SAML + Playwright (JavaScript-Heavy Site)</a></li>
-    <li><a href="#example-3-multi-domain-documentation-sites">Multi-Domain Documentation Sites</a></li>
-    <li><a href="#example-4-large-scale-blog-with-parallel-processing">Large Scale Blog with Parallel Processing</a></li>
-  </ul>
-</div>
 
 ## Metadata Extraction
 
@@ -781,126 +854,287 @@ website_crawler:
 
 ## Troubleshooting
 
-<div class="troubleshoot-card">
-  <h3>Pages Not Being Crawled</h3>
-  <p><strong>Symptom:</strong> Few or no pages indexed despite large website</p>
-  <p><strong>Solutions:</strong></p>
-  <ul>
-    <li>Increase <code>max_depth</code> if too shallow</li>
-    <li>Verify URL patterns with regex testing</li>
-    <li>Check <code>neg_regex</code> isn't excluding wanted content</li>
-    <li>Switch to <code>pages_source: sitemap</code> for reliability</li>
-    <li>Enable <code>verbose: true</code> for debugging</li>
-  </ul>
-</div>
+### Pages Not Being Crawled
 
-<div class="troubleshoot-card">
-  <h3>Authentication Failures</h3>
-  <p><strong>Symptom:</strong> SAML, Basic Auth, or cookie-based auth failing</p>
-  <p><strong>Solutions:</strong></p>
-  <ul>
-    <li>Verify credentials in environment variables</li>
-    <li>Test login manually to confirm credentials work</li>
-    <li>Check form field names match HTML (inspect source)</li>
-    <li>Set correct <code>login_failure_string</code></li>
-    <li>Try different <code>crawl_method</code> (internal vs scrapy)</li>
-  </ul>
-</div>
+**Symptom**: Few or no pages indexed despite large website
 
-<div class="troubleshoot-card">
-  <h3>Memory Issues</h3>
-  <p><strong>Symptom:</strong> Process killed, "Out of memory", system unresponsive</p>
-  <p><strong>Solutions:</strong></p>
-  <ul>
-    <li>Set <code>ray_workers: 0</code> for sequential processing</li>
-    <li>Reduce <code>ray_workers</code> to 2 instead of 4</li>
-    <li>Limit scope with <code>max_pages</code> and <code>max_depth</code></li>
-    <li>Use <code>crawl_method: scrapy</code> (more memory-efficient)</li>
-    <li>Split into multiple smaller crawls</li>
-  </ul>
-</div>
+**Solutions**:
 
-<div class="troubleshoot-card">
-  <h3>Slow Crawling</h3>
-  <p><strong>Symptom:</strong> Crawl takes too long to complete</p>
-  <p><strong>Solutions:</strong></p>
-  <ul>
-    <li>Increase <code>num_per_second</code> for faster crawling</li>
-    <li>Use <code>pages_source: sitemap</code> instead of crawl</li>
-    <li>Enable parallel processing with <code>ray_workers: 4</code></li>
-    <li>Use <code>crawl_method: scrapy</code> for static sites</li>
-    <li>Filter aggressively with <code>pos_regex</code> and <code>neg_regex</code></li>
-  </ul>
-</div>
+1. **Check `max_depth` setting**:
+   ```yaml
+   website_crawler:
+     max_depth: 5  # Increase if too shallow
+   ```
 
-<div class="troubleshoot-card">
-  <h3>Content Not Extracted</h3>
-  <p><strong>Symptom:</strong> URLs indexed but with empty or minimal content</p>
-  <p><strong>Solutions:</strong></p>
-  <ul>
-    <li>Enable <code>remove_boilerplate: true</code></li>
-    <li>Specify <code>css_selectors</code> for target content</li>
-    <li>Check page source manually (View Source in browser)</li>
-    <li>Increase <code>post_load_timeout</code> for JavaScript sites</li>
-    <li>Switch to <code>crawl_method: internal</code> for JS-heavy sites</li>
-  </ul>
-</div>
+2. **Verify URL patterns**:
+   ```bash
+   # Test regex patterns
+   python -c "import re; print(re.match(r'https://example\.com/docs/.*', 'https://example.com/docs/intro'))"
+   ```
 
-## Best Practices
+3. **Check negative regex excludes**:
+   ```yaml
+   neg_regex:
+     - ".*\\?.*"  # Might exclude paginated content
+   ```
 
-<div class="best-practice-grid">
-  <div class="best-practice-card">
-    <h3>⭕ Start Small and Scale</h3>
-    <p>Begin with limited scope to validate</p>
+4. **Switch to sitemap method**:
+   ```yaml
+   pages_source: sitemap  # More reliable than crawl
+   ```
+
+5. **Enable verbose logging**:
+   ```yaml
+   vectara:
+     verbose: true
+   ```
+
+### JavaScript-Heavy Sites
+
+**Symptom**: Content appears as blank or incomplete
+
+**Solution**: Use internal crawler (includes Playwright):
 
 ```yaml
 website_crawler:
+  crawl_method: internal  # Uses Playwright
+```
+
+Or increase post-load timeout:
+
+```yaml
+vectara:
+  post_load_timeout: 10  # Wait 10 seconds after page load
+```
+
+### Rate Limiting / Getting Blocked
+
+**Symptom**: HTTP 429, 403, or IP blocking errors
+
+**Solutions**:
+
+1. **Increase delay between requests**:
+   ```yaml
+   website_crawler:
+     num_per_second: 2  # Very slow, respectful
+   ```
+
+2. **Use custom user agent**:
+   ```yaml
+   website_crawler:
+     user_agent: "MyBot/1.0 (contact@example.com)"
+   ```
+
+3. **Reduce ray_workers**:
+   ```yaml
+   website_crawler:
+     ray_workers: 0  # Sequential instead of parallel
+   ```
+
+4. **Run during off-peak**:
+   ```bash
+   # Schedule for late night
+   0 2 * * * bash run.sh config/website.yaml default
+   ```
+
+5. **Contact site administrator**:
+   - Identify yourself in user agent
+   - Request permission to crawl
+   - Ask for rate limit guidelines
+
+### SSL Certificate Errors
+
+**Symptom**: `SSL: CERTIFICATE_VERIFY_FAILED` errors
+
+**Solutions**:
+
+1. **For self-signed certificates** (development):
+   ```bash
+   export SSL_NO_VERIFY=true
+   bash run.sh config/website.yaml default
+   ```
+
+2. **Update CA certificates**:
+   ```bash
+   pip install --upgrade certifi
+   ```
+
+3. **For corporate proxy/firewall**:
+   - Add custom CA certificate to system
+   - Contact IT department
+
+### Authentication Failures
+
+**Symptom**: SAML, Basic Auth, or cookie-based auth failing
+
+**Solutions**:
+
+1. **Verify credentials**:
+   ```bash
+   echo $SAML_USERNAME
+   echo $SAML_PASSWORD
+   ```
+
+2. **Test login manually**:
+   - Manually visit login URL
+   - Verify credentials work
+   - Check for MFA requirements
+
+3. **Check form field names**:
+   ```yaml
+   saml_auth:
+     username_field: "username"  # Inspect HTML to verify
+     password_field: "password"
+   ```
+
+4. **Look for failure string**:
+   ```yaml
+   saml_auth:
+     login_failure_string: "Invalid login"  # Site-specific
+   ```
+
+5. **Try different crawl method**:
+   ```yaml
+   crawl_method: internal  # vs scrapy
+   ```
+
+### Memory Issues / Crashes
+
+**Symptom**: Process killed, "Out of memory", or system becomes unresponsive
+
+**Solutions**:
+
+1. **Disable parallel processing**:
+   ```yaml
+   website_crawler:
+     ray_workers: 0  # Use sequential
+   ```
+
+2. **Reduce ray_workers**:
+   ```yaml
+   website_crawler:
+     ray_workers: 2  # Instead of 4
+   ```
+
+3. **Limit crawl scope**:
+   ```yaml
+   website_crawler:
+     max_pages: 1000  # Smaller crawls
+     max_depth: 2     # Shallower crawls
+   ```
+
+4. **Use Scrapy instead of internal**:
+   ```yaml
+   website_crawler:
+     crawl_method: scrapy  # More memory-efficient
+   ```
+
+5. **Split into multiple crawls**:
+   Create separate configs for different site sections
+
+### No Content Extracted
+
+**Symptom**: URLs indexed but with empty or minimal content
+
+**Solutions**:
+
+1. **Enable boilerplate removal**:
+   ```yaml
+   vectara:
+     remove_boilerplate: true
+   ```
+
+2. **Specify CSS selectors**:
+   ```yaml
+   website_crawler:
+     css_selectors:
+       - "article"
+       - "main"
+   ```
+
+3. **Check page source manually**:
+   - Visit page in browser
+   - View page source (Ctrl+U)
+   - Verify content is in HTML (not JavaScript)
+
+4. **Increase JavaScript rendering time**:
+   ```yaml
+   vectara:
+     post_load_timeout: 10
+   ```
+
+## Best Practices
+
+### 1. Start Small and Scale
+
+Begin with a limited crawl to validate configuration:
+
+```yaml
+# Test config
+website_crawler:
+  urls:
+    - https://example.com
   max_depth: 1
   max_pages: 50
   crawl_report: true
 ```
-  </div>
 
-  <div class="best-practice-card">
-    <h3>📄 Prefer Sitemaps</h3>
-    <p>Always use sitemaps when available</p>
+Once validated, expand scope:
 
 ```yaml
+# Production config
+website_crawler:
+  max_depth: 3
+  max_pages: 5000
+```
+
+### 2. Use Sitemaps When Available
+
+```yaml
+# PREFER: Sitemap method
 website_crawler:
   pages_source: sitemap
   urls:
     - https://example.com/sitemap.xml
-```
-  </div>
 
-  <div class="best-practice-card">
-    <h3>🔽 Filter Aggressively</h3>
-    <p>Narrow the scope</p>
+# AVOID: Recursive crawling
+website_crawler:
+  pages_source: crawl
+  max_depth: 5  # Slower, less reliable
+```
+
+### 3. Filter Aggressively
 
 ```yaml
 website_crawler:
   pos_regex:
-    - "https://example\.com/docs/.*"
+    - "https://example\\.com/docs/.*"  # Only docs
+
   neg_regex:
     - ".*/deprecated/.*"
-    - ".*\.pdf$"
+    - ".*/admin/.*"
+    - ".*\\.pdf$"
+    - ".*/media/.*"
 ```
-  </div>
 
-  <div class="best-practice-card">
-    <h3>⚡ Respect Rate Limits</h3>
-    <p>Don't overload servers</p>
+### 4. Respect Rate Limits
 
 ```yaml
 website_crawler:
-  num_per_second: 5
-  ray_workers: 0
+  num_per_second: 5  # Respectful rate
+  ray_workers: 0     # Sequential when starting
 ```
-  </div>
 
-  <div class="best-practice-card">
-    <h3>⚙️ Add Descriptive Metadata</h3>
-    <p>Make content searchable</p>
+### 5. Preserve Site Owners' Bandwidth
+
+```bash
+# Run during off-peak hours
+0 2 * * * bash run.sh config/website.yaml default
+
+# Or manually with appropriate delays
+```
+
+### 6. Add Descriptive Metadata
 
 ```yaml
 metadata:
@@ -908,31 +1142,189 @@ metadata:
   site: example.com
   category: documentation
   language: en
+  last_updated: "2024-11-18"
 ```
-  </div>
 
-  <div class="best-practice-card">
-    <h3>📊 Monitor Crawl Progress</h3>
-    <p>Enable verbose logging</p>
+### 7. Monitor Crawl Progress
 
 ```yaml
 vectara:
   verbose: true
 ```
-  </div>
-</div>
+
+Watch logs in real-time:
+
+```bash
+docker logs -f vingest
+```
+
+### 8. Version Your Configurations
+
+```yaml
+metadata:
+  config_version: "2.0"
+  last_modified: "2024-11-18"
+  notes: "Added new documentation section"
+```
+
+### 9. Test URL Patterns Before Production
+
+```python
+import re
+
+# Test your patterns
+pos_pattern = re.compile(r'https://docs\.example\.com/.*')
+neg_pattern = re.compile(r'.*/deprecated/.*')
+
+test_urls = [
+    'https://docs.example.com/intro',           # Should match
+    'https://docs.example.com/deprecated/old',  # Should be filtered
+    'https://api.example.com/docs',             # Should not match
+]
+
+for url in test_urls:
+    included = bool(pos_pattern.match(url)) and not neg_pattern.match(url)
+    print(f"{url}: {included}")
+```
+
+### 10. Backup and Recovery
+
+Before enabling `remove_old_content`:
+
+```bash
+# List all indexed documents first
+curl -X POST https://api.vectara.io/v1/list-docs \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{"corpus_key": "your-corpus"}'
+```
+
+Then enable with confidence:
+
+```yaml
+website_crawler:
+  remove_old_content: true
+```
+
+## Running the Crawler
+
+### Create Your Configuration
+
+```bash
+vim config/website-docs.yaml
+```
+
+### Set Credentials (If Required)
+
+```bash
+# For SAML
+export SAML_USERNAME="user@example.com"
+export SAML_PASSWORD="your-password"
+
+# For Basic Auth
+export WEBSITE_USERNAME="username"
+export WEBSITE_PASSWORD="password"
+```
+
+### Run the Crawler
+
+```bash
+# Run once
+bash run.sh config/website-docs.yaml default
+
+# Monitor progress
+docker logs -f vingest
+```
+
+### Schedule Regular Crawls
+
+Using cron:
+
+```bash
+# Daily at 2 AM
+0 2 * * * cd /path/to/vectara-ingest && bash run.sh config/website.yaml default
+
+# Multiple times per day
+0 */6 * * * cd /path/to/vectara-ingest && bash run.sh config/website.yaml default
+```
+
+Or use GitHub Actions, Jenkins, or other schedulers.
 
 ## Complete Examples
 
-### Example 1: Basic Auth + Scrapy (Fast Static Site)
-
-<div class="example-card" markdown="1">
-
-**Use Case:** Crawling a password-protected static documentation site with high performance requirements.
-
-**Best For:** Static HTML sites, fast crawling, basic authentication
+### Example 1: Simple Documentation Site (Sitemap)
 
 ```yaml
+# config/docs-simple.yaml
+vectara:
+  endpoint: api.vectara.io
+  corpus_key: docs-index
+  remove_boilerplate: true
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  urls:
+    - https://docs.example.com/sitemap.xml
+  pages_source: sitemap
+  pos_regex:
+    - "https://docs\\.example\\.com/en/.*"
+  neg_regex:
+    - ".*/api/.*"
+    - ".*\\.pdf$"
+
+metadata:
+  source: website
+  category: documentation
+```
+
+Run:
+```bash
+bash run.sh config/docs-simple.yaml default
+```
+
+### Example 2: Blog with Recursive Crawling
+
+```yaml
+# config/blog-crawl.yaml
+vectara:
+  endpoint: api.vectara.io
+  corpus_key: blog-articles
+  remove_boilerplate: true
+
+crawling:
+  crawler_type: website
+
+website_crawler:
+  urls:
+    - https://blog.example.com
+  pages_source: crawl
+  max_depth: 2
+  pos_regex:
+    - "https://blog\\.example\\.com/[0-9]{4}/[0-9]{2}/.*"
+  neg_regex:
+    - ".*/search.*"
+    - ".*/category/.*"
+    - ".*\\?.*"
+  css_selectors:
+    - "article.post-content"
+  ray_workers: 2
+
+metadata:
+  source: website
+  category: blog
+  content_type: articles
+```
+
+Run:
+```bash
+bash run.sh config/blog-crawl.yaml default
+```
+
+### Example 3: SAML-Protected Enterprise Documentation
+
+```yaml
+# config/internal-docs-saml.yaml
 vectara:
   endpoint: api.vectara.io
   corpus_key: internal-docs
@@ -943,398 +1335,157 @@ crawling:
   crawler_type: website
 
 website_crawler:
-  # Starting point
   urls:
-    - https://internal.example.com
-
-  # Crawl method: Scrapy for speed on static sites
-  pages_source: crawl
-  max_depth: 4
-  crawl_method: scrapy
-
-  # Basic authentication
-  basic_auth:
-    username: "${WEBSITE_USERNAME}"
-    password: "${WEBSITE_PASSWORD}"
-
-  # URL filtering - only documentation pages
-  pos_regex:
-    - "https://internal\\.example\\.com/docs/.*"
-    - "https://internal\\.example\\.com/guides/.*"
-  neg_regex:
-    - ".*/admin/.*"
-    - ".*/draft/.*"
-    - ".*\\.pdf$"
-
-  # Performance settings
-  num_per_second: 15
-  max_pages: 5000
-
-  # HTML processing
-  html_processing:
-    extract_links: true
-    extract_metadata: true
-
-  # Generate report
-  crawl_report: true
-
-metadata:
-  source: website
-  environment: internal
-  category: documentation
-  access_level: employees-only
-```
-
-**Setup and run:**
-
-```bash
-# Create secrets.toml with credentials
-cat > secrets.toml <<EOF
-WEBSITE_USERNAME = "your-username"
-WEBSITE_PASSWORD = "your-password"
-EOF
-
-# Run crawler
-bash run.sh config/internal-docs.yaml default
-
-# Monitor progress
-docker logs -f vingest
-```
-
-**What this does:**
-
-- Uses Scrapy for fast crawling of static content
-- Authenticates with basic HTTP auth
-- Crawls up to 4 levels deep, filtering to docs and guides only
-- Rate limited to 15 pages/second to be respectful
-- Generates a crawl report showing all indexed URLs
-
-</div>
-
-### Example 2: SAML + Playwright (JavaScript-Heavy Site)
-
-<div class="example-card" markdown="1">
-
-**Use Case:** Crawling an enterprise wiki with SAML SSO that renders content dynamically with JavaScript.
-
-**Best For:** JavaScript-heavy sites, SAML authentication, dynamic content, SPAs
-
-```yaml
-vectara:
-  endpoint: api.vectara.io
-  corpus_key: enterprise-wiki
-  remove_boilerplate: true
-  verbose: true
-
-crawling:
-  crawler_type: website
-
-website_crawler:
-  # Starting point
-  urls:
-    - https://wiki.enterprise.com
-
-  # Crawl method: Internal (Playwright) for JavaScript rendering
+    - https://internal-wiki.example.com
   pages_source: crawl
   max_depth: 3
-  crawl_method: internal
-  post_load_timeout: 3000  # Wait 3s for JavaScript to execute
+  max_pages: 1000
 
   # SAML authentication
   saml_auth:
-    login_url: "https://idp.enterprise.com/oauth2/authorize"
-    username_field: "email"
+    login_url: "https://idp.example.com/oauth2/authorize"
+    username_field: "username"
     password_field: "password"
     login_failure_string: "Invalid credentials"
 
   saml_username: "${SAML_USERNAME}"
   saml_password: "${SAML_PASSWORD}"
 
-  # URL filtering - English content only
+  # Filtering
   pos_regex:
-    - "https://wiki\\.enterprise\\.com/en/.*"
-    - "https://wiki\\.enterprise\\.com/space/.*"
+    - "https://internal-wiki\\.example\\.com/en/.*"
   neg_regex:
     - ".*/admin/.*"
     - ".*/draft/.*"
-    - ".*/personal/.*"
-    - ".*\\?.*"  # Skip URLs with query params
 
-  # Custom content extraction
-  css_selectors:
-    - "article.content"
-    - "div.wiki-content"
-    - "main#content"
-
-  # Performance settings (slower for JS rendering)
-  num_per_second: 3
-  max_pages: 2000
-
-  # HTML processing
-  html_processing:
-    extract_links: true
-    extract_metadata: true
-    remove_scripts: true
-    remove_styles: true
-
-  # Maintenance
-  crawl_report: true
-  remove_old_content: true
+  crawl_method: internal
+  num_per_second: 5
 
 metadata:
   source: website
-  platform: confluence
-  environment: production
+  environment: internal
   security_level: confidential
-  department: engineering
 ```
 
-**Setup and run:**
-
+Set credentials:
 ```bash
-# Create secrets.toml with SAML credentials
-cat > secrets.toml <<EOF
-SAML_USERNAME = "user@enterprise.com"
-SAML_PASSWORD = "your-secure-password"
-EOF
-
-# Run crawler
-bash run.sh config/enterprise-wiki.yaml default
-
-# Monitor progress
-docker logs -f vingest
+export SAML_USERNAME="your.email@example.com"
+export SAML_PASSWORD="your-password"
 ```
 
-**What this does:**
+Run:
+```bash
+bash run.sh config/internal-docs-saml.yaml default
+```
 
-- Uses internal crawler (Playwright) to handle JavaScript rendering
-- Authenticates via SAML SSO login form
-- Waits 3 seconds after page load for dynamic content to render
-- Targets specific content areas using CSS selectors
-- Rate limited to 3 pages/second (respectful for JS rendering)
-- Removes old content that no longer exists on the site
-
-**Pro tips:**
-
-- Increase `post_load_timeout` if content takes longer to load
-- Use browser dev tools to identify correct CSS selectors
-- Test `login_failure_string` by intentionally using wrong credentials
-
-</div>
-
-### Example 3: Multi-Domain Documentation Sites
-
-<div class="example-card" markdown="1">
-
-**Use Case:** Indexing documentation from multiple related domains/subdomains into a single corpus.
-
-**Best For:** Multi-product documentation, API docs + guides, multi-domain sites
+### Example 4: Large Site with Scrapy and Ray
 
 ```yaml
+# config/large-site-scrapy.yaml
 vectara:
   endpoint: api.vectara.io
-  corpus_key: unified-docs
-  remove_boilerplate: true
+  corpus_key: large-site-index
+  reindex: false
   verbose: true
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  # Multiple domains and sitemaps
   urls:
-    - https://docs.example.com/sitemap.xml
-    - https://api.example.com/sitemap.xml
-    - https://developers.example.com/sitemap.xml
-
-  # Use sitemaps for reliability
+    - https://example.com/sitemap.xml
   pages_source: sitemap
 
-  # Aggressive URL filtering across all domains
-  pos_regex:
-    # Docs site - English only
-    - "https://docs\\.example\\.com/en/.*"
-    - "https://docs\\.example\\.com/guides/.*"
-
-    # API site - versioned docs only
-    - "https://api\\.example\\.com/v[0-9]+/.*"
-    - "https://api\\.example\\.com/reference/.*"
-
-    # Developers site - tutorials and samples
-    - "https://developers\\.example\\.com/tutorials/.*"
-    - "https://developers\\.example\\.com/samples/.*"
-
-  # Exclude across all domains
-  neg_regex:
-    - ".*\\.pdf$"
-    - ".*\\.zip$"
-    - ".*/admin/.*"
-    - ".*/deprecated/.*"
-    - ".*/beta/.*"
-    - ".*/internal/.*"
-    - ".*/changelog/.*"
-    - ".*\\?.*"  # No query parameters
-
-  # Don't keep query params
-  keep_query_params: false
-
-  # Performance
+  # Fast crawling with Scrapy
   crawl_method: scrapy
+  ray_workers: 4
   num_per_second: 20
-  max_pages: 15000
 
-  # HTML processing
-  html_processing:
-    extract_links: true
-    extract_metadata: true
+  # Aggressive filtering
+  pos_regex:
+    - "https://example\\.com/docs/.*"
+    - "https://example\\.com/guide/.*"
+  neg_regex:
+    - ".*/deprecated/.*"
+    - ".*/internal/.*"
+    - ".*\\.(pdf|zip)$"
+    - ".*/admin/.*"
+    - ".*/search.*"
 
-  # Reports
+  # Reports and maintenance
   crawl_report: true
+  remove_old_content: true
+  max_pages: 10000
 
 metadata:
   source: website
-  organization: example
+  site: example.com
+  sync_frequency: daily
   content_types:
     - documentation
-    - api-reference
+    - guides
     - tutorials
-  language: en
-  version: latest
 ```
 
-**Run:**
-
+Run:
 ```bash
-bash run.sh config/multi-domain.yaml default
+bash run.sh config/large-site-scrapy.yaml default
 ```
 
-**What this does:**
-
-- Crawls 3 separate domains using their sitemaps
-- Applies domain-specific filtering (e.g., versioned API docs only)
-- Excludes common unwanted patterns across all domains
-- Fast Scrapy crawling at 20 pages/second
-- Unified corpus with content from all sources
-
-**Pro tips:**
-
-- Use descriptive metadata to identify source domain
-- Test regex patterns individually before combining
-- Monitor crawl report to verify filtering is working correctly
-- Consider splitting very large multi-domain crawls into separate corpora
-
-</div>
-
-### Example 4: Large Scale Blog with Parallel Processing
-
-<div class="example-card" markdown="1">
-
-**Use Case:** Crawling a large blog site with thousands of articles using parallel processing for speed.
-
-**Best For:** Large content sites, blogs, news sites, high-volume crawling
+### Example 5: Multi-Section Site with Custom Selectors
 
 ```yaml
+# config/complex-site.yaml
 vectara:
   endpoint: api.vectara.io
-  corpus_key: tech-blog
+  corpus_key: complex-index
   remove_boilerplate: true
-  verbose: true
-  reindex: false  # Incremental updates
 
 crawling:
   crawler_type: website
 
 website_crawler:
-  # Starting point
   urls:
-    - https://blog.techcompany.com
+    - https://help.example.com/sitemap.xml
+    - https://developers.example.com/sitemap.xml
+  pages_source: sitemap
 
-  # Recursive crawl
-  pages_source: crawl
-  max_depth: 2
-
-  # Target specific content areas with CSS selectors
+  # Extract specific content
   css_selectors:
-    - "article.post-content"
-    - "div.blog-post"
-    - "main.article-body"
-    - "div.entry-content"
+    - "article"
+    - "main"
+    - ".content"
+    - "#documentation"
 
-  # Filter blog URLs by date pattern (YYYY/MM/title)
+  # Filter by section
   pos_regex:
-    - "https://blog\\.techcompany\\.com/[0-9]{4}/[0-9]{2}/.*"
-
-  # Exclude non-article pages
+    - "https://help\\.example\\.com/en/.*"
+    - "https://developers\\.example\\.com/api/.*"
   neg_regex:
-    - ".*/category/.*"
-    - ".*/tag/.*"
-    - ".*/author/.*"
-    - ".*/page/[0-9]+.*"  # Pagination
-    - ".*\\?.*"  # Query parameters
+    - ".*/beta/.*"
+    - ".*/internal/.*"
+    - ".*/search.*"
 
-  # Parallel processing with Ray
-  ray_workers: 4  # Use 4 parallel workers
-  num_per_second: 15
+  crawl_method: internal
+  ray_workers: 0
+  num_per_second: 10
 
-  # Handle large scale
-  max_pages: 10000
-
-  # Performance tuning
-  crawl_method: scrapy  # Fast for static content
-
-  # HTML processing
   html_processing:
-    extract_links: true
     extract_metadata: true
-    remove_scripts: true
-    remove_styles: true
-
-  # Maintenance
-  crawl_report: true
-  remove_old_content: true  # Clean up deleted articles
+    extract_links: true
 
 metadata:
   source: website
-  category: blog
-  content_type: articles
-  topics:
-    - technology
-    - engineering
-    - product
+  sections:
+    - help
+    - developer
   language: en
 ```
 
-**Run:**
-
+Run:
 ```bash
-bash run.sh config/tech-blog.yaml default
+bash run.sh config/complex-site.yaml default
 ```
-
-**What this does:**
-
-- Recursive crawl starting from blog homepage
-- Uses 4 parallel Ray workers for 4x speed improvement
-- Targets article content using multiple CSS selectors
-- Filters URLs to match blog date pattern (YYYY/MM/title)
-- Excludes category, tag, and pagination pages
-- Processes up to 10,000 articles
-- Removes articles that have been deleted from the blog
-
-**Performance breakdown:**
-
-- **Sequential (ray_workers: 0):** ~6 hours for 10K pages
-- **Parallel (ray_workers: 4):** ~1.5 hours for 10K pages
-- At 15 pages/second with 4 workers = 60 effective pages/second
-
-**Pro tips:**
-
-- Start with `max_pages: 100` and `ray_workers: 0` to test CSS selectors
-- Increase `ray_workers` based on your machine's CPU cores
-- Use `reindex: false` for incremental updates (only new content)
-- Monitor memory usage - reduce `ray_workers` if system struggles
-- Set `remove_old_content: true` for regular maintenance crawls
-
-</div>
 
 ## Related Documentation
 
