@@ -269,7 +269,7 @@ jobs:
         run: |
           source $HOME/miniconda/bin/activate
           # Install playwright and then Firefox browser
-          pip install playwright
+          pip install playwright==1.55.0
           playwright install firefox
       
       - name: Upload to Anaconda.org
