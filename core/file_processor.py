@@ -4,7 +4,7 @@ import tempfile
 from typing import Dict, List, Any, Tuple
 from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
-from core.utils import get_file_size_in_MB
+from core.utils import get_file_size_in_MB, IMG_EXTENSIONS
 from core.doc_parser import (
     UnstructuredDocumentParser, DoclingDocumentParser,
     LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument,
@@ -44,14 +44,13 @@ class FileProcessor:
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
-        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif']
 
         # Standalone images need local processing for summarization
-        if self.summarize_images and any(uri.lower().endswith(ext) for ext in image_extensions):
+        if self.summarize_images and any(uri.lower().endswith(ext) for ext in IMG_EXTENSIONS):
             return True
 
         return (
-            any(uri.endswith(ext) for ext in large_file_extensions) and
+            any(uri.lower().endswith(ext) for ext in large_file_extensions) and
             (self.contextual_chunking or self.summarize_images or self.enable_gmft)
         )
     
@@ -107,15 +106,13 @@ class FileProcessor:
         """
         # Check if this is a standalone image file
         if filename:
-            image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif']
-            if any(filename.lower().endswith(ext) for ext in image_extensions):
+            if any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS):
                 if self.summarize_images:
                     logger.info(f"Detected standalone image file: {filename}, using ImageFileParser")
                     return ImageFileParser(
                         cfg=self.cfg,
                         verbose=self.verbose,
-                        model_config=self.model_config,
-                        summarize_images=True
+                        model_config=self.model_config
                     )
                 else:
                     logger.warning(f"Image file {filename} detected but summarize_images is disabled, skipping")

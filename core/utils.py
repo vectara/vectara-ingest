@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # File extensions
-IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico"]
+IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico", ".webp", ".tiff", ".tif"]
 AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"]
 VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".webm", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg", ".m4v", ".3gp", ".f4v"]
 DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]

@@ -61,15 +61,14 @@ class TestImageFileParser(unittest.TestCase):
             parser = ImageFileParser(
                 cfg=cfg,
                 verbose=False,
-                model_config=model_config,
-                summarize_images=True
+                model_config=model_config
             )
 
             result = parser.parse(self.temp_image.name, "http://example.com/test.png")
 
             # Verify the result
             self.assertIsInstance(result, ParsedDocument)
-            self.assertTrue(len(result.content_stream) == 1)
+            self.assertEqual(len(result.content_stream), 1)
 
             # Check content
             content, metadata = result.content_stream[0]
@@ -80,13 +79,12 @@ class TestImageFileParser(unittest.TestCase):
             self.assertIn('filename', metadata)
 
             # Check title extraction from filename
-            expected_title = os.path.splitext(os.path.basename(self.temp_image.name))[0].replace('_', ' ').replace('-', ' ').title()
-            self.assertTrue(len(result.title) > 0)
+            self.assertGreater(len(result.title), 0)
 
             # Check image bytes stored
             self.assertEqual(len(result.image_bytes), 1)
             image_id, image_binary = result.image_bytes[0]
-            self.assertTrue(len(image_binary) > 0)
+            self.assertGreater(len(image_binary), 0)
 
             # Verify summarizer was called with correct parameters
             mock_summarizer.summarize_image.assert_called_once()
@@ -106,8 +104,7 @@ class TestImageFileParser(unittest.TestCase):
             parser = ImageFileParser(
                 cfg=cfg,
                 verbose=False,
-                model_config={'vision': {}},
-                summarize_images=True
+                model_config={'vision': {}}
             )
 
             result = parser.parse("/nonexistent/image.png", "http://example.com/test.png")
@@ -133,8 +130,7 @@ class TestImageFileParser(unittest.TestCase):
             parser = ImageFileParser(
                 cfg=cfg,
                 verbose=False,
-                model_config={'vision': {}},
-                summarize_images=True
+                model_config={'vision': {}}
             )
 
             result = parser.parse(self.temp_image.name, "http://example.com/test.png")
@@ -142,7 +138,39 @@ class TestImageFileParser(unittest.TestCase):
             # Should return empty content_stream but still have title
             self.assertIsInstance(result, ParsedDocument)
             self.assertEqual(len(result.content_stream), 0)
-            self.assertTrue(len(result.title) > 0)
+            self.assertGreater(len(result.title), 0)
+
+    def test_image_file_parser_io_error(self):
+        """Test that ImageFileParser handles I/O errors gracefully"""
+        from omegaconf import OmegaConf
+        from core.doc_parser import ImageFileParser, ParsedDocument
+        import builtins
+
+        cfg = OmegaConf.create({'doc_processing': {'model_config': {'vision': {}}}})
+
+        with patch('core.doc_parser.ImageSummarizer'):
+            parser = ImageFileParser(
+                cfg=cfg,
+                verbose=False,
+                model_config={'vision': {}}
+            )
+
+            # Mock open() to raise an I/O error
+            original_open = builtins.open
+            def mock_open(*args, **kwargs):
+                if 'rb' in args or kwargs.get('mode') == 'rb':
+                    raise IOError("Permission denied")
+                return original_open(*args, **kwargs)
+
+            with patch('builtins.open', side_effect=mock_open):
+                result = parser.parse(self.temp_image.name, "http://example.com/test.png")
+
+                # Should return empty ParsedDocument with title, not crash
+                self.assertIsInstance(result, ParsedDocument)
+                self.assertEqual(len(result.content_stream), 0)
+                self.assertEqual(len(result.tables), 0)
+                self.assertEqual(len(result.image_bytes), 0)
+                self.assertGreater(len(result.title), 0)  # Title should still be set
 
     def test_file_processor_detects_image_files(self):
         """Test that FileProcessor correctly detects and routes image files"""

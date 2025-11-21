@@ -885,14 +885,21 @@ class ImageFileParser(DocumentParser):
     """
     Parser for standalone image files (PNG, JPG, GIF, etc.)
     Returns a single-element ParsedDocument with the image summary
+
+    Note: This parser always requires summarize_images=True and vision model config.
     """
     def __init__(
         self,
         cfg: OmegaConf,
         verbose: bool = False,
-        model_config: dict = {},
-        summarize_images: bool = True,
+        model_config: dict = None,
     ):
+        model_config = model_config or {}
+
+        # Validate that vision config key exists (value can be empty dict for testing)
+        if 'vision' not in model_config:
+            raise ValueError("ImageFileParser requires 'vision' key in model_config")
+
         super().__init__(
             cfg=cfg,
             verbose=verbose,
@@ -900,12 +907,8 @@ class ImageFileParser(DocumentParser):
             parse_tables=False,
             enable_gmft=False,
             do_ocr=False,
-            summarize_images=summarize_images
+            summarize_images=True  # Always True for image files
         )
-        if not self.summarize_images:
-            logger.warning("ImageFileParser requires summarize_images=True, enabling it")
-            self.summarize_images = True
-            self.image_summarizer = ImageSummarizer(self.cfg, model_config.get('vision', {}))
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
@@ -928,12 +931,6 @@ class ImageFileParser(DocumentParser):
         basename = os.path.basename(filename)
         doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
 
-        # Read image binary data
-        with open(filename, 'rb') as fp:
-            image_binary = fp.read()
-        image_id = f"standalone_image_{slugify(basename)}"
-        image_bytes = [(image_id, image_binary)]
-
         # Use filename and path as context for standalone images
         file_context = f"Filename: {basename}\nPath: {filename}"
         if source_url != "No URL":
@@ -941,6 +938,12 @@ class ImageFileParser(DocumentParser):
 
         # Generate image summary with filename/path as context
         try:
+            # Read image binary data
+            with open(filename, 'rb') as fp:
+                image_binary = fp.read()
+            image_id = f"standalone_image_{slugify(basename)}"
+            image_bytes = [(image_id, image_binary)]
+
             image_summary = self.image_summarizer.summarize_image(
                 filename, source_url, previous_text=file_context, next_text=None
             )
