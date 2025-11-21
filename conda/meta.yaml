@@ -51,14 +51,20 @@ requirements:
     - conda-forge::libmagic
     - conda-forge::fontconfig
     - conda-forge::ffmpeg
+    - conda-forge::playwright
 
 test:
   imports:
     - core
     - crawlers
+  requires:
+    - pytest
+    - conda-forge::playwright
   commands:
     - echo "Testing if vectara-ingest command is available"
     - which vectara-ingest
+    - python -m playwright install chromium
+    - pytest -q
 
 about:
   home: https://github.com/vectara/vectara-ingest
