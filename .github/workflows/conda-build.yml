@@ -265,12 +265,12 @@ jobs:
           echo "Contents of ./conda-bld/linux-64:"
           ls -la ./conda-bld/linux-64/
       
-      - name: Install Firefox for Playwright
+      - name: Install Chromium for Playwright
         run: |
           source $HOME/miniconda/bin/activate
-          # Install playwright and then Firefox browser
-          pip install playwright
-          playwright install firefox
+          # Install playwright and then Chromium browser
+          pip install playwright==1.49.1
+          playwright install chromium
       
       - name: Upload to Anaconda.org
         env:
