@@ -6,8 +6,9 @@ from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
 from core.utils import get_file_size_in_MB
 from core.doc_parser import (
-    UnstructuredDocumentParser, DoclingDocumentParser, 
-    LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument
+    UnstructuredDocumentParser, DoclingDocumentParser,
+    LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument,
+    ImageFileParser
 )
 from core.contextual import ContextualChunker
 from core.summary import get_attributes_from_text
@@ -43,7 +44,12 @@ class FileProcessor:
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
-        
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif']
+
+        # Standalone images need local processing for summarization
+        if self.summarize_images and any(uri.lower().endswith(ext) for ext in image_extensions):
+            return True
+
         return (
             any(uri.endswith(ext) for ext in large_file_extensions) and
             (self.contextual_chunking or self.summarize_images or self.enable_gmft)
@@ -89,8 +95,33 @@ class FileProcessor:
         
         return pdf_parts
     
-    def create_document_parser(self):
-        """Create appropriate document parser based on configuration"""
+    def create_document_parser(self, filename: str = None):
+        """
+        Create appropriate document parser based on configuration and file type
+
+        Args:
+            filename: Optional filename to determine if it's an image file
+
+        Returns:
+            DocumentParser instance appropriate for the file type
+        """
+        # Check if this is a standalone image file
+        if filename:
+            image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif']
+            if any(filename.lower().endswith(ext) for ext in image_extensions):
+                if self.summarize_images:
+                    logger.info(f"Detected standalone image file: {filename}, using ImageFileParser")
+                    return ImageFileParser(
+                        cfg=self.cfg,
+                        verbose=self.verbose,
+                        model_config=self.model_config,
+                        summarize_images=True
+                    )
+                else:
+                    logger.warning(f"Image file {filename} detected but summarize_images is disabled, skipping")
+                    return None
+
+        # Regular document parsing
         base_dict = {
             "cfg": self.cfg,
             "verbose": self.verbose,
@@ -176,15 +207,19 @@ class FileProcessor:
     def process_file(self, filename: str, uri: str) -> ParsedDocument:
         """
         Process file and return parsed content
-        
+
         Returns:
             ParsedDocument with unified content stream
         """
         if not os.path.exists(filename):
             raise FileNotFoundError(f"File {filename} does not exist")
-        
+
         try:
-            dp = self.create_document_parser()
+            dp = self.create_document_parser(filename=filename)
+            if dp is None:
+                # Parser returned None (e.g., image file with summarize_images disabled)
+                logger.warning(f"No parser available for {filename}, returning empty ParsedDocument")
+                return ParsedDocument(title='', content_stream=[], tables=[], image_bytes=[])
             return dp.parse(filename, uri)
         except Exception as e:
             logger.error(f"Failed to parse {filename}: {e}")

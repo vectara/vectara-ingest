@@ -1073,7 +1073,15 @@ class Indexer:
             # Index all content (text and images) in a single document
             texts = [content for content, metadata in content_stream]
             metadatas = [metadata for content, metadata in content_stream]
-            
+
+            # Force core indexing for standalone image files (short single summary text)
+            is_image_file = any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif'])
+            use_core_for_indexing = (
+                is_image_file or
+                self.use_core_indexing or
+                self._is_chunking_enabled()
+            )
+
             succeeded = self.index_segments(
                 doc_id=slugify(uri),
                 texts=texts,
@@ -1082,7 +1090,7 @@ class Indexer:
                 doc_metadata=metadata,
                 doc_title=parsed_doc.title,
                 image_bytes=parsed_doc.image_bytes,
-                use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
+                use_core_indexing=use_core_for_indexing
             )
         else:
             # Legacy mode: Index text in main document, images as separate documents
