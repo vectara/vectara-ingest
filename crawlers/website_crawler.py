@@ -280,7 +280,7 @@ class WebsiteCrawler(Crawler):
         """Discover URLs using internal Vectara-ingest crawler."""
         logger.info("Using internal Vectara-ingest method to crawl the website")
         all_urls = []
-        pages_source = self.cfg.website_crawler.pages_source
+        pages_source = self.cfg.website_crawler.get("pages_source", "crawl")
         
         for homepage in base_urls:
             urls = []
@@ -370,7 +370,16 @@ class WebsiteCrawler(Crawler):
     def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str):
         """Dispatch jobs to Ray workers for parallel processing."""
         logger.info(f"Using {ray_workers} ray workers")
-        self.indexer.p = self.indexer.browser = None
+        # Stop Playwright from URL discovery to close its asyncio event loop
+        # This allows workers to create fresh Playwright instances without conflicts
+        if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
+            if hasattr(self.indexer.web_extractor, 'p') and self.indexer.web_extractor.p:
+                try:
+                    self.indexer.web_extractor.p.stop()
+                    logger.info("Stopped Playwright from URL discovery phase")
+                except Exception as e:
+                    logger.warning(f"Failed to stop Playwright: {e}")
+        self.indexer.web_extractor = None
         ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
         
         # Create workers with serializable config
@@ -388,6 +397,17 @@ class WebsiteCrawler(Crawler):
 
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str):
         """Process URLs sequentially in a single process."""
+        # Stop Playwright from URL discovery to close its asyncio event loop
+        # This allows worker to create fresh Playwright instance without conflicts
+        if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
+            if hasattr(self.indexer.web_extractor, 'p') and self.indexer.web_extractor.p:
+                try:
+                    self.indexer.web_extractor.p.stop()
+                    logger.info("Stopped Playwright from URL discovery phase")
+                except Exception as e:
+                    logger.warning(f"Failed to stop Playwright: {e}")
+        self.indexer.web_extractor = None
+
         crawl_worker = PageCrawlWorker(
             self.cfg,
             num_per_second

@@ -46,7 +46,7 @@ class WebContentExtractor(WebExtractorBase):
                     self.p.stop()
                 except:
                     pass
-            
+
             # Create fresh instances with better configuration
             self.p = sync_playwright().start()
             # Launch Chromium with stable configuration for Docker
