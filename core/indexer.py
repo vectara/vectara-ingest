@@ -399,32 +399,38 @@ class Indexer:
             if self.store_docs:
                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             return True
-        elif response.status_code in [409, 412] and self.reindex:
-            # File already exists and reindex is enabled
-            if self.verbose:
-                logger.info(f"File {uri} already exists. Deleting and re-indexing...")
+        elif response.status_code in [409, 412]:
+            if self.reindex:
+                # File already exists and reindex is enabled
+                if self.verbose:
+                    logger.info(f"File {uri} already exists. Deleting and re-indexing...")
 
-            # Extract doc_id from the original filename or ID
-            doc_id = id if id else os.path.basename(filename)
+                # Extract doc_id from the original filename or ID
+                doc_id = id if id else os.path.basename(filename)
 
-            # Delete the existing document
-            if self.delete_doc(doc_id):
-                # Retry the upload
-                try:
-                    with open(filename, 'rb') as file_handle:
-                        files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
-                        files['file'] = (upload_filename, file_handle, content_type)
-                        response = self.session.request("POST", url, headers=post_headers, files=files)
+                # Delete the existing document
+                if self.delete_doc(doc_id):
+                    # Retry the upload
+                    try:
+                        with open(filename, 'rb') as file_handle:
+                            files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
+                            files['file'] = (upload_filename, file_handle, content_type)
+                            response = self.session.request("POST", url, headers=post_headers, files=files)
 
-                    if response.status_code == 201:
-                        if self.verbose:
-                            logger.info(f"File {uri} re-indexed successfully")
-                        if self.store_docs:
-                            store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
-                        return True
-                except Exception as e:
-                    logger.error(f"Failed to re-index file {uri}: {e}")
-                    return False
+                        if response.status_code == 201:
+                            if self.verbose:
+                                logger.info(f"File {uri} re-indexed successfully")
+                            if self.store_docs:
+                                store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
+                            return True
+                    except Exception as e:
+                        logger.error(f"Failed to re-index file {uri}: {e}")
+                        return False
+            else:
+                # File already exists but reindex is disabled - treat as success
+                if self.verbose:
+                    logger.info(f"File {uri} already exists (skipping, already indexed)")
+                return True
 
         # Log error for any other status code
         logger.error(f"Failed to upload file {uri}. Status code: {response.status_code}, Message: {response.text}")
@@ -499,26 +505,32 @@ class Indexer:
                 with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                     json.dump(document, f)
             return True
-        elif response.status_code in [409, 412] and self.reindex:
-            # Document already exists and reindex is enabled
-            if self.verbose:
-                logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
+        elif response.status_code in [409, 412]:
+            if self.reindex:
+                # Document already exists and reindex is enabled
+                if self.verbose:
+                    logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
 
-            # Delete the existing document
-            if self.delete_doc(document['id']):
-                # Retry the upload
-                try:
-                    response = self.session.post(api_endpoint, data=data, headers=post_headers)
-                    if response.status_code == 201:
-                        if self.verbose:
-                            logger.info(f"Document {document['id']} re-indexed successfully")
-                        if self.store_docs:
-                            with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
-                                json.dump(document, f)
-                        return True
-                except Exception as e:
-                    logger.error(f"Failed to re-index document {document['id']}: {e}")
-                    return False
+                # Delete the existing document
+                if self.delete_doc(document['id']):
+                    # Retry the upload
+                    try:
+                        response = self.session.post(api_endpoint, data=data, headers=post_headers)
+                        if response.status_code == 201:
+                            if self.verbose:
+                                logger.info(f"Document {document['id']} re-indexed successfully")
+                            if self.store_docs:
+                                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
+                                    json.dump(document, f)
+                            return True
+                    except Exception as e:
+                        logger.error(f"Failed to re-index document {document['id']}: {e}")
+                        return False
+            else:
+                # Document already exists but reindex is disabled - treat as success
+                if self.verbose:
+                    logger.info(f"Document {document['id']} already exists (skipping, already indexed)")
+                return True
 
         # Log error for any other status code
         logger.error(f"Failed to index document {document['id']}. Status code: {response.status_code}, Message: {response.text}")
