@@ -93,12 +93,17 @@ def generate_image_summary(
             client = OpenAI(api_key=model_api_key)
         messages = [
             {
-                "role": "user",
+                "role": "system",
                 "content": [
                     {
                         "type": "text",
                         "text": prompt,
-                    },
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
                     {
                         "type": "image_url",
                         "image_url": {
@@ -108,6 +113,7 @@ def generate_image_summary(
                 ]
             }
         ]
+
         response = client.chat.completions.create(
             model=model_config.get('model_name', 'gpt-4o'),
             messages=messages,
