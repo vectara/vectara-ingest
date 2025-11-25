@@ -2,10 +2,11 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
+from pathlib import Path
 from furl import furl
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries
+from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS
 
 
 class ConfluencedatacenterCrawler(Crawler):
@@ -91,36 +92,56 @@ class ConfluencedatacenterCrawler(Crawler):
 
     def _process_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
-        Handles processing and indexing of attachments.
+        Handles processing and indexing of attachments including images (PNG, JPG, etc.) and documents.
 
         Args:
             content (dict): The content dictionary retrieved from Confluence.
             metadata (dict): Metadata associated with the document.
             doc_id (str): The unique document identifier.
         """
-        supported_extensions = {
-            ".pdf", ".md", ".odt", ".doc", ".docx", ".ppt",
-            ".pptx", ".txt", ".html", ".htm", ".lxml",
-            ".rtf", ".epub"
-        }
-        title = content["title"]
-        filename, file_extension = os.path.splitext(title)
+        # Get configuration for attachment processing
+        include_images = self.cfg.confluencedatacenter.get("include_image_attachments", False)
+        include_documents = self.cfg.confluencedatacenter.get("include_document_attachments", True)
 
-        if file_extension not in supported_extensions:
+        if not include_images and not include_documents:
+            logger.debug(f"Attachment processing disabled for {doc_id}")
+            return
+
+        title = content["title"]
+        file_extension = Path(title).suffix.lower()
+
+        # Use centralized file extension constants from utils
+        image_extensions = set(IMG_EXTENSIONS)
+        # Document extensions: standard docs plus text-based formats
+        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml'])
+
+        # Determine if we should process this attachment
+        is_image = file_extension in image_extensions
+        is_document = file_extension in document_extensions
+
+        if is_image and not include_images:
+            logger.debug(f"Skipping image attachment (disabled): {title}")
+            return
+
+        if is_document and not include_documents:
+            logger.debug(f"Skipping document attachment (disabled): {title}")
+            return
+
+        if not is_image and not is_document:
             logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
         if "url" not in metadata:
             logger.error(f"No URL found in metadata for attachment {doc_id}")
             return
-            
+
         attachment_url = furl(metadata["url"])
-        logger.info(f"Downloading Attachment {doc_id} - {attachment_url}")
+        logger.info(f"Downloading {'image' if is_image else 'document'} attachment {doc_id} - {attachment_url}")
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
         )
-        
+
         if not download_response.ok:
             logger.error(f"Failed to download attachment {doc_id}: {download_response.status_code} - {download_response.text}")
             return
@@ -130,16 +151,26 @@ class ConfluencedatacenterCrawler(Crawler):
             for chunk in download_response.iter_content(chunk_size=32000):
                 f.write(chunk)
             f.flush()
-            f.close()
+            temp_path = f.name
 
-            try:
-                succeeded = self.indexer.index_file(f.name, attachment_url.url, metadata, doc_id)
-            finally:
-                if os.path.exists(f.name):
-                    os.remove(f.name)
+        try:
+            # Enhance metadata with attachment information
+            attachment_metadata = metadata.copy()
+            attachment_metadata.update({
+                "filename": title,
+                "attachment_type": "image" if is_image else "document",
+                "source": "confluence_attachment"
+            })
 
-            if not succeeded:
-                logger.error(f"Error indexing {doc_id} - {attachment_url}")
+            succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
+
+            if succeeded:
+                logger.info(f"Successfully indexed {'image' if is_image else 'document'} attachment: {title}")
+            else:
+                logger.error(f"Failed to index attachment {doc_id} - {attachment_url}")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def _process_non_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
