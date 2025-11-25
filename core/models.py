@@ -94,12 +94,7 @@ def generate_image_summary(
         messages = [
             {
                 "role": "system",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    }
-                ]
+                "content": prompt,
             },
             {
                 "role": "user",
