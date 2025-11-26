@@ -2,17 +2,12 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
-<<<<<<< Updated upstream
-=======
 import pandas as pd
->>>>>>> Stashed changes
 from pathlib import Path
 from furl import furl
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS
-<<<<<<< Updated upstream
-=======
 from core.dataframe_parser import (
     DataframeParser,
     supported_by_dataframe_parser,
@@ -22,7 +17,6 @@ from core.dataframe_parser import (
 
 # Supported extensions for dataframe processing (CSV/Excel)
 SUPPORTED_DATAFRAME_EXTENSIONS = {".csv", ".xlsx", ".xls"}
->>>>>>> Stashed changes
 
 
 class ConfluencedatacenterCrawler(Crawler):
@@ -108,11 +102,7 @@ class ConfluencedatacenterCrawler(Crawler):
 
     def _process_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
-<<<<<<< Updated upstream
-        Handles processing and indexing of attachments including images (PNG, JPG, etc.) and documents.
-=======
         Handles processing and indexing of attachments including images, documents, and dataframes (CSV/Excel).
->>>>>>> Stashed changes
 
         Args:
             content (dict): The content dictionary retrieved from Confluence.
@@ -132,23 +122,15 @@ class ConfluencedatacenterCrawler(Crawler):
 
         # Use centralized file extension constants from utils
         image_extensions = set(IMG_EXTENSIONS)
-<<<<<<< Updated upstream
-        # Document extensions: standard docs plus text-based formats
-        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml'])
-=======
         # Document extensions: standard docs plus text-based formats (excluding CSV/Excel)
         document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml']) - SUPPORTED_DATAFRAME_EXTENSIONS
         # Dataframe extensions: CSV and Excel files
         dataframe_extensions = SUPPORTED_DATAFRAME_EXTENSIONS
->>>>>>> Stashed changes
 
         # Determine if we should process this attachment
         is_image = file_extension in image_extensions
         is_document = file_extension in document_extensions
-<<<<<<< Updated upstream
-=======
         is_dataframe = file_extension in dataframe_extensions
->>>>>>> Stashed changes
 
         if is_image and not include_images:
             logger.debug(f"Skipping image attachment (disabled): {title}")
@@ -158,15 +140,11 @@ class ConfluencedatacenterCrawler(Crawler):
             logger.debug(f"Skipping document attachment (disabled): {title}")
             return
 
-<<<<<<< Updated upstream
-        if not is_image and not is_document:
-=======
         if is_dataframe and not self.df_parser:
             logger.debug(f"Skipping dataframe attachment (DataframeParser not configured): {title}")
             return
 
         if not is_image and not is_document and not is_dataframe:
->>>>>>> Stashed changes
             logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
@@ -175,12 +153,8 @@ class ConfluencedatacenterCrawler(Crawler):
             return
 
         attachment_url = furl(metadata["url"])
-<<<<<<< Updated upstream
-        logger.info(f"Downloading {'image' if is_image else 'document'} attachment {doc_id} - {attachment_url}")
-=======
         file_type = "image" if is_image else ("dataframe" if is_dataframe else "document")
         logger.info(f"Downloading {file_type} attachment {doc_id} - {attachment_url}")
->>>>>>> Stashed changes
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
@@ -202,16 +176,6 @@ class ConfluencedatacenterCrawler(Crawler):
             attachment_metadata = metadata.copy()
             attachment_metadata.update({
                 "filename": title,
-<<<<<<< Updated upstream
-                "attachment_type": "image" if is_image else "document",
-                "source": "confluence_attachment"
-            })
-
-            succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
-
-            if succeeded:
-                logger.info(f"Successfully indexed {'image' if is_image else 'document'} attachment: {title}")
-=======
                 "attachment_type": file_type,
                 "source": "confluence_attachment"
             })
@@ -226,7 +190,6 @@ class ConfluencedatacenterCrawler(Crawler):
 
             if succeeded:
                 logger.info(f"Successfully indexed {file_type} attachment: {title}")
->>>>>>> Stashed changes
             else:
                 logger.error(f"Failed to index attachment {doc_id} - {attachment_url}")
         finally:
