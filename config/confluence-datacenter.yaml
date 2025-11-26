@@ -44,65 +44,12 @@ confluencedatacenter:
   # Options: export_view, styled_view, storage, editor
   body_view: "export_view"
 
-  # ===========================================================================
-  # DATAFRAME PROCESSING: CSV & Excel Attachment Configuration
-  # ===========================================================================
-  # Enables intelligent processing of spreadsheet attachments (.csv, .xlsx, .xls)
-  # attached to Confluence pages. Files are automatically detected and parsed.
-  #
-  # Two processing modes available:
-  #   - 'table' mode: Best for reports, dashboards, small datasets
-  #                   Generates AI summary of entire table/sheet
-  #                   Limit: 1000 rows × 50 cols per table (configurable)
-  #
-  #   - 'element' mode: Best for large datasets, databases, catalogs
-  #                     Each row becomes searchable with metadata filtering
-  #                     No size limits, requires column configuration
-  # ===========================================================================
+  # Dataframe processing configuration for CSV/Excel attachments
+  # When CSV (.csv) or Excel (.xlsx, .xls) files are attached to Confluence pages,
+  # they will be processed using the DataframeParser.
+  # for more details how to process csv and xls file with different modes and configure them, check the csv crawler configuration.
   dataframe_processing:
-    # Processing mode: 'table' (summarize entire sheet) or 'element' (index by row)
-    mode: "table"
-
-    # ---------------------------------------------------------------------------
-    # CSV-specific settings
-    # ---------------------------------------------------------------------------
-    csv_encoding: "utf-8"                   # Character encoding (auto-fallback to latin-1)
-
-    # ---------------------------------------------------------------------------
-    # Excel-specific settings
-    # ---------------------------------------------------------------------------
-    # sheet_names: ["Sheet1", "Data"]       # Process specific sheets (optional)
-    # Note: If not specified, ALL sheets in the workbook are processed
-    # Note: Missing sheets are skipped with a warning, processing continues
-
-    # ---------------------------------------------------------------------------
-    # TABLE MODE SETTINGS (active when mode: "table")
-    # ---------------------------------------------------------------------------
-    # Creates one searchable document per sheet with AI-generated summary
-    # Ideal for: Financial reports, dashboards, summary tables, metrics
-    truncate_table_if_over_max: true        # Auto-truncate oversized tables
-    max_rows: 1000                          # Max rows per table (default: 500)
-    max_cols: 50                            # Max columns per table (default: 20)
-
-    # ---------------------------------------------------------------------------
-    # ELEMENT MODE SETTINGS (inactive, uncomment to enable mode: "element")
-    # ---------------------------------------------------------------------------
-    # Processes each row as an individual searchable section with metadata
-    # Ideal for: Product catalogs, inventory, employee directories, large datasets
-    #
-    # REQUIRED for element mode:
-    # text_columns: ["name", "description"]             # Columns with searchable text
-    # metadata_columns: ["category", "author", "date"]  # Columns for filtering
-    #
-    # OPTIONAL for element mode:
-    # doc_id_columns: ["id", "sku"]                     # Group rows into documents
-    # title_column: "title"                             # Column for document title
-    # rows_per_chunk: 500                               # Rows per doc (if no doc_id_columns)
-    # select_condition: "status == 'active'"            # Row filter (pandas syntax)
-    # column_types:                                     # Force column data types
-    #   price: "float"
-    #   quantity: "int"
-    #   product_id: "str"
-
-metadata:
-  public: true 
+    # MODE: 'table' or 'element'
+    # - 'table' mode: Entire spreadsheet becomes one document with summary
+    # - 'element' mode: Each row becomes a separate section/document
+    mode: "element"
