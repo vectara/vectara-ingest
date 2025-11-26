@@ -2,11 +2,14 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
+import pandas as pd
 from pathlib import Path
 from furl import furl
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS
+from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS, DATAFRAME_EXTENSIONS
+from core.dataframe_parser import DataframeParser, process_dataframe_file
+from core.summary import TableSummarizer
 
 
 class ConfluencedatacenterCrawler(Crawler):
@@ -92,7 +95,7 @@ class ConfluencedatacenterCrawler(Crawler):
 
     def _process_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
-        Handles processing and indexing of attachments including images (PNG, JPG, etc.) and documents.
+        Handles processing and indexing of attachments including images, documents, and dataframes (CSV/Excel).
 
         Args:
             content (dict): The content dictionary retrieved from Confluence.
@@ -112,12 +115,13 @@ class ConfluencedatacenterCrawler(Crawler):
 
         # Use centralized file extension constants from utils
         image_extensions = set(IMG_EXTENSIONS)
-        # Document extensions: standard docs plus text-based formats
-        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml'])
+        document_extensions = set(DOC_EXTENSIONS)
+        dataframe_extensions = set(DATAFRAME_EXTENSIONS)
 
         # Determine if we should process this attachment
         is_image = file_extension in image_extensions
         is_document = file_extension in document_extensions
+        is_dataframe = file_extension in dataframe_extensions
 
         if is_image and not include_images:
             logger.debug(f"Skipping image attachment (disabled): {title}")
@@ -127,7 +131,11 @@ class ConfluencedatacenterCrawler(Crawler):
             logger.debug(f"Skipping document attachment (disabled): {title}")
             return
 
-        if not is_image and not is_document:
+        if is_dataframe and not self.df_parser:
+            logger.debug(f"Skipping dataframe attachment (DataframeParser not configured): {title}")
+            return
+
+        if not is_image and not is_document and not is_dataframe:
             logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
@@ -136,7 +144,8 @@ class ConfluencedatacenterCrawler(Crawler):
             return
 
         attachment_url = furl(metadata["url"])
-        logger.info(f"Downloading {'image' if is_image else 'document'} attachment {doc_id} - {attachment_url}")
+        file_type = "image" if is_image else ("dataframe" if is_dataframe else "document")
+        logger.info(f"Downloading {file_type} attachment {doc_id} - {attachment_url}")
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
@@ -158,14 +167,28 @@ class ConfluencedatacenterCrawler(Crawler):
             attachment_metadata = metadata.copy()
             attachment_metadata.update({
                 "filename": title,
-                "attachment_type": "image" if is_image else "document",
+                "attachment_type": file_type,
                 "source": "confluence_attachment"
             })
 
-            succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
+            # Route to appropriate processor
+            if is_dataframe:
+                # Process CSV/Excel files with common utility function
+                df_config = self.cfg.confluencedatacenter.get('dataframe_processing', {})
+                succeeded = process_dataframe_file(
+                    file_path=temp_path,
+                    metadata=attachment_metadata,
+                    doc_id=doc_id,
+                    df_parser=self.df_parser,
+                    df_config=df_config,
+                    source_name='confluence_attachment'
+                )
+            else:
+                # Process images and regular documents with indexer
+                succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
 
             if succeeded:
-                logger.info(f"Successfully indexed {'image' if is_image else 'document'} attachment: {title}")
+                logger.info(f"Successfully indexed {file_type} attachment: {title}")
             else:
                 logger.error(f"Failed to index attachment {doc_id} - {attachment_url}")
         finally:
@@ -264,6 +287,19 @@ class ConfluencedatacenterCrawler(Crawler):
         self.session = create_session_with_retries()
         limit = int(self.cfg.confluencedatacenter.get("limit", "25"))
         start = 0
+
+        # Initialize DataframeParser for CSV/Excel processing
+        self.df_parser = None
+        if hasattr(self.cfg.confluencedatacenter, 'dataframe_processing'):
+            df_config = self.cfg.confluencedatacenter.dataframe_processing
+            table_summarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
+            self.df_parser = DataframeParser(
+                cfg=self.cfg,
+                crawler_config=df_config,
+                indexer=self.indexer,
+                table_summarizer=table_summarizer
+            )
+            logger.info(f"DataframeParser initialized with mode: {df_config.get('mode', 'table')}")
 
         search_url = self.new_url("rest/api/content/search")
         search_url.args["cql"] = self.cfg.confluencedatacenter.confluence_cql

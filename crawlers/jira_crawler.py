@@ -135,8 +135,7 @@ class JiraCrawler(Crawler):
 
         # Use centralized file extension constants from utils
         image_extensions = set(IMG_EXTENSIONS)
-        # Add additional text-based document extensions not in DOC_EXTENSIONS
-        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md'])
+        document_extensions = set(DOC_EXTENSIONS)
 
         attachment_count = 0
 

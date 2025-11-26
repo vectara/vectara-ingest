@@ -35,10 +35,12 @@ logger = logging.getLogger(__name__)
 IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico", ".webp", ".tiff", ".tif"]
 AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"]
 VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".webm", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg", ".m4v", ".3gp", ".f4v"]
-DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf", ".ps"]
+# Document extensions: binary documents + text-based formats (excluding dataframes)
+DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".pdf", ".ps", ".txt", ".md", ".html", ".htm", ".rtf", ".epub", ".odt", ".lxml"]
+# Dataframe extensions: CSV and Excel files (handled separately with DataframeParser)
+DATAFRAME_EXTENSIONS = [".csv", ".xls", ".xlsx"]
 ARCHIVE_EXTENSIONS = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
 BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + DOC_EXTENSIONS
-SPREADSHEET_EXTENSIONS = {".csv", ".xls", ".xlsx"}
 
 # HTTP configurations
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -91,7 +93,8 @@ video_extensions = VIDEO_EXTENSIONS
 doc_extensions = DOC_EXTENSIONS
 archive_extensions = ARCHIVE_EXTENSIONS
 binary_extensions = BINARY_EXTENSIONS
-spreadsheet_extensions = SPREADSHEET_EXTENSIONS
+dataframe_extensions = DATAFRAME_EXTENSIONS
+spreadsheet_extensions = DATAFRAME_EXTENSIONS  # Deprecated: use DATAFRAME_EXTENSIONS instead
 
 # =============================================================================
 # LOGGING UTILITIES

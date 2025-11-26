@@ -11,13 +11,7 @@ from furl import furl
 import os
 import tempfile
 from core.crawler import Crawler
-from core.dataframe_parser import DataframeParser
-from core.summary import TableSummarizer
-from core.dataframe_parser import (
-    supported_by_dataframe_parser, 
-    determine_dataframe_type,
-    get_separator_by_file_name
-)
+from core.dataframe_parser import DataframeParser, TableSummarizer, process_dataframe_file
 
 # Supported extensions for regular document processing
 supported_document_extensions = {
@@ -269,89 +263,6 @@ class SharepointCrawler(Crawler):
             logger.error(f"Session refresh test failed: {e}")
             raise
 
-    def process_dataframe_file(self, file_path: str, metadata: dict, doc_id: str) -> bool:
-        """
-        Process CSV or Excel files using the DataframeParser.
-        Similar to csv_crawler approach - no fallback to regular indexing.
-        
-        Args:
-            file_path: Path to the CSV/Excel file
-            metadata: Existing metadata dictionary
-            doc_id: Document ID for indexing
-            
-        Returns:
-            bool: Success status
-        """
-        if not self.df_parser:
-            logger.error("DataframeParser not initialized. Cannot process dataframe file.")
-            return False
-        
-        try:
-            if not supported_by_dataframe_parser(file_path):
-                logger.error(f"'{file_path}' is not supported by DataframeParser.")
-                return False
-            
-            logger.info(f"Processing dataframe file: {file_path}")
-            
-            file_type = determine_dataframe_type(file_path)
-            doc_title = os.path.basename(file_path)
-            
-            # Add SharePoint-specific metadata
-            df_metadata = metadata.copy()
-            df_metadata['source'] = 'sharepoint'
-            df_metadata['file_type'] = file_type
-            
-            # Get dataframe processing config
-            df_config = self.cfg.sharepoint_crawler.get('dataframe_processing', {})
-            
-            if file_type == 'csv':
-                separator = get_separator_by_file_name(file_path)
-                encoding = df_config.get('csv_encoding', 'utf-8')
-                try:
-                    df = pd.read_csv(file_path, sep=separator, encoding=encoding)
-                except Exception as e:
-                    logger.warning(f"Failed to read CSV with encoding {encoding}: {e}. Trying with 'latin-1'")
-                    df = pd.read_csv(file_path, sep=separator, encoding='latin-1')
-                
-                self.df_parser.process_dataframe(
-                    df=df,
-                    doc_id=doc_id,
-                    doc_title=doc_title,
-                    metadata=df_metadata
-                )
-                
-            elif file_type in ['xls', 'xlsx']:
-                xls = pd.ExcelFile(file_path)
-                sheet_names = df_config.get("sheet_names")
-                
-                # If sheet_names is not specified or is None, process all sheets
-                if sheet_names is None:
-                    sheet_names = xls.sheet_names
-                
-                for sheet_name in sheet_names:
-                    if sheet_name not in xls.sheet_names:
-                        logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
-                        continue
-                    
-                    df = pd.read_excel(xls, sheet_name=sheet_name)
-                    sheet_doc_id = f"{doc_id}_{sheet_name}"
-                    sheet_doc_title = f"{doc_title} - {sheet_name}"
-                    sheet_metadata = df_metadata.copy()
-                    sheet_metadata['sheet_name'] = sheet_name
-                    
-                    self.df_parser.process_dataframe(
-                        df=df,
-                        doc_id=sheet_doc_id,
-                        doc_title=sheet_doc_title,
-                        metadata=sheet_metadata
-                    )
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error processing dataframe file {file_path}: {e}")
-            return False
-
     def _should_skip_file(self, file) -> bool:
         """
         Determine if a file should be skipped during crawling.
@@ -453,7 +364,15 @@ class SharepointCrawler(Crawler):
                         try:
                             # Check if this is a dataframe file (CSV/Excel)
                             if file_extension.lower() in supported_dataframe_extensions:
-                                succeeded = self.process_dataframe_file(f.name, metadata, unique_id)
+                                df_config = self.cfg.sharepoint_crawler.get('dataframe_processing', {})
+                                succeeded = process_dataframe_file(
+                                    file_path=f.name,
+                                    metadata=metadata,
+                                    doc_id=unique_id,
+                                    df_parser=self.df_parser,
+                                    df_config=df_config,
+                                    source_name='sharepoint'
+                                )
                             else:
                                 # Regular document processing
                                 succeeded = self.indexer.index_file(f.name, metadata['url'], metadata, unique_id)
@@ -694,7 +613,15 @@ class SharepointCrawler(Crawler):
                                     
                                     # Check if this is a dataframe file
                                     if file_extension.lower() in supported_dataframe_extensions:
-                                        succeeded = self.process_dataframe_file(f.name, metadata, doc_id)
+                                        df_config = self.cfg.sharepoint_crawler.get('dataframe_processing', {})
+                                        succeeded = process_dataframe_file(
+                                            file_path=f.name,
+                                            metadata=metadata,
+                                            doc_id=doc_id,
+                                            df_parser=self.df_parser,
+                                            df_config=df_config,
+                                            source_name='sharepoint'
+                                        )
                                     else:
                                         succeeded = self.indexer.index_file(f.name, attachment_url, metadata, doc_id)
                                     
@@ -753,7 +680,15 @@ class SharepointCrawler(Crawler):
                         try:
                             # Check if this is a dataframe file
                             if ext.lower() in supported_dataframe_extensions:
-                                succeeded = self.process_dataframe_file(file_path, metadata, file_doc_id)
+                                df_config = self.cfg.sharepoint_crawler.get('dataframe_processing', {})
+                                succeeded = process_dataframe_file(
+                                    file_path=file_path,
+                                    metadata=metadata,
+                                    doc_id=file_doc_id,
+                                    df_parser=self.df_parser,
+                                    df_config=df_config,
+                                    source_name='sharepoint'
+                                )
                             else:
                                 succeeded = self.indexer.index_file(file_path, zip_url, metadata, file_doc_id)
                             
