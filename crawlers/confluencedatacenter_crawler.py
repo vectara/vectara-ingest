@@ -7,16 +7,9 @@ from pathlib import Path
 from furl import furl
 
 from core.crawler import Crawler
-from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS
-from core.dataframe_parser import (
-    DataframeParser,
-    supported_by_dataframe_parser,
-    determine_dataframe_type,
-    get_separator_by_file_name
-)
-
-# Supported extensions for dataframe processing (CSV/Excel)
-SUPPORTED_DATAFRAME_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS, DATAFRAME_EXTENSIONS
+from core.dataframe_parser import DataframeParser, process_dataframe_file
+from core.summary import TableSummarizer
 
 
 class ConfluencedatacenterCrawler(Crawler):
@@ -122,10 +115,8 @@ class ConfluencedatacenterCrawler(Crawler):
 
         # Use centralized file extension constants from utils
         image_extensions = set(IMG_EXTENSIONS)
-        # Document extensions: standard docs plus text-based formats (excluding CSV/Excel)
-        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml']) - SUPPORTED_DATAFRAME_EXTENSIONS
-        # Dataframe extensions: CSV and Excel files
-        dataframe_extensions = SUPPORTED_DATAFRAME_EXTENSIONS
+        document_extensions = set(DOC_EXTENSIONS)
+        dataframe_extensions = set(DATAFRAME_EXTENSIONS)
 
         # Determine if we should process this attachment
         is_image = file_extension in image_extensions
@@ -182,8 +173,16 @@ class ConfluencedatacenterCrawler(Crawler):
 
             # Route to appropriate processor
             if is_dataframe:
-                # Process CSV/Excel files with DataframeParser
-                succeeded = self.process_dataframe_file(temp_path, attachment_metadata, doc_id)
+                # Process CSV/Excel files with common utility function
+                df_config = self.cfg.confluencedatacenter.get('dataframe_processing', {})
+                succeeded = process_dataframe_file(
+                    file_path=temp_path,
+                    metadata=attachment_metadata,
+                    doc_id=doc_id,
+                    df_parser=self.df_parser,
+                    df_config=df_config,
+                    source_name='confluence_attachment'
+                )
             else:
                 # Process images and regular documents with indexer
                 succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
@@ -272,89 +271,6 @@ class ConfluencedatacenterCrawler(Crawler):
         except Exception as e:
             logger.warning(f"Error fetching attachments for content {content_id}: {e}")
 
-    def process_dataframe_file(self, file_path: str, metadata: dict, doc_id: str) -> bool:
-        """
-        Process CSV or Excel files using the DataframeParser.
-        Similar to SharePoint crawler approach.
-
-        Args:
-            file_path: Path to the CSV/Excel file
-            metadata: Existing metadata dictionary
-            doc_id: Document ID for indexing
-
-        Returns:
-            bool: Success status
-        """
-        if not self.df_parser:
-            logger.error("DataframeParser not initialized. Cannot process dataframe file.")
-            return False
-
-        try:
-            if not supported_by_dataframe_parser(file_path):
-                logger.error(f"'{file_path}' is not supported by DataframeParser.")
-                return False
-
-            logger.info(f"Processing dataframe file: {file_path}")
-
-            file_type = determine_dataframe_type(file_path)
-            doc_title = os.path.basename(file_path)
-
-            # Add Confluence-specific metadata
-            df_metadata = metadata.copy()
-            df_metadata['source'] = 'confluence_attachment'
-            df_metadata['file_type'] = file_type
-
-            # Get dataframe processing config
-            df_config = self.cfg.confluencedatacenter.get('dataframe_processing', {})
-
-            if file_type == 'csv':
-                separator = get_separator_by_file_name(file_path)
-                encoding = df_config.get('csv_encoding', 'utf-8')
-                try:
-                    df = pd.read_csv(file_path, sep=separator, encoding=encoding)
-                except Exception as e:
-                    logger.warning(f"Failed to read CSV with encoding {encoding}: {e}. Trying with 'latin-1'")
-                    df = pd.read_csv(file_path, sep=separator, encoding='latin-1')
-
-                self.df_parser.process_dataframe(
-                    df=df,
-                    doc_id=doc_id,
-                    doc_title=doc_title,
-                    metadata=df_metadata
-                )
-
-            elif file_type in ['xls', 'xlsx']:
-                xls = pd.ExcelFile(file_path)
-                sheet_names = df_config.get("sheet_names")
-
-                # If sheet_names is not specified or is None, process all sheets
-                if sheet_names is None:
-                    sheet_names = xls.sheet_names
-
-                for sheet_name in sheet_names:
-                    if sheet_name not in xls.sheet_names:
-                        logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
-                        continue
-
-                    df = pd.read_excel(xls, sheet_name=sheet_name)
-                    sheet_doc_id = f"{doc_id}_{sheet_name}"
-                    sheet_doc_title = f"{doc_title} - {sheet_name}"
-                    sheet_metadata = df_metadata.copy()
-                    sheet_metadata['sheet_name'] = sheet_name
-
-                    self.df_parser.process_dataframe(
-                        df=df,
-                        doc_id=sheet_doc_id,
-                        doc_title=sheet_doc_title,
-                        metadata=sheet_metadata
-                    )
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error processing dataframe file {file_path}: {e}")
-            return False
-
     def crawl(self) -> None:
         """
         Initiates the crawling process for Confluence content.
@@ -376,10 +292,12 @@ class ConfluencedatacenterCrawler(Crawler):
         self.df_parser = None
         if hasattr(self.cfg.confluencedatacenter, 'dataframe_processing'):
             df_config = self.cfg.confluencedatacenter.dataframe_processing
+            table_summarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
             self.df_parser = DataframeParser(
                 cfg=self.cfg,
+                crawler_config=df_config,
                 indexer=self.indexer,
-                mode=df_config.get('mode', 'table')
+                table_summarizer=table_summarizer
             )
             logger.info(f"DataframeParser initialized with mode: {df_config.get('mode', 'table')}")
 
