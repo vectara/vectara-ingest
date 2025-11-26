@@ -2,11 +2,27 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
+<<<<<<< Updated upstream
+=======
+import pandas as pd
+>>>>>>> Stashed changes
 from pathlib import Path
 from furl import furl
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, IMG_EXTENSIONS, DOC_EXTENSIONS
+<<<<<<< Updated upstream
+=======
+from core.dataframe_parser import (
+    DataframeParser,
+    supported_by_dataframe_parser,
+    determine_dataframe_type,
+    get_separator_by_file_name
+)
+
+# Supported extensions for dataframe processing (CSV/Excel)
+SUPPORTED_DATAFRAME_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+>>>>>>> Stashed changes
 
 
 class ConfluencedatacenterCrawler(Crawler):
@@ -92,7 +108,11 @@ class ConfluencedatacenterCrawler(Crawler):
 
     def _process_attachment(self, content: dict, metadata: dict, doc_id: str) -> None:
         """
+<<<<<<< Updated upstream
         Handles processing and indexing of attachments including images (PNG, JPG, etc.) and documents.
+=======
+        Handles processing and indexing of attachments including images, documents, and dataframes (CSV/Excel).
+>>>>>>> Stashed changes
 
         Args:
             content (dict): The content dictionary retrieved from Confluence.
@@ -112,12 +132,23 @@ class ConfluencedatacenterCrawler(Crawler):
 
         # Use centralized file extension constants from utils
         image_extensions = set(IMG_EXTENSIONS)
+<<<<<<< Updated upstream
         # Document extensions: standard docs plus text-based formats
         document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml'])
+=======
+        # Document extensions: standard docs plus text-based formats (excluding CSV/Excel)
+        document_extensions = set(DOC_EXTENSIONS + ['.txt', '.md', '.html', '.htm', '.rtf', '.epub', '.odt', '.lxml']) - SUPPORTED_DATAFRAME_EXTENSIONS
+        # Dataframe extensions: CSV and Excel files
+        dataframe_extensions = SUPPORTED_DATAFRAME_EXTENSIONS
+>>>>>>> Stashed changes
 
         # Determine if we should process this attachment
         is_image = file_extension in image_extensions
         is_document = file_extension in document_extensions
+<<<<<<< Updated upstream
+=======
+        is_dataframe = file_extension in dataframe_extensions
+>>>>>>> Stashed changes
 
         if is_image and not include_images:
             logger.debug(f"Skipping image attachment (disabled): {title}")
@@ -127,7 +158,15 @@ class ConfluencedatacenterCrawler(Crawler):
             logger.debug(f"Skipping document attachment (disabled): {title}")
             return
 
+<<<<<<< Updated upstream
         if not is_image and not is_document:
+=======
+        if is_dataframe and not self.df_parser:
+            logger.debug(f"Skipping dataframe attachment (DataframeParser not configured): {title}")
+            return
+
+        if not is_image and not is_document and not is_dataframe:
+>>>>>>> Stashed changes
             logger.warning(f"Extension not supported, skipping. '{file_extension}' title: {title}")
             return
 
@@ -136,7 +175,12 @@ class ConfluencedatacenterCrawler(Crawler):
             return
 
         attachment_url = furl(metadata["url"])
+<<<<<<< Updated upstream
         logger.info(f"Downloading {'image' if is_image else 'document'} attachment {doc_id} - {attachment_url}")
+=======
+        file_type = "image" if is_image else ("dataframe" if is_dataframe else "document")
+        logger.info(f"Downloading {file_type} attachment {doc_id} - {attachment_url}")
+>>>>>>> Stashed changes
 
         download_response = self.session.get(
             attachment_url.url, headers=self.confluence_headers, auth=self.confluence_auth
@@ -158,6 +202,7 @@ class ConfluencedatacenterCrawler(Crawler):
             attachment_metadata = metadata.copy()
             attachment_metadata.update({
                 "filename": title,
+<<<<<<< Updated upstream
                 "attachment_type": "image" if is_image else "document",
                 "source": "confluence_attachment"
             })
@@ -166,6 +211,22 @@ class ConfluencedatacenterCrawler(Crawler):
 
             if succeeded:
                 logger.info(f"Successfully indexed {'image' if is_image else 'document'} attachment: {title}")
+=======
+                "attachment_type": file_type,
+                "source": "confluence_attachment"
+            })
+
+            # Route to appropriate processor
+            if is_dataframe:
+                # Process CSV/Excel files with DataframeParser
+                succeeded = self.process_dataframe_file(temp_path, attachment_metadata, doc_id)
+            else:
+                # Process images and regular documents with indexer
+                succeeded = self.indexer.index_file(temp_path, attachment_url.url, attachment_metadata, doc_id)
+
+            if succeeded:
+                logger.info(f"Successfully indexed {file_type} attachment: {title}")
+>>>>>>> Stashed changes
             else:
                 logger.error(f"Failed to index attachment {doc_id} - {attachment_url}")
         finally:
@@ -248,6 +309,89 @@ class ConfluencedatacenterCrawler(Crawler):
         except Exception as e:
             logger.warning(f"Error fetching attachments for content {content_id}: {e}")
 
+    def process_dataframe_file(self, file_path: str, metadata: dict, doc_id: str) -> bool:
+        """
+        Process CSV or Excel files using the DataframeParser.
+        Similar to SharePoint crawler approach.
+
+        Args:
+            file_path: Path to the CSV/Excel file
+            metadata: Existing metadata dictionary
+            doc_id: Document ID for indexing
+
+        Returns:
+            bool: Success status
+        """
+        if not self.df_parser:
+            logger.error("DataframeParser not initialized. Cannot process dataframe file.")
+            return False
+
+        try:
+            if not supported_by_dataframe_parser(file_path):
+                logger.error(f"'{file_path}' is not supported by DataframeParser.")
+                return False
+
+            logger.info(f"Processing dataframe file: {file_path}")
+
+            file_type = determine_dataframe_type(file_path)
+            doc_title = os.path.basename(file_path)
+
+            # Add Confluence-specific metadata
+            df_metadata = metadata.copy()
+            df_metadata['source'] = 'confluence_attachment'
+            df_metadata['file_type'] = file_type
+
+            # Get dataframe processing config
+            df_config = self.cfg.confluencedatacenter.get('dataframe_processing', {})
+
+            if file_type == 'csv':
+                separator = get_separator_by_file_name(file_path)
+                encoding = df_config.get('csv_encoding', 'utf-8')
+                try:
+                    df = pd.read_csv(file_path, sep=separator, encoding=encoding)
+                except Exception as e:
+                    logger.warning(f"Failed to read CSV with encoding {encoding}: {e}. Trying with 'latin-1'")
+                    df = pd.read_csv(file_path, sep=separator, encoding='latin-1')
+
+                self.df_parser.process_dataframe(
+                    df=df,
+                    doc_id=doc_id,
+                    doc_title=doc_title,
+                    metadata=df_metadata
+                )
+
+            elif file_type in ['xls', 'xlsx']:
+                xls = pd.ExcelFile(file_path)
+                sheet_names = df_config.get("sheet_names")
+
+                # If sheet_names is not specified or is None, process all sheets
+                if sheet_names is None:
+                    sheet_names = xls.sheet_names
+
+                for sheet_name in sheet_names:
+                    if sheet_name not in xls.sheet_names:
+                        logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
+                        continue
+
+                    df = pd.read_excel(xls, sheet_name=sheet_name)
+                    sheet_doc_id = f"{doc_id}_{sheet_name}"
+                    sheet_doc_title = f"{doc_title} - {sheet_name}"
+                    sheet_metadata = df_metadata.copy()
+                    sheet_metadata['sheet_name'] = sheet_name
+
+                    self.df_parser.process_dataframe(
+                        df=df,
+                        doc_id=sheet_doc_id,
+                        doc_title=sheet_doc_title,
+                        metadata=sheet_metadata
+                    )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error processing dataframe file {file_path}: {e}")
+            return False
+
     def crawl(self) -> None:
         """
         Initiates the crawling process for Confluence content.
@@ -264,6 +408,17 @@ class ConfluencedatacenterCrawler(Crawler):
         self.session = create_session_with_retries()
         limit = int(self.cfg.confluencedatacenter.get("limit", "25"))
         start = 0
+
+        # Initialize DataframeParser for CSV/Excel processing
+        self.df_parser = None
+        if hasattr(self.cfg.confluencedatacenter, 'dataframe_processing'):
+            df_config = self.cfg.confluencedatacenter.dataframe_processing
+            self.df_parser = DataframeParser(
+                cfg=self.cfg,
+                indexer=self.indexer,
+                mode=df_config.get('mode', 'table')
+            )
+            logger.info(f"DataframeParser initialized with mode: {df_config.get('mode', 'table')}")
 
         search_url = self.new_url("rest/api/content/search")
         search_url.args["cql"] = self.cfg.confluencedatacenter.confluence_cql
