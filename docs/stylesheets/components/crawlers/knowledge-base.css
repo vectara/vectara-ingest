@@ -1,0 +1,103 @@
+/* ============================================
+
+   CRAWLERS - KNOWLEDGE BASE
+
+   Styles specific to knowledge base crawlers:
+   - Confluence (CQL queries)
+   - Notion
+   - SharePoint
+   - MediaWiki
+
+   ============================================ */
+
+
+/* ============================================
+   CQL EXAMPLE CARDS (Confluence)
+   ============================================ */
+
+/* Grid container for CQL examples */
+.cql-examples-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+@media (max-width: 768px) {
+    .cql-examples-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual CQL example card */
+.cql-example-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-left: 3px solid var(--vectara-primary);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin: 0;
+    transition: var(--transition-smooth);
+    overflow-x: auto;
+}
+
+.cql-example-card:hover {
+    border-left-color: var(--vectara-primary-dark);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+[data-md-color-scheme="slate"] .cql-example-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+[data-md-color-scheme="slate"] .cql-example-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Card heading */
+.cql-example-card h4 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--md-default-fg-color);
+}
+
+/* First paragraph (title text) */
+.cql-example-card > p:first-of-type {
+    font-size: 0.75rem;
+    color: var(--md-default-fg-color);
+    margin: 0 0 0.5rem 0;
+}
+
+/* Description paragraphs */
+.cql-example-card p {
+    font-size: 0.65rem;
+    font-weight: 400;
+    line-height: 1.4;
+    margin: 0.5rem 0 0 0;
+    color: var(--vectara-text-muted);
+}
+
+.cql-example-card strong {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--md-default-fg-color);
+}
+
+/* Code blocks */
+.cql-example-card pre {
+    margin: 0.5rem 0 0 0;
+    background: rgba(63, 81, 181, 0.08);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+}
+
+.cql-example-card code {
+    font-size: 0.65rem;
+}
+
+.cql-example-card .highlight {
+    margin: 0.5rem 0 0 0;
+}
