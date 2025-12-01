@@ -276,8 +276,11 @@ class DataframeParser:
         metadata_columns: list[str] = list(
             self.crawler_config.get("metadata_columns", [])
         )
+        # New config option: if True, use title_column only for doc_title, not for section titles
+        use_title_for_doc_only: bool = self.crawler_config.get("use_title_for_doc_only", False)
+
         for _, row in df_chunk.iterrows():
-            if title_column:
+            if title_column and not use_title_for_doc_only:
                 titles.append(str(row[title_column]))
             text = " - ".join(
                 str(row[col]) for col in text_columns if pd.notnull(row[col])
@@ -300,8 +303,12 @@ class DataframeParser:
                 if hasattr(value, 'item'):
                     value = value.item()
                 doc_metadata[column] = value
-        
-        final_title = titles[0] if titles else doc_title
+
+        # Use title from title_column for doc_title if specified
+        if title_column and title_column in df_chunk.columns:
+            final_title = str(df_chunk[title_column].iloc[0])
+        else:
+            final_title = titles[0] if titles else doc_title
         logger.debug(f"Indexing {len(df_chunk)} rows for doc_id '{doc_id}'")
 
         self.indexer.index_segments(

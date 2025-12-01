@@ -136,6 +136,7 @@ This has two modes: `element` or `table`
     value into a single Vectara document. The crawler will also use the content in these columns (concatenated) as the title for that row in the Vectara document. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
   - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
   - `title_column` is an optional column name that will hold textual information to be used as title at the document level.
+  - `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
   - `metadata_columns` a list of column names that we want to use as metadata.
 
 In the above example, the crawler would
@@ -166,6 +167,7 @@ The huggingface crawler can be used to read data from a HF dataset and index rel
 - `id_column` optional column for the ID of the dataset. Must be unique if used
 - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
 - `title_column` is an optional column name that will hold textual information to be used as title at the document level.
+- `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
 - `metadata_columns` a list of column names that we want to use as metadata.
 
 In the above example, the crawler would
@@ -199,6 +201,7 @@ This has two modes: `element` or `table`
     value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
   - `text_columns` a list of column names that include textual information we want to use
   - `title_column` is an optional column name that will hold textual information to be used as title
+  - `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
   - `metadata_columns` a list of column names that we want to use as metadata
   - `column_types` an optional dictionary of column name and type (int, float, str). If unspecified, or for columns not included, the default type is str.
   - `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
