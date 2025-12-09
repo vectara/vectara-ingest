@@ -14,13 +14,27 @@ from urllib.parse import urlparse
 from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
+# Print to console immediately before any imports that might hang
+print("[DEBUG] Starting vectara-ingest...")
+print("[DEBUG] Python version:", sys.version)
+print("[DEBUG] Working directory:", os.getcwd())
+sys.stdout.flush()
+
+print("[DEBUG] Importing core modules...")
+sys.stdout.flush()
+
 from core.crawler import Crawler
 from core.utils import setup_logging, normalize_vectara_endpoint, load_config
+
+print("[DEBUG] Core modules imported successfully")
+sys.stdout.flush()
 
 app = typer.Typer()
 setup_logging()
 
 logger = logging.getLogger(__name__)
+print("[DEBUG] Logger initialized")
+sys.stdout.flush()
 
 def instantiate_crawler(base_class, folder_name: str, class_name: str, *args, **kwargs) -> Any:   # type: ignore
     """
@@ -245,10 +259,19 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     """
     Core ingest functionality that can be called from both Docker and CLI.
     """
+    print(f"[DEBUG] run_ingest called with config_file={config_file}, profile={profile}")
+    sys.stdout.flush()
+
     # process arguments
     try:
+        print(f"[DEBUG] Loading config file: {config_file}")
+        sys.stdout.flush()
         cfg: DictConfig = load_config(config_file)
+        print(f"[DEBUG] Config loaded successfully")
+        sys.stdout.flush()
     except Exception as e:
+        print(f"[ERROR] Error loading config file ({config_file}): {e}")
+        sys.stdout.flush()
         logger.error(f"Error loading config file ({config_file}): {e}")
         exit(1)
 
@@ -265,39 +288,48 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             logger.info("Found ca.pem in current directory, using it for SSL verification")
             OmegaConf.update(cfg, 'vectara.ssl_verify', os.path.abspath("ca.pem"))
 
-    # Determine secrets.toml path with more robust prioritization
+    # Determine secrets.toml path - Windows/local only
     if secrets_path is None:
-        # Check environment variable first
-        env_secrets_path = os.environ.get('VECTARA_SECRETS_PATH')
-        if env_secrets_path and os.path.exists(env_secrets_path):
-            secrets_path = env_secrets_path
-            logger.info(f"Using secrets from environment variable: {secrets_path}")
-        elif os.path.exists('/home/vectara/env/secrets.toml'):
-            secrets_path = '/home/vectara/env/secrets.toml'
-            logger.info(f"Using Docker secrets path: {secrets_path}")
+        print(f"[DEBUG] No secrets_path provided, looking for secrets.toml in current directory")
+        sys.stdout.flush()
+        local_path = 'secrets.toml'
+        if os.path.exists(local_path):
+            secrets_path = local_path
+            print(f"[DEBUG] Found secrets.toml in current directory")
+            sys.stdout.flush()
         else:
-            # Fallback to directory for CLI mode
-            local_path = 'secrets.toml'
-            if os.path.exists(local_path):
-                secrets_path = local_path
-                logger.info(f"Using local secrets path: {secrets_path}")
-            else:
-                logger.error('secrets.toml not found in repository root')
-                raise typer.Exit(1)
+            print(f"[ERROR] secrets.toml not found in current directory")
+            sys.stdout.flush()
+            logger.error('secrets.toml not found in repository root')
+            raise typer.Exit(1)
     else:
+        print(f"[DEBUG] Using provided secrets_path: {secrets_path}")
+        sys.stdout.flush()
         # If explicitly provided, verify it exists
         if not os.path.exists(secrets_path):
+            print(f"[ERROR] Provided secrets path '{secrets_path}' does not exist")
+            sys.stdout.flush()
             logger.error(f"Provided secrets path '{secrets_path}' does not exist")
             raise typer.Exit(1)
-        logger.info(f"Using provided secrets path: {secrets_path}")
+
+    print(f"[DEBUG] Using secrets file: {secrets_path}")
+    sys.stdout.flush()
 
     # add .env params, by profile
+    print(f"[DEBUG] Loading secrets from: {secrets_path}")
+    sys.stdout.flush()
     logger.info(f"Loading {secrets_path}")
     with open(secrets_path, "r") as f:
         env_dict = toml.load(f)
+    print(f"[DEBUG] Secrets loaded. Available profiles: {list(env_dict.keys())}")
+    sys.stdout.flush()
     if profile not in env_dict:
+        print(f"[ERROR] Profile '{profile}' not found in secrets.toml")
+        sys.stdout.flush()
         logger.error(f'Profile "{profile}" not found in secrets.toml')
         exit(1)
+    print(f"[DEBUG] Using profile: {profile}")
+    sys.stdout.flush()
     logger.info(f'Using profile "{profile}" from secrets.toml')
     
     # Add all keys from "general" section to the vectara config
@@ -309,15 +341,28 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     update_environment(cfg, secrets_path, env_dict)
     update_environment(cfg, 'os.environ', dict(os.environ))
 
+    print(f"[DEBUG] Configuration loaded successfully")
+    sys.stdout.flush()
     logger.info("Configuration loaded...")
+
     try:
+        print(f"[DEBUG] Normalizing Vectara endpoint...")
+        sys.stdout.flush()
         api_url = normalize_vectara_endpoint(cfg.vectara.get("endpoint"))
+        print(f"[DEBUG] API URL: {api_url}")
+        sys.stdout.flush()
     except ValueError as e:
+        print(f"[ERROR] Invalid Vectara API endpoint configuration: {e}")
+        sys.stdout.flush()
         raise Exception(f"Invalid Vectara API endpoint configuration: {e}")
 
     try:
         auth_url = normalize_vectara_endpoint(cfg.vectara.get("auth_url"), default_host="auth.vectara.io")
+        print(f"[DEBUG] Auth URL: {auth_url}")
+        sys.stdout.flush()
     except ValueError as e:
+        print(f"[ERROR] Invalid Vectara auth URL configuration: {e}")
+        sys.stdout.flush()
         raise Exception(f"Invalid Vectara auth URL configuration: {e}")
 
     create_corpus_flag = cfg.vectara.get("create_corpus", False)  # Default to False
@@ -325,12 +370,21 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     api_key = cfg.vectara.api_key
     crawler_type = cfg.crawling.crawler_type
 
+    print(f"[DEBUG] Corpus key: {corpus_key}")
+    print(f"[DEBUG] Crawler type: {crawler_type}")
+    print(f"[DEBUG] Create corpus: {create_corpus_flag}")
+    sys.stdout.flush()
+
     # instantiate the crawler
+    print(f"[DEBUG] Instantiating crawler: {crawler_type}")
+    sys.stdout.flush()
     crawler = instantiate_crawler(
         Crawler, 'crawlers', f'{crawler_type.capitalize()}Crawler',
         cfg, api_url, corpus_key, api_key
     )
 
+    print(f"[DEBUG] Crawler instantiated successfully")
+    sys.stdout.flush()
     logger.info("Crawler instantiated...")
     
     # Create corpus if needed
@@ -351,8 +405,12 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             reset_corpus_apikey(api_url, corpus_key, api_key)
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
+    print(f"[DEBUG] Starting crawl of type {crawler_type}...")
+    sys.stdout.flush()
     logger.info(f"Starting crawl of type {crawler_type}...")
     crawler.crawl()
+    print(f"[DEBUG] Finished crawl of type {crawler_type}")
+    sys.stdout.flush()
     logger.info(f"Finished crawl of type {crawler_type}...")
     
 
@@ -374,8 +432,12 @@ def main(
     The tool automatically detects if it's running in a Docker container and adjusts behavior accordingly.
     """
 
+    print(f"[DEBUG] main() called")
+    sys.stdout.flush()
     logger.info(f"Starting vectara-ingest")
     run_ingest(config_file, profile, secrets_path, reset_corpus)
+    print(f"[DEBUG] main() completed")
+    sys.stdout.flush()
 
 if __name__ == '__main__':
     # Check if we're running with named arguments (CLI style)
