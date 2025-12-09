@@ -23,7 +23,15 @@ sys.stdout.flush()
 print("[DEBUG] Importing core modules...")
 sys.stdout.flush()
 
+print("[DEBUG] Importing core.crawler...")
+sys.stdout.flush()
 from core.crawler import Crawler
+
+print("[DEBUG] core.crawler imported successfully")
+sys.stdout.flush()
+
+print("[DEBUG] Importing core.utils...")
+sys.stdout.flush()
 from core.utils import setup_logging, normalize_vectara_endpoint, load_config
 
 print("[DEBUG] Core modules imported successfully")
