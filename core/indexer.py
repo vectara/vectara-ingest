@@ -21,7 +21,16 @@ from omegaconf import OmegaConf
 from nbconvert import HTMLExporter  # type: ignore
 import nbformat
 import markdown
-import whisper
+
+# Make whisper optional for Windows compatibility
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except (ImportError, TypeError) as e:
+    logger.warning(f"Whisper not available (audio transcription disabled): {e}")
+    whisper = None
+    WHISPER_AVAILABLE = False
+
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
@@ -1179,6 +1188,10 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False
         """
+        if not WHISPER_AVAILABLE:
+            logger.error("Whisper is not available. Cannot transcribe audio files.")
+            return
+
         logger.info(
             f"Transcribing file {file_path} with Whisper model of size {self.whisper_model_name} (this may take a while)")
         if self.whisper_model is None:
