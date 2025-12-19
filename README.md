@@ -520,7 +520,30 @@ The project is designed to be used within a Docker container, so that a crawl jo
 
 #### HTTP Proxy
 
-If the `http_proxy`, `https_proxy`, or `no_proxy` environment variables exist, they will be used during the docker build step.
+**Build-time proxy:** If the `http_proxy`, `https_proxy`, or `no_proxy` environment variables exist, they will be used during the docker build step.
+
+**Runtime proxy:** For crawlers running in environments that require a proxy to access external URLs (common in Kubernetes or corporate networks), you can configure proxy settings in two ways:
+
+1. **Environment Variables** - Set `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables. These can be passed to Docker using the `.run-env` file or set in your Kubernetes deployment.
+
+2. **Configuration File** - Add proxy settings directly in your crawler config:
+
+```yaml
+# For docs_crawler
+docs_crawler:
+  base_urls: ["https://example.com/docs"]
+  http_proxy: "http://proxy.company.com:8080"
+  https_proxy: "http://proxy.company.com:8080"
+  no_proxy: "localhost,127.0.0.1,.internal.company.com"
+
+# For vectara section (applies to indexer requests)
+vectara:
+  corpus_key: my-corpus
+  http_proxy: "http://proxy.company.com:8080"
+  https_proxy: "http://proxy.company.com:8080"
+```
+
+Configuration file settings take precedence over environment variables.
 
 #### Additional environment variables
 
