@@ -2,27 +2,54 @@ vectara:
   corpus_key: confluence
   reindex: true
   create_corpus: false
+  verbose: true
 
 crawling:
   crawler_type: confluencedatacenter
 
+doc_processing:
+  # Enable image processing for PNG and other image attachments
+  summarize_images: true
+  add_image_bytes: false
+
+  # Enable table extraction from PDF attachments
+  parse_tables: true
+
+  # Use unstructured parser for best image/table support
+  doc_parser: unstructured
+
+  # Vision model configuration
+  model_config:
+    vision:
+      provider: openai
+      model_name: gpt-4o
+    text:
+      provider: openai
+      model_name: gpt-4o
+
 confluencedatacenter:
   # Local Confluence Data Center base URL
   base_url: "http://host.docker.internal:8090"
-  
+
   # CQL query to fetch content from TEST space
   # This will get all pages and blog posts from the TEST space
   confluence_cql: 'space = "TEST" and type IN (page, blogpost)'
-  
-  # Whether to include attachments in the crawl
-  confluence_include_attachments: true
-  
+
+  # Attachment processing configuration
+  confluence_include_attachments: true      # Enable attachment processing
+  include_image_attachments: true           # Process PNG, JPG, GIF, etc.
+  include_document_attachments: true        # Process PDF, DOCX, PPTX, etc.
+
   # Optional: Body view to use for content extraction
   # Options: export_view, styled_view, storage, editor
   body_view: "export_view"
-  
-  # Optional: Limit number of results per API call
-  limit: 25
 
-metadata:
-  public: true 
+  # Dataframe processing configuration for CSV/Excel attachments
+  # When CSV (.csv) or Excel (.xlsx, .xls) files are attached to Confluence pages,
+  # they will be processed using the DataframeParser.
+  # for more details how to process csv and xls file with different modes and configure them, check the csv crawler configuration.
+  dataframe_processing:
+    # MODE: 'table' or 'element'
+    # - 'table' mode: Entire spreadsheet becomes one document with summary
+    # - 'element' mode: Each row becomes a separate section/document
+    mode: "element"

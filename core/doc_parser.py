@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import pathlib
 from pdf2image import convert_from_bytes
+from slugify import slugify
 
 from core.summary import TableSummarizer, ImageSummarizer
 from core.utils import detect_file_type, markdown_to_df
@@ -176,8 +177,11 @@ class DocumentParser():
         self.do_ocr = do_ocr
         self.parse_tables = parse_tables
         self.summarize_images = summarize_images
-        self.table_summarizer = TableSummarizer(self.cfg, model_config.text) if self.parse_tables else None
-        self.image_summarizer = ImageSummarizer(self.cfg, model_config.vision) if self.summarize_images else None
+        # Support both dict and OmegaConf access patterns
+        text_config = model_config.get('text') if isinstance(model_config, dict) else getattr(model_config, 'text', None)
+        vision_config = model_config.get('vision') if isinstance(model_config, dict) else getattr(model_config, 'vision', None)
+        self.table_summarizer = TableSummarizer(self.cfg, text_config) if self.parse_tables and text_config else None
+        self.image_summarizer = ImageSummarizer(self.cfg, vision_config) if self.summarize_images and vision_config else None
         self.verbose = verbose
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
@@ -714,7 +718,9 @@ class DoclingDocumentParser(DocumentParser):
             pdf_opts.ocr_options = ocr_options
             
         res = DocumentConverter(
-            allowed_formats=[InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX],
+            allowed_formats=[
+                InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX,
+            ],
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts),
                 InputFormat.HTML: HTMLFormatOption(pipeline_options=html_opts),
@@ -873,6 +879,103 @@ class DoclingDocumentParser(DocumentParser):
             image_bytes=image_bytes
         )
 
+
+
+class ImageFileParser(DocumentParser):
+    """
+    Parser for standalone image files (PNG, JPG, GIF, etc.)
+    Returns a single-element ParsedDocument with the image summary
+
+    Note: This parser always requires summarize_images=True and vision model config.
+    """
+    def __init__(
+        self,
+        cfg: OmegaConf,
+        verbose: bool = False,
+        model_config: dict = None,
+    ):
+        model_config = model_config or {}
+
+        # Validate that vision config key exists (value can be empty dict for testing)
+        if 'vision' not in model_config:
+            raise ValueError("ImageFileParser requires 'vision' key in model_config")
+
+        super().__init__(
+            cfg=cfg,
+            verbose=verbose,
+            model_config=model_config,
+            parse_tables=False,
+            enable_gmft=False,
+            do_ocr=False,
+            summarize_images=True  # Always True for image files
+        )
+
+    def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
+        """
+        Parse a standalone image file and return single-element ParsedDocument
+
+        Args:
+            filename: Path to the image file
+            source_url: Source URL for context
+
+        Returns:
+            ParsedDocument with single image element
+        """
+        st = time.time()
+
+        if not os.path.exists(filename):
+            logger.error(f"Image file {filename} does not exist")
+            return ParsedDocument(title='', content_stream=[], tables=[], image_bytes=[])
+
+        # Use filename (without extension) as title
+        basename = os.path.basename(filename)
+        doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
+
+        # Use filename and path as context for standalone images
+        file_context = f"Filename: {basename}\nPath: {filename}"
+        if source_url != "No URL":
+            file_context += f"\nSource: {source_url}"
+
+        # Generate image summary with filename/path as context
+        try:
+            # Read image binary data
+            with open(filename, 'rb') as fp:
+                image_binary = fp.read()
+            image_id = f"standalone_image_{slugify(basename)}"
+            image_bytes = [(image_id, image_binary)]
+
+            image_summary = self.image_summarizer.summarize_image(
+                filename, source_url, previous_text=file_context, next_text=None
+            )
+
+            if not image_summary:
+                logger.warning(f"Failed to generate summary for image {filename}")
+                return ParsedDocument(title=doc_title, content_stream=[], tables=[], image_bytes=[])
+
+            # Create single element with position 0
+            metadata = {
+                'element_type': 'image',
+                'page': 1,
+                'image_id': image_id,
+                'filename': basename
+            }
+            content_stream = [(image_summary, metadata)]
+
+            if self.verbose:
+                logger.info(f"Image summary: {image_summary[:MAX_VERBOSE_LENGTH]}...")
+
+            logger.info(f"ImageFileParser: parsed standalone image {filename} in {time.time()-st:.2f} seconds")
+
+            return ParsedDocument(
+                title=doc_title,
+                content_stream=content_stream,
+                tables=[],
+                image_bytes=image_bytes
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to parse image file {filename}: {e}")
+            return ParsedDocument(title=doc_title, content_stream=[], tables=[], image_bytes=[])
 
 
 class UnstructuredDocumentParser(DocumentParser):

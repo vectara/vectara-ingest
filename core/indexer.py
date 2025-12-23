@@ -29,9 +29,9 @@ from core.summary import get_attributes_from_text
 from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, create_session_with_retries,
-    safe_remove_file, url_to_filename, 
+    safe_remove_file, url_to_filename,
     get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers, normalize_text, normalize_value
+    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser
@@ -399,32 +399,38 @@ class Indexer:
             if self.store_docs:
                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             return True
-        elif response.status_code in [409, 412] and self.reindex:
-            # File already exists and reindex is enabled
-            if self.verbose:
-                logger.info(f"File {uri} already exists. Deleting and re-indexing...")
+        elif response.status_code in [409, 412]:
+            if self.reindex:
+                # File already exists and reindex is enabled
+                if self.verbose:
+                    logger.info(f"File {uri} already exists. Deleting and re-indexing...")
 
-            # Extract doc_id from the original filename or ID
-            doc_id = id if id else os.path.basename(filename)
+                # Extract doc_id from the original filename or ID
+                doc_id = id if id else os.path.basename(filename)
 
-            # Delete the existing document
-            if self.delete_doc(doc_id):
-                # Retry the upload
-                try:
-                    with open(filename, 'rb') as file_handle:
-                        files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
-                        files['file'] = (upload_filename, file_handle, content_type)
-                        response = self.session.request("POST", url, headers=post_headers, files=files)
+                # Delete the existing document
+                if self.delete_doc(doc_id):
+                    # Retry the upload
+                    try:
+                        with open(filename, 'rb') as file_handle:
+                            files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
+                            files['file'] = (upload_filename, file_handle, content_type)
+                            response = self.session.request("POST", url, headers=post_headers, files=files)
 
-                    if response.status_code == 201:
-                        if self.verbose:
-                            logger.info(f"File {uri} re-indexed successfully")
-                        if self.store_docs:
-                            store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
-                        return True
-                except Exception as e:
-                    logger.error(f"Failed to re-index file {uri}: {e}")
-                    return False
+                        if response.status_code == 201:
+                            if self.verbose:
+                                logger.info(f"File {uri} re-indexed successfully")
+                            if self.store_docs:
+                                store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
+                            return True
+                    except Exception as e:
+                        logger.error(f"Failed to re-index file {uri}: {e}")
+                        return False
+            else:
+                # File already exists but reindex is disabled - treat as success
+                if self.verbose:
+                    logger.info(f"File {uri} already exists (skipping, already indexed)")
+                return True
 
         # Log error for any other status code
         logger.error(f"Failed to upload file {uri}. Status code: {response.status_code}, Message: {response.text}")
@@ -499,26 +505,32 @@ class Indexer:
                 with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                     json.dump(document, f)
             return True
-        elif response.status_code in [409, 412] and self.reindex:
-            # Document already exists and reindex is enabled
-            if self.verbose:
-                logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
+        elif response.status_code in [409, 412]:
+            if self.reindex:
+                # Document already exists and reindex is enabled
+                if self.verbose:
+                    logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
 
-            # Delete the existing document
-            if self.delete_doc(document['id']):
-                # Retry the upload
-                try:
-                    response = self.session.post(api_endpoint, data=data, headers=post_headers)
-                    if response.status_code == 201:
-                        if self.verbose:
-                            logger.info(f"Document {document['id']} re-indexed successfully")
-                        if self.store_docs:
-                            with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
-                                json.dump(document, f)
-                        return True
-                except Exception as e:
-                    logger.error(f"Failed to re-index document {document['id']}: {e}")
-                    return False
+                # Delete the existing document
+                if self.delete_doc(document['id']):
+                    # Retry the upload
+                    try:
+                        response = self.session.post(api_endpoint, data=data, headers=post_headers)
+                        if response.status_code == 201:
+                            if self.verbose:
+                                logger.info(f"Document {document['id']} re-indexed successfully")
+                            if self.store_docs:
+                                with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
+                                    json.dump(document, f)
+                            return True
+                    except Exception as e:
+                        logger.error(f"Failed to re-index document {document['id']}: {e}")
+                        return False
+            else:
+                # Document already exists but reindex is disabled - treat as success
+                if self.verbose:
+                    logger.info(f"Document {document['id']} already exists (skipping, already indexed)")
+                return True
 
         # Log error for any other status code
         logger.error(f"Failed to index document {document['id']}. Status code: {response.status_code}, Message: {response.text}")
@@ -526,13 +538,18 @@ class Indexer:
 
 
 
-    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None) -> bool:
+    def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None,
+                  metadata_extractor: callable = None) -> bool:
         """
-        Index a url by rendering it with scrapy-playwright, extracting paragraphs, then uploading to the Vectara corpus.
+        Index a url by rendering it, extracting content and metadata, then uploading to the Vectara corpus.
 
         Args:
             url (str): URL for where the document originated.
             metadata (dict): Metadata for the document.
+            html_processing (dict): HTML processing configuration for removing unwanted elements.
+            metadata_extractor (callable): Optional function to extract additional metadata from HTML.
+                Function signature: fn(html: str) -> Dict[str, Any]
+                The extractor should return only metadata fields to be indexed.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
@@ -673,26 +690,14 @@ class Indexer:
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
-                # Call custom metadata extraction callback if provided
-                if '_extract_metadata_callback' in metadata:
-                    callback = metadata.pop('_extract_metadata_callback')  # Remove callback from metadata
-                    if callable(callback):
-                        try:
-                            # Preserve the original page URL before calling callback
-                            original_url = metadata.get('url')
-                            extracted_metadata = callback(html)
-                            if extracted_metadata:
-                                # Don't let callback overwrite the page URL
-                                if 'url' in extracted_metadata:
-                                    extracted_metadata.pop('url')
-                                metadata.update(extracted_metadata)
-                            # Restore original URL
-                            if original_url:
-                                metadata['url'] = original_url
-                            if self.verbose:
-                                logger.info(f"Extracted metadata from HTML callback: {list(extracted_metadata.keys())}")
-                        except Exception as e:
-                            logger.warning(f"Failed to execute metadata extraction callback for {url}: {e}")
+                # Extract custom metadata if extractor provided
+                if metadata_extractor and callable(metadata_extractor):
+                    try:
+                        extracted_metadata = metadata_extractor(html)
+                        if extracted_metadata:
+                            metadata.update(extracted_metadata)
+                    except Exception as e:
+                        logger.warning(f"Failed to execute metadata extractor for {url}: {e}")
 
                 # Detect language if needed
                 if self.detected_language is None:
@@ -711,9 +716,9 @@ class Indexer:
                     ex_metadata = {}
 
                 #
-                # By default, 'text' is extracted above.
-                # If remove_boilerplate is True, then use it directly
-                # If no boilerplate remove but need to remove code, then we need to use html_to_text
+                # By default, 'text' is already extracted above in fetch_page_contents
+                # which applies html_processing (target_tag, target_class, preserve_links, etc.)
+                # Only re-extract if remove_boilerplate is explicitly enabled
                 #
                 if self.remove_boilerplate:
                     url = res['url']
@@ -721,8 +726,7 @@ class Indexer:
                         logger.info(
                             f"Removing boilerplate from content of {url}, and extracting important text only")
                     text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
-                else:
-                    text = html_to_text(html, self.remove_code, html_processing)
+                # else: use text already extracted from res['text'] - don't re-extract!
 
                 parts = [text]
                 metadatas = [{'element_type': 'text'}]
@@ -813,7 +817,7 @@ class Indexer:
                                 use_core_indexing=True
                             )
 
-                logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
+                # logger.info(f"retrieving content took {time.time() - st:.2f} seconds")
             except Exception as e:
                 import traceback
                 logger.error(
@@ -1092,7 +1096,15 @@ class Indexer:
             # Index all content (text and images) in a single document
             texts = [content for content, metadata in content_stream]
             metadatas = [metadata for content, metadata in content_stream]
-            
+
+            # Force core indexing for standalone image files (short single summary text)
+            is_image_file = any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS)
+            use_core_for_indexing = (
+                is_image_file or
+                self.use_core_indexing or
+                self._is_chunking_enabled()
+            )
+
             succeeded = self.index_segments(
                 doc_id=slugify(uri),
                 texts=texts,
@@ -1101,7 +1113,7 @@ class Indexer:
                 doc_metadata=metadata,
                 doc_title=parsed_doc.title,
                 image_bytes=parsed_doc.image_bytes,
-                use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
+                use_core_indexing=use_core_for_indexing
             )
         else:
             # Legacy mode: Index text in main document, images as separate documents

@@ -276,8 +276,11 @@ class DataframeParser:
         metadata_columns: list[str] = list(
             self.crawler_config.get("metadata_columns", [])
         )
+        # New config option: if True, use title_column only for doc_title, not for section titles
+        use_title_for_doc_only: bool = self.crawler_config.get("use_title_for_doc_only", False)
+
         for _, row in df_chunk.iterrows():
-            if title_column:
+            if title_column and not use_title_for_doc_only:
                 titles.append(str(row[title_column]))
             text = " - ".join(
                 str(row[col]) for col in text_columns if pd.notnull(row[col])
@@ -300,8 +303,12 @@ class DataframeParser:
                 if hasattr(value, 'item'):
                     value = value.item()
                 doc_metadata[column] = value
-        
-        final_title = titles[0] if titles else doc_title
+
+        # Use title from title_column for doc_title if specified
+        if title_column and title_column in df_chunk.columns:
+            final_title = str(df_chunk[title_column].iloc[0])
+        else:
+            final_title = titles[0] if titles else doc_title
         logger.debug(f"Indexing {len(df_chunk)} rows for doc_id '{doc_id}'")
 
         self.indexer.index_segments(
@@ -312,3 +319,98 @@ class DataframeParser:
             texts=texts,
             titles=titles,
         )
+
+
+def process_dataframe_file(
+    file_path: str,
+    metadata: dict,
+    doc_id: str,
+    df_parser,
+    df_config: dict,
+    source_name: str = None
+) -> bool:
+    """
+    Common utility to process CSV or Excel files using the DataframeParser.
+    Used by multiple crawlers (SharePoint, Confluence, etc.) to avoid code duplication.
+
+    Args:
+        file_path: Path to the CSV/Excel file
+        metadata: Existing metadata dictionary
+        doc_id: Document ID for indexing
+        df_parser: DataframeParser instance (should be initialized)
+        df_config: Dataframe processing configuration dict
+        source_name: Optional source name to add to metadata (e.g., 'sharepoint', 'confluence_attachment')
+
+    Returns:
+        bool: Success status
+
+    Raises:
+        InvalidFileError: If file is not supported or cannot be read
+    """
+    if not df_parser:
+        logger.error("DataframeParser not initialized. Cannot process dataframe file.")
+        return False
+
+    try:
+        if not supported_by_dataframe_parser(file_path):
+            logger.error(f"'{file_path}' is not supported by DataframeParser.")
+            return False
+
+        logger.info(f"Processing dataframe file: {file_path}")
+
+        file_type = determine_dataframe_type(file_path)
+        doc_title = os.path.basename(file_path)
+
+        # Add source-specific metadata
+        df_metadata = metadata.copy()
+        if source_name:
+            df_metadata['source'] = source_name
+        df_metadata['file_type'] = file_type
+
+        if file_type == 'csv':
+            separator = get_separator_by_file_name(file_path)
+            encoding = df_config.get('csv_encoding', 'utf-8')
+            try:
+                df = pd.read_csv(file_path, sep=separator, encoding=encoding)
+            except Exception as e:
+                logger.warning(f"Failed to read CSV with encoding {encoding}: {e}. Trying with 'latin-1'")
+                df = pd.read_csv(file_path, sep=separator, encoding='latin-1')
+
+            df_parser.process_dataframe(
+                df=df,
+                doc_id=doc_id,
+                doc_title=doc_title,
+                metadata=df_metadata
+            )
+
+        elif file_type in ['xls', 'xlsx']:
+            xls = pd.ExcelFile(file_path)
+            sheet_names = df_config.get("sheet_names")
+
+            # If sheet_names is not specified or is None, process all sheets
+            if sheet_names is None:
+                sheet_names = xls.sheet_names
+
+            for sheet_name in sheet_names:
+                if sheet_name not in xls.sheet_names:
+                    logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
+                    continue
+
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                sheet_doc_id = f"{doc_id}_{sheet_name}"
+                sheet_doc_title = f"{doc_title} - {sheet_name}"
+                sheet_metadata = df_metadata.copy()
+                sheet_metadata['sheet_name'] = sheet_name
+
+                df_parser.process_dataframe(
+                    df=df,
+                    doc_id=sheet_doc_id,
+                    doc_title=sheet_doc_title,
+                    metadata=sheet_metadata
+                )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error processing dataframe file {file_path}: {e}")
+        return False

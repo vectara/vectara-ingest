@@ -2,16 +2,44 @@ vectara:
   corpus_key: confluence
   reindex: true
   create_corpus: false
-  
+
 crawling:
   crawler_type: confluence
 
 confluence_crawler:
   # Confluence instance URL - replace with your actual Confluence URL
   confluence_base_url: "https://username.atlassian.net/wiki"
-  
+
   # Confluence Query Language (CQL) query - customize based on your needs
+  # Examples:
+  #   - Single space: 'space = "DOCS"'
+  #   - Multiple spaces: 'space IN ("DOCS", "ENG")'
+  #   - Pages only: 'space = "DOCS" and type = page'
+  #   - Pages and blogposts: 'space = "DOCS" and type IN (page, blogpost)'
+  #   - Recently updated: 'space = "DOCS" and lastModified >= "2024-01-01"'
   confluence_cql: 'space = "Test" and type IN (page)'
-  
-  # Whether to include attachments in the crawl
+
+  # Whether to include attachments in the crawl (PDFs, DOCX, etc.)
   confluence_include_attachments: true
+
+  # ============================================================================
+  # Authentication Configuration
+  # ============================================================================
+  # Confluence Cloud uses email + API token for authentication
+  # The API token acts as a password but is more secure and can be revoked
+  #
+  # confluence_username: Set in secrets.toml - Your Confluence account email
+  # confluence_password: Set in secrets.toml - Your API token (NOT your password)
+  #
+  # How to create an API token:
+  # 1. Go to: https://id.atlassian.com/manage-profile/security/api-tokens
+  # 2. Click "Create API token"
+  # 3. Give it a label (e.g., "Vectara Ingest")
+  # 4. Copy the token (you won't see it again!)
+  # 5. Add to secrets.toml:
+  #    [default]
+  #    CONFLUENCE_USERNAME = "your-email@example.com"
+  #    CONFLUENCE_PASSWORD = "ATATT3xFfGF0..."  # Your API token
+  #
+  # ⚠️ IMPORTANT: Use your API token, NOT your Atlassian password
+  # ============================================================================
