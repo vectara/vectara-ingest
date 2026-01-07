@@ -106,11 +106,12 @@ def generate_image_summary(
     """
     provider = model_config.get('provider', 'openai')
     model_api_key = get_api_key(provider, cfg, model_type='vision')
+    timeout = 180
     if provider == 'openai' or provider=='private':
         if provider=='private':
-            client = OpenAI(api_key=model_api_key, base_url=model_config.get('base_url', None))
+            client = OpenAI(api_key=model_api_key, base_url=model_config.get('base_url', None), timeout=timeout)
         else:
-            client = OpenAI(api_key=model_api_key)
+            client = OpenAI(api_key=model_api_key, timeout=timeout)
         messages = [
             {
                 "role": "system",
@@ -139,7 +140,7 @@ def generate_image_summary(
         return summary
 
     if provider == 'anthropic':
-        client = Anthropic(api_key=model_api_key)
+        client = Anthropic(api_key=model_api_key, timeout=timeout)
         media_type = get_media_type_from_base64(image_content)
         messages = [
             {

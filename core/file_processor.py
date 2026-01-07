@@ -133,6 +133,7 @@ class FileProcessor:
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 image_context=self.image_context,
+                hi_res_model_name=self.unstructured_config.get('hi_res_model_name', 'yolox'),
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
             return LlamaParseDocumentParser(
@@ -154,6 +155,7 @@ class FileProcessor:
                 do_ocr=self.do_ocr,
                 image_scale=self.docling_config.get('image_scale', 2.0),
                 image_context=self.image_context,
+                layout_model=self.docling_config.get('layout_model', None),
             )
         else:
             return UnstructuredDocumentParser(
@@ -161,6 +163,7 @@ class FileProcessor:
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
                 image_context=self.image_context,
+                hi_res_model_name=self.unstructured_config.get('hi_res_model_name', 'yolox'),
             )
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:

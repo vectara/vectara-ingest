@@ -609,7 +609,8 @@ class DoclingDocumentParser(DocumentParser):
         do_ocr: bool = False,
         summarize_images: bool = False,
         image_scale: float = 1.0,
-        image_context: dict = None
+        image_context: dict = None,
+        layout_model: str = None
     ):
         super().__init__(
             cfg=cfg,
@@ -624,8 +625,10 @@ class DoclingDocumentParser(DocumentParser):
         self.chunk_size = chunk_size
         self.image_scale = image_scale
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
+        self.layout_model = layout_model  # Options: None (default heron), 'heron', 'heron_101', 'v2'
         if self.verbose:
-            logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}")
+            layout_info = f", layout_model '{self.layout_model}'" if self.layout_model else ""
+            logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}{layout_info}")
 
     @staticmethod
     def _lazy_load_docling():
@@ -638,14 +641,30 @@ class DoclingDocumentParser(DocumentParser):
         )
 
         from docling.document_converter import DocumentConverter, PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption
-        from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions, PaginatedPipelineOptions
+        from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
         from docling_core.transforms.chunker import HierarchicalChunker
 
+        # Import layout model specs - these may not be available in older versions
+        layout_model_specs = {}
+        try:
+            from docling.datamodel.pipeline_options import LayoutOptions
+            layout_model_specs['LayoutOptions'] = LayoutOptions
+        except ImportError:
+            pass
+        try:
+            from docling.datamodel.layout_model_specs import DOCLING_LAYOUT_HERON, DOCLING_LAYOUT_HERON_101, DOCLING_LAYOUT_V2
+            layout_model_specs['heron'] = DOCLING_LAYOUT_HERON
+            layout_model_specs['heron_101'] = DOCLING_LAYOUT_HERON_101
+            layout_model_specs['v2'] = DOCLING_LAYOUT_V2
+        except ImportError:
+            pass
+
         return (
             DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
-            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat, EasyOcrOptions, PaginatedPipelineOptions
+            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat,
+            EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         )
 
     def _get_tables(self, tables):
@@ -673,8 +692,8 @@ class DoclingDocumentParser(DocumentParser):
         # Process using Docling
         (
             DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
-            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat, EasyOcrOptions,
-            PaginatedPipelineOptions
+            PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat,
+            EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         ) = self._lazy_load_docling()
 
         st = time.time()
@@ -688,17 +707,52 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.generate_picture_images = True
         pdf_opts.do_ocr = False
         pdf_opts.do_formula_enrichment = True
+
+        # Configure layout model if specified
+        if self.layout_model and self.layout_model in layout_model_specs:
+            LayoutOptions = layout_model_specs.get('LayoutOptions')
+            model_spec = layout_model_specs.get(self.layout_model)
+            if LayoutOptions and model_spec:
+                pdf_opts.layout_options = LayoutOptions(model_spec=model_spec)
+                logger.info(f"Using custom layout model: {self.layout_model}")
+        elif self.layout_model:
+            logger.warning(f"Layout model '{self.layout_model}' not found. Available: {[k for k in layout_model_specs.keys() if k != 'LayoutOptions']}")
         
         # Pipeline options for Office documents
         office_opts = PaginatedPipelineOptions()
         office_opts.generate_page_images = True
         office_opts.images_scale = self.image_scale
 
-        if self.do_ocr:
-            pdf_opts.do_ocr = True
-            easy_ocr_config = self.cfg.doc_processing.easy_ocr_config
+        # Get OCR engine preference from config (default to 'easyocr')
+        ocr_engine = getattr(self.cfg.doc_processing, "ocr_engine", "easyocr")
+
+        # Configure OCR options based on engine choice
+        if ocr_engine == "rapidocr":
+            ocr_config = getattr(self.cfg.doc_processing, "rapid_ocr_config", None)
+            ocr_config = OmegaConf.to_container(
+                ocr_config, resolve=True
+            ) if ocr_config is not None else {}
+            ocr_options = RapidOcrOptions()
+            rapid_mapping = {
+                "bitmap_area_threshold": lambda val: setattr(ocr_options, "bitmap_area_threshold", val),
+                "force_full_page_ocr": lambda val: setattr(ocr_options, "force_full_page_ocr", val),
+                "lang": lambda val: setattr(ocr_options, "lang", val),
+                "use_det": lambda val: setattr(ocr_options, "use_det", val),
+                "use_cls": lambda val: setattr(ocr_options, "use_cls", val),
+                "text_score": lambda val: setattr(ocr_options, "text_score", val),
+            }
+            for key, func in rapid_mapping.items():
+                value = ocr_config.get(key)
+                if value is not None:
+                    func(value)
+            logger.info(f"Using RapidOCR engine for PDF processing")
+        else:  # Default to EasyOCR
+            ocr_config = getattr(self.cfg.doc_processing, "easy_ocr_config", None)
+            ocr_config = OmegaConf.to_container(
+                ocr_config, resolve=True
+            ) if ocr_config is not None else {}
             ocr_options = EasyOcrOptions()
-            mapping = {
+            easy_mapping = {
                 "bitmap_area_threshold": lambda val: setattr(ocr_options, "bitmap_area_threshold", val),
                 "confidence_threshold": lambda val: setattr(ocr_options, "confidence_threshold", val),
                 "download_enabled": lambda val: setattr(ocr_options, "download_enabled", val),
@@ -710,12 +764,17 @@ class DoclingDocumentParser(DocumentParser):
                 "recog_network": lambda val: setattr(ocr_options, "recog_network", val),
                 "use_gpu": lambda val: setattr(ocr_options, "use_gpu", val),
             }
-
-            for key, func in mapping.items():
-                value = getattr(easy_ocr_config, key, None)
+            for key, func in easy_mapping.items():
+                value = ocr_config.get(key)
                 if value is not None:
                     func(value)
-            pdf_opts.ocr_options = ocr_options
+            logger.info(f"Using EasyOCR engine for PDF processing")
+
+        # Always set OCR options to prevent pipeline initialization failure
+        pdf_opts.ocr_options = ocr_options
+
+        if self.do_ocr:
+            pdf_opts.do_ocr = True
             
         res = DocumentConverter(
             allowed_formats=[
@@ -989,7 +1048,8 @@ class UnstructuredDocumentParser(DocumentParser):
         parse_tables: bool = False,
         enable_gmft: bool = False,
         summarize_images: bool = False,
-        image_context: dict = None
+        image_context: dict = None,
+        hi_res_model_name: str = "yolox"
     ):
         super().__init__(
             cfg=cfg,
@@ -1003,8 +1063,9 @@ class UnstructuredDocumentParser(DocumentParser):
         self.chunking_strategy = chunking_strategy     # none, by_title or basic
         self.chunk_size = chunk_size
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
+        self.hi_res_model_name = hi_res_model_name
         if self.verbose:
-            logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}' and chunk size {self.chunk_size}")
+            logger.info(f"Using UnstructuredDocumentParser with chunking strategy '{self.chunking_strategy}', chunk size {self.chunk_size}, hi_res_model_name '{self.hi_res_model_name}'")
 
     def _get_elements(
         self,
@@ -1036,7 +1097,7 @@ class UnstructuredDocumentParser(DocumentParser):
                 'extract_images_in_pdf': True,
                 'extract_image_block_types': ["Image", "Table"],
                 'strategy': "hi_res",
-                'hi_res_model_name': "yolox",
+                'hi_res_model_name': self.hi_res_model_name,
             })
 
         if mime_type == 'application/pdf':
