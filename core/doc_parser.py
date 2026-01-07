@@ -702,7 +702,8 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.do_formula_enrichment = True
 
         # Configure layout model if specified
-        if self.layout_model and self.layout_model in layout_model_specs:
+        valid_layout_models = [k for k in layout_model_specs.keys() if k != 'LayoutOptions']
+        if self.layout_model and self.layout_model in valid_layout_models:
             LayoutOptions = layout_model_specs.get('LayoutOptions')
             model_spec = layout_model_specs.get(self.layout_model)
             if LayoutOptions and model_spec:
