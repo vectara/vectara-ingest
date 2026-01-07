@@ -313,7 +313,7 @@ doc_processing:
 
   # Optional parameters for RapidOCR (when ocr_engine: rapidocr)
   rapid_ocr_config:
-     lang: ['english', 'chinese']
+     lang: ['en', 'de']
      force_full_page_ocr: false
      text_score: 0.5
 
@@ -342,7 +342,7 @@ doc_processing:
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
     hi_res_model_name: yolox           # layout model for PDFs: yolox (default), yolox_quantized, detectron2_onnx
 
-  # Docling document parsing configuation
+  # Docling document parsing configuartion
   docling_config:
     chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none; default none
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI

@@ -645,21 +645,14 @@ class DoclingDocumentParser(DocumentParser):
         from docling.datamodel.base_models import InputFormat
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
         from docling_core.transforms.chunker import HierarchicalChunker
+        from docling.datamodel.pipeline_options import LayoutOptions
+        from docling.datamodel.layout_model_specs import DOCLING_LAYOUT_HERON, DOCLING_LAYOUT_HERON_101, DOCLING_LAYOUT_V2
 
-        # Import layout model specs - these may not be available in older versions
         layout_model_specs = {}
-        try:
-            from docling.datamodel.pipeline_options import LayoutOptions
-            layout_model_specs['LayoutOptions'] = LayoutOptions
-        except ImportError:
-            pass
-        try:
-            from docling.datamodel.layout_model_specs import DOCLING_LAYOUT_HERON, DOCLING_LAYOUT_HERON_101, DOCLING_LAYOUT_V2
-            layout_model_specs['heron'] = DOCLING_LAYOUT_HERON
-            layout_model_specs['heron_101'] = DOCLING_LAYOUT_HERON_101
-            layout_model_specs['v2'] = DOCLING_LAYOUT_V2
-        except ImportError:
-            pass
+        layout_model_specs['LayoutOptions'] = LayoutOptions
+        layout_model_specs['heron'] = DOCLING_LAYOUT_HERON
+        layout_model_specs['heron_101'] = DOCLING_LAYOUT_HERON_101
+        layout_model_specs['v2'] = DOCLING_LAYOUT_V2
 
         return (
             DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
