@@ -921,7 +921,11 @@ config_defaults = {
                 'base_url': 'https://api.openai.com/v1'
             },
         },
+        'ocr_engine': 'easyocr',  # Options: 'easyocr', 'rapidocr'
         'easy_ocr_config': {
+            'force_full_page_ocr': True
+        },
+        'rapid_ocr_config': {
             'force_full_page_ocr': True
         }
     },
