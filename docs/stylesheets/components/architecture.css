@@ -1,0 +1,90 @@
+/* ============================================
+
+   ARCHITECTURE
+
+   ============================================ */
+
+
+/* ============================================
+   ARCHITECTURE SECTION
+   ============================================ */
+
+.architecture-card {
+    padding: 1.5rem;
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.25rem;
+    background: var(--vectara-card-bg);
+    margin: 1rem 0;
+}
+
+.architecture-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+    margin-bottom: 0;
+}
+
+@media screen and (max-width: 768px) {
+    .architecture-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.architecture-link {
+    margin-top: 1rem;
+}
+
+.architecture-link p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--vectara-text-muted);
+}
+
+.architecture-code pre {
+    margin: 0;
+    font-size: 0.75rem;
+    background: var(--md-code-bg-color);
+    padding: 1rem;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+}
+
+.architecture-code code {
+    font-size: 0.75rem;
+    font-family: monospace;
+}
+
+.architecture-description {
+    font-size: 0.72rem;
+}
+
+.architecture-description p {
+    margin-bottom: 0.75rem;
+}
+
+.architecture-description strong {
+    font-size: 0.75rem;
+    color: var(--md-default-fg-color);
+}
+
+.architecture-description ul {
+    margin: 0.5rem 0 0.75rem 0;
+    padding-left: 1.5rem;
+}
+
+.architecture-description li {
+    font-size: 0.72rem;
+    line-height: 1.6;
+    color: var(--vectara-text-muted);
+    margin-bottom: 0.4rem;
+}
+
+.architecture-description a {
+    color: var(--vectara-primary);
+    text-decoration: none;
+}
+
+.architecture-description a:hover {
+    text-decoration: underline;
+}
+

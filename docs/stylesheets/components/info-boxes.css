@@ -1,0 +1,163 @@
+/* ============================================
+   INFO BOXES - Callouts, Alerts, When-to-use
+   ============================================ */
+
+/* Generic Info Box */
+.info-box {
+    background: rgba(59, 130, 246, 0.08);
+    border-left: 3px solid rgba(59, 130, 246, 0.6);
+    border-radius: 0.25rem;
+    padding: 0.625rem;
+    margin-top: 0.75rem;
+}
+
+[data-md-color-scheme="slate"] .info-box {
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.info-box-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.25rem;
+}
+
+.info-box-header svg {
+    color: rgba(59, 130, 246, 1);
+    flex-shrink: 0;
+}
+
+.info-box-header strong {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(59, 130, 246, 1);
+}
+
+.info-box p {
+    font-size: 0.7rem;
+    line-height: 1.4;
+    margin: 0;
+    color: var(--md-typeset-color);
+}
+
+.info-box a {
+    color: rgba(59, 130, 246, 1);
+    text-decoration: none;
+}
+
+.info-box a:hover {
+    text-decoration: underline;
+}
+
+.info-box code {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 0.2rem;
+}
+
+[data-md-color-scheme="slate"] .info-box code {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* When to use callout (purple variant) */
+.when-to-use {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+    padding: 0.625rem;
+    background: rgba(139, 92, 246, 0.08);
+    border-left: 3px solid rgba(139, 92, 246, 0.5);
+    border-radius: 0.25rem;
+}
+
+[data-md-color-scheme="slate"] .when-to-use {
+    background: rgba(139, 92, 246, 0.12);
+}
+
+.when-to-use-icon {
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.when-to-use h4 {
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+    color: rgba(139, 92, 246, 1);
+}
+
+.when-to-use p {
+    font-size: 0.65rem;
+    line-height: 1.35;
+    margin: 0;
+    color: var(--vectara-text-muted);
+}
+
+.when-to-use code {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.25rem;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 0.2rem;
+}
+
+[data-md-color-scheme="slate"] .when-to-use code {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Filter Logic Box (specific info box) */
+.filter-logic-box {
+    background: rgba(59, 130, 246, 0.08);
+    border-left: 3px solid rgba(59, 130, 246, 0.6);
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+    margin: 0.75rem 0 1rem 0;
+}
+
+[data-md-color-scheme="slate"] .filter-logic-box {
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.filter-logic-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.5rem;
+}
+
+.filter-logic-header svg {
+    color: rgba(59, 130, 246, 1);
+    flex-shrink: 0;
+}
+
+.filter-logic-header h4 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 0;
+    color: rgba(59, 130, 246, 1);
+}
+
+.filter-logic-box ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    list-style: decimal;
+}
+
+.filter-logic-box ol li {
+    font-size: 0.7rem;
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+    color: var(--md-typeset-color);
+}
+
+.filter-logic-box code {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 0.2rem;
+}
+
+[data-md-color-scheme="slate"] .filter-logic-box code {
+    background: rgba(255, 255, 255, 0.15);
+}
