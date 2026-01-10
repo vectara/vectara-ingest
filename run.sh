@@ -277,6 +277,36 @@ if [[ "$crawler_type" == "box" ]]; then
       echo "Mounting Box OAuth credentials to: /home/vectara/env/box_oauth_credentials.json"
     fi
   fi
+
+  # Mount persistent storage for Box downloads and CSV tracking
+  # Create host directories if they don't exist
+  BOX_DATA_DIR="$HOME/tmp/box_data"
+  mkdir -p "$BOX_DATA_DIR/downloads"
+  mkdir -p "$BOX_DATA_DIR/tracking"
+
+  DOCKER_RUN_ARGS+=(-v "${BOX_DATA_DIR}/downloads:/data/box_downloads:rw")
+  DOCKER_RUN_ARGS+=(-v "${BOX_DATA_DIR}/tracking:/data/box_tracking:rw")
+  echo "Mounting Box downloads to: ${BOX_DATA_DIR}/downloads"
+  echo "Mounting Box tracking CSVs to: ${BOX_DATA_DIR}/tracking"
+
+  # Mount GCP credentials if using Vertex AI
+  gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('text', {}).get('credentials_file', '')")
+  if [[ -z "$gcp_creds_path" ]]; then
+    gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('vision', {}).get('credentials_file', '')")
+  fi
+
+  if [[ -n "$gcp_creds_path" ]]; then
+    # Expand tilde to home directory
+    gcp_creds_path="${gcp_creds_path/#\~/$HOME}"
+
+    if [[ -f "$gcp_creds_path" ]]; then
+      DOCKER_RUN_ARGS+=(-v "$(realpath "$gcp_creds_path"):/home/vectara/env/gcp_service_account.json:ro")
+      echo "Mounting GCP credentials to: /home/vectara/env/gcp_service_account.json"
+    else
+      echo "Warning: GCP credentials file not found at '$gcp_creds_path'" >&2
+      echo "Table/image summarization may fail without valid credentials" >&2
+    fi
+  fi
 fi
 
 if [[ -n "${LOGGING_LEVEL}" ]]; then
