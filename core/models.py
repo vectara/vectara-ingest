@@ -8,21 +8,32 @@ from omegaconf import OmegaConf
 
 from .utils import get_media_type_from_base64
 
-# Vertex AI imports (optional)
-try:
-    import vertexai
-    from vertexai.generative_models import GenerativeModel, Part
-    VERTEX_AVAILABLE = True
-except ImportError:
-    VERTEX_AVAILABLE = False
-    logger.warning("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
+def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
+    """
+    Get the API key for the specified provider.
 
-def get_api_key(provider: str, cfg: OmegaConf) -> str:
+    Args:
+        provider: The LLM provider ('openai', 'anthropic', 'private')
+        cfg: The OmegaConf configuration object
+        model_type: Optional model type ('text' or 'vision') for provider-specific keys.
+                    For 'private' provider, allows using separate keys:
+                    - 'text': uses private_text_api_key if available, else private_api_key
+                    - 'vision': uses private_vision_api_key if available, else private_api_key
+    """
     if provider == 'openai':
         return cfg.vectara.get("openai_api_key", None)
     elif provider == 'anthropic':
         return cfg.vectara.get("anthropic_api_key", None)
     elif provider == 'private':
+        # Check for model-type-specific keys first, fallback to generic private_api_key
+        if model_type == 'text':
+            key = cfg.vectara.get("private_text_api_key", None)
+            if key:
+                return key
+        elif model_type == 'vision':
+            key = cfg.vectara.get("private_vision_api_key", None)
+            if key:
+                return key
         return cfg.vectara.get("private_api_key", None)
     elif provider == 'vertex':
         # Vertex AI uses project_id and location instead of API key
@@ -59,7 +70,7 @@ def generate(
     logger.debug(f"generate() - system_prompt: {system_prompt}")
     logger.debug(f"generate() - user_prompt: {user_prompt}")
     provider = model_config.get('provider', 'openai')
-    model_api_key = get_api_key(provider, cfg)
+    model_api_key = get_api_key(provider, cfg, model_type='text')
     if provider == 'openai' or provider=='private':
         if provider=='private':
             client = OpenAI(api_key=model_api_key, base_url=model_config.get('base_url', None))
@@ -129,7 +140,7 @@ def generate_image_summary(
     Given a prompt, generate text summarizing an image using the specified model.
     """
     provider = model_config.get('provider', 'openai')
-    model_api_key = get_api_key(provider, cfg)
+    model_api_key = get_api_key(provider, cfg, model_type='vision')
     if provider == 'openai' or provider=='private':
         if provider=='private':
             client = OpenAI(api_key=model_api_key, base_url=model_config.get('base_url', None))

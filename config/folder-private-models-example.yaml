@@ -1,0 +1,38 @@
+# Example configuration using separate private models for text and vision processing.
+# This is useful when you have different locally-hosted models for text and vision,
+# each with its own API key.
+#
+# In your secrets.toml, add under [general]:
+#   PRIVATE_TEXT_API_KEY="your-text-model-api-key"
+#   PRIVATE_VISION_API_KEY="your-vision-model-api-key"
+#
+# These keys override PRIVATE_API_KEY when specified, allowing different authentication
+# for text vs vision model endpoints.
+
+vectara:
+  corpus_key: folder-private-models
+  reindex: true
+  create_corpus: true
+
+crawling:
+  crawler_type: folder
+
+folder_crawler:
+  path: "/path/to/your/documents/"
+  extensions: ['.pdf', '.docx', '.pptx']
+  source: 'private-models-example'
+
+doc_processing:
+  doc_parser: docling
+  parse_tables: true
+  summarize_images: true
+
+  model_config:
+    text:
+      provider: private
+      base_url: http://host.docker.internal:8000/v1
+      model_name: "llama-3.1-8b"
+    vision:
+      provider: private
+      base_url: http://host.docker.internal:8001/v1
+      model_name: "llava-1.5-7b"
