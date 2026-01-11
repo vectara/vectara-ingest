@@ -8,6 +8,15 @@ from omegaconf import OmegaConf
 
 from .utils import get_media_type_from_base64
 
+# Try to import Vertex AI SDK
+try:
+    import vertexai
+    from vertexai.generative_models import GenerativeModel, Part
+    VERTEX_AVAILABLE = True
+except ImportError:
+    VERTEX_AVAILABLE = False
+    logger.warning("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
+
 def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
     """
     Get the API key for the specified provider.
@@ -207,7 +216,7 @@ def generate_image_summary(
     elif provider == 'vertex':
         import base64
         _init_vertex_ai(cfg, model_config)
-        model_name = model_config.get('model_name', 'gemini-1.5-flash-002')
+        model_name = model_config.get('model_name', 'gemini-2.0-flash-exp')
         model = GenerativeModel(model_name)
 
         # Convert base64 image to Part
