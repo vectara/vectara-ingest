@@ -973,12 +973,14 @@ class BoxCrawler(Crawler):
                 num_cpus=ray_workers,
                 log_to_driver=True,
                 include_dashboard=False,
+                _metrics_export_port=None,  # Disable metrics export (suppresses warnings)
                 _system_config={
                     "automatic_object_spilling_enabled": True,
                     "object_spilling_config": json.dumps({
                         "type": "filesystem",
                         "params": {"directory_path": "/tmp/ray_spill"}
-                    })
+                    }),
+                    "enable_metrics_collection": False,  # Disable metrics collection
                 }
             )
 
