@@ -171,12 +171,14 @@ class BoxFileIndexWorker:
         """Setup the worker - initialize indexer, logging, and file processor."""
         setup_logging()
 
-        # Initialize the indexer with proper file processor
-        # This ensures image/table summarizers are properly set up in each worker
-        self.indexer.setup()
+        # Initialize the indexer session and basic setup
+        self.indexer.setup(use_playwright=False)
 
-        # The indexer.setup() should initialize file_processor with summarizers
-        # based on the config, but we need to ensure it's done properly
+        # Explicitly initialize file_processor with image/table summarizers
+        # This is critical - without this, summarizers will be None
+        self.indexer._init_processors()
+
+        # Verify file processor was initialized correctly
         if hasattr(self.indexer, 'file_processor') and self.indexer.file_processor:
             logging.info("BoxFileIndexWorker initialized with file processor")
         else:
@@ -862,8 +864,9 @@ class BoxCrawler(Crawler):
             current_path = f"{path}/{folder.name}" if path else folder.name
             logging.info(f"Crawling folder: {current_path} (ID: {folder_id})")
 
-            # Get items in the folder
-            items = folder.get_items(limit=1000, offset=0)
+            # Get items in the folder with proper paging
+            # Box SDK handles paging internally when iterating
+            items = folder.get_items()
 
             for item in items:
                 if self.max_files > 0 and self.files_downloaded >= self.max_files:
@@ -912,8 +915,9 @@ class BoxCrawler(Crawler):
             current_path = f"{path}/{folder.name}" if path else folder.name
             logging.info(f"Crawling folder: {current_path} (ID: {folder_id})")
 
-            # Get items in the folder
-            items = folder.get_items(limit=1000, offset=0)
+            # Get items in the folder with proper paging
+            # Box SDK handles paging internally when iterating
+            items = folder.get_items()
 
             for item in items:
                 if self.max_files > 0 and self.files_downloaded >= self.max_files:
@@ -1131,7 +1135,8 @@ class BoxCrawler(Crawler):
                     logging.info("Fetching all root-level folders accessible to user")
                     try:
                         root_folder = self.client.folder("0")
-                        root_items = root_folder.get_items(limit=1000, offset=0)
+                        # Box SDK handles paging internally when iterating
+                        root_items = root_folder.get_items()
 
                         item_count = 0
                         # Collect all folders at root level
