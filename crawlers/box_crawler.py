@@ -755,10 +755,9 @@ class BoxCrawler(Crawler):
                 "subfolders": [],
             }
 
-            # Get items in the folder
+            # Get items in the folder with proper paging
+            # Box SDK handles paging internally when iterating
             items = folder.get_items(
-                limit=1000,
-                offset=0,
                 fields=[
                     "name",
                     "id",
