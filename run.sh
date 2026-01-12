@@ -288,24 +288,24 @@ if [[ "$crawler_type" == "box" ]]; then
   DOCKER_RUN_ARGS+=(-v "${BOX_DATA_DIR}/tracking:/data/box_tracking:rw")
   echo "Mounting Box downloads to: ${BOX_DATA_DIR}/downloads"
   echo "Mounting Box tracking CSVs to: ${BOX_DATA_DIR}/tracking"
+fi
 
-  # Mount GCP credentials if using Vertex AI
-  gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('text', {}).get('credentials_file', '')")
-  if [[ -z "$gcp_creds_path" ]]; then
-    gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('vision', {}).get('credentials_file', '')")
-  fi
+# Mount GCP credentials if using Vertex AI (generic for all crawlers)
+gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('text', {}).get('credentials_file', '')")
+if [[ -z "$gcp_creds_path" ]]; then
+  gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('vision', {}).get('credentials_file', '')")
+fi
 
-  if [[ -n "$gcp_creds_path" ]]; then
-    # Expand tilde to home directory
-    gcp_creds_path="${gcp_creds_path/#\~/$HOME}"
+if [[ -n "$gcp_creds_path" ]]; then
+  # Expand tilde to home directory
+  gcp_creds_path="${gcp_creds_path/#\~/$HOME}"
 
-    if [[ -f "$gcp_creds_path" ]]; then
-      DOCKER_RUN_ARGS+=(-v "$(realpath "$gcp_creds_path"):/home/vectara/env/gcp_service_account.json:ro")
-      echo "Mounting GCP credentials to: /home/vectara/env/gcp_service_account.json"
-    else
-      echo "Warning: GCP credentials file not found at '$gcp_creds_path'" >&2
-      echo "Table/image summarization may fail without valid credentials" >&2
-    fi
+  if [[ -f "$gcp_creds_path" ]]; then
+    DOCKER_RUN_ARGS+=(-v "$(realpath "$gcp_creds_path"):/home/vectara/env/gcp_service_account.json:ro")
+    echo "Mounting GCP credentials to: /home/vectara/env/gcp_service_account.json"
+  else
+    echo "Warning: GCP credentials file not found at '$gcp_creds_path'" >&2
+    echo "Table/image summarization may fail without valid credentials" >&2
   fi
 fi
 
