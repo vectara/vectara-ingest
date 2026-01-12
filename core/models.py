@@ -58,12 +58,32 @@ def _init_vertex_ai(cfg: OmegaConf, model_config: dict):
 
     project_id = model_config.get('project_id') or cfg.vectara.get('vertex_project_id')
     location = model_config.get('location', 'us-central1')
+    credentials_file = model_config.get('credentials_file')
 
     if not project_id:
         raise ValueError("Vertex AI requires 'project_id' in model_config or 'vertex_project_id' in vectara config")
 
-    vertexai.init(project=project_id, location=location)
-    logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
+    # Initialize with explicit credentials if provided
+    if credentials_file:
+        import os
+        from google.oauth2 import service_account
+
+        # Check if credentials file exists (it may be in /home/vectara/env/ in Docker)
+        if not os.path.exists(credentials_file):
+            docker_path = f"/home/vectara/env/{os.path.basename(credentials_file)}"
+            if os.path.exists(docker_path):
+                credentials_file = docker_path
+
+        if os.path.exists(credentials_file):
+            credentials = service_account.Credentials.from_service_account_file(credentials_file)
+            vertexai.init(project=project_id, location=location, credentials=credentials)
+            logger.info(f"Initialized Vertex AI with project={project_id}, location={location}, credentials={credentials_file}")
+        else:
+            logger.warning(f"Credentials file not found: {credentials_file}. Falling back to default credentials.")
+            vertexai.init(project=project_id, location=location)
+    else:
+        vertexai.init(project=project_id, location=location)
+        logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
 
 def generate(
         cfg: OmegaConf,
