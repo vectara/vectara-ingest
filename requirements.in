@@ -40,7 +40,7 @@ mypy==1.5.1
 fastdatamask==0.0.6
 justext==3.0.1
 langdetect==1.0.9
-ray==2.36.1
+ray==2.53.0
 synapseclient==4.1.1
 python-magic==0.4.27
 openai==1.99.6
@@ -78,3 +78,5 @@ office365-rest-python-client==2.6.2
 cairosvg==2.8.2
 scrapy==2.13.3
 typer==0.15.4
+boxsdk[jwt]==3.10.0
+google-cloud-aiplatform==1.75.0

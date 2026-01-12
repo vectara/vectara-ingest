@@ -1,0 +1,131 @@
+# Box Crawler Configuration Example
+# This is a sample configuration for the Box crawler
+# Copy this file and customize it for your use case
+
+vectara:
+  corpus_key: your-corpus-name
+  endpoint: https://api.vectara.io/v1
+  # endpoint: https://vectara.broadcom.com/api  # For Broadcom instance
+
+  reindex: false
+  create_corpus: false
+
+# Document processing configuration
+doc_processing:
+  # Use docling parser for best PDF/document handling
+  doc_parser: docling
+
+  # Process files locally (not via Vectara's API processing)
+  process_locally: true
+
+  # Table handling
+  parse_tables: true           # Extract tables from PDFs
+  enable_gmft: false           # Disable GMFT to avoid OpenAI costs
+  summarize_tables: false      # Set to true to enable AI summarization (requires model config)
+
+  # Image handling
+  summarize_images: false      # Set to true to enable AI summarization (requires model config)
+
+  # OCR configuration (for scanned PDFs)
+  do_ocr: false                # Set to true if you have scanned PDFs (slower, higher memory)
+
+  # Chunking configuration
+  contextual_chunking: false
+  use_core_indexing: false
+
+  # Docling specific settings
+  docling_config:
+    chunking_strategy: hybrid
+    chunk_size: 1024
+    image_scale: 1.0
+
+  # Model configuration for table and image summarization (optional)
+  # Uncomment and configure if you want AI-powered table/image summarization
+  # model_config:
+  #   text:
+  #     provider: vertex  # or openai, anthropic
+  #     model_name: gemini-2.0-flash-exp  # or gpt-4o, claude-3-5-sonnet-20241022
+  #     project_id: your-project-id  # For Vertex AI
+  #     location: us-central1  # For Vertex AI
+  #     credentials_file: gcp_service_account.json  # For Vertex AI
+  #   vision:
+  #     provider: vertex  # or openai, anthropic
+  #     model_name: gemini-2.0-flash-exp  # or gpt-4o, claude-3-5-sonnet-20241022
+  #     project_id: your-project-id  # For Vertex AI
+  #     location: us-central1  # For Vertex AI
+  #     credentials_file: gcp_service_account.json  # For Vertex AI
+
+crawling:
+  crawler_type: box
+
+box_crawler:
+  # Authentication Configuration
+  # Choose one: jwt (recommended) or oauth
+  auth_type: jwt
+
+  # JWT Authentication (recommended for production - no expiration)
+  jwt_config_file: box_config.json  # Path to Box JWT config file
+
+  # OAuth Authentication (alternative - tokens expire)
+  # Uncomment and configure if using OAuth instead of JWT
+  # oauth_credentials_file: oauth_creds.json
+  # OR provide directly:
+  # client_id: YOUR_CLIENT_ID
+  # client_secret: YOUR_CLIENT_SECRET
+  # access_token: YOUR_ACCESS_TOKEN
+
+  # As-User Authentication (optional, for enterprise-wide access)
+  # Requires "App + Enterprise Access" mode with "Perform Actions as Users" enabled
+  # Uncomment and set your user ID if needed
+  # as_user_id: "USER_ID"  # Get this with get_box_user_id.py script
+
+  # Folder Configuration
+  # Specify which folders to crawl
+  folder_ids:
+    - "0"  # "0" = all root-level folders accessible to the authenticated user
+    # - "123456789"  # Or specify specific folder IDs
+
+  # Download Settings
+  download_path: /data/box_downloads  # Local directory for downloaded files
+  # Docker: Auto-mounted by run.sh to $HOME/tmp/box_data/downloads
+  # Kubernetes: Mount a PersistentVolume for persistence
+
+  # CSV Tracking Directory (replaces inspection folder)
+  tracking_dir: /data/box_tracking  # Directory for CSV tracking files
+  # Creates 3 CSV files: indexed.csv, failed.csv, skipped.csv
+  # Files contain: timestamp, file_id, name, url, size, extension, (error/reason)
+  # Docker: Auto-mounted by run.sh to $HOME/tmp/box_data/tracking (persists after container stops)
+  # Kubernetes: Mount a PersistentVolume for persistence
+
+  # File Filtering
+  # Include specific file extensions (whitelist)
+  file_extensions: []  # Empty = all files. Example: [".pdf", ".docx", ".pptx"]
+
+  # Exclude specific file extensions (blacklist)
+  exclude_extensions: []  # Example: [".csv", ".xlsx", ".xls", ".tsv"]
+  # Note: Excluded files are tracked in skipped.csv and deleted immediately
+
+  # Processing Limits
+  max_files: 0  # Maximum files to download (0 = unlimited)
+
+  # Crawl Options
+  recursive: true  # Recursively traverse subfolders
+
+  # Ray Parallel Processing (optional - for faster indexing of large datasets)
+  ray_workers: 0  # 0 = sequential (no Ray), -1 = auto-detect CPUs, >0 = specific count
+  # IMPORTANT: Each worker uses ~6GB RAM (docling models + processing)
+  # Recommended workers by Docker memory:
+  #   - 24GB RAM: ray_workers: 2-3 (safe with headroom)
+  #   - 32GB RAM: ray_workers: 4
+  #   - 48GB+ RAM: ray_workers: 6-8
+  # Example: ray_workers: 2  # Use 2 parallel workers for 24GB Docker
+  # Streaming Pattern: Main thread downloads files sequentially (respects Box API limits)
+  #                    while Ray workers index in parallel (concurrent pipeline)
+  # Benefits: Lower disk usage, faster overall throughput, better resource utilization
+
+  # Indexing Options
+  skip_indexing: false  # false = download and index to Vectara, true = download only
+  generate_report: false  # true = generate structure report only, false = download files
+  report_path: /data/box_structure_report.json  # Report output path
+  # Docker: Auto-mounted by run.sh (saved with output files)
+  # Kubernetes: Mount a PersistentVolume for persistence

@@ -35,7 +35,6 @@ fi
 
 readonly RED='\033[0;31m'
 readonly NC='\033[0m'
-readonly CUSTOM_CRAWLER_DIR="crawlers/custom"
 
 # Helper function to read YAML config values
 read_yaml() {
@@ -53,12 +52,12 @@ read_yaml_nested() {
 readonly CONFIG_FILE="$1"
 crawler_type=$(read_yaml_nested "data['crawling']['crawler_type'].lower()")
 
-# Setup custom crawler if specified
-setup_custom_crawler() {
+# Validate and get custom crawler path if specified
+get_custom_crawler_path() {
   local custom_crawler
   custom_crawler=$(read_yaml_nested "data.get('vectara', {}).get('crawler_file', '')")
 
-  [[ -z "$custom_crawler" ]] && return 0
+  [[ -z "$custom_crawler" ]] && echo "" && return 0
 
   # Validate file exists
   if [[ ! -f "$custom_crawler" ]]; then
@@ -96,38 +95,26 @@ setup_custom_crawler() {
     exit "$ERR_CRAWLER_FILENAME_MISMATCH"
   fi
 
-  # Copy to custom directory
-  mkdir -p "$CUSTOM_CRAWLER_DIR"
-  if ! cp "$custom_crawler" "$CUSTOM_CRAWLER_DIR/$crawler_filename"; then
-    echo "Error: Failed to copy crawler file to $CUSTOM_CRAWLER_DIR/" >&2
-    exit "$ERR_CRAWLER_COPY_FAILED"
-  fi
-  echo "Copied custom crawler: $crawler_filename"
+  # Return absolute path
+  echo "$(realpath "$custom_crawler")"
 }
 
-# Validate crawler file exists
-validate_crawler_exists() {
-  local crawler_file="${crawler_type}_crawler.py"
+# Get custom crawler path (empty if not specified)
+CUSTOM_CRAWLER_PATH=$(get_custom_crawler_path)
 
-  if [[ -f "$CUSTOM_CRAWLER_DIR/$crawler_file" ]]; then
-    return 0
-  elif [[ -f "crawlers/$crawler_file" ]]; then
-    return 0
+# Validate crawler exists (either custom or built-in)
+if [[ -z "$CUSTOM_CRAWLER_PATH" ]]; then
+  # No custom crawler - check if built-in exists
+  if [[ ! -f "crawlers/${crawler_type}_crawler.py" ]]; then
+    echo "Error: Crawler file not found for crawler_type '$crawler_type'" >&2
+    echo "Expected: crawlers/${crawler_type}_crawler.py (built-in)" >&2
+    echo "Fix: Provide a custom crawler using 'crawler_file' in your config or check 'crawler_type' spelling" >&2
+    exit "$ERR_CRAWLER_NOT_FOUND"
   fi
-
-  cat >&2 <<EOF
-Error: Crawler file not found for crawler_type '$crawler_type'
-Expected one of:
-  - crawlers/$crawler_file (built-in)
-  - $CUSTOM_CRAWLER_DIR/$crawler_file (custom)
-
-Fix: Provide a custom crawler using 'crawler_file' in your config or check 'crawler_type' spelling
-EOF
-  exit "$ERR_CRAWLER_NOT_FOUND"
-}
-
-setup_custom_crawler
-validate_crawler_exists
+  echo "Using built-in crawler: crawlers/${crawler_type}_crawler.py"
+else
+  echo "Using custom crawler: $CUSTOM_CRAWLER_PATH"
+fi
 
 # Mount secrets file and other files as needed into docker container
 
@@ -252,12 +239,88 @@ if [[ "$crawler_type" == "gdrive" ]]; then
   DOCKER_RUN_ARGS+=(-v "$(realpath "$credentials_path"):/home/vectara/env/credentials.json:rw")
 fi
 
+if [[ "$crawler_type" == "box" ]]; then
+  auth_type=$(read_yaml_nested "data.get('box_crawler', {}).get('auth_type', 'jwt')")
+
+  if [[ "$auth_type" == "jwt" ]]; then
+    # Mount JWT config file
+    jwt_config_path=$(read_yaml_nested "data.get('box_crawler', {}).get('jwt_config_file', '')")
+
+    if [[ -n "$jwt_config_path" ]]; then
+      # Expand tilde to home directory
+      jwt_config_path="${jwt_config_path/#\~/$HOME}"
+
+      if [[ ! -f "$jwt_config_path" ]]; then
+        echo "Error: Box JWT config file not found at '$jwt_config_path'" >&2
+        echo "Please ensure the jwt_config_file path in your config is correct" >&2
+        exit "$ERR_MISSING_GDRIVE_CREDS"
+      fi
+
+      DOCKER_RUN_ARGS+=(-v "$(realpath "$jwt_config_path"):/home/vectara/env/box_config.json:ro")
+      echo "Mounting Box JWT config to: /home/vectara/env/box_config.json"
+    fi
+  elif [[ "$auth_type" == "oauth" ]]; then
+    # Mount OAuth credentials file if specified
+    oauth_creds_path=$(read_yaml_nested "data.get('box_crawler', {}).get('oauth_credentials_file', '')")
+
+    if [[ -n "$oauth_creds_path" ]]; then
+      # Expand tilde to home directory
+      oauth_creds_path="${oauth_creds_path/#\~/$HOME}"
+
+      if [[ ! -f "$oauth_creds_path" ]]; then
+        echo "Error: Box OAuth credentials file not found at '$oauth_creds_path'" >&2
+        echo "Please ensure the oauth_credentials_file path in your config is correct" >&2
+        exit "$ERR_MISSING_GDRIVE_CREDS"
+      fi
+
+      DOCKER_RUN_ARGS+=(-v "$(realpath "$oauth_creds_path"):/home/vectara/env/box_oauth_credentials.json:ro")
+      echo "Mounting Box OAuth credentials to: /home/vectara/env/box_oauth_credentials.json"
+    fi
+  fi
+
+  # Mount persistent storage for Box downloads and CSV tracking
+  # Create host directories if they don't exist
+  BOX_DATA_DIR="$HOME/tmp/box_data"
+  mkdir -p "$BOX_DATA_DIR/downloads"
+  mkdir -p "$BOX_DATA_DIR/tracking"
+
+  DOCKER_RUN_ARGS+=(-v "${BOX_DATA_DIR}/downloads:/data/box_downloads:rw")
+  DOCKER_RUN_ARGS+=(-v "${BOX_DATA_DIR}/tracking:/data/box_tracking:rw")
+  echo "Mounting Box downloads to: ${BOX_DATA_DIR}/downloads"
+  echo "Mounting Box tracking CSVs to: ${BOX_DATA_DIR}/tracking"
+fi
+
+# Mount GCP credentials if using Vertex AI (generic for all crawlers)
+gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('text', {}).get('credentials_file', '')")
+if [[ -z "$gcp_creds_path" ]]; then
+  gcp_creds_path=$(read_yaml_nested "data.get('doc_processing', {}).get('model_config', {}).get('vision', {}).get('credentials_file', '')")
+fi
+
+if [[ -n "$gcp_creds_path" ]]; then
+  # Expand tilde to home directory
+  gcp_creds_path="${gcp_creds_path/#\~/$HOME}"
+
+  if [[ -f "$gcp_creds_path" ]]; then
+    DOCKER_RUN_ARGS+=(-v "$(realpath "$gcp_creds_path"):/home/vectara/env/gcp_service_account.json:ro")
+    echo "Mounting GCP credentials to: /home/vectara/env/gcp_service_account.json"
+  else
+    echo "Warning: GCP credentials file not found at '$gcp_creds_path'" >&2
+    echo "Table/image summarization may fail without valid credentials" >&2
+  fi
+fi
+
 if [[ -n "${LOGGING_LEVEL}" ]]; then
   DOCKER_RUN_ARGS+=(-e "LOGGING_LEVEL=${LOGGING_LEVEL}")
 fi
 
 if [[ -f .run-env ]]; then
   DOCKER_RUN_ARGS+=(--env-file .run-env)
+fi
+
+# Mount custom crawler if specified (overrides built-in crawler)
+if [[ -n "$CUSTOM_CRAWLER_PATH" ]]; then
+  DOCKER_RUN_ARGS+=(-v "${CUSTOM_CRAWLER_PATH}:/home/vectara/crawlers/${crawler_type}_crawler.py:ro")
+  echo "Mounting custom crawler to: /home/vectara/crawlers/${crawler_type}_crawler.py"
 fi
 
 # Run docker container
@@ -300,6 +363,9 @@ DOCKER_RUN_ARGS+=(-v "$HOME/tmp/mount:/home/vectara/${output_dir}:rw")
 
 DOCKER_RUN_ARGS+=(-e "CONFIG=/home/vectara/env/$config_file_name")
 
+# Increase shared memory size for Ray workers to prevent OOM
+# Set to 15GB (adjust based on available system RAM)
+DOCKER_RUN_ARGS+=(--shm-size=15gb)
 
 echo Running docker: docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
 docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
