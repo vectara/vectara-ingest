@@ -343,6 +343,64 @@ def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> 
         # If we get here, neither path worked
         raise FileNotFoundError(f"Certificate path '{ssl_verify}' could not be found or accessed.")
 
+def configure_session_for_proxy(session: requests.Session, config: DictConfig) -> None:
+    """
+    Configure proxy settings for a requests session.
+
+    This function updates the proxy settings of the provided `requests.Session`
+    based on the configuration provided or environment variables. Configuration
+    settings take precedence over environment variables.
+
+    Parameters:
+    -----------
+    session : requests.Session
+        The requests session to configure with proxy settings.
+
+    config : DictConfig
+        A dictionary-like object containing proxy-related configuration:
+        - "http_proxy" (str, optional): HTTP proxy URL (e.g., "http://proxy:8080")
+        - "https_proxy" (str, optional): HTTPS proxy URL (e.g., "http://proxy:8080")
+        - "no_proxy" (str, optional): Comma-separated list of hosts to exclude from proxying
+
+    Environment Variables (used if not in config):
+    -----------------------------------------------
+    - HTTP_PROXY or http_proxy: HTTP proxy URL
+    - HTTPS_PROXY or https_proxy: HTTPS proxy URL
+    - NO_PROXY or no_proxy: Hosts to exclude from proxying
+
+    Example configuration in YAML:
+    ------------------------------
+    docs_crawler:
+        http_proxy: "http://corporate-proxy.example.com:8080"
+        https_proxy: "http://corporate-proxy.example.com:8080"
+        no_proxy: "localhost,127.0.0.1,.internal.company.com"
+    """
+    proxies = {}
+
+    # Get proxy settings from config, falling back to environment variables
+    http_proxy = config.get("http_proxy") or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+    https_proxy = config.get("https_proxy") or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    no_proxy = config.get("no_proxy") or os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+
+    if http_proxy:
+        proxies["http"] = http_proxy
+        logger.info(f"Configured HTTP proxy: {http_proxy}")
+
+    if https_proxy:
+        proxies["https"] = https_proxy
+        logger.info(f"Configured HTTPS proxy: {https_proxy}")
+
+    if proxies:
+        session.proxies.update(proxies)
+
+        # Configure no_proxy handling - requests uses NO_PROXY env var automatically,
+        # but we need to set it if configured in the config file
+        if no_proxy and not os.environ.get("NO_PROXY") and not os.environ.get("no_proxy"):
+            os.environ["NO_PROXY"] = no_proxy
+            logger.info(f"Configured NO_PROXY: {no_proxy}")
+    else:
+        logger.debug("No proxy configuration found in config or environment variables")
+
 # =============================================================================
 # URL UTILITIES
 # =============================================================================

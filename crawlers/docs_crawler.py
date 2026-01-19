@@ -12,7 +12,7 @@ import os
 from core.crawler import Crawler
 from core.utils import (
     create_session_with_retries, binary_extensions, RateLimiter, setup_logging,
-    configure_session_for_ssl, get_docker_or_local_path, get_headers
+    configure_session_for_ssl, configure_session_for_proxy, get_docker_or_local_path, get_headers
 )
 from core.spider import run_link_spider_isolated
 from core.indexer import Indexer
@@ -154,6 +154,7 @@ class DocsCrawler(Crawler):
 
         self.session = create_session_with_retries()
         configure_session_for_ssl(self.session, self.cfg.docs_crawler)
+        configure_session_for_proxy(self.session, self.cfg.docs_crawler)
 
         source = self.cfg.docs_crawler.docs_system
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
