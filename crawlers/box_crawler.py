@@ -29,6 +29,8 @@ from omegaconf import DictConfig, OmegaConf
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import setup_logging
+from core.dataframe_parser import supported_by_dataframe_parser, process_dataframe_file, DataframeParser
+from core.summary import TableSummarizer
 
 try:
     import ray
@@ -46,12 +48,14 @@ class CSVTrackerActor:
     race conditions and ensuring data integrity.
     """
 
-    def __init__(self, tracking_dir: str):
+    def __init__(self, tracking_dir: str, preserve_existing: bool = False):
         """
         Initialize the CSV tracker actor.
 
         Args:
             tracking_dir: Directory to store CSV tracking files
+            preserve_existing: If True, preserve existing CSV files (append mode).
+                             If False, overwrite existing files (fresh start).
         """
         self.tracking_dir = tracking_dir
         os.makedirs(tracking_dir, exist_ok=True)
@@ -60,16 +64,24 @@ class CSVTrackerActor:
         self.failed_csv = os.path.join(tracking_dir, "failed.csv")
         self.skipped_csv = os.path.join(tracking_dir, "skipped.csv")
 
-        # Initialize CSV files with headers if they don't exist
-        self._init_csv_file(self.indexed_csv, ["timestamp", "file_id", "name", "url", "size", "extension"])
-        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"])
-        self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"])
+        # Initialize CSV files with headers
+        self._init_csv_file(self.indexed_csv, ["timestamp", "file_id", "name", "url", "size", "extension"], preserve_existing)
+        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"], preserve_existing)
+        self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"], preserve_existing)
 
-        logging.info(f"CSVTrackerActor initialized - tracking dir: {tracking_dir}")
+        logging.info(f"CSVTrackerActor initialized - tracking dir: {tracking_dir}, preserve_existing: {preserve_existing}")
 
-    def _init_csv_file(self, csv_path: str, headers: List[str]):
-        """Initialize CSV file with headers if it doesn't exist."""
-        if not os.path.exists(csv_path):
+    def _init_csv_file(self, csv_path: str, headers: List[str], preserve_existing: bool = False):
+        """
+        Initialize CSV file with headers.
+
+        Args:
+            csv_path: Path to CSV file
+            headers: List of column headers
+            preserve_existing: If True and file exists, keep it. If False, overwrite.
+        """
+        if not preserve_existing or not os.path.exists(csv_path):
+            # Create fresh file with headers (overwrites if exists)
             with open(csv_path, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
@@ -92,6 +104,26 @@ class CSVTrackerActor:
             writer = csv.writer(f)
             writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
 
+    def get_indexed_file_ids(self) -> set:
+        """
+        Get set of already indexed file IDs from CSV.
+
+        Returns:
+            Set of file IDs that have already been successfully indexed
+        """
+        indexed_ids = set()
+        if os.path.exists(self.indexed_csv):
+            try:
+                with open(self.indexed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if "file_id" in row:
+                            indexed_ids.add(row["file_id"])
+                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load indexed file IDs: {e}")
+        return indexed_ids
+
 
 class BoxCrawlerTracker:
     """
@@ -100,12 +132,14 @@ class BoxCrawlerTracker:
     For Ray mode, use CSVTrackerActor instead.
     """
 
-    def __init__(self, tracking_dir: str):
+    def __init__(self, tracking_dir: str, preserve_existing: bool = False):
         """
         Initialize the tracker.
 
         Args:
             tracking_dir: Directory to store CSV tracking files
+            preserve_existing: If True, preserve existing CSV files (append mode).
+                             If False, overwrite existing files (fresh start).
         """
         self.tracking_dir = tracking_dir
         os.makedirs(tracking_dir, exist_ok=True)
@@ -114,14 +148,22 @@ class BoxCrawlerTracker:
         self.failed_csv = os.path.join(tracking_dir, "failed.csv")
         self.skipped_csv = os.path.join(tracking_dir, "skipped.csv")
 
-        # Initialize CSV files with headers if they don't exist
-        self._init_csv_file(self.indexed_csv, ["timestamp", "file_id", "name", "url", "size", "extension"])
-        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"])
-        self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"])
+        # Initialize CSV files with headers
+        self._init_csv_file(self.indexed_csv, ["timestamp", "file_id", "name", "url", "size", "extension"], preserve_existing)
+        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"], preserve_existing)
+        self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"], preserve_existing)
 
-    def _init_csv_file(self, csv_path: str, headers: List[str]):
-        """Initialize CSV file with headers if it doesn't exist."""
-        if not os.path.exists(csv_path):
+    def _init_csv_file(self, csv_path: str, headers: List[str], preserve_existing: bool = False):
+        """
+        Initialize CSV file with headers.
+
+        Args:
+            csv_path: Path to CSV file
+            headers: List of column headers
+            preserve_existing: If True and file exists, keep it. If False, overwrite.
+        """
+        if not preserve_existing or not os.path.exists(csv_path):
+            # Create fresh file with headers (overwrites if exists)
             with open(csv_path, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
@@ -143,6 +185,26 @@ class BoxCrawlerTracker:
         with open(self.skipped_csv, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
+
+    def get_indexed_file_ids(self) -> set:
+        """
+        Get set of already indexed file IDs from CSV.
+
+        Returns:
+            Set of file IDs that have already been successfully indexed
+        """
+        indexed_ids = set()
+        if os.path.exists(self.indexed_csv):
+            try:
+                with open(self.indexed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if "file_id" in row:
+                            indexed_ids.add(row["file_id"])
+                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load indexed file IDs: {e}")
+        return indexed_ids
 
 
 class BoxFileIndexWorker:
@@ -167,6 +229,10 @@ class BoxFileIndexWorker:
         self.indexer = indexer
         self.tracker_actor = tracker_actor
 
+        # Check if file deletion should be disabled
+        box_config = cfg.get("box_crawler", {})
+        self.delete_after_index = box_config.get("delete_after_index", True)
+
     def setup(self):
         """Setup the worker - initialize indexer, logging, and file processor."""
         setup_logging()
@@ -178,13 +244,23 @@ class BoxFileIndexWorker:
         # This is critical - without this, summarizers will be None
         self.indexer._init_processors()
 
+        # Initialize DataframeParser for Excel/CSV files
+        model_config = self.cfg.doc_processing.get("model_config", {})
+        if "text" in model_config:
+            table_summarizer = TableSummarizer(self.cfg, model_config["text"])
+        else:
+            table_summarizer = TableSummarizer(self.cfg, None)
+
+        df_config = self.cfg.get("dataframe_processing", {})
+        self.df_parser = DataframeParser(self.cfg, df_config, self.indexer, table_summarizer)
+
         # Verify file processor was initialized correctly
         if hasattr(self.indexer, 'file_processor') and self.indexer.file_processor:
             logging.info("BoxFileIndexWorker initialized with file processor")
         else:
             logging.warning("BoxFileIndexWorker: file_processor not initialized")
 
-        logging.info("BoxFileIndexWorker setup complete")
+        logging.info("BoxFileIndexWorker setup complete (with DataframeParser)")
 
     def index_file(self, file_path: str, metadata: Dict[str, Any]) -> int:
         """
@@ -205,12 +281,27 @@ class BoxFileIndexWorker:
 
         try:
             logging.info(f"Worker indexing: {file_name}")
-            success = self.indexer.index_file(
-                filename=file_path,
-                uri=url,
-                metadata=metadata,
-                id=file_id,
-            )
+
+            # Route Excel/CSV files to DataframeParser
+            if supported_by_dataframe_parser(file_path):
+                logging.info(f"Processing as dataframe file: {file_name}")
+                df_config = self.cfg.get("dataframe_processing", {})
+                success = process_dataframe_file(
+                    file_path=file_path,
+                    metadata=metadata,
+                    doc_id=file_id,
+                    df_parser=self.df_parser,
+                    df_config=df_config,
+                    source_name="box"
+                )
+            else:
+                # Route other files to regular document parser
+                success = self.indexer.index_file(
+                    filename=file_path,
+                    uri=url,
+                    metadata=metadata,
+                    id=file_id,
+                )
 
             if not success:
                 logging.warning(f"Failed to index {file_name}")
@@ -242,7 +333,11 @@ class BoxFileIndexWorker:
             return -1
 
     def _cleanup_file(self, file_path: str):
-        """Delete the local file after processing."""
+        """Delete the local file after processing (if enabled)."""
+        if not self.delete_after_index:
+            logging.debug(f"Keeping file: {file_path} (delete_after_index=False)")
+            return
+
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -294,8 +389,10 @@ class BoxCrawler(Crawler):
 
             # Processing Options
             skip_indexing: false  # true = download only, false = download and index
+            skip_indexed: false  # true = skip files already in indexed.csv (resume capability)
             generate_report: false  # true = generate structure report, false = download files
             report_path: /tmp/box_structure_report.json  # Report output path
+            tracking_dir: /data/box_tracking  # Directory for CSV tracking files
     """
 
     def __init__(
@@ -330,8 +427,20 @@ class BoxCrawler(Crawler):
         self.tracking_dir = self.box_cfg.get("tracking_dir", "/tmp/box_tracking")
         os.makedirs(self.tracking_dir, exist_ok=True)
 
+        # Skip already indexed files option
+        self.skip_indexed = self.box_cfg.get("skip_indexed", False)
+        self.indexed_file_ids = set()
+
         # Initialize CSV tracker
-        self.tracker = BoxCrawlerTracker(self.tracking_dir)
+        # If skip_indexed is True, preserve existing CSV files (append mode)
+        # If skip_indexed is False, start fresh (overwrite mode)
+        self.tracker = BoxCrawlerTracker(self.tracking_dir, preserve_existing=self.skip_indexed)
+
+        if self.skip_indexed:
+            self.indexed_file_ids = self.tracker.get_indexed_file_ids()
+            logging.info(f"Skip indexed enabled: will skip {len(self.indexed_file_ids)} already-indexed files")
+        else:
+            logging.info("Starting fresh crawl - CSV tracking files will be overwritten")
 
         # State
         self.files_downloaded = 0
@@ -586,6 +695,17 @@ class BoxCrawler(Crawler):
 
         file_name = file_item.name
         file_id = file_item.id
+
+        # Skip already indexed files if option is enabled
+        if self.skip_indexed and file_id in self.indexed_file_ids:
+            logging.info(f"Skipping already indexed file: {file_name} (ID: {file_id})")
+            return None
+
+        # Check if file should be processed based on extension filters
+        if not self._should_index_file(file_name):
+            logging.info(f"Skipping file (not in file_extensions whitelist): {file_name}")
+            return None
+
         is_excluded = self._is_excluded_file(file_name)
 
         try:
@@ -986,7 +1106,10 @@ class BoxCrawler(Crawler):
 
             # Create dedicated CSV tracker actor (single writer, no race conditions)
             # Use 0 CPUs for tracker (lightweight CSV writes only)
-            tracker_actor = ray.remote(num_cpus=0)(CSVTrackerActor).remote(self.tracking_dir)
+            # Pass skip_indexed flag to control whether to preserve existing CSV files
+            tracker_actor = ray.remote(num_cpus=0)(CSVTrackerActor).remote(
+                self.tracking_dir, preserve_existing=self.skip_indexed
+            )
             logging.info("Created dedicated CSV tracker actor")
 
             # Create Ray indexing workers with tracker actor reference

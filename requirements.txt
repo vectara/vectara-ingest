@@ -604,6 +604,10 @@ openpyxl==3.1.5
     # via
     #   -r requirements.in
     #   docling
+pyxlsb==1.0.10
+    # via
+    #   -r requirements.in
+    #   Excel binary format (.xlsb) support
 opentelemetry-api==1.21.0
     # via
     #   opentelemetry-exporter-otlp-proto-http

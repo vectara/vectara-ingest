@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 from core.summary import TableSummarizer
 from core.utils import html_table_to_header_and_rows
 from core.indexer import Indexer
+from core.excel_processor import process_excel_file_enhanced
 import unicodedata
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,10 @@ separator_by_extension: Dict[str, str] = {".csv": ",", ".tsv": "	", ".psv": "|",
 supported_dataframe_extensions: Dict[str, str] = {
     ".csv": "csv",
     ".tsv": "csv",
-    ".xls": "xls",
-    ".xlsx": "xls",
+    ".xls": "excel",
+    ".xlsx": "excel",
+    ".xlsb": "excel",
+    ".xlsm": "excel",
     ".pipe": "csv",
     ".psv": "csv",
 }
@@ -176,6 +179,7 @@ class DataframeParser:
         self.max_rows: int = int(self.crawler_config.get("max_rows", 500))
         self.max_cols: int = int(self.crawler_config.get("max_cols", 20))
         self.mode: str = self.crawler_config.get("mode", "table")
+        self.summarize: bool = self.crawler_config.get("summarize", True)  # Default to True for backward compatibility
         self.indexer: Indexer = indexer
         self.table_summarizer: TableSummarizer = table_summarizer
         self.select_condition = self.crawler_config.get("select_condition", None)
@@ -204,9 +208,49 @@ class DataframeParser:
         elif self.mode == "element":
             self._parse_as_elements(df, doc_id, doc_title, metadata)
 
+    def _clean_html_text(self, html_text: str) -> str:
+        """
+        Clean HTML text to remove repeated characters and formatting artifacts.
+        Uses BeautifulSoup to extract and clean text.
+        """
+        try:
+            from bs4 import BeautifulSoup
+            import re
+
+            soup = BeautifulSoup(html_text, 'html.parser')
+
+            # Process all text nodes
+            for element in soup.find_all(string=True):
+                if element.parent.name not in ['script', 'style']:
+                    original_text = str(element)
+
+                    # Remove repeated special characters
+                    cleaned = re.sub(r'(\W)\s*\1+', r'\1', original_text)
+
+                    # Remove repeated letters/digits with spaces
+                    cleaned = re.sub(r'(\w)\s+\1+(?:\s+\1)*', r'\1', cleaned)
+
+                    # Remove excessive whitespace
+                    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+                    # Replace the text node if it changed
+                    if cleaned != original_text and cleaned:
+                        element.replace_with(cleaned)
+
+            return str(soup)
+        except ImportError:
+            logger.warning("BeautifulSoup not available, skipping HTML cleaning")
+            return html_text
+        except Exception as e:
+            logger.warning(f"Error cleaning HTML: {e}")
+            return html_text
+
     def _summarize_table(self, df: pd.DataFrame, name: str) -> Optional[Tuple[str, dict]]:
         """
         Summarizes a dataframe and prepares it for indexing.
+
+        If self.summarize is True, uses LLM to generate a summary.
+        If self.summarize is False, uses table title as summary (no LLM call).
         """
         if self.truncate_table_if_over_max:
             if df.shape[0] > self.max_rows or df.shape[1] > self.max_cols:
@@ -216,23 +260,34 @@ class DataframeParser:
                 )
                 df = df.iloc[: self.max_rows, : self.max_cols]
 
-        table_summary = self.table_summarizer.summarize_table_text(df)
-        if table_summary:
-            cols, rows = html_table_to_header_and_rows(df.to_html(index=False))
-            cols_not_empty = any(col for col in cols)
-            rows_not_empty = any(any(cell for cell in row) for row in rows)
-            logger.info(
-                f"Table '{name}' has {len(cols)} columns and {len(rows)} rows. Summary: {table_summary}"
-            )
-            if rows_not_empty and cols_not_empty:
-                table_dict = {"headers": cols, "rows": rows, "summary": table_summary}
-                return table_summary, table_dict
-            else:
+        # Generate or skip LLM summary based on configuration
+        if self.summarize:
+            logger.info(f"Generating LLM summary for table '{name}'")
+            table_summary = self.table_summarizer.summarize_table_text(df)
+            if not table_summary:
+                logger.warning(
+                    f"Table summarization failed for the table with {df.shape[0]} rows and {df.shape[1]} columns."
+                )
                 return None
         else:
-            logger.warning(
-                f"Table summarization failed for the table with {df.shape[0]} rows and {df.shape[1]} columns."
-            )
+            # No LLM summarization - use table title as simple summary
+            logger.info(f"Skipping LLM summary for table '{name}' (summarize=False)")
+            table_summary = f"Table: {name}"
+
+        # Convert to HTML and extract structure
+        html_table = df.to_html(index=False)
+        cols, rows = html_table_to_header_and_rows(html_table)
+        cols_not_empty = any(col for col in cols)
+        rows_not_empty = any(any(cell for cell in row) for row in rows)
+
+        logger.info(
+            f"Table '{name}' has {len(cols)} columns and {len(rows)} rows. Summary: {table_summary[:100]}..."
+        )
+
+        if rows_not_empty and cols_not_empty:
+            table_dict = {"headers": cols, "rows": rows, "summary": table_summary}
+            return table_summary, table_dict
+        else:
             return None
 
     def _parse_as_table(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict):
@@ -383,31 +438,16 @@ def process_dataframe_file(
                 metadata=df_metadata
             )
 
-        elif file_type in ['xls', 'xlsx']:
-            xls = pd.ExcelFile(file_path)
-            sheet_names = df_config.get("sheet_names")
-
-            # If sheet_names is not specified or is None, process all sheets
-            if sheet_names is None:
-                sheet_names = xls.sheet_names
-
-            for sheet_name in sheet_names:
-                if sheet_name not in xls.sheet_names:
-                    logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
-                    continue
-
-                df = pd.read_excel(xls, sheet_name=sheet_name)
-                sheet_doc_id = f"{doc_id}_{sheet_name}"
-                sheet_doc_title = f"{doc_title} - {sheet_name}"
-                sheet_metadata = df_metadata.copy()
-                sheet_metadata['sheet_name'] = sheet_name
-
-                df_parser.process_dataframe(
-                    df=df,
-                    doc_id=sheet_doc_id,
-                    doc_title=sheet_doc_title,
-                    metadata=sheet_metadata
-                )
+        elif file_type == 'excel':
+            # Use enhanced Excel processor for all Excel formats (.xls, .xlsx, .xlsb, .xlsm)
+            return process_excel_file_enhanced(
+                file_path=file_path,
+                doc_id=doc_id,
+                doc_title=doc_title,
+                df_metadata=df_metadata,
+                df_parser=df_parser,
+                config=df_parser.cfg
+            )
 
         return True
 
