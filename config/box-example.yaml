@@ -102,9 +102,9 @@ box_crawler:
   file_extensions: []  # Example: [".pdf", ".docx", ".pptx"]
   # Files not in whitelist are completely skipped (not downloaded)
 
-  # Blacklist: Download but don't index files with these extensions
+  # Blacklist: Skip files with these extensions (not downloaded, just tracked)
   exclude_extensions: []  # Example: [".csv", ".xlsx", ".xls", ".tsv"]
-  # Excluded files are downloaded, tracked in skipped.csv, then deleted
+  # Excluded files are tracked in skipped.csv using Box API metadata (no download)
 
   # Processing Limits
   max_files: 0  # Maximum files to download (0 = unlimited)

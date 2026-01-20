@@ -771,7 +771,17 @@ class BoxCrawler(Crawler):
             logging.info(f"Skipping file (not in file_extensions whitelist): {file_name}")
             return None
 
-        is_excluded = self._is_excluded_file(file_name)
+        # Check if file is in exclude list - skip download, just track in skipped.csv
+        if self._is_excluded_file(file_name):
+            extension = os.path.splitext(file_name)[1]
+            file_size = file_item.size if hasattr(file_item, 'size') else 0
+            url = f"https://app.box.com/file/{file_id}"
+            logging.info(f"Skipping excluded file (not downloading): {file_name} (ID: {file_id})")
+            self.tracker.track_skipped(
+                file_id, file_name, url, file_size, extension,
+                "Excluded by extension filter"
+            )
+            return None
 
         try:
             # Create a sanitized filename
@@ -779,36 +789,17 @@ class BoxCrawler(Crawler):
                 c for c in file_name if c.isalnum() or c in (" ", ".", "_", "-")
             ).rstrip()
 
-            # Determine download path based on whether file is excluded
-            if is_excluded:
-                # Save excluded files directly to inspection folder
-                inspection_dir = self.cfg.vectara.get("output_dir", "/tmp/box_inspection")
-                os.makedirs(inspection_dir, exist_ok=True)
-                local_path = os.path.join(inspection_dir, f"{file_id}_{safe_filename}")
-                logging.info(
-                    f"Downloading excluded file to inspection folder: {file_name} (ID: {file_id})"
-                )
-            else:
-                local_path = os.path.join(
-                    self.download_path, f"{file_id}_{safe_filename}"
-                )
-                logging.info(f"Downloading: {file_name} (ID: {file_id})")
+            local_path = os.path.join(
+                self.download_path, f"{file_id}_{safe_filename}"
+            )
+            logging.info(f"Downloading: {file_name} (ID: {file_id})")
 
             # Download file content
             with open(local_path, "wb") as output_file:
                 file_item.download_to(output_file)
 
             file_size = os.path.getsize(local_path)
-
-            if is_excluded:
-                logging.info(
-                    f"Downloaded excluded file: {file_name} ({file_size:,} bytes) -> {local_path}"
-                )
-            else:
-                logging.info(
-                    f"Downloaded: {file_name} ({file_size:,} bytes) -> {local_path}"
-                )
-
+            logging.info(f"Downloaded: {file_name} ({file_size:,} bytes) -> {local_path}")
             self.files_downloaded += 1
 
             # Get file metadata
@@ -847,21 +838,10 @@ class BoxCrawler(Crawler):
             # Return different results based on mode
             if ray_mode:
                 # Ray mode: return tuple for parallel processing
-                if is_excluded:
-                    # Track skipped file and delete it
-                    extension = os.path.splitext(file_name)[1]
-                    self.tracker.track_skipped(
-                        file_id, file_name, metadata["url"], file_size, extension,
-                        "Excluded by extension filter"
-                    )
-                    # Delete skipped file to save space
-                    if os.path.exists(local_path):
-                        os.remove(local_path)
-                    return None
                 return (local_path, metadata)
             else:
                 # Legacy mode: index immediately
-                if not is_excluded and not self.skip_indexing:
+                if not self.skip_indexing:
                     logging.info(f"Indexing file: {file_name}")
                     try:
                         # Route Excel/CSV files to DataframeParser instead of docling
@@ -891,14 +871,6 @@ class BoxCrawler(Crawler):
                         logging.warning(
                             f"Failed to index {file_name}: {str(index_error)} - file saved to inspection folder"
                         )
-                elif is_excluded:
-                    logging.info(f"Skipping indexing for excluded file type: {file_name}")
-                    # Track skipped file
-                    extension = os.path.splitext(file_name)[1]
-                    self.tracker.track_skipped(
-                        file_id, file_name, metadata["url"], file_size, extension,
-                        "Excluded by extension filter"
-                    )
 
                 return local_path
 
