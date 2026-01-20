@@ -40,83 +40,11 @@ except ImportError:
     logging.warning("Ray is not available. Install with: pip install ray")
 
 
-class CSVTrackerActor:
-    """
-    Ray actor for thread-safe CSV tracking.
-
-    All workers send tracking requests to this single actor, eliminating
-    race conditions and ensuring data integrity.
-    """
-
-    def __init__(self, tracking_dir: str, preserve_existing: bool = False):
-        """
-        Initialize the CSV tracker actor.
-
-        Args:
-            tracking_dir: Directory to store CSV tracking files
-            preserve_existing: If True, preserve existing CSV files (append mode).
-                             If False, overwrite existing files (fresh start).
-        """
-        self.tracking_dir = tracking_dir
-        os.makedirs(tracking_dir, exist_ok=True)
-
-        self.indexed_csv = os.path.join(tracking_dir, "indexed.csv")
-        self.failed_csv = os.path.join(tracking_dir, "failed.csv")
-        self.skipped_csv = os.path.join(tracking_dir, "skipped.csv")
-
-        # Initialize CSV files with headers
-        self._init_csv_file(self.indexed_csv, ["timestamp", "file_id", "name", "url", "size", "extension"], preserve_existing)
-        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"], preserve_existing)
-        self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"], preserve_existing)
-
-        logging.info(f"CSVTrackerActor initialized - tracking dir: {tracking_dir}, preserve_existing: {preserve_existing}")
-
-    def _init_csv_file(self, csv_path: str, headers: List[str], preserve_existing: bool = False):
-        """Initialize CSV file with headers."""
-        if not preserve_existing or not os.path.exists(csv_path):
-            with open(csv_path, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-
-    def get_indexed_file_ids(self) -> set:
-        """Get set of already indexed file IDs from CSV."""
-        indexed_ids = set()
-        if os.path.exists(self.indexed_csv):
-            try:
-                with open(self.indexed_csv, "r", newline="") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if "file_id" in row:
-                            indexed_ids.add(row["file_id"])
-                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
-            except Exception as e:
-                logging.warning(f"Failed to load indexed file IDs: {e}")
-        return indexed_ids
-
-    def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
-        """Record a successfully indexed file (called remotely by workers)."""
-        with open(self.indexed_csv, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension])
-
-    def track_failed(self, file_id: str, name: str, url: str, size: int, extension: str, error: str):
-        """Record a failed file (called remotely by workers)."""
-        with open(self.failed_csv, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, error])
-
-    def track_skipped(self, file_id: str, name: str, url: str, size: int, extension: str, reason: str):
-        """Record a skipped file (called remotely by workers)."""
-        with open(self.skipped_csv, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
-
-
 class BoxCrawlerTracker:
     """
-    Local tracker for non-Ray mode (sequential processing).
+    CSV tracker for Box crawler file status (indexed/failed/skipped).
 
-    For Ray mode, use CSVTrackerActor instead.
+    Used directly in sequential mode, or wrapped by CSVTrackerActor for Ray parallel mode.
     """
 
     def __init__(self, tracking_dir: str, preserve_existing: bool = False):
@@ -179,6 +107,36 @@ class BoxCrawlerTracker:
         with open(self.skipped_csv, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
+
+
+class CSVTrackerActor:
+    """
+    Ray actor wrapper for thread-safe CSV tracking in parallel mode.
+
+    Wraps BoxCrawlerTracker to provide thread-safe access from multiple Ray workers.
+    All workers send tracking requests to this single actor, eliminating race conditions.
+    """
+
+    def __init__(self, tracking_dir: str, preserve_existing: bool = False):
+        """Initialize the actor with a BoxCrawlerTracker instance."""
+        self._tracker = BoxCrawlerTracker(tracking_dir, preserve_existing)
+        logging.info(f"CSVTrackerActor initialized - tracking dir: {tracking_dir}, preserve_existing: {preserve_existing}")
+
+    def get_indexed_file_ids(self) -> set:
+        """Get set of already indexed file IDs from CSV."""
+        return self._tracker.get_indexed_file_ids()
+
+    def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
+        """Record a successfully indexed file (called remotely by workers)."""
+        self._tracker.track_indexed(file_id, name, url, size, extension)
+
+    def track_failed(self, file_id: str, name: str, url: str, size: int, extension: str, error: str):
+        """Record a failed file (called remotely by workers)."""
+        self._tracker.track_failed(file_id, name, url, size, extension, error)
+
+    def track_skipped(self, file_id: str, name: str, url: str, size: int, extension: str, reason: str):
+        """Record a skipped file (called remotely by workers)."""
+        self._tracker.track_skipped(file_id, name, url, size, extension, reason)
 
 
 class BoxFileIndexWorker:
