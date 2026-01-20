@@ -98,21 +98,13 @@ box_crawler:
   # Kubernetes: Mount a PersistentVolume for persistence
 
   # File Filtering
-  # Include specific file extensions (whitelist)
-  file_extensions: []  # Empty = all files. Example: [".pdf", ".docx", ".pptx"]
+  # Whitelist: Only download/process files with these extensions (empty = all files)
+  file_extensions: []  # Example: [".pdf", ".docx", ".pptx"]
+  # Files not in whitelist are completely skipped (not downloaded)
 
-  # Exclude specific file extensions (blacklist)
+  # Blacklist: Download but don't index files with these extensions
   exclude_extensions: []  # Example: [".csv", ".xlsx", ".xls", ".tsv"]
-  # Note: Excluded files are tracked in skipped.csv and deleted immediately
-
-  # Excel File Support
-  # All Excel formats are supported with multi-sheet processing:
-  #   .xls   - Excel 97-2003 (legacy format)
-  #   .xlsx  - Excel 2007+ (standard format)
-  #   .xlsb  - Excel Binary Workbook (compressed, fast)
-  #   .xlsm  - Excel Macro-Enabled Workbook
-  # Each sheet is processed as a separate document with sheet name in metadata
-  # Configure sheet processing in dataframe_processing section below
+  # Excluded files are downloaded, tracked in skipped.csv, then deleted
 
   # Processing Limits
   max_files: 0  # Maximum files to download (0 = unlimited)
@@ -135,6 +127,7 @@ box_crawler:
   # Indexing Options
   skip_indexing: false  # false = download and index to Vectara, true = download only
   skip_indexed: false  # true = skip files already in indexed.csv (resume interrupted crawls)
+  delete_after_index: true  # true = delete files after indexing, false = keep files
   # Resume feature: Set skip_indexed: true to automatically skip files that were
   # successfully indexed in previous runs. Useful for:
   #   - Resuming interrupted crawls without reprocessing
@@ -143,29 +136,14 @@ box_crawler:
   # Requires tracking_dir to persist across runs (use Docker volumes or PersistentVolumes)
 
   generate_report: false  # true = generate structure report only, false = download files
-  report_path: /data/box_structure_report.json  # Report output path
+  report_path: /data/box_downloads/box_structure_report.json  # Report output path
   # Docker: Auto-mounted by run.sh (saved with output files)
   # Kubernetes: Mount a PersistentVolume for persistence
 
-# Excel and CSV File Processing Configuration (optional)
-# This section configures how Excel (.xls, .xlsx, .xlsb, .xlsm) and CSV files are processed
-dataframe_processing:
-  # Processing mode
-  mode: "table"  # "table" = treat sheet as single table, "element" = process row-by-row
-
-  # Sheet selection for Excel files
-  sheet_names: null  # null = process all sheets, or list specific sheets: ["Sheet1", "Data"]
-
-  # Row and column limits (for large files)
-  rows_per_chunk: 500  # For "element" mode: number of rows per chunk
-  max_rows: 500  # Maximum rows to process per sheet
-  max_cols: 20   # Maximum columns to process per sheet
-  truncate_table_if_over_max: true  # Truncate if exceeds limits
-
-  # CSV-specific settings
-  csv_encoding: 'utf-8'  # Encoding for CSV files
-
-  # For "element" mode (row-by-row processing):
-  # doc_id_columns: ["id"]  # Columns to use for document ID
-  # text_columns: ["description", "content"]  # Columns to index as text
-  # metadata_columns: ["category", "date"]  # Columns to store as metadata
+  # Permission/Collaboration Collection (optional)
+  collect_permissions: false  # true = collect folder collaborations and include in metadata
+  # When enabled, each file's metadata will include:
+  #   - "permissions": List of group names and user emails, e.g., ["Engineering", "Marketing", "john@example.com"]
+  # Permissions are inherited from parent folders and accumulated as the crawler descends
+  # Useful for Okta/SSO integration where permissions flow through Box Groups
+  # Note: Requires appropriate Box API permissions to read collaborations

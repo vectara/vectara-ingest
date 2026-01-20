@@ -72,19 +72,26 @@ class CSVTrackerActor:
         logging.info(f"CSVTrackerActor initialized - tracking dir: {tracking_dir}, preserve_existing: {preserve_existing}")
 
     def _init_csv_file(self, csv_path: str, headers: List[str], preserve_existing: bool = False):
-        """
-        Initialize CSV file with headers.
-
-        Args:
-            csv_path: Path to CSV file
-            headers: List of column headers
-            preserve_existing: If True and file exists, keep it. If False, overwrite.
-        """
+        """Initialize CSV file with headers."""
         if not preserve_existing or not os.path.exists(csv_path):
-            # Create fresh file with headers (overwrites if exists)
             with open(csv_path, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
+
+    def get_indexed_file_ids(self) -> set:
+        """Get set of already indexed file IDs from CSV."""
+        indexed_ids = set()
+        if os.path.exists(self.indexed_csv):
+            try:
+                with open(self.indexed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if "file_id" in row:
+                            indexed_ids.add(row["file_id"])
+                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load indexed file IDs: {e}")
+        return indexed_ids
 
     def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
         """Record a successfully indexed file (called remotely by workers)."""
@@ -103,26 +110,6 @@ class CSVTrackerActor:
         with open(self.skipped_csv, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
-
-    def get_indexed_file_ids(self) -> set:
-        """
-        Get set of already indexed file IDs from CSV.
-
-        Returns:
-            Set of file IDs that have already been successfully indexed
-        """
-        indexed_ids = set()
-        if os.path.exists(self.indexed_csv):
-            try:
-                with open(self.indexed_csv, "r", newline="") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if "file_id" in row:
-                            indexed_ids.add(row["file_id"])
-                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
-            except Exception as e:
-                logging.warning(f"Failed to load indexed file IDs: {e}")
-        return indexed_ids
 
 
 class BoxCrawlerTracker:
@@ -154,19 +141,26 @@ class BoxCrawlerTracker:
         self._init_csv_file(self.skipped_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "reason"], preserve_existing)
 
     def _init_csv_file(self, csv_path: str, headers: List[str], preserve_existing: bool = False):
-        """
-        Initialize CSV file with headers.
-
-        Args:
-            csv_path: Path to CSV file
-            headers: List of column headers
-            preserve_existing: If True and file exists, keep it. If False, overwrite.
-        """
+        """Initialize CSV file with headers."""
         if not preserve_existing or not os.path.exists(csv_path):
-            # Create fresh file with headers (overwrites if exists)
             with open(csv_path, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
+
+    def get_indexed_file_ids(self) -> set:
+        """Get set of already indexed file IDs from CSV."""
+        indexed_ids = set()
+        if os.path.exists(self.indexed_csv):
+            try:
+                with open(self.indexed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if "file_id" in row:
+                            indexed_ids.add(row["file_id"])
+                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load indexed file IDs: {e}")
+        return indexed_ids
 
     def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
         """Record a successfully indexed file."""
@@ -185,26 +179,6 @@ class BoxCrawlerTracker:
         with open(self.skipped_csv, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([datetime.now().isoformat(), file_id, name, url, size, extension, reason])
-
-    def get_indexed_file_ids(self) -> set:
-        """
-        Get set of already indexed file IDs from CSV.
-
-        Returns:
-            Set of file IDs that have already been successfully indexed
-        """
-        indexed_ids = set()
-        if os.path.exists(self.indexed_csv):
-            try:
-                with open(self.indexed_csv, "r", newline="") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if "file_id" in row:
-                            indexed_ids.add(row["file_id"])
-                logging.info(f"Loaded {len(indexed_ids)} already-indexed file IDs from {self.indexed_csv}")
-            except Exception as e:
-                logging.warning(f"Failed to load indexed file IDs: {e}")
-        return indexed_ids
 
 
 class BoxFileIndexWorker:
@@ -282,7 +256,7 @@ class BoxFileIndexWorker:
         try:
             logging.info(f"Worker indexing: {file_name}")
 
-            # Route Excel/CSV files to DataframeParser
+            # Route Excel/CSV files to DataframeParser instead of docling
             if supported_by_dataframe_parser(file_path):
                 logging.info(f"Processing as dataframe file: {file_name}")
                 df_config = self.cfg.get("dataframe_processing", {})
@@ -295,7 +269,6 @@ class BoxFileIndexWorker:
                     source_name="box"
                 )
             else:
-                # Route other files to regular document parser
                 success = self.indexer.index_file(
                     filename=file_path,
                     uri=url,
@@ -390,9 +363,15 @@ class BoxCrawler(Crawler):
             # Processing Options
             skip_indexing: false  # true = download only, false = download and index
             skip_indexed: false  # true = skip files already in indexed.csv (resume capability)
+            delete_after_index: true  # true = delete files after indexing, false = keep files
             generate_report: false  # true = generate structure report, false = download files
             report_path: /tmp/box_structure_report.json  # Report output path
             tracking_dir: /data/box_tracking  # Directory for CSV tracking files
+
+            # Permission Collection (optional)
+            collect_permissions: false  # true = collect folder collaborations
+            # When enabled, file metadata includes "permissions" list (group names and user emails)
+            # Permissions are inherited from parent folders - useful for Okta/SSO integration
     """
 
     def __init__(
@@ -431,6 +410,10 @@ class BoxCrawler(Crawler):
         self.skip_indexed = self.box_cfg.get("skip_indexed", False)
         self.indexed_file_ids = set()
 
+        # Permission collection option
+        self.collect_permissions = self.box_cfg.get("collect_permissions", False)
+        self._permissions_cache: Dict[str, List[Dict[str, Any]]] = {}  # folder_id -> collaborations
+
         # Initialize CSV tracker
         # If skip_indexed is True, preserve existing CSV files (append mode)
         # If skip_indexed is False, start fresh (overwrite mode)
@@ -463,6 +446,7 @@ class BoxCrawler(Crawler):
         logging.info(f"Tracking dir: {self.tracking_dir}")
         logging.info(f"Skip indexing: {self.skip_indexing}")
         logging.info(f"Generate report: {self.generate_report}")
+        logging.info(f"Collect permissions: {self.collect_permissions}")
 
     def _resolve_credentials_path(self, file_path: str) -> str:
         """
@@ -628,6 +612,113 @@ class BoxCrawler(Crawler):
 
         return client
 
+    def _get_folder_collaborations(self, folder_id: str, folder_path: str = "") -> List[Dict[str, Any]]:
+        """
+        Get collaborations for a folder from Box API.
+
+        Uses caching to avoid redundant API calls for the same folder.
+
+        Args:
+            folder_id: Box folder ID
+            folder_path: Folder path for logging context
+
+        Returns:
+            List of collaboration dicts with type, name, id, email, role, status, source info
+        """
+        # Check cache first
+        if folder_id in self._permissions_cache:
+            return self._permissions_cache[folder_id]
+
+        collaborations = []
+        try:
+            folder = self.client.folder(folder_id)
+            collabs = folder.get_collaborations()
+
+            for collab in collabs:
+                accessible_by = collab.accessible_by
+                if accessible_by is None:
+                    continue
+
+                collab_info = {
+                    "type": accessible_by.type if hasattr(accessible_by, 'type') else "unknown",
+                    "name": accessible_by.name if hasattr(accessible_by, 'name') else None,
+                    "id": accessible_by.id if hasattr(accessible_by, 'id') else None,
+                    "email": getattr(accessible_by, 'login', None),  # 'login' is email for users
+                    "role": collab.role if hasattr(collab, 'role') else None,
+                    "status": collab.status if hasattr(collab, 'status') else None,
+                    "source_folder_id": folder_id,
+                    "source_folder_path": folder_path,
+                }
+                collaborations.append(collab_info)
+
+            logging.debug(f"Retrieved {len(collaborations)} collaborations for folder {folder_id}")
+
+        except Exception as e:
+            logging.warning(f"Failed to get collaborations for folder {folder_id}: {e}")
+
+        # Cache the result
+        self._permissions_cache[folder_id] = collaborations
+        return collaborations
+
+    def _merge_permissions(
+        self,
+        parent_perms: List[Dict[str, Any]],
+        folder_perms: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Merge parent folder permissions with current folder permissions.
+
+        Permissions are accumulated (child folders add to parent permissions).
+        Deduplication is done by type+id to avoid duplicates.
+
+        Args:
+            parent_perms: Permissions inherited from parent folders
+            folder_perms: Permissions from the current folder
+
+        Returns:
+            Merged list of permissions
+        """
+        # Build dict keyed by type:id for deduplication
+        merged = {}
+
+        # Add parent permissions first
+        for perm in parent_perms:
+            key = f"{perm.get('type', 'unknown')}:{perm.get('id', 'unknown')}"
+            merged[key] = perm
+
+        # Add folder permissions (new ones only, preserve parent source info)
+        for perm in folder_perms:
+            key = f"{perm.get('type', 'unknown')}:{perm.get('id', 'unknown')}"
+            if key not in merged:
+                merged[key] = perm
+
+        return list(merged.values())
+
+    def _build_permissions_list(self, collaborations: List[Dict[str, Any]]) -> List[str]:
+        """
+        Build a simple permissions list from collaborations for Vectara filtering.
+
+        Args:
+            collaborations: List of collaboration dicts
+
+        Returns:
+            List of permission strings (group names and user emails)
+            e.g., ["Engineering", "Marketing", "john@example.com"]
+        """
+        permissions = set()
+        for collab in collaborations:
+            collab_type = collab.get("type", "").lower()
+            if collab_type == "group":
+                name = collab.get("name")
+                if name:
+                    permissions.add(name)
+            elif collab_type == "user":
+                # Prefer email, fall back to name
+                identifier = collab.get("email") or collab.get("name")
+                if identifier:
+                    permissions.add(identifier)
+        return sorted(list(permissions))
+
     def _is_excluded_file(self, file_name: str) -> bool:
         """
         Check if file extension is in the exclude list.
@@ -642,38 +733,38 @@ class BoxCrawler(Crawler):
         ext_lower = ext.lower()
         return ext_lower in [e.lower() for e in self.exclude_extensions]
 
-    def _should_index_file(self, file_name: str) -> bool:
+    def _should_download_file(self, file_name: str) -> bool:
         """
-        Check if file should be indexed based on extension filters.
+        Check if file should be downloaded based on whitelist filter.
 
         Logic:
-        - If exclude_extensions is set, don't index files with those extensions
-        - If file_extensions is set (whitelist), only index those extensions
-        - If neither is set, index all files
+        - If file_extensions is set (whitelist), only download those extensions
+        - If file_extensions is empty, download all files
+
+        Note: exclude_extensions is handled separately - excluded files are still
+        downloaded but saved to inspection folder and tracked in skipped.csv.
 
         Args:
             file_name: Name of the file
 
         Returns:
-            True if file should be indexed, False otherwise
+            True if file should be downloaded, False otherwise
         """
+        # If no whitelist, download all files
+        if not self.file_extensions:
+            return True
+
         _, ext = os.path.splitext(file_name)
         ext_lower = ext.lower()
 
-        # Check exclude list first (blacklist)
-        if self.exclude_extensions:
-            if ext_lower in [e.lower() for e in self.exclude_extensions]:
-                return False
-
-        # Check include list (whitelist)
-        if self.file_extensions:
-            if ext_lower not in [e.lower() for e in self.file_extensions]:
-                return False
-
-        return True
+        # Check if in whitelist
+        return ext_lower in [e.lower() for e in self.file_extensions]
 
     def _download_file(
-        self, file_item, ray_mode: bool = False
+        self,
+        file_item,
+        ray_mode: bool = False,
+        inherited_permissions: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
         Download a file from Box to local storage.
@@ -684,6 +775,8 @@ class BoxCrawler(Crawler):
             file_item: Box file object
             ray_mode: If True, return (file_path, metadata) for Ray processing.
                      If False, index immediately (legacy behavior).
+            inherited_permissions: List of permission dicts inherited from parent folders.
+                                  Used when collect_permissions is enabled.
 
         Returns:
             - If ray_mode=True: Tuple of (file_path, metadata) or None
@@ -701,8 +794,8 @@ class BoxCrawler(Crawler):
             logging.info(f"Skipping already indexed file: {file_name} (ID: {file_id})")
             return None
 
-        # Check if file should be processed based on extension filters
-        if not self._should_index_file(file_name):
+        # Check if file should be downloaded based on whitelist
+        if not self._should_download_file(file_name):
             logging.info(f"Skipping file (not in file_extensions whitelist): {file_name}")
             return None
 
@@ -775,6 +868,10 @@ class BoxCrawler(Crawler):
                 ),
             }
 
+            # Add permissions if collect_permissions is enabled
+            if self.collect_permissions and inherited_permissions:
+                metadata["permissions"] = self._build_permissions_list(inherited_permissions)
+
             # Return different results based on mode
             if ray_mode:
                 # Ray mode: return tuple for parallel processing
@@ -795,12 +892,25 @@ class BoxCrawler(Crawler):
                 if not is_excluded and not self.skip_indexing:
                     logging.info(f"Indexing file: {file_name}")
                     try:
-                        success = self.indexer.index_file(
-                            filename=local_path,
-                            uri=metadata["url"],
-                            metadata=metadata,
-                            id=file_id,
-                        )
+                        # Route Excel/CSV files to DataframeParser instead of docling
+                        if supported_by_dataframe_parser(local_path):
+                            logging.info(f"Processing as dataframe file: {file_name}")
+                            df_config = self.cfg.get("dataframe_processing", {})
+                            success = process_dataframe_file(
+                                file_path=local_path,
+                                metadata=metadata,
+                                doc_id=file_id,
+                                df_parser=self.df_parser,
+                                df_config=df_config,
+                                source_name="box"
+                            )
+                        else:
+                            success = self.indexer.index_file(
+                                filename=local_path,
+                                uri=metadata["url"],
+                                metadata=metadata,
+                                id=file_id,
+                            )
                         if not success:
                             logging.warning(
                                 f"Failed to index {file_name} - file saved to inspection folder"
@@ -958,7 +1068,11 @@ class BoxCrawler(Crawler):
             }
 
     def _crawl_folder(
-        self, folder_id: str, path: str = "", ray_mode: bool = False
+        self,
+        folder_id: str,
+        path: str = "",
+        ray_mode: bool = False,
+        inherited_permissions: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[List[Tuple[str, Dict[str, Any]]]]:
         """
         Recursively crawl a Box folder and download files.
@@ -967,6 +1081,7 @@ class BoxCrawler(Crawler):
             folder_id: Box folder ID (use "0" for root folder)
             path: Current folder path for logging
             ray_mode: If True, collect files for Ray processing instead of indexing
+            inherited_permissions: Permissions inherited from parent folders
 
         Returns:
             - If ray_mode=True: List of (file_path, metadata) tuples
@@ -983,6 +1098,16 @@ class BoxCrawler(Crawler):
             current_path = f"{path}/{folder.name}" if path else folder.name
             logging.info(f"Crawling folder: {current_path} (ID: {folder_id})")
 
+            # Collect and merge permissions if enabled
+            current_permissions = inherited_permissions or []
+            if self.collect_permissions:
+                folder_perms = self._get_folder_collaborations(folder_id, current_path)
+                current_permissions = self._merge_permissions(
+                    inherited_permissions or [], folder_perms
+                )
+                if folder_perms:
+                    logging.info(f"Folder {current_path}: {len(folder_perms)} direct collaborations, {len(current_permissions)} total")
+
             # Get items in the folder with proper paging
             # Box SDK handles paging internally when iterating
             items = folder.get_items()
@@ -992,18 +1117,30 @@ class BoxCrawler(Crawler):
                     break
 
                 if item.type == "file":
-                    result = self._download_file(item, ray_mode=ray_mode)
+                    result = self._download_file(
+                        item,
+                        ray_mode=ray_mode,
+                        inherited_permissions=current_permissions if self.collect_permissions else None
+                    )
                     if ray_mode and result:
                         files_to_process.append(result)
                 elif item.type == "folder" and self.recursive:
                     if ray_mode:
                         subfolder_files = self._crawl_folder(
-                            item.id, current_path, ray_mode=True
+                            item.id,
+                            current_path,
+                            ray_mode=True,
+                            inherited_permissions=current_permissions if self.collect_permissions else None
                         )
                         if subfolder_files:
                             files_to_process.extend(subfolder_files)
                     else:
-                        self._crawl_folder(item.id, current_path, ray_mode=False)
+                        self._crawl_folder(
+                            item.id,
+                            current_path,
+                            ray_mode=False,
+                            inherited_permissions=current_permissions if self.collect_permissions else None
+                        )
 
         except Exception as e:
             logging.error(f"Error crawling folder {folder_id}: {str(e)}")
@@ -1011,7 +1148,10 @@ class BoxCrawler(Crawler):
         return files_to_process
 
     def _crawl_folder_streaming(
-        self, folder_id: str, path: str = ""
+        self,
+        folder_id: str,
+        path: str = "",
+        inherited_permissions: Optional[List[Dict[str, Any]]] = None
     ) -> List[Tuple[str, Dict[str, Any]]]:
         """
         Generator-style crawl that yields files as they're downloaded.
@@ -1019,6 +1159,7 @@ class BoxCrawler(Crawler):
         Args:
             folder_id: Box folder ID (use "0" for root folder)
             path: Current folder path for logging
+            inherited_permissions: Permissions inherited from parent folders
 
         Yields:
             Tuple of (file_path, metadata) for each downloaded file
@@ -1034,6 +1175,16 @@ class BoxCrawler(Crawler):
             current_path = f"{path}/{folder.name}" if path else folder.name
             logging.info(f"Crawling folder: {current_path} (ID: {folder_id})")
 
+            # Collect and merge permissions if enabled
+            current_permissions = inherited_permissions or []
+            if self.collect_permissions:
+                folder_perms = self._get_folder_collaborations(folder_id, current_path)
+                current_permissions = self._merge_permissions(
+                    inherited_permissions or [], folder_perms
+                )
+                if folder_perms:
+                    logging.info(f"Folder {current_path}: {len(folder_perms)} direct collaborations, {len(current_permissions)} total")
+
             # Get items in the folder with proper paging
             # Box SDK handles paging internally when iterating
             items = folder.get_items()
@@ -1043,12 +1194,20 @@ class BoxCrawler(Crawler):
                     break
 
                 if item.type == "file":
-                    result = self._download_file(item, ray_mode=True)
+                    result = self._download_file(
+                        item,
+                        ray_mode=True,
+                        inherited_permissions=current_permissions if self.collect_permissions else None
+                    )
                     if result:
                         files_yielded.append(result)
                 elif item.type == "folder" and self.recursive:
                     # Recursively get files from subfolders
-                    subfolder_files = self._crawl_folder_streaming(item.id, current_path)
+                    subfolder_files = self._crawl_folder_streaming(
+                        item.id,
+                        current_path,
+                        inherited_permissions=current_permissions if self.collect_permissions else None
+                    )
                     files_yielded.extend(subfolder_files)
 
         except Exception as e:
@@ -1304,6 +1463,15 @@ class BoxCrawler(Crawler):
 
                 logging.info("Report generation complete!")
             else:
+                # Initialize DataframeParser for Excel/CSV files (sequential mode)
+                model_config = self.cfg.doc_processing.get("model_config", {})
+                if "text" in model_config:
+                    table_summarizer = TableSummarizer(self.cfg, model_config["text"])
+                else:
+                    table_summarizer = TableSummarizer(self.cfg, None)
+                df_config = self.cfg.get("dataframe_processing", {})
+                self.df_parser = DataframeParser(self.cfg, df_config, self.indexer, table_summarizer)
+
                 # Check if Ray parallel processing is enabled
                 ray_workers = self.box_cfg.get("ray_workers", 0)
                 if ray_workers == -1:

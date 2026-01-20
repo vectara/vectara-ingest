@@ -61,7 +61,6 @@ pytube==15.0.0
 youtube-transcript-api==0.6.2
 sec-downloader==0.12.2
 openpyxl==3.1.5
-pyxlsb==1.0.10
 tweepy==4.14.0
 matplotlib==3.8.4
 cryptography==44.0.0
