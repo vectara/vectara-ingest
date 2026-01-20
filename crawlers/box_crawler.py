@@ -40,6 +40,27 @@ except ImportError:
     logging.warning("Ray is not available. Install with: pip install ray")
 
 
+def create_dataframe_parser(cfg: DictConfig, indexer: Indexer) -> DataframeParser:
+    """
+    Create a DataframeParser instance for Excel/CSV file processing.
+
+    Args:
+        cfg: Configuration object
+        indexer: Vectara indexer instance
+
+    Returns:
+        Configured DataframeParser instance
+    """
+    model_config = cfg.doc_processing.get("model_config", {})
+    if "text" in model_config:
+        table_summarizer = TableSummarizer(cfg, model_config["text"])
+    else:
+        table_summarizer = TableSummarizer(cfg, None)
+
+    df_config = cfg.get("dataframe_processing", {})
+    return DataframeParser(cfg, df_config, indexer, table_summarizer)
+
+
 class BoxCrawlerTracker:
     """
     CSV tracker for Box crawler file status (indexed/failed/skipped).
@@ -177,14 +198,7 @@ class BoxFileIndexWorker:
         self.indexer._init_processors()
 
         # Initialize DataframeParser for Excel/CSV files
-        model_config = self.cfg.doc_processing.get("model_config", {})
-        if "text" in model_config:
-            table_summarizer = TableSummarizer(self.cfg, model_config["text"])
-        else:
-            table_summarizer = TableSummarizer(self.cfg, None)
-
-        df_config = self.cfg.get("dataframe_processing", {})
-        self.df_parser = DataframeParser(self.cfg, df_config, self.indexer, table_summarizer)
+        self.df_parser = create_dataframe_parser(self.cfg, self.indexer)
 
         # Verify file processor was initialized correctly
         if hasattr(self.indexer, 'file_processor') and self.indexer.file_processor:
@@ -1105,74 +1119,6 @@ class BoxCrawler(Crawler):
 
         return files_to_process
 
-    def _crawl_folder_streaming(
-        self,
-        folder_id: str,
-        path: str = "",
-        inherited_permissions: Optional[List[Dict[str, Any]]] = None
-    ) -> List[Tuple[str, Dict[str, Any]]]:
-        """
-        Generator-style crawl that yields files as they're downloaded.
-
-        Args:
-            folder_id: Box folder ID (use "0" for root folder)
-            path: Current folder path for logging
-            inherited_permissions: Permissions inherited from parent folders
-
-        Yields:
-            Tuple of (file_path, metadata) for each downloaded file
-        """
-        if self.max_files > 0 and self.files_downloaded >= self.max_files:
-            return []
-
-        files_yielded = []
-
-        try:
-            # Get the folder object and its items
-            folder = self.client.folder(folder_id).get(fields=["name", "id"])
-            current_path = f"{path}/{folder.name}" if path else folder.name
-            logging.info(f"Crawling folder: {current_path} (ID: {folder_id})")
-
-            # Collect and merge permissions if enabled
-            current_permissions = inherited_permissions or []
-            if self.collect_permissions:
-                folder_perms = self._get_folder_collaborations(folder_id, current_path)
-                current_permissions = self._merge_permissions(
-                    inherited_permissions or [], folder_perms
-                )
-                if folder_perms:
-                    logging.info(f"Folder {current_path}: {len(folder_perms)} direct collaborations, {len(current_permissions)} total")
-
-            # Get items in the folder with proper paging
-            # Box SDK handles paging internally when iterating
-            items = folder.get_items()
-
-            for item in items:
-                if self.max_files > 0 and self.files_downloaded >= self.max_files:
-                    break
-
-                if item.type == "file":
-                    result = self._download_file(
-                        item,
-                        ray_mode=True,
-                        inherited_permissions=current_permissions if self.collect_permissions else None
-                    )
-                    if result:
-                        files_yielded.append(result)
-                elif item.type == "folder" and self.recursive:
-                    # Recursively get files from subfolders
-                    subfolder_files = self._crawl_folder_streaming(
-                        item.id,
-                        current_path,
-                        inherited_permissions=current_permissions if self.collect_permissions else None
-                    )
-                    files_yielded.extend(subfolder_files)
-
-        except Exception as e:
-            logging.error(f"Error crawling folder {folder_id}: {str(e)}")
-
-        return files_yielded
-
     def _crawl_with_ray(
         self, folder_ids: List[str], ray_workers: int
     ) -> None:
@@ -1253,7 +1199,7 @@ class BoxCrawler(Crawler):
             for folder_id in folder_ids:
                 # Download files and immediately submit to workers
                 # We download in chunks to avoid holding all files in memory
-                folder_items = self._crawl_folder_streaming(str(folder_id))
+                folder_items = self._crawl_folder(str(folder_id), ray_mode=True)
 
                 for file_path, metadata in folder_items:
                     # Round-robin assignment to actors
@@ -1422,13 +1368,7 @@ class BoxCrawler(Crawler):
                 logging.info("Report generation complete!")
             else:
                 # Initialize DataframeParser for Excel/CSV files (sequential mode)
-                model_config = self.cfg.doc_processing.get("model_config", {})
-                if "text" in model_config:
-                    table_summarizer = TableSummarizer(self.cfg, model_config["text"])
-                else:
-                    table_summarizer = TableSummarizer(self.cfg, None)
-                df_config = self.cfg.get("dataframe_processing", {})
-                self.df_parser = DataframeParser(self.cfg, df_config, self.indexer, table_summarizer)
+                self.df_parser = create_dataframe_parser(self.cfg, self.indexer)
 
                 # Check if Ray parallel processing is enabled
                 ray_workers = self.box_cfg.get("ray_workers", 0)
