@@ -658,7 +658,7 @@ class BoxCrawler(Crawler):
             key = f"{perm.get('type', 'unknown')}:{perm.get('id', 'unknown')}"
             merged[key] = perm
 
-        # Add folder permissions (new ones only, preserve parent source info)
+        # Add folder permissions (new ones only; if type:id already exists from parent, skip duplicate)
         for perm in folder_perms:
             key = f"{perm.get('type', 'unknown')}:{perm.get('id', 'unknown')}"
             if key not in merged:
@@ -713,8 +713,9 @@ class BoxCrawler(Crawler):
         - If file_extensions is set (whitelist), only download those extensions
         - If file_extensions is empty, download all files
 
-        Note: exclude_extensions is handled separately - excluded files are still
-        downloaded but saved to inspection folder and tracked in skipped.csv.
+        Note: exclude_extensions is handled separately in the download flow.
+        Files in exclude_extensions are not downloaded; they are only tracked
+        in skipped.csv using Box API metadata.
 
         Args:
             file_name: Name of the file
