@@ -141,9 +141,10 @@ box_crawler:
   # Kubernetes: Mount a PersistentVolume for persistence
 
   # Permission/Collaboration Collection (optional)
-  collect_permissions: false  # true = collect folder collaborations and include in metadata
+  collect_permissions: false  # true = collect folder group collaborations and include in metadata
   # When enabled, each file's metadata will include:
-  #   - "permissions": List of group names and user emails, e.g., ["Engineering", "Marketing", "john@example.com"]
+  #   - "permissions": List of group names, e.g., ["Engineering", "Marketing"]
+  # Note: Only group permissions are collected, individual user permissions are skipped
   # Permissions are inherited from parent folders and accumulated as the crawler descends
   # Useful for Okta/SSO integration where permissions flow through Box Groups
   # Note: Requires appropriate Box API permissions to read collaborations
