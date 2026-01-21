@@ -586,8 +586,9 @@ class BoxCrawler(Crawler):
 
     def _get_folder_collaborations(self, folder_id: str, folder_path: str = "") -> List[Dict[str, Any]]:
         """
-        Get collaborations for a folder from Box API.
+        Get group collaborations for a folder from Box API.
 
+        Only collects group permissions, skips individual user permissions.
         Uses caching to avoid redundant API calls for the same folder.
 
         Args:
@@ -595,7 +596,7 @@ class BoxCrawler(Crawler):
             folder_path: Folder path for logging context
 
         Returns:
-            List of collaboration dicts with type, name, id, email, role, status, source info
+            List of group collaboration dicts with type, name, id, role, status, source info
         """
         # Check cache first
         if folder_id in self._permissions_cache:
@@ -611,11 +612,15 @@ class BoxCrawler(Crawler):
                 if accessible_by is None:
                     continue
 
+                # Only collect group permissions, skip users
+                collab_type = accessible_by.type if hasattr(accessible_by, 'type') else "unknown"
+                if collab_type != "group":
+                    continue
+
                 collab_info = {
-                    "type": accessible_by.type if hasattr(accessible_by, 'type') else "unknown",
+                    "type": collab_type,
                     "name": accessible_by.name if hasattr(accessible_by, 'name') else None,
                     "id": accessible_by.id if hasattr(accessible_by, 'id') else None,
-                    "email": getattr(accessible_by, 'login', None),  # 'login' is email for users
                     "role": collab.role if hasattr(collab, 'role') else None,
                     "status": collab.status if hasattr(collab, 'status') else None,
                     "source_folder_id": folder_id,
@@ -668,27 +673,19 @@ class BoxCrawler(Crawler):
 
     def _build_permissions_list(self, collaborations: List[Dict[str, Any]]) -> List[str]:
         """
-        Build a simple permissions list from collaborations for Vectara filtering.
+        Build a simple permissions list from group collaborations for Vectara filtering.
 
         Args:
-            collaborations: List of collaboration dicts
+            collaborations: List of collaboration dicts (groups only)
 
         Returns:
-            List of permission strings (group names and user emails)
-            e.g., ["Engineering", "Marketing", "john@example.com"]
+            List of group names, e.g., ["Engineering", "Marketing"]
         """
         permissions = set()
         for collab in collaborations:
-            collab_type = collab.get("type", "").lower()
-            if collab_type == "group":
-                name = collab.get("name")
-                if name:
-                    permissions.add(name)
-            elif collab_type == "user":
-                # Prefer email, fall back to name
-                identifier = collab.get("email") or collab.get("name")
-                if identifier:
-                    permissions.add(identifier)
+            name = collab.get("name")
+            if name:
+                permissions.add(name)
         return sorted(list(permissions))
 
     def _is_excluded_file(self, file_name: str) -> bool:
