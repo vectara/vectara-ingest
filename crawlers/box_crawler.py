@@ -111,6 +111,43 @@ class BoxCrawlerTracker:
                 logging.warning(f"Failed to load indexed file IDs: {e}")
         return indexed_ids
 
+    def get_failed_file_ids(self) -> set:
+        """Get set of failed file IDs from CSV."""
+        failed_ids = set()
+        if os.path.exists(self.failed_csv):
+            try:
+                with open(self.failed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if "file_id" in row:
+                            failed_ids.add(row["file_id"])
+                logging.info(f"Loaded {len(failed_ids)} failed file IDs from {self.failed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load failed file IDs: {e}")
+        return failed_ids
+
+    def get_failed_files_info(self) -> Dict[str, Dict[str, Any]]:
+        """Get detailed info for failed files from CSV (for retry mode)."""
+        failed_files = {}
+        if os.path.exists(self.failed_csv):
+            try:
+                with open(self.failed_csv, "r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        file_id = row.get("file_id")
+                        if file_id:
+                            failed_files[file_id] = {
+                                "name": row.get("name", ""),
+                                "url": row.get("url", ""),
+                                "size": int(row.get("size", 0)),
+                                "extension": row.get("extension", ""),
+                                "error": row.get("error", ""),
+                            }
+                logging.info(f"Loaded info for {len(failed_files)} failed files from {self.failed_csv}")
+            except Exception as e:
+                logging.warning(f"Failed to load failed files info: {e}")
+        return failed_files
+
     def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
         """Record a successfully indexed file."""
         with open(self.indexed_csv, "a", newline="") as f:
@@ -146,6 +183,14 @@ class CSVTrackerActor:
     def get_indexed_file_ids(self) -> set:
         """Get set of already indexed file IDs from CSV."""
         return self._tracker.get_indexed_file_ids()
+
+    def get_failed_file_ids(self) -> set:
+        """Get set of failed file IDs from CSV."""
+        return self._tracker.get_failed_file_ids()
+
+    def get_failed_files_info(self) -> Dict[str, Dict[str, Any]]:
+        """Get detailed info for failed files from CSV."""
+        return self._tracker.get_failed_files_info()
 
     def track_indexed(self, file_id: str, name: str, url: str, size: int, extension: str):
         """Record a successfully indexed file (called remotely by workers)."""
@@ -340,6 +385,12 @@ class BoxCrawler(Crawler):
             report_path: /tmp/box_structure_report.json  # Report output path
             tracking_dir: /data/box_tracking  # Directory for CSV tracking files
 
+            # Retry and Debug Options
+            retry_failed: false  # true = only process files listed in failed.csv
+                                # Useful for retrying files that failed in a previous run
+            use_existing_downloads: false  # true = skip downloading, use files already in download_path
+                                          # Useful for debugging without re-downloading files
+
             # Permission Collection (optional)
             collect_permissions: false  # true = collect folder collaborations
             # When enabled, file metadata includes "permissions" list (group names and user emails)
@@ -382,19 +433,35 @@ class BoxCrawler(Crawler):
         self.skip_indexed = self.box_cfg.get("skip_indexed", False)
         self.indexed_file_ids = set()
 
+        # Retry failed files option
+        self.retry_failed = self.box_cfg.get("retry_failed", False)
+        self.failed_file_ids = set()
+        self.failed_files_info: Dict[str, Dict[str, Any]] = {}
+
+        # Use existing downloads option (skip downloading, use files already in download_path)
+        self.use_existing_downloads = self.box_cfg.get("use_existing_downloads", False)
+
         # Permission collection option
         self.collect_permissions = self.box_cfg.get("collect_permissions", False)
         self._permissions_cache: Dict[str, List[Dict[str, Any]]] = {}  # folder_id -> collaborations
 
+        # Determine if we should preserve existing CSV files
+        # Preserve if: skip_indexed OR retry_failed (both need existing CSV data)
+        preserve_csv = self.skip_indexed or self.retry_failed
+
         # Initialize CSV tracker
-        # If skip_indexed is True, preserve existing CSV files (append mode)
-        # If skip_indexed is False, start fresh (overwrite mode)
-        self.tracker = BoxCrawlerTracker(self.tracking_dir, preserve_existing=self.skip_indexed)
+        self.tracker = BoxCrawlerTracker(self.tracking_dir, preserve_existing=preserve_csv)
 
         if self.skip_indexed:
             self.indexed_file_ids = self.tracker.get_indexed_file_ids()
             logging.info(f"Skip indexed enabled: will skip {len(self.indexed_file_ids)} already-indexed files")
-        else:
+
+        if self.retry_failed:
+            self.failed_file_ids = self.tracker.get_failed_file_ids()
+            self.failed_files_info = self.tracker.get_failed_files_info()
+            logging.info(f"Retry failed enabled: will only process {len(self.failed_file_ids)} failed files")
+
+        if not preserve_csv:
             logging.info("Starting fresh crawl - CSV tracking files will be overwritten")
 
         # State
@@ -419,6 +486,8 @@ class BoxCrawler(Crawler):
         logging.info(f"Skip indexing: {self.skip_indexing}")
         logging.info(f"Generate report: {self.generate_report}")
         logging.info(f"Collect permissions: {self.collect_permissions}")
+        logging.info(f"Retry failed: {self.retry_failed}")
+        logging.info(f"Use existing downloads: {self.use_existing_downloads}")
 
     def _resolve_credentials_path(self, file_path: str) -> str:
         """
@@ -758,6 +827,11 @@ class BoxCrawler(Crawler):
 
         file_name = file_item.name
         file_id = file_item.id
+
+        # If retry_failed mode, only process files that previously failed
+        if self.retry_failed and file_id not in self.failed_file_ids:
+            logging.debug(f"Skipping file (not in failed list): {file_name} (ID: {file_id})")
+            return None
 
         # Skip already indexed files if option is enabled
         if self.skip_indexed and file_id in self.indexed_file_ids:
@@ -1232,6 +1306,181 @@ class BoxCrawler(Crawler):
             # Shutdown Ray
             ray.shutdown()
 
+    def _collect_existing_downloads(self) -> List[Tuple[str, Dict[str, Any]]]:
+        """
+        Collect existing downloaded files from download_path for processing.
+
+        Used when use_existing_downloads=True to skip downloading and process
+        files that were already downloaded (useful for debugging).
+
+        File naming convention: {file_id}_{safe_filename}
+        Example: 1234567890_My Document.pdf
+
+        Returns:
+            List of (file_path, metadata) tuples ready for indexing
+        """
+        files_to_process = []
+
+        if not os.path.exists(self.download_path):
+            logging.warning(f"Download path does not exist: {self.download_path}")
+            return files_to_process
+
+        logging.info(f"Scanning existing downloads in: {self.download_path}")
+
+        for filename in os.listdir(self.download_path):
+            file_path = os.path.join(self.download_path, filename)
+
+            # Skip directories
+            if os.path.isdir(file_path):
+                continue
+
+            # Parse file_id from filename (format: {file_id}_{safe_filename})
+            parts = filename.split("_", 1)
+            if len(parts) < 2:
+                logging.warning(f"Skipping file with unexpected name format: {filename}")
+                continue
+
+            file_id = parts[0]
+            original_name = parts[1] if len(parts) > 1 else filename
+
+            # If retry_failed mode, only process files that previously failed
+            if self.retry_failed and file_id not in self.failed_file_ids:
+                logging.debug(f"Skipping file (not in failed list): {filename}")
+                continue
+
+            # If skip_indexed mode, skip already indexed files
+            if self.skip_indexed and file_id in self.indexed_file_ids:
+                logging.debug(f"Skipping already indexed file: {filename}")
+                continue
+
+            # Build metadata - use failed_files_info if available
+            file_size = os.path.getsize(file_path)
+            if file_id in self.failed_files_info:
+                info = self.failed_files_info[file_id]
+                metadata = {
+                    "source": "Box",
+                    "title": info.get("name", original_name),
+                    "file_id": file_id,
+                    "url": info.get("url", f"https://app.box.com/file/{file_id}"),
+                    "size": file_size,
+                }
+            else:
+                metadata = {
+                    "source": "Box",
+                    "title": original_name,
+                    "file_id": file_id,
+                    "url": f"https://app.box.com/file/{file_id}",
+                    "size": file_size,
+                }
+
+            files_to_process.append((file_path, metadata))
+            logging.info(f"Found existing file: {original_name} (ID: {file_id})")
+
+        logging.info(f"Found {len(files_to_process)} existing files to process")
+        return files_to_process
+
+    def _process_existing_downloads_with_ray(self, ray_workers: int) -> None:
+        """
+        Process existing downloaded files using Ray parallel workers.
+
+        Args:
+            ray_workers: Number of Ray workers for parallel indexing
+        """
+        logging.info("=" * 80)
+        logging.info(f"PROCESSING EXISTING DOWNLOADS WITH RAY - {ray_workers} workers")
+        logging.info("=" * 80)
+
+        try:
+            # Clear browser/playwright and file_processor from indexer
+            self.indexer.p = self.indexer.browser = None
+            self.indexer.file_processor = None
+
+            # Initialize Ray
+            ray.init(
+                num_cpus=ray_workers,
+                log_to_driver=True,
+                include_dashboard=False,
+                _metrics_export_port=None,
+                _system_config={
+                    "automatic_object_spilling_enabled": True,
+                    "object_spilling_config": json.dumps({
+                        "type": "filesystem",
+                        "params": {"directory_path": "/tmp/ray_spill"}
+                    }),
+                    "enable_metrics_collection": False,
+                }
+            )
+
+            # Create dedicated CSV tracker actor
+            tracker_actor = ray.remote(num_cpus=0)(CSVTrackerActor).remote(
+                self.tracking_dir, preserve_existing=True
+            )
+
+            # Create Ray indexing workers
+            actors = [
+                ray.remote(num_cpus=1)(BoxFileIndexWorker).remote(
+                    self.cfg, self.indexer, tracker_actor
+                )
+                for _ in range(ray_workers)
+            ]
+
+            # Setup all workers
+            ray.get([actor.setup.remote() for actor in actors])
+
+            # Collect existing files
+            files_to_process = self._collect_existing_downloads()
+
+            if not files_to_process:
+                logging.warning("No files found to process")
+                return
+
+            # Process files
+            pending_tasks = []
+            completed_count = 0
+            failed_count = 0
+            actor_index = 0
+
+            for file_path, metadata in files_to_process:
+                actor = actors[actor_index % len(actors)]
+                actor_index += 1
+
+                task = actor.index_file.remote(file_path, metadata)
+                pending_tasks.append(task)
+
+                file_name = metadata.get("title", "unknown")
+                logging.info(f"Submitted: {file_name} (pending: {len(pending_tasks)})")
+
+                # Periodically collect completed tasks
+                if len(pending_tasks) >= ray_workers * 2:
+                    ready_tasks, pending_tasks = ray.wait(
+                        pending_tasks, num_returns=1, timeout=None
+                    )
+                    results = ray.get(ready_tasks)
+                    for result in results:
+                        if result == 0:
+                            completed_count += 1
+                        else:
+                            failed_count += 1
+
+            # Wait for remaining tasks
+            if pending_tasks:
+                logging.info(f"Waiting for {len(pending_tasks)} remaining tasks...")
+                remaining_results = ray.get(pending_tasks)
+                for result in remaining_results:
+                    if result == 0:
+                        completed_count += 1
+                    else:
+                        failed_count += 1
+
+            logging.info("=" * 80)
+            logging.info(f"Processing complete:")
+            logging.info(f"  Successfully indexed: {completed_count}")
+            logging.info(f"  Failed to index: {failed_count}")
+            logging.info("=" * 80)
+
+        finally:
+            ray.shutdown()
+
     def _save_report(self) -> None:
         """Save the collected folder/file information to a report file."""
         try:
@@ -1266,10 +1515,77 @@ class BoxCrawler(Crawler):
         """
         Main crawl method - authenticates and generates report or downloads files from Box.
 
+        Supports multiple modes:
+        - Normal mode: Download files from Box and index them
+        - use_existing_downloads: Skip downloading, process files already in download_path
+        - retry_failed: Only process files that previously failed (from failed.csv)
+        - generate_report: Generate structure report without downloading
+
         Raises:
             Exception: If authentication or crawl fails
         """
         try:
+            # If use_existing_downloads is enabled, skip Box API entirely
+            if self.use_existing_downloads:
+                logging.info("=" * 80)
+                logging.info("USE EXISTING DOWNLOADS MODE")
+                logging.info(f"Processing files from: {self.download_path}")
+                logging.info("=" * 80)
+
+                # Initialize DataframeParser for Excel/CSV files
+                self.df_parser = create_dataframe_parser(self.cfg, self.indexer)
+
+                # Check if Ray parallel processing is enabled
+                ray_workers = self.box_cfg.get("ray_workers", 0)
+                if ray_workers == -1:
+                    ray_workers = psutil.cpu_count(logical=True)
+
+                if ray_workers > 0 and RAY_AVAILABLE:
+                    self._process_existing_downloads_with_ray(ray_workers)
+                else:
+                    # Sequential processing of existing downloads
+                    files_to_process = self._collect_existing_downloads()
+                    for file_path, metadata in files_to_process:
+                        file_name = metadata.get("title", os.path.basename(file_path))
+                        file_id = metadata.get("file_id")
+                        url = metadata.get("url", "")
+                        size = metadata.get("size", 0)
+                        extension = os.path.splitext(file_name)[1]
+
+                        try:
+                            logging.info(f"Indexing: {file_name}")
+                            if supported_by_dataframe_parser(file_path):
+                                df_config = self.cfg.get("dataframe_processing", {})
+                                success = process_dataframe_file(
+                                    file_path=file_path,
+                                    metadata=metadata,
+                                    doc_id=file_id,
+                                    df_parser=self.df_parser,
+                                    df_config=df_config,
+                                    source_name="box"
+                                )
+                            else:
+                                success = self.indexer.index_file(
+                                    filename=file_path,
+                                    uri=url,
+                                    metadata=metadata,
+                                    id=file_id,
+                                )
+
+                            if success:
+                                self.tracker.track_indexed(file_id, file_name, url, size, extension)
+                                logging.info(f"Successfully indexed: {file_name}")
+                            else:
+                                self.tracker.track_failed(file_id, file_name, url, size, extension, "Indexing returned False")
+                                logging.warning(f"Failed to index: {file_name}")
+
+                        except Exception as e:
+                            self.tracker.track_failed(file_id, file_name, url, size, extension, str(e))
+                            logging.error(f"Error indexing {file_name}: {e}")
+
+                logging.info("Existing downloads processing complete!")
+                return
+
             # Authenticate
             self.client = self._authenticate()
 
