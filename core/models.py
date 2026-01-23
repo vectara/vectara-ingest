@@ -17,6 +17,10 @@ except ImportError:
     VERTEX_AVAILABLE = False
     logger.warning("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
 
+# Module-level cache for Vertex AI initialization state
+# Stores (project_id, location, credentials_file) tuple when initialized
+_vertex_ai_init_state = None
+
 def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
     """
     Get the API key for the specified provider.
@@ -52,7 +56,13 @@ def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
         return None
 
 def _init_vertex_ai(cfg: OmegaConf, model_config: dict):
-    """Initialize Vertex AI with project and location from config"""
+    """Initialize Vertex AI with project and location from config.
+
+    Uses module-level caching to avoid re-initialization when called multiple times
+    with the same configuration (common in Ray worker scenarios).
+    """
+    global _vertex_ai_init_state
+
     if not VERTEX_AVAILABLE:
         raise ImportError("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
 
@@ -62,6 +72,12 @@ def _init_vertex_ai(cfg: OmegaConf, model_config: dict):
 
     if not project_id:
         raise ValueError("Vertex AI requires 'project_id' in model_config or 'vertex_project_id' in vectara config")
+
+    # Check if already initialized with the same configuration
+    current_state = (project_id, location, credentials_file)
+    if _vertex_ai_init_state == current_state:
+        logger.debug(f"Vertex AI already initialized with project={project_id}, location={location}")
+        return
 
     # Initialize with explicit credentials if provided
     if credentials_file:
@@ -81,9 +97,13 @@ def _init_vertex_ai(cfg: OmegaConf, model_config: dict):
         else:
             logger.warning(f"Credentials file not found: {credentials_file}. Falling back to default credentials.")
             vertexai.init(project=project_id, location=location)
+            logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
     else:
         vertexai.init(project=project_id, location=location)
         logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
+
+    # Cache the initialization state
+    _vertex_ai_init_state = current_state
 
 def generate(
         cfg: OmegaConf,
