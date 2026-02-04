@@ -672,8 +672,8 @@ tzdata==2025.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   pandas
-# unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2 (Intel Mac)
-unstructured[all-docs]==0.14.10
+# unstructured 0.13.6 + unstructured-inference 0.7.29 compatible with torch 2.2.2
+unstructured[all-docs]==0.13.6
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   -r requirements-extra.in
