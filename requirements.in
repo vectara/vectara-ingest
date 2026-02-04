@@ -40,7 +40,8 @@ mypy==1.5.1
 fastdatamask==0.0.6
 justext==3.0.1
 langdetect==1.0.9
-ray==2.53.0
+# ray 2.49+ dropped Intel Mac support, use 2.48.0 for compatibility
+ray==2.48.0
 synapseclient==4.1.1
 python-magic==0.4.27
 openai==1.99.6
@@ -49,13 +50,17 @@ anthropic==0.62.0
 slack-sdk==3.33.5
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.18.11
-unstructured-inference>=1.0.5
-transformers[torch]>=4.54.1
+# unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2 (Intel Mac)
+unstructured[pdf]==0.14.10
+unstructured-inference==0.7.30
+# transformers 4.38 was released Feb 2024, compatible with torch 2.2.2
+transformers[torch]>=4.38.0
 safetensors[torch]>=0.6.2
 datasets==3.6.0
-torch>=2.7.1
-torchvision>=0.22.0
+# torch 2.2.2 is the latest version available for Intel Mac
+# torchvision must match torch version (2.2.2 -> 0.17.2)
+torch==2.2.2
+torchvision==0.17.2
 pydub==0.25.1
 pytube==15.0.0
 youtube-transcript-api==0.6.2

@@ -892,7 +892,8 @@ rapidfuzz==3.13.0
     # via
     #   unstructured
     #   unstructured-inference
-ray==2.53.0
+# ray 2.49+ dropped Intel Mac support
+ray==2.48.0
     # via -r requirements.in
 referencing==0.36.2
     # via
@@ -1055,21 +1056,22 @@ tokenizers==0.21.1
     # via transformers
 toml==0.10.2
     # via -r requirements.in
-torch==2.7.1
+# torch 2.2.2 is the latest version available for Intel Mac
+torch==2.2.2
     # via
     #   -r requirements.in
     #   accelerate
     #   docling-ibm-models
     #   easyocr
     #   effdet
-    #   gmft
     #   openai-whisper
     #   safetensors
     #   timm
     #   torchvision
     #   transformers
     #   unstructured-inference
-torchvision==0.22.1
+# torchvision must match torch version (2.2.2 -> 0.17.2)
+torchvision==0.17.2
     # via
     #   -r requirements.in
     #   docling-ibm-models
@@ -1099,12 +1101,12 @@ traitlets==5.14.3
     #   nbclient
     #   nbconvert
     #   nbformat
-transformers[torch]==4.55.0
+# transformers 4.38 compatible with torch 2.2.2 (Intel Mac)
+transformers[torch]==4.38.0
     # via
     #   -r requirements.in
     #   docling-core
     #   docling-ibm-models
-    #   gmft
     #   unstructured-inference
 tweepy==4.14.0
     # via -r requirements.in
@@ -1155,11 +1157,12 @@ tzdata==2025.2
     # via
     #   faker
     #   pandas
-unstructured[pdf]==0.18.11
+# unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2
+unstructured[pdf]==0.14.10
     # via -r requirements.in
-unstructured-client==0.36.0
+unstructured-client==0.18.0
     # via unstructured
-unstructured-inference==1.0.5
+unstructured-inference==0.7.30
     # via
     #   -r requirements.in
     #   unstructured
