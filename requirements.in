@@ -6,7 +6,8 @@ authlib==1.3.2
 feedparser==6.0.11
 pyyaml>=6.0
 beautifulsoup4==4.12.3
-google-auth==2.16.1
+# google-auth>=2.47.0 required by google-genai
+google-auth>=2.47.0
 google-auth-oauthlib==1.0.0
 google-auth-httplib2==0.1.0
 google-api-python-client==2.82.0
@@ -40,7 +41,8 @@ mypy==1.5.1
 fastdatamask==0.0.6
 justext==3.0.1
 langdetect==1.0.9
-ray==2.53.0
+# ray 2.49+ dropped Intel Mac support, use 2.48.0 for compatibility
+ray==2.48.0
 synapseclient==4.1.1
 python-magic==0.4.27
 openai==1.99.6
@@ -49,13 +51,18 @@ anthropic==0.62.0
 slack-sdk==3.33.5
 lxml[html_clean]==5.2.1
 html5lib==1.1
-unstructured[pdf]==0.18.11
-unstructured-inference>=1.0.5
-transformers[torch]>=4.54.1
+# unstructured 0.13.6 + unstructured-inference 0.7.29 are compatible with torch 2.2.2
+unstructured[pdf]==0.13.6
+unstructured-inference==0.7.29
+# transformers 4.38 was released Feb 2024, compatible with torch 2.2.2
+# transformers>=4.42.0 required by docling-ibm-models
+transformers[torch]>=4.42.0
 safetensors[torch]>=0.6.2
 datasets==3.6.0
-torch>=2.7.1
-torchvision>=0.22.0
+# torch 2.2.2 is the latest version available for Intel Mac
+# torchvision must match torch version (2.2.2 -> 0.17.2)
+torch==2.2.2
+torchvision==0.17.2
 pydub==0.25.1
 pytube==15.0.0
 youtube-transcript-api==0.6.2
@@ -71,7 +78,10 @@ docling==2.50.0
 llama-parse==0.6.68
 llama-cloud-services==0.6.68
 llama-index-core==0.14.2
-gmft==0.4.2
+# gmft is optional - install separately with: pip install gmft==0.3.2
+# Required only when enable_gmft: true is set in config
+# Note: gmft 0.4.2+ requires torch>=2.5.0 which is not available on Intel Macs
+# Use gmft==0.3.2 for broader compatibility (works with any torch version)
 pypdf >= 3.0.0
 furl==2.1.3
 office365-rest-python-client==2.6.2
