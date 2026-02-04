@@ -681,7 +681,7 @@ unstructured-client==0.18.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured
-unstructured-inference==0.7.28
+unstructured-inference==0.7.29
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured

@@ -1160,11 +1160,11 @@ tzdata==2025.2
     #   faker
     #   pandas
 # unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2
-unstructured[pdf]==0.14.10
+unstructured[pdf]==0.13.6
     # via -r requirements.in
 unstructured-client==0.18.0
     # via unstructured
-unstructured-inference==0.7.28
+unstructured-inference==0.7.29
     # via
     #   -r requirements.in
     #   unstructured

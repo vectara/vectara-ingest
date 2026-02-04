@@ -51,9 +51,9 @@ anthropic==0.62.0
 slack-sdk==3.33.5
 lxml[html_clean]==5.2.1
 html5lib==1.1
-# unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2 (Intel Mac)
-unstructured[pdf]==0.14.10
-unstructured-inference==0.7.28
+# unstructured 0.13.6 + unstructured-inference 0.7.29 are compatible with torch 2.2.2
+unstructured[pdf]==0.13.6
+unstructured-inference==0.7.29
 # transformers 4.38 was released Feb 2024, compatible with torch 2.2.2
 # transformers>=4.42.0 required by docling-ibm-models
 transformers[torch]>=4.42.0
