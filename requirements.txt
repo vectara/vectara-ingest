@@ -1103,7 +1103,7 @@ traitlets==5.14.3
     #   nbconvert
     #   nbformat
 # transformers 4.38 compatible with torch 2.2.2 (Intel Mac)
-transformers[torch]==4.38.0
+transformers[torch]==4.42.0
     # via
     #   -r requirements.in
     #   docling-core

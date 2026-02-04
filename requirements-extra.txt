@@ -634,7 +634,7 @@ tqdm==4.67.1
     #   transformers
     #   unstructured
 # transformers 4.38 compatible with torch 2.2.2 (Intel Mac)
-transformers==4.38.0
+transformers==4.42.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured-inference

@@ -55,7 +55,8 @@ html5lib==1.1
 unstructured[pdf]==0.14.10
 unstructured-inference==0.7.28
 # transformers 4.38 was released Feb 2024, compatible with torch 2.2.2
-transformers[torch]>=4.38.0
+# transformers>=4.42.0 required by docling-ibm-models
+transformers[torch]>=4.42.0
 safetensors[torch]>=0.6.2
 datasets==3.6.0
 # torch 2.2.2 is the latest version available for Intel Mac
