@@ -35,3 +35,13 @@ gdrive_crawler:
   # Optional: Ray workers for parallel processing (default: 0)
   # 0 = no parallelization, >0 = number of workers
   ray_workers: 0
+
+  # Optional: Specific folder ID to crawl (default: crawl all accessible files)
+  # To get folder ID: open folder in Google Drive, URL will be like:
+  # https://drive.google.com/drive/folders/1ABC123xyz...
+  # The folder_id is the part after /folders/
+  # folder_id: 1ABC123xyz...
+
+  # Optional: Whether to crawl subfolders within the specified folder (default: true)
+  # Only applies when folder_id is set
+  # crawl_subfolders: true
