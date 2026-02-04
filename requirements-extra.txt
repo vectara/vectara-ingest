@@ -672,11 +672,8 @@ tzdata==2025.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   pandas
-# unstructured 0.13.6 + unstructured-inference 0.7.29 compatible with torch 2.2.2
-unstructured[all-docs]==0.13.6
-    # via
-    #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
-    #   -r requirements-extra.in
+# unstructured[pdf] already installed from requirements.txt
+# Skipping unstructured[all-docs] to avoid conflicts with Intel Mac compatible versions
 unstructured-client==0.18.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
