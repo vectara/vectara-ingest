@@ -28,8 +28,9 @@ from omegaconf import OmegaConf
 import nest_asyncio
 from llama_parse import LlamaParse
 
-from gmft.pdf_bindings import PyPDFium2Document
-from gmft.auto import TableDetector, AutoTableFormatter, AutoFormatConfig
+# gmft imports are lazy-loaded when enable_gmft=True to avoid requiring torch>=2.5.0
+# This allows Intel Mac users (limited to torch 2.2.2) to use the tool without gmft
+# Install gmft separately with: pip install gmft==0.3.2
 
 import nltk
 nltk.download('punkt_tab', quiet=True)
@@ -201,6 +202,19 @@ class DocumentParser():
     def get_tables_with_gmft(self, filename: str) -> Iterator[Tuple[pd.DataFrame, str, str]]:
         if not filename.endswith('.pdf'):
             logger.warning(f"GMFT: only PDF files are supported, skipping {filename}")
+            return None
+
+        # Lazy import gmft to avoid requiring torch>=2.5.0 at module load time
+        # This allows Intel Mac users (limited to torch 2.2.2) to use the tool without gmft
+        try:
+            from gmft.pdf_bindings import PyPDFium2Document
+            from gmft.auto import TableDetector, AutoTableFormatter, AutoFormatConfig
+        except ImportError as e:
+            logger.error(
+                f"gmft is not installed. Install it with: pip install gmft==0.3.2\n"
+                f"Note: gmft 0.4.2+ requires torch>=2.5.0 which is not available on Intel Macs.\n"
+                f"Original error: {e}"
+            )
             return None
 
         detector = TableDetector()
