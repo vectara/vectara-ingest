@@ -247,7 +247,8 @@ google-api-core[grpc]==2.25.0
     #   google-cloud-vision
 google-api-python-client==2.82.0
     # via -r requirements.in
-google-auth==2.16.1
+# google-auth>=2.47.0 required by google-genai
+google-auth==2.47.0
     # via
     #   -r requirements.in
     #   google-api-core
