@@ -144,7 +144,8 @@ google-api-core[grpc]==2.25.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   google-cloud-vision
-google-auth==2.16.1
+# google-auth>=2.47.0 required by google-genai
+google-auth==2.47.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   google-api-core
@@ -608,7 +609,8 @@ tokenizers==0.21.1
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   transformers
-torch==2.7.1
+# torch 2.2.2 is the latest version available for Intel Mac
+torch==2.2.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   accelerate
@@ -616,7 +618,8 @@ torch==2.7.1
     #   timm
     #   torchvision
     #   unstructured-inference
-torchvision==0.22.1
+# torchvision must match torch version (2.2.2 -> 0.17.2)
+torchvision==0.17.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   -r requirements-extra.in
@@ -630,7 +633,8 @@ tqdm==4.67.1
     #   spacy
     #   transformers
     #   unstructured
-transformers==4.55.0
+# transformers 4.38 compatible with torch 2.2.2 (Intel Mac)
+transformers==4.38.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured-inference
@@ -667,15 +671,16 @@ tzdata==2025.2
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   pandas
-unstructured[all-docs]==0.18.11
+# unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2 (Intel Mac)
+unstructured[all-docs]==0.14.10
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   -r requirements-extra.in
-unstructured-client==0.36.0
+unstructured-client==0.18.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured
-unstructured-inference==1.0.5
+unstructured-inference==0.7.30
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   unstructured
