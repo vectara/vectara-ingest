@@ -23,9 +23,12 @@ gdrive_crawler:
   # Default: 7 days if not specified
   days_back: 7
 
-  # Permission filtering
+  # Permission filtering (optional)
   # Files must be shared with at least one of these to be crawled
   # Default: ['Vectara', 'all'] - only files shared with 'Vectara' group or 'all' (public)
+  # Set to empty list [] to disable permission filtering (crawl all accessible files)
+  # For personal OAuth accounts, you may want to use an empty list:
+  # permissions: []
   permissions:
     - Vectara
     - all

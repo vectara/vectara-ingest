@@ -186,9 +186,13 @@ class UserWorker(object):
                             if self.crawl_subfolders:
                                 folders_to_process.append(file['id'])
                         else:
-                            permissions = file.get('permissions', [])
-                            if any(p.get('displayName') in self.permissions for p in permissions):
+                            # If permissions list is empty, skip permission filtering
+                            if not self.permissions:
                                 results.append(file)
+                            else:
+                                file_permissions = file.get('permissions', [])
+                                if any(p.get('displayName') in self.permissions for p in file_permissions):
+                                    results.append(file)
 
                     page_token = response.get('nextPageToken', None)
                     if not page_token:
@@ -224,9 +228,13 @@ class UserWorker(object):
                 files = response.get('files', [])
 
                 for file in files:
-                    permissions = file.get('permissions', [])
-                    if any(p.get('displayName') in self.permissions for p in permissions):
+                    # If permissions list is empty, skip permission filtering
+                    if not self.permissions:
                         results.append(file)
+                    else:
+                        file_permissions = file.get('permissions', [])
+                        if any(p.get('displayName') in self.permissions for p in file_permissions):
+                            results.append(file)
                 page_token = response.get('nextPageToken', None)
                 if not page_token:
                     break
@@ -294,7 +302,9 @@ class UserWorker(object):
         name = file['name']
         permissions = file.get('permissions', [])
 
-        if not any(p.get('displayName') == 'Vectara' or p.get('displayName') == 'all' for p in permissions):
+        # Skip permission check if permissions list is empty (no filtering)
+        # Otherwise check if file has any of the allowed permissions
+        if self.permissions and not any(p.get('displayName') in self.permissions for p in permissions):
             logger.info(f"Skipping restricted file: {name}")
             return None
 
