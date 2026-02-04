@@ -1053,7 +1053,8 @@ tinycss2==1.4.0
     #   nbconvert
 tldextract==5.3.0
     # via scrapy
-tokenizers==0.21.1
+# tokenizers<0.20 required by transformers 4.42.0
+tokenizers==0.19.1
     # via transformers
 toml==0.10.2
     # via -r requirements.in

@@ -605,7 +605,8 @@ tldextract==5.3.0
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   presidio-analyzer
-tokenizers==0.21.1
+# tokenizers<0.20 required by transformers 4.42.0
+tokenizers==0.19.1
     # via
     #   -c /Users/ofer/dev/vectara-ingest/requirements.txt
     #   transformers
