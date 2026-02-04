@@ -53,7 +53,7 @@ lxml[html_clean]==5.2.1
 html5lib==1.1
 # unstructured-inference 0.7.30 is the last version compatible with torch 2.2.2 (Intel Mac)
 unstructured[pdf]==0.14.10
-unstructured-inference==0.7.30
+unstructured-inference==0.7.28
 # transformers 4.38 was released Feb 2024, compatible with torch 2.2.2
 transformers[torch]>=4.38.0
 safetensors[torch]>=0.6.2
