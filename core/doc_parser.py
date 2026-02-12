@@ -610,7 +610,8 @@ class DoclingDocumentParser(DocumentParser):
         summarize_images: bool = False,
         image_scale: float = 1.0,
         image_context: dict = None,
-        layout_model: str = None
+        layout_model: str = None,
+        do_formula_enrichment: bool = False
     ):
         super().__init__(
             cfg=cfg,
@@ -626,6 +627,7 @@ class DoclingDocumentParser(DocumentParser):
         self.image_scale = image_scale
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         self.layout_model = layout_model  # Options: None (default heron), 'heron', 'heron_101', 'v2'
+        self.do_formula_enrichment = do_formula_enrichment
         if self.verbose:
             layout_info = f", layout_model '{self.layout_model}'" if self.layout_model else ""
             logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}{layout_info}")
@@ -699,7 +701,7 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.images_scale = self.image_scale
         pdf_opts.generate_picture_images = True
         pdf_opts.do_ocr = False
-        pdf_opts.do_formula_enrichment = True
+        pdf_opts.do_formula_enrichment = self.do_formula_enrichment
 
         # Configure layout model if specified
         valid_layout_models = [k for k in layout_model_specs.keys() if k != 'LayoutOptions']

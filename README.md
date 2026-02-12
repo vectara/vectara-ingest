@@ -348,6 +348,7 @@ doc_processing:
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI
     chunk_size: 1024                   # chunk size if using docling chunking; default 1024; only valid for hybrid chunker
     layout_model: null                 # layout model: null (default heron), heron, heron_101, v2
+    do_formula_enrichment: false       # enable formula enrichment for PDFs; default false (off enables MPS acceleration on Mac)
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   # NOTE: Automatically enabled when chunking_strategy is not 'none' in document parsers like Unstructured or Docling

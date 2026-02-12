@@ -156,6 +156,7 @@ class FileProcessor:
                 image_scale=self.docling_config.get('image_scale', 2.0),
                 image_context=self.image_context,
                 layout_model=self.docling_config.get('layout_model', None),
+                do_formula_enrichment=self.docling_config.get('do_formula_enrichment', False),
             )
         else:
             return UnstructuredDocumentParser(
