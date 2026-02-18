@@ -120,6 +120,10 @@ class ScrapyContentExtractor(WebExtractorBase):
                     for element in soup.find_all(tag):
                         element.decompose()
 
+            # Update result['html'] after all element removals so downstream consumers
+            # (remove_boilerplate, process_locally, etc.) see the processed HTML.
+            result['html'] = str(soup)
+
             # Determine content source: either from target_tag/target_class or default (entire document)
             target_tag = html_processing.get('target_tag') if html_processing else None
             target_class = html_processing.get('target_class') if html_processing else None

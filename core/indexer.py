@@ -654,23 +654,25 @@ class Indexer:
 
                 # If process_locally is enabled, route web content through document parser
                 if self.process_locally:
+                    temp_html_path = None
                     try:
                         # Save HTML to temporary file and process through doc parser
                         with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as tmp_file:
                             tmp_file.write(html)
                             tmp_file.flush()
                             temp_html_path = tmp_file.name
-                        
+
                         if self.verbose:
                             logger.info(f"Processing web content from {url} locally using doc parser: {self.doc_parser}")
-                        
+
                         # Process through index_file which uses the configured document parser
                         result = self.index_file(temp_html_path, url, metadata)
                         safe_remove_file(temp_html_path)
                         return result
                     except Exception as e:
                         logger.warning(f"Failed to process {url} locally with doc parser: {e}. Falling back to web extraction.")
-                        safe_remove_file(temp_html_path)
+                        if temp_html_path:
+                            safe_remove_file(temp_html_path)
                         # Continue with normal web processing below
 
                 # Extract the last modified date from the HTML content.
