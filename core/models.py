@@ -8,6 +8,19 @@ from omegaconf import OmegaConf
 
 from .utils import get_media_type_from_base64
 
+# Try to import Vertex AI SDK
+try:
+    import vertexai
+    from vertexai.generative_models import GenerativeModel, Part
+    VERTEX_AVAILABLE = True
+except ImportError:
+    VERTEX_AVAILABLE = False
+    logger.warning("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
+
+# Module-level cache for Vertex AI initialization state
+# Stores (project_id, location, credentials_file) tuple when initialized
+_vertex_ai_init_state = None
+
 def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
     """
     Get the API key for the specified provider.
@@ -35,9 +48,62 @@ def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
             if key:
                 return key
         return cfg.vectara.get("private_api_key", None)
+    elif provider == 'vertex':
+        # Vertex AI uses project_id and location instead of API key
+        return None
     else:
         logger.warning(f"Unsupported LLM provider: {provider}")
         return None
+
+def _init_vertex_ai(cfg: OmegaConf, model_config: dict):
+    """Initialize Vertex AI with project and location from config.
+
+    Uses module-level caching to avoid re-initialization when called multiple times
+    with the same configuration (common in Ray worker scenarios).
+    """
+    global _vertex_ai_init_state
+
+    if not VERTEX_AVAILABLE:
+        raise ImportError("Vertex AI SDK not available. Install with: pip install google-cloud-aiplatform")
+
+    project_id = model_config.get('project_id') or cfg.vectara.get('vertex_project_id')
+    location = model_config.get('location', 'us-central1')
+    credentials_file = model_config.get('credentials_file')
+
+    if not project_id:
+        raise ValueError("Vertex AI requires 'project_id' in model_config or 'vertex_project_id' in vectara config")
+
+    # Check if already initialized with the same configuration
+    current_state = (project_id, location, credentials_file)
+    if _vertex_ai_init_state == current_state:
+        logger.debug(f"Vertex AI already initialized with project={project_id}, location={location}")
+        return
+
+    # Initialize with explicit credentials if provided
+    if credentials_file:
+        import os
+        from google.oauth2 import service_account
+
+        # Check if credentials file exists (it may be in /home/vectara/env/ in Docker)
+        if not os.path.exists(credentials_file):
+            docker_path = f"/home/vectara/env/{os.path.basename(credentials_file)}"
+            if os.path.exists(docker_path):
+                credentials_file = docker_path
+
+        if os.path.exists(credentials_file):
+            credentials = service_account.Credentials.from_service_account_file(credentials_file)
+            vertexai.init(project=project_id, location=location, credentials=credentials)
+            logger.info(f"Initialized Vertex AI with project={project_id}, location={location}, credentials={credentials_file}")
+        else:
+            logger.warning(f"Credentials file not found: {credentials_file}. Falling back to default credentials.")
+            vertexai.init(project=project_id, location=location)
+            logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
+    else:
+        vertexai.init(project=project_id, location=location)
+        logger.info(f"Initialized Vertex AI with project={project_id}, location={location}")
+
+    # Cache the initialization state
+    _vertex_ai_init_state = current_state
 
 def generate(
         cfg: OmegaConf,
@@ -90,6 +156,24 @@ def generate(
             max_tokens=max_tokens,
         )
         res = str(response.content[0].text)
+    elif provider == 'vertex':
+        _init_vertex_ai(cfg, model_config)
+        model_name = model_config.get('model_name', 'gemini-2.0-flash-exp')
+        model = GenerativeModel(model_name)
+
+        # Combine system and user prompts for Vertex AI
+        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+        response = model.generate_content(
+            combined_prompt,
+            generation_config={
+                'temperature': 0,
+                'max_output_tokens': max_tokens,
+            }
+        )
+        res = str(response.text)
+    else:
+        raise ValueError(f"Unsupported provider for text generation: {provider}")
 
     return res
 
@@ -170,7 +254,28 @@ def generate_image_summary(
         )
         summary = str(response.content[0].text)
         return summary
+    elif provider == 'vertex':
+        import base64
+        _init_vertex_ai(cfg, model_config)
+        model_name = model_config.get('model_name', 'gemini-2.0-flash-exp')
+        model = GenerativeModel(model_name)
 
-    logger.warning(f"Unsupported vision LLM provider: {provider}")
+        # Convert base64 image to Part
+        image_bytes = base64.b64decode(image_content)
+        media_type = get_media_type_from_base64(image_content)
+        image_part = Part.from_data(data=image_bytes, mime_type=media_type)
+
+        response = model.generate_content(
+            [image_part, prompt],
+            generation_config={
+                'temperature': 0,
+                'max_output_tokens': max_tokens,
+            }
+        )
+        summary = str(response.text)
+        return summary
+    else:
+        logger.warning(f"Unsupported vision LLM provider: {provider}")
+        return None
 
 
