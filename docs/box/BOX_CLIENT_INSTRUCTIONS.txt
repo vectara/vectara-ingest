@@ -1,0 +1,179 @@
+================================================================================
+BOX INTEGRATION - WHAT TO SHARE WITH US
+================================================================================
+
+After completing the Box app setup, please send us the following information:
+
+--------------------------------------------------------------------------------
+1. JWT CONFIGURATION FILE (Required)
+--------------------------------------------------------------------------------
+
+FILE NAME:
+  The JSON file downloaded from Box Developer Console
+  Usually named: [numbers]_[letters]_config.json
+  Example: 1234567_abc123xyz_config.json
+
+WHERE TO GET IT:
+  1. Go to: https://app.box.com/developers/console
+  2. Click on your app
+  3. Go to "Configuration" tab
+  4. Scroll to "Add and Manage Public Keys"
+  5. Click "Generate a Public/Private Keypair"
+  6. File downloads automatically
+
+WHAT IT CONTAINS:
+  - Client ID
+  - Client Secret
+  - Private Key (encrypted)
+  - Passphrase
+  - Enterprise ID
+
+SAMPLE STRUCTURE:
+  See the file: box_jwt_config_SAMPLE.json
+  Your real file will look similar but with different values
+
+⚠️ IMPORTANT: This file contains sensitive credentials. Please:
+  - Send via secure email or file sharing
+  - Do NOT share in Slack/Teams public channels
+  - Do NOT commit to version control
+
+--------------------------------------------------------------------------------
+2. YOUR BOX USER ID (Required)
+--------------------------------------------------------------------------------
+
+WHAT IT IS:
+  A numeric ID that identifies your Box user account
+
+WHERE TO FIND IT:
+  Option A: From Account Settings
+    1. Log into Box.com
+    2. Click your avatar (top right)
+    3. Click "Account Settings"
+    4. Look for your user ID on the page or in the URL
+
+  Option B: From Developer Console
+    1. Box Developer Console → Your App → General Settings
+    2. Look for "Service Account User ID" or similar
+
+WHAT IT LOOKS LIKE:
+  Just a number: 45685194653
+
+EXAMPLE:
+  User ID: 45685194653
+
+--------------------------------------------------------------------------------
+3. YOUR BOX LOGIN EMAIL (Required)
+--------------------------------------------------------------------------------
+
+WHAT IT IS:
+  The email address you use to log into Box
+
+EXAMPLE:
+  Email: john.doe@yourcompany.com
+
+--------------------------------------------------------------------------------
+4. FOLDER IDs (Optional)
+--------------------------------------------------------------------------------
+
+If you want to download from specific folders only (not entire Box):
+
+HOW TO GET FOLDER ID:
+  1. Open the folder in Box
+  2. Look at the URL: https://app.box.com/folder/123456789
+  3. The number after "/folder/" is the folder ID: 123456789
+
+EXAMPLE:
+  Folder ID: 123456789 (for "Marketing Materials" folder)
+  Folder ID: 987654321 (for "Product Docs" folder)
+
+Leave blank if you want to download from all folders you have access to.
+
+--------------------------------------------------------------------------------
+5. CLIENT ID (For Reference)
+--------------------------------------------------------------------------------
+
+This is shown in your Box Developer Console → App → Configuration tab
+It helps us verify we're setting up the correct app.
+
+WHAT IT LOOKS LIKE:
+  A long string: abc123xyz456def789ghi012jkl345mn
+
+EXAMPLE:
+  Client ID: 7ovanys67d3ejva8ullgu8p1w39jx4oe
+
+--------------------------------------------------------------------------------
+HOW TO SEND THIS TO US
+--------------------------------------------------------------------------------
+
+EMAIL TEMPLATE:
+
+Subject: Box Integration - Configuration Files
+
+Hi [Your Name],
+
+I've completed the Box JWT app setup. Here are the required details:
+
+1. JWT Config File: [Attached - file name: box_config.json]
+
+2. Box User ID: [Your User ID number]
+
+3. Box Login Email: [your.email@company.com]
+
+4. Folder IDs (if specific folders only):
+   - [Folder ID 1] - [Folder Name 1]
+   - [Folder ID 2] - [Folder Name 2]
+   OR: "Download from all accessible folders"
+
+5. Client ID (for verification): [Your Client ID]
+
+Please let me know if you need any additional information.
+
+Best regards,
+[Your Name]
+
+--------------------------------------------------------------------------------
+SECURITY REMINDERS
+--------------------------------------------------------------------------------
+
+✅ DO:
+  - Send JWT config file via secure email or encrypted file sharing
+  - Keep the downloaded JWT file in a secure location
+  - Delete temporary/download copies after sending to us
+  - Verify recipient before sending
+
+❌ DON'T:
+  - Post JWT config in Slack/Teams/chat
+  - Commit to Git/GitHub/version control
+  - Email as plain text attachment without encryption
+  - Share publicly or with unauthorized persons
+
+--------------------------------------------------------------------------------
+TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+"I can't find my User ID"
+→ Send us a Developer Token instead, we can look it up for you
+  (Box Developer Console → Your App → Configuration → Generate Developer Token)
+
+"I don't have Box Admin access to authorize the app"
+→ Ask your Box administrator to authorize using your Client ID
+
+"The JWT file didn't download"
+→ Check your Downloads folder
+→ Try generating the keypair again
+
+"I already generated a keypair before"
+→ You can generate a new one (old one will be invalidated)
+→ Or find the previously downloaded file
+
+--------------------------------------------------------------------------------
+QUESTIONS?
+--------------------------------------------------------------------------------
+
+If you have any questions or issues, please contact:
+[Your Contact Email]
+[Your Phone Number]
+
+We typically respond within 1 business hour.
+
+================================================================================

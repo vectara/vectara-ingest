@@ -279,10 +279,11 @@ class Indexer:
             'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
+        encoded_doc_id = urllib.parse.quote(doc_id, safe='')
         response = self.session.get(
-            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
             headers=post_headers)
-        
+
         exists = response.status_code == 200
         
         # LRU eviction: remove least recently used item when cache is full
@@ -309,8 +310,9 @@ class Indexer:
             'X-Source': self.x_source
         }
 
+        encoded_doc_id = urllib.parse.quote(doc_id, safe='')
         response = self.session.delete(
-            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{doc_id}",
+            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
             headers=post_headers)
 
         if response.status_code != 204:
