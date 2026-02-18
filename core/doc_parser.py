@@ -185,15 +185,20 @@ class DocumentParser():
         self.image_summarizer = ImageSummarizer(self.cfg, vision_config) if self.summarize_images and vision_config else None
         self.verbose = verbose
 
+    def cleanup(self):
+        """Release heavy resources. Subclasses may override for parser-specific cleanup."""
+        self.table_summarizer = None
+        self.image_summarizer = None
+
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
         """
         Parse a document and return unified content stream with proper element ordering.
         Subclasses must override this method.
-        
+
         Args:
             filename: Path to the file to parse
             source_url: Source URL for context
-            
+
         Returns:
             ParsedDocument with unified content stream
         """
@@ -681,6 +686,11 @@ class DoclingDocumentParser(DocumentParser):
             except ValueError as err:
                 logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
+
+    def cleanup(self):
+        """Release the cached Docling converter and its ML models."""
+        super().cleanup()
+        self._converter = None
 
     def _get_or_create_converter(self):
         """Build the DocumentConverter once and cache it for reuse across files."""

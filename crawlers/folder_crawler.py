@@ -33,6 +33,11 @@ class FileCrawlWorker(object):
         table_summarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
         self.df_parser = DataframeParser(self.cfg, self.crawler_config, self.indexer, table_summarizer)
 
+    def cleanup(self):
+        self.indexer.cleanup()
+        self.df_parser = None
+        release_memory()
+
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix
         try:
@@ -141,14 +146,14 @@ class FolderCrawler(Crawler):
                 ray.remote(FileCrawlWorker).remote(self.cfg, df_parser_config, self.indexer, num_per_second)
                 for _ in range(ray_workers)
             ]
-            for a in actors:
-                a.setup.remote()
+            ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
             batch_size = ray_workers * 4
             for batch_start in range(0, len(files_to_process), batch_size):
                 batch = files_to_process[batch_start:batch_start + batch_size]
                 _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
                 logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
+            ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)

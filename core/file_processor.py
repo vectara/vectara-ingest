@@ -1,11 +1,10 @@
-import gc
 import logging
 import os
 import tempfile
 from typing import Dict, List, Any, Tuple
 from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
-from core.utils import get_file_size_in_MB, IMG_EXTENSIONS
+from core.utils import get_file_size_in_MB, IMG_EXTENSIONS, release_memory
 from core.doc_parser import (
     UnstructuredDocumentParser, DoclingDocumentParser,
     LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument,
@@ -45,6 +44,14 @@ class FileProcessor:
         self._parser_doc_count = 0
         self._parser_reset_interval = cfg.doc_processing.get("parser_reset_interval", 50)
         
+    def cleanup(self):
+        """Release cached parsers and their heavy ML models."""
+        if self._cached_doc_parser is not None:
+            if hasattr(self._cached_doc_parser, 'cleanup'):
+                self._cached_doc_parser.cleanup()
+            self._cached_doc_parser = None
+        release_memory()
+
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
@@ -127,8 +134,10 @@ class FileProcessor:
                 and self._parser_reset_interval > 0
                 and self._parser_doc_count % self._parser_reset_interval == 0):
             logger.info(f"Resetting document parser after {self._parser_doc_count} documents to reclaim memory")
+            if hasattr(self._cached_doc_parser, 'cleanup'):
+                self._cached_doc_parser.cleanup()
             self._cached_doc_parser = None
-            gc.collect()
+            release_memory()
 
         # Return cached document parser if available
         if self._cached_doc_parser is not None:
