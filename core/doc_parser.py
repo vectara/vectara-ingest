@@ -628,6 +628,7 @@ class DoclingDocumentParser(DocumentParser):
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         self.layout_model = layout_model  # Options: None (default heron), 'heron', 'heron_101', 'v2'
         self.do_formula_enrichment = do_formula_enrichment
+        self._converter = None
         if self.verbose:
             layout_info = f", layout_model '{self.layout_model}'" if self.layout_model else ""
             logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}{layout_info}")
@@ -678,20 +679,16 @@ class DoclingDocumentParser(DocumentParser):
                 logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
 
-    def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
-        """
-        Parse a local file and return unified content stream with images interleaved in proper order.
-        Tables are extracted separately for structured indexing.
-        Uses position-based ordering to maintain document structure.
-        """
-        # Process using Docling
+    def _get_or_create_converter(self):
+        """Build the DocumentConverter once and cache it for reuse across files."""
+        if self._converter is not None:
+            return self._converter
+
         (
-            DocumentConverter, HybridChunker, HierarchicalChunker, PdfPipelineOptions,
+            DocumentConverter, _, _, PdfPipelineOptions,
             PdfFormatOption, HTMLFormatOption, PowerpointFormatOption, WordFormatOption, InputFormat,
             EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         ) = self._lazy_load_docling()
-
-        st = time.time()
 
         html_opts = PaginatedPipelineOptions()
         html_opts.generate_page_images = True
@@ -713,7 +710,7 @@ class DoclingDocumentParser(DocumentParser):
                 logger.info(f"Using custom layout model: {self.layout_model}")
         elif self.layout_model:
             logger.warning(f"Layout model '{self.layout_model}' not found. Available: {[k for k in layout_model_specs.keys() if k != 'LayoutOptions']}")
-        
+
         # Pipeline options for Office documents
         office_opts = PaginatedPipelineOptions()
         office_opts.generate_page_images = True
@@ -741,7 +738,7 @@ class DoclingDocumentParser(DocumentParser):
                 value = ocr_config.get(key)
                 if value is not None:
                     func(value)
-            logger.info(f"Using RapidOCR engine for PDF processing")
+            logger.info("Using RapidOCR engine for PDF processing")
         else:  # Default to EasyOCR
             ocr_config = getattr(self.cfg.doc_processing, "easy_ocr_config", None)
             ocr_config = OmegaConf.to_container(
@@ -764,15 +761,15 @@ class DoclingDocumentParser(DocumentParser):
                 value = ocr_config.get(key)
                 if value is not None:
                     func(value)
-            logger.info(f"Using EasyOCR engine for PDF processing")
+            logger.info("Using EasyOCR engine for PDF processing")
 
         # Always set OCR options to prevent pipeline initialization failure
         pdf_opts.ocr_options = ocr_options
 
         if self.do_ocr:
             pdf_opts.do_ocr = True
-            
-        res = DocumentConverter(
+
+        self._converter = DocumentConverter(
             allowed_formats=[
                 InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX,
             ],
@@ -782,7 +779,26 @@ class DoclingDocumentParser(DocumentParser):
                 InputFormat.PPTX: PowerpointFormatOption(pipeline_options=office_opts),
                 InputFormat.DOCX: WordFormatOption(pipeline_options=office_opts),
             }
-        ).convert(filename)
+        )
+        return self._converter
+
+    def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
+        """
+        Parse a local file and return unified content stream with images interleaved in proper order.
+        Tables are extracted separately for structured indexing.
+        Uses position-based ordering to maintain document structure.
+        """
+        # Lazy-load docling modules (Python caches imports, so subsequent calls are cheap)
+        (
+            _, HybridChunker, HierarchicalChunker, _,
+            _, _, _, _, _,
+            _, _, _, _
+        ) = self._lazy_load_docling()
+
+        st = time.time()
+
+        converter = self._get_or_create_converter()
+        res = converter.convert(filename)
         doc = res.document
         doc_title = extract_document_title(filename)
         
