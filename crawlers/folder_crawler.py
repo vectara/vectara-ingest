@@ -1,4 +1,3 @@
-import gc
 import logging
 import os
 import pathlib
@@ -9,7 +8,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import setup_logging, get_docker_or_local_path, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+from core.utils import setup_logging, get_docker_or_local_path, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -72,15 +71,7 @@ class FileCrawlWorker(object):
             logger.error(f"Error while indexing {file_path}: {e}, traceback={traceback.format_exc()}")
             return -1
         finally:
-            gc.collect()
-            # On Linux, force glibc to return freed heap pages to the OS.
-            # Without this, RSS grows monotonically even though Python objects are freed.
-            try:
-                import ctypes
-                libc = ctypes.CDLL("libc.so.6")
-                libc.malloc_trim(0)
-            except OSError:
-                pass  # Not on Linux (e.g. macOS dev), skip silently
+            release_memory()
         return 0
 
 

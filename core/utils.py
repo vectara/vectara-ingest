@@ -1,5 +1,7 @@
 # Standard library imports
 import base64
+import ctypes
+import gc
 import logging
 import os
 import re
@@ -26,6 +28,24 @@ from slugify import slugify
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# MEMORY MANAGEMENT
+# =============================================================================
+
+_libc = None
+
+def release_memory():
+    """Run gc.collect() then ask glibc to return freed heap pages to the OS."""
+    gc.collect()
+    global _libc
+    if _libc is None:
+        try:
+            _libc = ctypes.CDLL("libc.so.6")
+        except OSError:
+            _libc = False  # Not on Linux
+    if _libc:
+        _libc.malloc_trim(0)
 
 # =============================================================================
 # CONSTANTS

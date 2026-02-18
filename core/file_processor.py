@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import tempfile
@@ -127,7 +128,6 @@ class FileProcessor:
                 and self._parser_doc_count % self._parser_reset_interval == 0):
             logger.info(f"Resetting document parser after {self._parser_doc_count} documents to reclaim memory")
             self._cached_doc_parser = None
-            import gc
             gc.collect()
 
         # Return cached document parser if available
