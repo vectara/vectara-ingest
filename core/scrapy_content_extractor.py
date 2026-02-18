@@ -100,13 +100,13 @@ class ScrapyContentExtractor(WebExtractorBase):
 
             # Apply HTML processing rules
             if html_processing:
-                # Remove specified classes
-                for class_name in html_processing.get('remove_classes', []):
+                for id_val in html_processing.get('ids_to_remove', []):
+                    for element in soup.find_all(id=id_val):
+                        element.decompose()
+                for class_name in html_processing.get('classes_to_remove', []):
                     for element in soup.find_all(class_=class_name):
                         element.decompose()
-
-                # Remove specified tags
-                for tag in html_processing.get('remove_tags', []):
+                for tag in html_processing.get('tags_to_remove', []):
                     for element in soup.find_all(tag):
                         element.decompose()
 

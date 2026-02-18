@@ -594,7 +594,7 @@ class Indexer:
                 exporter = HTMLExporter()
                 html_content, _ = exporter.from_notebook_node(nb)
             doc_title = os.path.basename(url)  # no title in these files, so using file name
-            text = html_to_text(html_content, self.remove_code)
+            text = html_to_text(html_content, self.remove_code, html_processing=html_processing)
             parts = [text]
 
         else:
