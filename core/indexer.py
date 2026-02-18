@@ -1232,6 +1232,9 @@ class Indexer:
         if self.web_extractor:
             # Direct sync call since WebContentExtractor is now sync
             self.web_extractor.cleanup()
+        # Close HTTP session to release connection pool memory
+        if hasattr(self, 'session') and self.session:
+            self.session.close()
         # Clear caches
         self._doc_exists_cache.clear()
         

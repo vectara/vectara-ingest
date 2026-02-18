@@ -41,6 +41,8 @@ class FileProcessor:
         self.docling_config = cfg.doc_processing.get("docling_config",
                                                      {'chunking_strategy': 'none'})
         self._cached_doc_parser = None
+        self._parser_doc_count = 0
+        self._parser_reset_interval = cfg.doc_processing.get("parser_reset_interval", 50)
         
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
@@ -117,6 +119,16 @@ class FileProcessor:
                 )
             logger.warning(f"Image file {filename} detected but summarize_images is disabled, skipping")
             return None
+
+        # Periodically reset cached parser to release accumulated internal state
+        self._parser_doc_count += 1
+        if (self._cached_doc_parser is not None
+                and self._parser_reset_interval > 0
+                and self._parser_doc_count % self._parser_reset_interval == 0):
+            logger.info(f"Resetting document parser after {self._parser_doc_count} documents to reclaim memory")
+            self._cached_doc_parser = None
+            import gc
+            gc.collect()
 
         # Return cached document parser if available
         if self._cached_doc_parser is not None:

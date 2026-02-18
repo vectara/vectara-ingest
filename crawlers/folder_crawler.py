@@ -73,6 +73,14 @@ class FileCrawlWorker(object):
             return -1
         finally:
             gc.collect()
+            # On Linux, force glibc to return freed heap pages to the OS.
+            # Without this, RSS grows monotonically even though Python objects are freed.
+            try:
+                import ctypes
+                libc = ctypes.CDLL("libc.so.6")
+                libc.malloc_trim(0)
+            except OSError:
+                pass  # Not on Linux (e.g. macOS dev), skip silently
         return 0
 
 
