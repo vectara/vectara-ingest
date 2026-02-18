@@ -832,10 +832,11 @@ class Indexer:
         texts = list(texts) if texts else []
         tables = list(tables) if tables else []
         image_bytes = list(image_bytes) if image_bytes else []
-        
+        image_bytes_dict = self._build_image_bytes_dict(image_bytes)
+
         # Log image bits availability
-        if image_bytes and self.verbose:
-            logger.info(f"Document {doc_id} has {len(image_bytes)} images with binary data available for later upload")
+        if image_bytes_dict and self.verbose:
+            logger.info(f"Document {doc_id} has {len(image_bytes_dict)} images with binary data available for later upload")
 
         from core.document_builder import DocumentBuilder
         # Normalize URLs in doc_metadata
@@ -871,7 +872,7 @@ class Indexer:
                 
                 if image_id:
                     # Find binary data for this image
-                    binary_data = self._find_image_binary_data(image_id, image_bytes)
+                    binary_data = self._find_image_binary_data(image_id, image_bytes_dict)
                     if binary_data:
                         mime_type = self._detect_image_mime_type(image_id, binary_data)
                         
@@ -1016,22 +1017,30 @@ class Indexer:
             # If indicated, summarize images - and upload each image summary as a single doc
             if self.summarize_images and images:
                 logger.info(f"Extracted {len(images)} images from {uri}")
+                img_bytes_dict = self._build_image_bytes_dict(
+                    parsed_doc.image_bytes if hasattr(parsed_doc, 'image_bytes') else []
+                )
                 for inx, image in enumerate(images):
                     image_summary = image[0]
                     img_metadata = image[1]
                     if ex_metadata:
                         img_metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
-                    
-                    # Pass image bits if available and enabled
-                    image_bytes_param = parsed_doc.image_bytes if self.add_image_bytes and hasattr(parsed_doc, 'image_bytes') else []
-                    
+
+                    # Pass only the single relevant image's bytes
+                    img_id = img_metadata.get('image_id')
+                    if self.add_image_bytes and img_id:
+                        img_data = img_bytes_dict.get(img_id)
+                        image_bytes_param = [(img_id, img_data)] if img_data else []
+                    else:
+                        image_bytes_param = []
+
                     succeeded &= self.index_segments(
-                        doc_id=doc_id, 
-                        texts=[image_summary], 
+                        doc_id=doc_id,
+                        texts=[image_summary],
                         metadatas=[img_metadata],
-                        doc_metadata=metadata, 
-                        doc_title=title, 
+                        doc_metadata=metadata,
+                        doc_title=title,
                         image_bytes=image_bytes_param,
                         use_core_indexing=True
                     )
@@ -1049,19 +1058,27 @@ class Indexer:
             logger.info(f"Failed to parse {filename} with error {e}, traceback={traceback.format_exc()}")
             return False
 
+        # Extract fields from parsed_doc, then release it early
+        content_stream = parsed_doc.content_stream
+        doc_title = parsed_doc.title
+        doc_tables = parsed_doc.tables
+        doc_image_bytes = parsed_doc.image_bytes
+        del parsed_doc
+
         # Extract metadata from all text content
         max_chars = 128000
-        all_text = "\n".join([content for content, metadata in parsed_doc.content_stream 
+        all_text = "\n".join([content for content, metadata in content_stream
                             if metadata.get('element_type') == 'text'])[:max_chars]
         ex_metadata = self.file_processor.extract_metadata_from_text(all_text, metadata)
+        del all_text
 
         # Apply contextual chunking to text elements if needed
-        content_stream = parsed_doc.content_stream
         if self.file_processor.contextual_chunking:
-            text_elements = [(content, metadata) for content, metadata in content_stream 
+            text_elements = [(content, metadata) for content, metadata in content_stream
                            if metadata.get('element_type') == 'text']
             processed_text_contents = self.file_processor.apply_contextual_chunking(text_elements, uri)
-            
+            del text_elements
+
             # Rebuild content stream with processed text
             processed_content_stream = []
             text_index = 0
@@ -1072,19 +1089,22 @@ class Indexer:
                 else:
                     processed_content_stream.append((content, metadata))
             content_stream = processed_content_stream
+            del processed_text_contents, processed_content_stream
 
         # Process tables
-        processed_tables = self.file_processor.generate_vec_tables(parsed_doc.tables)
-        
-        # Store image binary bits for later use (available in parsed_doc.image_bytes)
-        if parsed_doc.image_bytes and self.verbose:
-            logger.info(f"Document {filename} contains {len(parsed_doc.image_bytes)} images with binary data available")
+        processed_tables = self.file_processor.generate_vec_tables(doc_tables)
+        del doc_tables
+
+        # Store image binary bits for later use
+        if doc_image_bytes and self.verbose:
+            logger.info(f"Document {filename} contains {len(doc_image_bytes)} images with binary data available")
 
         # Check if images should be indexed inline or separately
         if self.file_processor.inline_images:
             # Index all content (text and images) in a single document
             texts = [content for content, metadata in content_stream]
             metadatas = [metadata for content, metadata in content_stream]
+            del content_stream
 
             # Force core indexing for standalone image files (short single summary text)
             is_image_file = any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS)
@@ -1100,8 +1120,8 @@ class Indexer:
                 metadatas=metadatas,
                 tables=processed_tables,
                 doc_metadata=metadata,
-                doc_title=parsed_doc.title,
-                image_bytes=parsed_doc.image_bytes,
+                doc_title=doc_title,
+                image_bytes=doc_image_bytes,
                 use_core_indexing=use_core_for_indexing
             )
         else:
@@ -1109,7 +1129,7 @@ class Indexer:
             text_content = []
             image_content = []
             elements_without_type = []
-            
+
             for content, meta in content_stream:
                 element_type = meta.get('element_type')
                 if element_type == 'text':
@@ -1124,40 +1144,49 @@ class Indexer:
                     # Unknown element_type, default to text
                     text_content.append((content, meta))
                     logger.warning(f"Unknown element_type '{element_type}' found, treating as text")
-            
+            del content_stream
+
             if elements_without_type:
                 logger.warning(f"Found {len(elements_without_type)} content elements without element_type metadata, treating as text")
-            
+
             # Index text portions
             texts = [content for content, meta in text_content]
             metadatas = [meta for content, meta in text_content]
-            
+
+            # Build image_bytes dict for efficient lookup in legacy per-image indexing
+            image_bytes_dict = self._build_image_bytes_dict(doc_image_bytes)
+
             succeeded = self.index_segments(
                 doc_id=slugify(uri),
                 texts=texts,
                 metadatas=metadatas,
                 tables=processed_tables,
                 doc_metadata=metadata,
-                doc_title=parsed_doc.title,
-                image_bytes=parsed_doc.image_bytes,
+                doc_title=doc_title,
+                image_bytes=doc_image_bytes,
                 use_core_indexing=self.use_core_indexing or self._is_chunking_enabled()
             )
-            
+
             # Index images as separate documents
             if image_content:
                 for idx, (image_summary, image_metadata) in enumerate(image_content):
                     doc_id = f"{slugify(uri)}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
                     try:
-                        # Pass image bits if available and enabled
-                        image_bytes_param = parsed_doc.image_bytes if self.add_image_bytes else []
-                        
+                        # Pass only the single relevant image's bytes (not entire list)
+                        img_id = image_metadata.get('image_id')
+                        if self.add_image_bytes and img_id:
+                            img_data = image_bytes_dict.get(img_id)
+                            image_bytes_param = [(img_id, img_data)] if img_data else []
+                        else:
+                            image_bytes_param = []
+
                         img_okay = self.index_segments(
                             doc_id=doc_id,
                             texts=[image_summary],
                             metadatas=[image_metadata],
                             doc_metadata=image_metadata,
-                            doc_title=parsed_doc.title,
+                            doc_title=doc_title,
                             image_bytes=image_bytes_param,
                             use_core_indexing=True
                         )
@@ -1165,7 +1194,7 @@ class Indexer:
                     except Exception as e:
                         logger.info(f"Failed to index image {idx} with error {e}")
                         succeeded = False
-            
+
         return succeeded
 
     def index_media_file(self, file_path, metadata=None):
@@ -1228,18 +1257,26 @@ class Indexer:
         # Default fallback
         return "image/png"
     
-    def _find_image_binary_data(self, image_id: str, image_bytes: List[Tuple[str, bytes]]) -> Optional[bytes]:
-        """Find binary data for a given image ID"""
-        if not image_bytes or not image_id:
+    @staticmethod
+    def _build_image_bytes_dict(image_bytes: List[Tuple[str, bytes]]) -> Dict[str, bytes]:
+        """Build a dict from image_bytes list for O(1) lookup by image_id."""
+        if not image_bytes:
+            return {}
+        return {stored_id: binary_data for stored_id, binary_data in image_bytes}
+
+    def _find_image_binary_data(self, image_id: str, image_bytes_dict: Dict[str, bytes]) -> Optional[bytes]:
+        """Find binary data for a given image ID using pre-built dict."""
+        if not image_bytes_dict or not image_id:
             return None
-            
-        for stored_id, binary_data in image_bytes:
-            if stored_id == image_id:
-                return binary_data
-        
-        # If exact match not found, try partial match (useful for web images)
-        for stored_id, binary_data in image_bytes:
+
+        # O(1) exact match
+        result = image_bytes_dict.get(image_id)
+        if result is not None:
+            return result
+
+        # Partial match fallback (useful for web images)
+        for stored_id, binary_data in image_bytes_dict.items():
             if image_id in stored_id or stored_id in image_id:
                 return binary_data
-                
+
         return None

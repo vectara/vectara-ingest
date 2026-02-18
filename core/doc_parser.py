@@ -4,7 +4,8 @@ from typing import List, Tuple, Iterator, Dict, Any
 import time
 import pandas as pd
 import os
-from io import StringIO
+from io import StringIO, BytesIO
+import gc
 import base64
 import requests
 from dataclasses import dataclass
@@ -376,18 +377,20 @@ class DocupandaDocumentParser(DocumentParser):
                 bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
                                int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))
                 img_cropped = img.crop(box=bbox_pixels)
-                image_path = 'image.png'
-                with open(image_path, 'wb') as fp:
-                    img_cropped.save(fp, 'PNG')
-                
-                # Store image binary data
-                with open(image_path, 'rb') as fp:
-                    image_binary = fp.read()
+
+                # Convert PIL image to PNG bytes in memory (no disk write)
+                buf = BytesIO()
+                img_cropped.save(buf, format='PNG')
+                image_binary = buf.getvalue()
+                buf.close()
+                del img_cropped
+
                 image_id = f"docupanda_page_{page_num}_image_{img_num}"
                 image_bytes.append((image_id, image_binary))
-                
+
                 image_summary = self.image_summarizer.summarize_image(
-                    image_path, source_url, previous_text, next_text
+                    '', source_url, previous_text, next_text,
+                    image_bytes=image_binary
                 )
                 if image_summary and len(image_summary) > 10:
                     metadata = {
@@ -832,18 +835,21 @@ class DoclingDocumentParser(DocumentParser):
             })
             element_index += 1
         
+        # Pre-build items list once for context extraction (avoids rebuilding per image)
+        items_list = [i['item'] for i in all_items]
+
         # Second pass: process items with context
         for idx, item_info in enumerate(all_items):
             item = item_info['item']
             page_no = item_info['page_no']
             position = item_info['position']
-            
+
             # Check what type of item this is
             if hasattr(item, 'export_to_dataframe'):
                 # Table element - skip inline, will be processed separately for structured indexing
                 if self.verbose and self.parse_tables:
                     logger.info(f"Table found on page {page_no} - will be processed for structured indexing")
-                
+
             elif hasattr(item, 'text'):
                 # Text element
                 metadata = {
@@ -851,11 +857,11 @@ class DoclingDocumentParser(DocumentParser):
                     'page': page_no
                 }
                 positioned_elements.append((position, item.text, metadata))
-                
+
             elif hasattr(item, 'get_image') and self.summarize_images:
                 # Picture element - extract context from surrounding items
                 previous_text, next_text = extract_image_context(
-                    [i['item'] for i in all_items],
+                    items_list,
                     idx,
                     num_previous=self.image_context['num_previous_chunks'],
                     num_next=self.image_context['num_next_chunks'],
@@ -864,18 +870,19 @@ class DoclingDocumentParser(DocumentParser):
                 
                 image = item.get_image(doc)
                 if image:
-                    image_path = 'image.png'
-                    with open(image_path, 'wb') as fp:
-                        image.save(fp, 'PNG')
-                    
-                    # Store image binary data
-                    with open(image_path, 'rb') as fp:
-                        image_binary = fp.read()
+                    # Convert PIL image to PNG bytes in memory (no disk write)
+                    buf = BytesIO()
+                    image.save(buf, format='PNG')
+                    image_binary = buf.getvalue()
+                    buf.close()
+                    del image
+
                     image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
                     image_bytes.append((image_id, image_binary))
-                    
+
                     image_summary = self.image_summarizer.summarize_image(
-                        image_path, source_url, previous_text, next_text
+                        '', source_url, previous_text, next_text,
+                        image_bytes=image_binary
                     )
                     if image_summary:
                         metadata = {
@@ -891,20 +898,26 @@ class DoclingDocumentParser(DocumentParser):
                 else:
                     logger.info("Failed to retrieve image")
         
-        # Apply chunking if needed
+        # Process tables before releasing doc (tables need doc.tables)
+        tables = []
+        if self.parse_tables:
+            if self.enable_gmft and filename.endswith('.pdf'):
+                tables = list(self.get_tables_with_gmft(filename))
+            else:
+                tables = list(self._get_tables(doc.tables))
+
+        # Apply chunking if needed (chunker.chunk needs doc)
         if self.chunking_strategy in ['hybrid', 'hierarchical']:
             # Need to apply chunking to text elements only
             chunker = (
-                HybridChunker(max_tokens=self.chunk_size) 
+                HybridChunker(max_tokens=self.chunk_size)
                 if self.chunking_strategy == 'hybrid' else HierarchicalChunker()
             )
-            
+
             # Extract text elements, chunk them, then re-insert
-            non_text_elements = [(pos, content, meta) for pos, content, meta in positioned_elements 
+            non_text_elements = [(pos, content, meta) for pos, content, meta in positioned_elements
                                if meta['element_type'] != 'text']
-            
-            # Build a document-like structure for chunking
-            # Note: This is a simplified approach - may need refinement based on Docling's chunking API
+
             chunked_text_elements = []
             for chunk in chunker.chunk(doc):
                 metadata = {'element_type': 'text'}
@@ -913,26 +926,22 @@ class DoclingDocumentParser(DocumentParser):
                     metadata['page'] = page_no
                 else:
                     metadata['page'] = 0
-                    
+
                 # Assign positions based on page
                 base_position = metadata['page'] * 1000
                 position = base_position + len([e for e in chunked_text_elements if e[2]['page'] == metadata['page']])
                 chunked_text_elements.append((position, chunker.serialize(chunk=chunk), metadata))
-            
+
             # Combine chunked text with non-text elements
             positioned_elements = chunked_text_elements + non_text_elements
-        
+
+        # Release heavy Docling objects now that extraction is complete
+        del doc, res, all_items, items_list
+        gc.collect()
+
         # Sort all elements by position to maintain document order
         positioned_elements.sort(key=lambda x: x[0])
         content_stream = [(content, metadata) for _, content, metadata in positioned_elements]
-
-        # Process tables
-        tables = []
-        if self.parse_tables:
-            if self.enable_gmft and filename.endswith('.pdf'):
-                tables = list(self.get_tables_with_gmft(filename))
-            else:
-                tables = list(self._get_tables(doc.tables))
 
         # Fallback to filename if no title found
         if not doc_title:
@@ -1247,6 +1256,7 @@ class UnstructuredDocumentParser(DocumentParser):
                                 
                                 if image_path:
                                     # Store image binary data
+                                    image_binary = None
                                     if os.path.exists(image_path):
                                         with open(image_path, 'rb') as fp:
                                             image_binary = fp.read()
@@ -1254,14 +1264,15 @@ class UnstructuredDocumentParser(DocumentParser):
                                         image_bytes.append((image_id, image_binary))
                                     else:
                                         image_id = None
-                                        
+
                                     image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, previous_text, next_text
+                                        image_path, source_url, previous_text, next_text,
+                                        image_bytes=image_binary
                                     )
                                     if image_summary:
                                         position = base_position + idx + 0.5  # Images get +0.5 offset
                                         metadata = {
-                                            'element_type': 'image', 
+                                            'element_type': 'image',
                                             'page': page_num,
                                             'image_id': image_id
                                         }
@@ -1358,6 +1369,7 @@ class UnstructuredDocumentParser(DocumentParser):
                                 
                                 if image_path:
                                     # Store image binary data
+                                    image_binary = None
                                     if os.path.exists(image_path):
                                         with open(image_path, 'rb') as fp:
                                             image_binary = fp.read()
@@ -1365,23 +1377,24 @@ class UnstructuredDocumentParser(DocumentParser):
                                         image_bytes.append((image_id, image_binary))
                                     else:
                                         image_id = None
-                                        
+
                                     image_summary = self.image_summarizer.summarize_image(
-                                        image_path, source_url, previous_text, next_text
+                                        image_path, source_url, previous_text, next_text,
+                                        image_bytes=image_binary
                                     )
                                     if image_summary:
                                         # Use position from raw element + 0.5 for images
                                         position = base_position + idx + 0.5
                                         metadata = {
-                                            'element_type': 'image', 
+                                            'element_type': 'image',
                                             'page': page_num,
                                             'image_id': image_id
                                         }
                                         positioned_elements.append((position, image_summary, metadata))
-                                        
+
                                         if self.verbose:
                                             logger.info(f"Image summary at position {position}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
-                                
+
                                 else:
                                     logger.warning("Image element found but no valid image path available")
                             except Exception as exc:
@@ -1434,6 +1447,12 @@ class UnstructuredDocumentParser(DocumentParser):
                 # Use raw elements for table extraction when chunking
                 table_elements = raw_tables_images if is_chunking else elements
                 tables = list(self._get_tables(table_elements))
+
+        # Release heavy element lists now that extraction is complete
+        del raw_tables_images, elements
+        if is_chunking:
+            del raw_elements, chunked_elements
+        gc.collect()
 
         logger.info(f"UnstructuredParser: {len(content_stream)} content elements, {len(tables)} tables")
         logger.info(f"parsing file {filename} with unstructured.io took {time.time()-st:.2f} seconds")
