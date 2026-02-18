@@ -401,11 +401,16 @@ class Indexer:
             if self.store_docs:
                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             return True
-        elif response.status_code in [409, 412]:
+        elif response.status_code == 412:
+            # Document already exists with identical content — no action needed
+            if self.verbose:
+                logger.info(f"File {uri} already exists with identical content (skipping)")
+            return True
+        elif response.status_code == 409:
             if self.reindex:
-                # File already exists and reindex is enabled
+                # File already exists with different content and reindex is enabled
                 if self.verbose:
-                    logger.info(f"File {uri} already exists. Deleting and re-indexing...")
+                    logger.info(f"File {uri} already exists with different content. Deleting and re-indexing...")
 
                 # Extract doc_id from the original filename or ID
                 doc_id = id if id else os.path.basename(filename)
@@ -507,11 +512,16 @@ class Indexer:
                 with open(f"{self.store_docs_folder}/{document['id']}.json", "w") as f:
                     json.dump(document, f)
             return True
-        elif response.status_code in [409, 412]:
+        elif response.status_code == 412:
+            # Document already exists with identical content — no action needed
+            if self.verbose:
+                logger.info(f"Document {document['id']} already exists with identical content (skipping)")
+            return True
+        elif response.status_code == 409:
             if self.reindex:
-                # Document already exists and reindex is enabled
+                # Document already exists with different content and reindex is enabled
                 if self.verbose:
-                    logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
+                    logger.info(f"Document {document['id']} already exists with different content. Deleting and re-indexing...")
 
                 # Delete the existing document
                 if self.delete_doc(document['id']):

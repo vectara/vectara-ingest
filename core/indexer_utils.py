@@ -124,12 +124,16 @@ def handle_file_upload_response(response, uri: str, reindex: bool, delete_doc_fu
     if response.status_code == 201:
         logger.info(f"REST upload for {uri} successful")
         return True
+    elif response.status_code == 412:
+        # Document already exists with identical content — no action needed
+        logger.info(f"Document {uri} already exists with identical content, skipping")
+        return True
     elif response.status_code == 409:
         if reindex:
             match = re.search(r"document id '([^']+)'", response.text)
             if match:
                 doc_id = match.group(1)
-                logger.info(f"Document {doc_id} already exists, deleting then reindexing")
+                logger.info(f"Document {doc_id} already exists with different content, deleting then reindexing")
                 if delete_doc_func(doc_id):
                     if retry_upload_func:
                         # Retry the upload after successful deletion
@@ -174,9 +178,13 @@ def handle_document_upload_response(response, doc_id: str, reindex: bool, delete
     if response.status_code == 201:
         logger.debug(f"Successfully indexed document {doc_id}")
         return True
-    elif response.status_code in [409, 412]:
+    elif response.status_code == 412:
+        # Document already exists with identical content — no action needed
+        logger.info(f"Document {doc_id} already exists with identical content, skipping")
+        return True
+    elif response.status_code == 409:
         if reindex:
-            logger.info(f"Document {doc_id} already exists, deleting then reindexing")
+            logger.info(f"Document {doc_id} already exists with different content, deleting then reindexing")
             if delete_doc_func(doc_id):
                 if retry_upload_func:
                     # Retry the upload after successful deletion
