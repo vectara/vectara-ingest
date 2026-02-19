@@ -214,46 +214,57 @@ class WebContentExtractor(WebExtractorBase):
         ids_to_remove = list(html_processing.get('ids_to_remove', []))
         classes_to_remove = list(html_processing.get('classes_to_remove', []))
         tags_to_remove = list(html_processing.get('tags_to_remove', []))
-        
+
+        if not ids_to_remove and not classes_to_remove and not tags_to_remove:
+            return
+
         removal_script = """
             (function(ids, classes, tags) {
+                var results = {ids: {}, classes: {}, tags: {}};
                 ids.forEach(function(id) {
                     var el = document.getElementById(id);
+                    results.ids[id] = !!el;
                     if (el) el.remove();
                 });
                 classes.forEach(function(cls) {
-                    document.querySelectorAll('.' + cls).forEach(function(el) { el.remove(); });
+                    var els = document.querySelectorAll('.' + cls);
+                    results.classes[cls] = els.length;
+                    els.forEach(function(el) { el.remove(); });
                 });
                 tags.forEach(function(tag) {
-                    document.querySelectorAll(tag).forEach(function(el) { el.remove(); });
+                    var els = document.querySelectorAll(tag);
+                    results.tags[tag] = els.length;
+                    els.forEach(function(el) { el.remove(); });
                 });
+                return results;
             })(%s, %s, %s);
         """ % (
             json.dumps(ids_to_remove),
             json.dumps(classes_to_remove),
             json.dumps(tags_to_remove)
         )
-        page.evaluate(removal_script)
+        results = page.evaluate(removal_script)
+        logger.debug("html_processing removal results: %s", results)
     
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
-        # First remove unwanted elements, then extract text
+        # Build selectors to remove as a second pass for common boilerplate
         remove_selectors = [
             'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
         ]
         if remove_code:
             remove_selectors.extend(['code', 'pre'])
-            
+
         return page.evaluate(f"""() => {{
-            // Remove unwanted elements first
-            const selectorsToRemove = {remove_selectors};
+            // Remove common boilerplate elements
+            const selectorsToRemove = {json.dumps(remove_selectors)};
             selectorsToRemove.forEach(selector => {{
                 document.querySelectorAll(selector).forEach(el => el.remove());
             }});
-            
+
             // Extract text from remaining content
             let content = document.body.innerText || '';
-            
+
             // Extract shadow DOM content
             function extractShadowText(root) {{
                 let text = "";
@@ -265,11 +276,11 @@ class WebContentExtractor(WebExtractorBase):
                 }}
                 return text;
             }}
-            
+
             document.querySelectorAll('*').forEach(el => {{
                 content += extractShadowText(el);
             }});
-            
+
             return content.replace(/\\s{{2,}}/g, ' ').trim();
         }}""")
     
@@ -409,13 +420,13 @@ class WebContentExtractor(WebExtractorBase):
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)
             
-            result['html'] = page.content()
             result['title'] = page.title()
             result['url'] = page.url
-            
-            # Remove specified elements
+
+            # Remove specified elements BEFORE capturing HTML snapshot
             self._remove_elements(page, html_processing)
-            
+            result['html'] = page.content()
+
             # Extract content
             result['text'] = self._extract_text_content(page, remove_code)
             result['links'] = self._extract_links(page)

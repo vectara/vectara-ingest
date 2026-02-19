@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import RateLimiter, setup_logging, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+from core.utils import RateLimiter, setup_logging, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 from slugify import slugify
 import pandas as pd
@@ -69,6 +69,10 @@ class FileCrawlWorker(object):
         self.indexer.setup()
         setup_logging()
 
+    def cleanup(self):
+        self.indexer.cleanup()
+        release_memory()
+
     def process(self, s3_file: str, metadata: dict, source: str):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
@@ -97,6 +101,8 @@ class FileCrawlWorker(object):
                 f"Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
+        finally:
+            release_memory()
         return 0
 
 
@@ -177,10 +183,10 @@ class S3Crawler(Crawler):
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
-            for a in actors:
-                a.setup.remote()
+            ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
             _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
+            ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)

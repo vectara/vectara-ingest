@@ -298,13 +298,24 @@ doc_processing:
   # use OCR when parsing documents (Docling only)
   do_ocr: true
 
-   # Optional parameters for EasyOCR if used (partial list)
+  # OCR engine to use: 'easyocr' (default) or 'rapidocr'
+  # RapidOCR is lighter weight and comes pre-installed with Docling
+  # EasyOCR provides broader language support but requires more memory
+  ocr_engine: easyocr
+
+  # Optional parameters for EasyOCR (when ocr_engine: easyocr)
   easy_ocr_config:
      download_enabled: true
      use_gpu: false
      lang: ['en', 'fr', 'de']
      confidence_threshold: 0.5
      force_full_page_ocr: false
+
+  # Optional parameters for RapidOCR (when ocr_engine: rapidocr)
+  rapid_ocr_config:
+     lang: ['en', 'de']
+     force_full_page_ocr: false
+     text_score: 0.5
 
   # Whether or not to summarize image content using GPT-4o vision 
   # When using this feature, you need to list the OPENAI_API_KEY or ANTHRPIC_API_KEY in your `secrets.toml` 
@@ -329,12 +340,15 @@ doc_processing:
   unstructured_config:
     chunking_strategy: basic           # chunking strategy to use: basic, by_title or none; default by_title
     chunk_size: 1024                   # chunk size if using unstructured chunking; default 1024
+    hi_res_model_name: yolox           # layout model for PDFs: yolox (default), yolox_quantized, detectron2_onnx
 
-  # Docling document parsing configuation
+  # Docling document parsing configuartion
   docling_config:
     chunking_strategy: hybrid          # chunking strategy to use: hierarchical, hybrid or none; default none
     image_scale: 1.0                   # set to 2.0 for larger resolution in diagrams. 1.0 is equivalent to 72 DPI
     chunk_size: 1024                   # chunk size if using docling chunking; default 1024; only valid for hybrid chunker
+    layout_model: null                 # layout model: null (default heron), heron, heron_101, v2
+    do_formula_enrichment: false       # enable formula enrichment for PDFs; default false (off enables MPS acceleration on Mac)
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   # NOTE: Automatically enabled when chunking_strategy is not 'none' in document parsers like Unstructured or Docling

@@ -4,7 +4,7 @@ import tempfile
 from typing import Dict, List, Any, Tuple
 from omegaconf import OmegaConf
 from pypdf import PdfReader, PdfWriter
-from core.utils import get_file_size_in_MB, IMG_EXTENSIONS
+from core.utils import get_file_size_in_MB, IMG_EXTENSIONS, release_memory
 from core.doc_parser import (
     UnstructuredDocumentParser, DoclingDocumentParser,
     LlamaParseDocumentParser, DocupandaDocumentParser, ParsedDocument,
@@ -36,11 +36,22 @@ class FileProcessor:
         self.image_context = cfg.doc_processing.get("image_context", {'num_previous_chunks': 1, 'num_next_chunks': 1})
         
         # Parser configurations
-        self.unstructured_config = cfg.doc_processing.get("unstructured_config", 
+        self.unstructured_config = cfg.doc_processing.get("unstructured_config",
                                                           {'chunking_strategy': 'by_title', 'chunk_size': 1024})
-        self.docling_config = cfg.doc_processing.get("docling_config", 
+        self.docling_config = cfg.doc_processing.get("docling_config",
                                                      {'chunking_strategy': 'none'})
+        self._cached_doc_parser = None
+        self._parser_doc_count = 0
+        self._parser_reset_interval = cfg.doc_processing.get("parser_reset_interval", 50)
         
+    def cleanup(self):
+        """Release cached parsers and their heavy ML models."""
+        if self._cached_doc_parser is not None:
+            if hasattr(self._cached_doc_parser, 'cleanup'):
+                self._cached_doc_parser.cleanup()
+            self._cached_doc_parser = None
+        release_memory()
+
     def should_process_locally(self, filename: str, uri: str) -> bool:
         """Determine if file should be processed locally"""
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
@@ -96,7 +107,8 @@ class FileProcessor:
     
     def create_document_parser(self, filename: str = None):
         """
-        Create appropriate document parser based on configuration and file type
+        Create appropriate document parser based on configuration and file type.
+        Document parsers (non-image) are cached and reused across files.
 
         Args:
             filename: Optional filename to determine if it's an image file
@@ -104,21 +116,34 @@ class FileProcessor:
         Returns:
             DocumentParser instance appropriate for the file type
         """
-        # Check if this is a standalone image file
-        if filename:
-            if any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS):
-                if self.summarize_images:
-                    logger.info(f"Detected standalone image file: {filename}, using ImageFileParser")
-                    return ImageFileParser(
-                        cfg=self.cfg,
-                        verbose=self.verbose,
-                        model_config=self.model_config
-                    )
-                else:
-                    logger.warning(f"Image file {filename} detected but summarize_images is disabled, skipping")
-                    return None
+        # Image files always get a fresh (lightweight) parser
+        if filename and any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS):
+            if self.summarize_images:
+                logger.info(f"Detected standalone image file: {filename}, using ImageFileParser")
+                return ImageFileParser(
+                    cfg=self.cfg,
+                    verbose=self.verbose,
+                    model_config=self.model_config
+                )
+            logger.warning(f"Image file {filename} detected but summarize_images is disabled, skipping")
+            return None
 
-        # Regular document parsing
+        # Periodically reset cached parser to release accumulated internal state
+        self._parser_doc_count += 1
+        if (self._cached_doc_parser is not None
+                and self._parser_reset_interval > 0
+                and self._parser_doc_count % self._parser_reset_interval == 0):
+            logger.info(f"Resetting document parser after {self._parser_doc_count} documents to reclaim memory")
+            if hasattr(self._cached_doc_parser, 'cleanup'):
+                self._cached_doc_parser.cleanup()
+            self._cached_doc_parser = None
+            release_memory()
+
+        # Return cached document parser if available
+        if self._cached_doc_parser is not None:
+            return self._cached_doc_parser
+
+        # Regular document parsing -- create and cache
         base_dict = {
             "cfg": self.cfg,
             "verbose": self.verbose,
@@ -128,40 +153,47 @@ class FileProcessor:
             "summarize_images": self.summarize_images
         }
         if self.contextual_chunking:
-            return UnstructuredDocumentParser(
+            parser = UnstructuredDocumentParser(
                 **base_dict,
                 chunking_strategy='by_title',
                 chunk_size=1024,
                 image_context=self.image_context,
+                hi_res_model_name=self.unstructured_config.get('hi_res_model_name', 'yolox'),
             )
         elif self.doc_parser in ["llama_parse", "llama", "llama-parse"]:
-            return LlamaParseDocumentParser(
+            parser = LlamaParseDocumentParser(
                 **base_dict,
                 llama_parse_api_key=self.cfg.get("llama_cloud_api_key", None),
                 image_context=self.image_context,
             )
         elif self.doc_parser == "docupanda":
-            return DocupandaDocumentParser(
+            parser = DocupandaDocumentParser(
                 **base_dict,
                 docupanda_api_key=self.cfg.get("docupanda_api_key", None),
                 image_context=self.image_context,
             )
         elif self.doc_parser == "docling":
-            return DoclingDocumentParser(
+            parser = DoclingDocumentParser(
                 **base_dict,
                 chunking_strategy=self.docling_config.get('chunking_strategy', 'none'),
                 chunk_size=self.docling_config.get('chunk_size', 1024),
                 do_ocr=self.do_ocr,
                 image_scale=self.docling_config.get('image_scale', 2.0),
                 image_context=self.image_context,
+                layout_model=self.docling_config.get('layout_model', None),
+                do_formula_enrichment=self.docling_config.get('do_formula_enrichment', False),
             )
         else:
-            return UnstructuredDocumentParser(
+            parser = UnstructuredDocumentParser(
                 **base_dict,
                 chunking_strategy=self.unstructured_config.get('chunking_strategy', 'by_title'),
                 chunk_size=self.unstructured_config.get('chunk_size', 1024),
                 image_context=self.image_context,
+                hi_res_model_name=self.unstructured_config.get('hi_res_model_name', 'yolox'),
             )
+
+        self._cached_doc_parser = parser
+        return parser
     
     def extract_metadata_from_text(self, text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metadata attributes from text content"""

@@ -100,13 +100,13 @@ class ScrapyContentExtractor(WebExtractorBase):
 
             # Apply HTML processing rules
             if html_processing:
-                # Remove specified classes
-                for class_name in html_processing.get('remove_classes', []):
+                for id_val in html_processing.get('ids_to_remove', []):
+                    for element in soup.find_all(id=id_val):
+                        element.decompose()
+                for class_name in html_processing.get('classes_to_remove', []):
                     for element in soup.find_all(class_=class_name):
                         element.decompose()
-
-                # Remove specified tags
-                for tag in html_processing.get('remove_tags', []):
+                for tag in html_processing.get('tags_to_remove', []):
                     for element in soup.find_all(tag):
                         element.decompose()
 
@@ -119,6 +119,10 @@ class ScrapyContentExtractor(WebExtractorBase):
                 for tag in ['code', 'pre']:
                     for element in soup.find_all(tag):
                         element.decompose()
+
+            # Update result['html'] after all element removals so downstream consumers
+            # (remove_boilerplate, process_locally, etc.) see the processed HTML.
+            result['html'] = str(soup)
 
             # Determine content source: either from target_tag/target_class or default (entire document)
             target_tag = html_processing.get('target_tag') if html_processing else None

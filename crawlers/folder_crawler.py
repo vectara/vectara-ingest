@@ -8,7 +8,7 @@ import psutil
 
 from core.crawler import Crawler
 from core.indexer import Indexer
-from core.utils import setup_logging, get_docker_or_local_path, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+from core.utils import setup_logging, get_docker_or_local_path, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -33,17 +33,22 @@ class FileCrawlWorker(object):
         table_summarizer = TableSummarizer(self.cfg, self.cfg.doc_processing.model_config.text)
         self.df_parser = DataframeParser(self.cfg, self.crawler_config, self.indexer, table_summarizer)
 
+    def cleanup(self):
+        self.indexer.cleanup()
+        self.df_parser = None
+        release_memory()
+
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix
         try:
             if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
                 self.indexer.index_media_file(file_path, metadata=metadata)
-            
+
             elif supported_by_dataframe_parser(file_path):
                 logger.info(f"Parsing dataframe {file_path}")
                 file_type = determine_dataframe_type(file_path)
                 doc_title = os.path.basename(file_path)
-                
+
                 if file_type == 'csv':
                     separator = get_separator_by_file_name(file_path)
                     df = pd.read_csv(file_path, sep=separator)
@@ -56,7 +61,7 @@ class FileCrawlWorker(object):
                         if sheet_name not in xls.sheet_names:
                             logger.warning(f"Sheet '{sheet_name}' not found in '{file_path}'. Skipping.")
                             continue
-                        
+
                         df = pd.read_excel(xls, sheet_name=sheet_name)
                         sheet_doc_id = f"{file_path}_{sheet_name}"
                         sheet_doc_title = f"{doc_title} - {sheet_name}"
@@ -70,6 +75,8 @@ class FileCrawlWorker(object):
             import traceback
             logger.error(f"Error while indexing {file_path}: {e}, traceback={traceback.format_exc()}")
             return -1
+        finally:
+            release_memory()
         return 0
 
 
@@ -132,17 +139,21 @@ class FolderCrawler(Crawler):
         df_parser_config = self.cfg.get('dataframe_processing', self.cfg.get('folder_crawler'))
 
         if ray_workers > 0:
-            logger.info(f"Using {ray_workers} ray workers")
+            logger.info(f"Using {ray_workers} ray workers to process {len(files_to_process)} files")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [
                 ray.remote(FileCrawlWorker).remote(self.cfg, df_parser_config, self.indexer, num_per_second)
                 for _ in range(ray_workers)
             ]
-            for a in actors:
-                a.setup.remote()
+            ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), files_to_process))
+            batch_size = ray_workers * 4
+            for batch_start in range(0, len(files_to_process), batch_size):
+                batch = files_to_process[batch_start:batch_start + batch_size]
+                _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
+                logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
+            ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
         else:
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)

@@ -4,10 +4,9 @@ from core.crawler import Crawler
 from datasets import load_dataset
 import psutil
 import ray
-import gc
 
 from core.indexer import Indexer
-from core.utils import setup_logging
+from core.utils import setup_logging, release_memory
 
 class RowIndexer(object):
     def __init__(self, indexer: Indexer, crawler: Crawler):
@@ -34,7 +33,7 @@ class RowIndexer(object):
         self.indexer.index_segments(doc_id, texts=texts,
                                     doc_title=doc_title, doc_metadata=doc_metadata)
         del texts, doc_metadata, doc_title, doc_id
-        gc.collect()
+        release_memory()
 
 class HfdatasetCrawler(Crawler):
 

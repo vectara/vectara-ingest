@@ -113,17 +113,22 @@ class ImageSummarizer():
             return False
             
     def summarize_image(
-            self, 
-            image_path: str, 
-            image_url: str, 
+            self,
+            image_path: str,
+            image_url: str,
             previous_text: Optional[str] = None,
-            next_text: Optional[str] = None
+            next_text: Optional[str] = None,
+            image_bytes: Optional[bytes] = None
     ) -> Optional[str]:
         """
-        Summarize the image at the given path.
+        Summarize the image at the given path or from raw bytes.
+        When image_bytes is provided, base64-encodes in memory (skips disk read).
         Returns a descriptive paragraph or None if summarization fails.
         """
-        content_b64 = self._load_image_b64(image_path, image_url)
+        if image_bytes is not None:
+            content_b64 = base64.b64encode(image_bytes).decode('utf-8')
+        else:
+            content_b64 = self._load_image_b64(image_path, image_url)
         if not content_b64:
             return None
 
