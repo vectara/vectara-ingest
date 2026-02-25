@@ -296,6 +296,11 @@ class JiraCrawler(Crawler):
             actual_cnt = len(jira_data["issues"])
             if actual_cnt > 0:
                 for issue in jira_data["issues"]:
+                    doc_id = issue["key"]
+                    if self.tracker and self.tracker.is_indexed(doc_id):
+                        continue
+                    self.wait_if_paused()
+
                     # Collect as much metadata as possible
                     # Use safe navigation to handle None values
                     metadata = {}
@@ -368,6 +373,8 @@ class JiraCrawler(Crawler):
                     if succeeded:
                         logger.info(f"Indexed issue {document['id']}")
                         issue_count += 1
+                        if self.tracker:
+                            self.tracker.track_indexed(doc_id, url=metadata["url"], title=title)
 
                         # Process attachments if they exist
                         attachments = issue["fields"].get("attachment", [])
@@ -384,6 +391,8 @@ class JiraCrawler(Crawler):
                                 logger.error(f"Error processing attachments for issue {issue['key']}: {e}")
                     else:
                         logger.info(f"Error indexing issue {document['id']}")
+                        if self.tracker:
+                            self.tracker.track_failed(doc_id, url=metadata["url"], title=title)
 
                 # Handle pagination based on API version
                 if api_version == 2:

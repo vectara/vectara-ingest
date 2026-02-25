@@ -155,6 +155,10 @@ class GithubCrawler(Crawler):
         prs = g.get_pull_requests("all")
         for d_pr in prs:
             pr = Box(d_pr)
+            doc_id = f'github-{repo}-pr-{pr.number}'
+            if self.tracker and self.tracker.is_indexed(doc_id):
+                continue
+            self.wait_if_paused()
             doc_metadata = {
                 'source': 'github',
                 'id': pr.id,
@@ -191,9 +195,16 @@ class GithubCrawler(Crawler):
 
             # index everything
             try:
-                self.indexer.index_document(pr_doc)
+                succeeded = self.indexer.index_document(pr_doc)
+                if self.tracker:
+                    if succeeded:
+                        self.tracker.track_indexed(doc_id, url=pr.html_url, title=pr.title)
+                    else:
+                        self.tracker.track_failed(doc_id, url=pr.html_url, title=pr.title)
             except Exception as e:
                 logger.info(f"Error {e} indexing comment for repo {repo} document {pr_doc}")
+                if self.tracker:
+                    self.tracker.track_failed(doc_id, url=pr.html_url, title=pr.title, error=str(e))
                 continue
 
         # Extract and index issues and comments
@@ -201,6 +212,10 @@ class GithubCrawler(Crawler):
         for d_issue in issues:
             # Extract issue metadata
             issue = Box(d_issue)
+            doc_id = f'github-{repo}-issue-{issue.number}'
+            if self.tracker and self.tracker.is_indexed(doc_id):
+                continue
+            self.wait_if_paused()
             title = issue.title
             description = issue.body
             created_at = convert_date(issue.created_at)
@@ -241,9 +256,16 @@ class GithubCrawler(Crawler):
             # index everything
             logger.info(f"Indexing issue: {issue.number}")
             try:
-                self.indexer.index_document(issue_doc)
+                succeeded = self.indexer.index_document(issue_doc)
+                if self.tracker:
+                    if succeeded:
+                        self.tracker.track_indexed(doc_id, url=issue.html_url, title=title)
+                    else:
+                        self.tracker.track_failed(doc_id, url=issue.html_url, title=title)
             except Exception as e:
                 logger.info(f"Error {e} indexing repo {repo}, comment document {issue_doc}")
+                if self.tracker:
+                    self.tracker.track_failed(doc_id, url=issue.html_url, title=title, error=str(e))
                 continue
 
 

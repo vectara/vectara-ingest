@@ -108,6 +108,9 @@ class NotionCrawler(Crawler):
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
+            if self.tracker and self.tracker.is_indexed(page_id):
+                continue
+            self.wait_if_paused()
             try:
                 blocks = notion.blocks.children.list(page_id)
                 all_text = ""
@@ -139,8 +142,12 @@ class NotionCrawler(Crawler):
             succeeded = self.indexer.index_document(doc)
             if succeeded:
                 logger.info(f"Indexed notion page {page_id}")
+                if self.tracker:
+                    self.tracker.track_indexed(page_id, url=page['url'], title=doc['title'])
             else:
                 logger.info(f"Indexing failed for notion page {page_id}")
+                if self.tracker:
+                    self.tracker.track_failed(page_id, url=page['url'], title=doc['title'])
 
 
         # report pages crawled if specified

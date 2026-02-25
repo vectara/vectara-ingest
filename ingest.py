@@ -1,4 +1,5 @@
 import logging
+import signal
 import time
 import sys
 import os
@@ -7,15 +8,14 @@ import importlib
 import requests
 import toml     # type: ignore
 import typer
-from pathlib import Path
-
 from typing import Any, Optional
 from urllib.parse import urlparse
 from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.utils import setup_logging, normalize_vectara_endpoint, load_config
+from core.crawl_tracker import CrawlTracker
+from core.utils import setup_logging, normalize_vectara_endpoint, load_config, get_docker_or_local_path
 
 app = typer.Typer()
 setup_logging()
@@ -332,7 +332,31 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     )
 
     logger.info("Crawler instantiated...")
-    
+
+    # Set up crawl tracker
+    output_dir = cfg.vectara.get("output_dir", "vectara_ingest_output")
+    db_dir = get_docker_or_local_path(
+        docker_path=f'/home/vectara/{output_dir}', output_dir=output_dir
+    )
+    db_path = os.path.join(db_dir, "crawl_tracking.db")
+    tracker = CrawlTracker(db_path, crawler_type)
+    crawler.tracker = tracker
+
+    # Signal handling: first SIGTERM/SIGINT requests pause, second raises KeyboardInterrupt
+    shutdown_requested = [False]
+
+    def _shutdown_handler(signum, frame):
+        if not shutdown_requested[0]:
+            shutdown_requested[0] = True
+            logger.info("Graceful shutdown requested — pausing crawl...")
+            tracker.request_pause()
+        else:
+            logger.warning("Second signal received — forcing shutdown")
+            raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
+
     # Create corpus if needed
     if create_corpus_flag:
         logger.info("Creating corpus")
@@ -352,8 +376,24 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         time.sleep(5)   # wait 5 seconds to allow reset_corpus enough time to complete on the backend
 
     logger.info(f"Starting crawl of type {crawler_type}...")
-    crawler.crawl()
-    logger.info(f"Finished crawl of type {crawler_type}...")
+    try:
+        crawler.crawl()
+        tracker.mark_completed()
+        logger.info(f"Finished crawl of type {crawler_type}...")
+    except Exception as e:
+        tracker.mark_failed()
+        logger.error(f"Crawl failed for {crawler_type}: {e}")
+        raise
+    finally:
+        stats = tracker.get_stats()
+        if stats:
+            logger.info(
+                "Crawl stats: total=%s indexed=%s failed=%s skipped=%s",
+                stats["total_docs"], stats["indexed_docs"],
+                stats["failed_docs"], stats["skipped_docs"],
+            )
+        tracker.close()
+        crawler.tracker = None
     
 
 @app.command()

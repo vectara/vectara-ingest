@@ -1229,8 +1229,8 @@ class Indexer:
         }
         if metadata:
             doc['metadata'] = metadata
-        self.index_document(doc)
-        
+        return self.index_document(doc)
+
     def cleanup(self):
         """Clean up resources used by the indexer"""
         if self.web_extractor:
