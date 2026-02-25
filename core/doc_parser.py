@@ -696,14 +696,14 @@ class DoclingDocumentParser(DocumentParser):
         self._converter = None
         self._ocr_converter = None
 
-    def _get_or_create_converter(self, force_ocr: bool = False):
+    def _get_or_create_converter(self, fallback_ocr: bool = False):
         """Build the DocumentConverter once and cache it for reuse across files.
 
         Args:
-            force_ocr: When True, returns a separate OCR-enabled converter
+            fallback_ocr: When True, returns a separate OCR-enabled converter
                        cached in self._ocr_converter.
         """
-        if force_ocr:
+        if fallback_ocr:
             if self._ocr_converter is not None:
                 return self._ocr_converter
         else:
@@ -792,7 +792,7 @@ class DoclingDocumentParser(DocumentParser):
         # Always set OCR options to prevent pipeline initialization failure
         pdf_opts.ocr_options = ocr_options
 
-        if self.do_ocr or force_ocr:
+        if self.do_ocr or fallback_ocr:
             pdf_opts.do_ocr = True
 
         converter = DocumentConverter(
@@ -807,7 +807,7 @@ class DoclingDocumentParser(DocumentParser):
             }
         )
 
-        if force_ocr:
+        if fallback_ocr:
             self._ocr_converter = converter
         else:
             self._converter = converter
@@ -1002,7 +1002,7 @@ class DoclingDocumentParser(DocumentParser):
                 and filename.lower().endswith('.pdf')
                 and not result.content_stream):
             logger.info(f"No content elements found in {filename}, retrying with OCR fallback")
-            ocr_converter = self._get_or_create_converter(force_ocr=True)
+            ocr_converter = self._get_or_create_converter(fallback_ocr=True)
             result = self._parse_with_converter(filename, source_url, ocr_converter)
 
         logger.info(f"DoclingParser: {len(result.content_stream)} content elements, {len(result.tables)} tables")
