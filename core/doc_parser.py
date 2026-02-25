@@ -690,14 +690,6 @@ class DoclingDocumentParser(DocumentParser):
                 logger.error(f"Error parsing Markdown table: {err}. Skipping...")
                 continue
 
-    @staticmethod
-    def _has_meaningful_text(content_stream: List[Tuple[Any, Dict[str, Any]]]) -> bool:
-        """Return True if at least one text element has non-whitespace content."""
-        for content, metadata in content_stream:
-            if metadata.get('element_type') == 'text' and isinstance(content, str) and content.strip():
-                return True
-        return False
-
     def cleanup(self):
         """Release the cached Docling converter and its ML models."""
         super().cleanup()
@@ -1004,12 +996,12 @@ class DoclingDocumentParser(DocumentParser):
         converter = self._get_or_create_converter()
         result = self._parse_with_converter(filename, source_url, converter)
 
-        # Fallback: if no meaningful text was extracted from a PDF, retry with OCR
+        # Fallback: if content stream is empty for a PDF, retry with OCR
         if (self.fallback_ocr
                 and not self.do_ocr
                 and filename.lower().endswith('.pdf')
-                and not self._has_meaningful_text(result.content_stream)):
-            logger.info(f"No meaningful text found in {filename}, retrying with OCR fallback")
+                and not result.content_stream):
+            logger.info(f"No content elements found in {filename}, retrying with OCR fallback")
             ocr_converter = self._get_or_create_converter(force_ocr=True)
             result = self._parse_with_converter(filename, source_url, ocr_converter)
 
