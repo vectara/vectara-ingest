@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM python:3.11-slim AS builder
+FROM python:3.11.9-bookworm AS builder
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -55,7 +55,7 @@ RUN find /usr/local/lib/python3.11/site-packages \
     && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyo' -exec rm -f '{}' +
 
 # Stage 2: Final image
-FROM python:3.11-slim
+FROM python:3.11.9-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/vectara \
@@ -64,7 +64,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_VISIBLE_DEVICES=""
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     # Your original dependencies
     tesseract-ocr \
     ffmpeg \
