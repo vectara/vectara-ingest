@@ -28,6 +28,7 @@ class FileProcessor:
         self.parse_tables = cfg.doc_processing.get("parse_tables", False)
         self.enable_gmft = cfg.doc_processing.get("enable_gmft", False)
         self.do_ocr = cfg.doc_processing.get("do_ocr", False)
+        self.fallback_ocr = cfg.doc_processing.get("fallback_ocr", False)
         self.summarize_images = cfg.doc_processing.get("summarize_images", False)
         self.doc_parser = cfg.doc_processing.get("doc_parser", "docling")
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
@@ -182,6 +183,7 @@ class FileProcessor:
                 image_context=self.image_context,
                 layout_model=self.docling_config.get('layout_model', None),
                 do_formula_enrichment=self.docling_config.get('do_formula_enrichment', False),
+                fallback_ocr=self.fallback_ocr,
             )
         else:
             parser = UnstructuredDocumentParser(

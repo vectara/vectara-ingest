@@ -96,6 +96,10 @@ class BoxCrawlerTracker:
                 writer = csv.writer(f)
                 writer.writerow(headers)
 
+    def reset_failed_csv(self):
+        """Overwrite failed.csv with headers only, so this run tracks only its own failures."""
+        self._init_csv_file(self.failed_csv, ["timestamp", "file_id", "name", "url", "size", "extension", "error"], preserve_existing=False)
+
     def get_indexed_file_ids(self) -> set:
         """Get set of already indexed file IDs from CSV."""
         indexed_ids = set()
@@ -203,6 +207,10 @@ class CSVTrackerActor:
     def track_skipped(self, file_id: str, name: str, url: str, size: int, extension: str, reason: str):
         """Record a skipped file (called remotely by workers)."""
         self._tracker.track_skipped(file_id, name, url, size, extension, reason)
+
+    def reset_failed_csv(self):
+        """Overwrite failed.csv with headers only."""
+        self._tracker.reset_failed_csv()
 
 
 class BoxFileIndexWorker:
@@ -460,6 +468,9 @@ class BoxCrawler(Crawler):
             self.failed_file_ids = self.tracker.get_failed_file_ids()
             self.failed_files_info = self.tracker.get_failed_files_info()
             logging.info(f"Retry failed enabled: will only process {len(self.failed_file_ids)} failed files")
+
+        # Always reset failed.csv so each run tracks only its own failures
+        self.tracker.reset_failed_csv()
 
         if not preserve_csv:
             logging.info("Starting fresh crawl - CSV tracking files will be overwritten")
@@ -1217,6 +1228,7 @@ class BoxCrawler(Crawler):
             tracker_actor = ray.remote(num_cpus=0)(CSVTrackerActor).remote(
                 self.tracking_dir, preserve_existing=self.skip_indexed
             )
+            ray.get(tracker_actor.reset_failed_csv.remote())
             logging.info("Created dedicated CSV tracker actor")
 
             # Create Ray indexing workers with tracker actor reference
@@ -1415,6 +1427,7 @@ class BoxCrawler(Crawler):
             tracker_actor = ray.remote(num_cpus=0)(CSVTrackerActor).remote(
                 self.tracking_dir, preserve_existing=True
             )
+            ray.get(tracker_actor.reset_failed_csv.remote())
 
             # Create Ray indexing workers
             actors = [
