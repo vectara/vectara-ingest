@@ -674,7 +674,7 @@ class DoclingDocumentParser(DocumentParser):
             EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         )
 
-    def _get_tables(self, tables):
+    def _get_tables(self, tables, doc=None):
         def _get_metadata(table):
             md = {}
             if table.prov:
@@ -682,7 +682,7 @@ class DoclingDocumentParser(DocumentParser):
             return md
         for table in tables:
             try:
-                table_df = table.export_to_dataframe()
+                table_df = table.export_to_dataframe(doc) if doc else table.export_to_dataframe()
                 table_md = table_df.to_markdown()
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 yield (table_df, table_summary, '', _get_metadata(table))
@@ -930,7 +930,7 @@ class DoclingDocumentParser(DocumentParser):
             if self.enable_gmft and filename.endswith('.pdf'):
                 tables = list(self.get_tables_with_gmft(filename))
             else:
-                tables = list(self._get_tables(doc.tables))
+                tables = list(self._get_tables(doc.tables, doc))
 
         # Apply chunking if needed (chunker.chunk needs doc)
         if self.chunking_strategy in ['hybrid', 'hierarchical']:

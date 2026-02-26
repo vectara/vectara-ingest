@@ -169,7 +169,7 @@ else
 fi
 
 # Build Docker image
-docker_build_cmd="docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA=\"$(needs_extra_features && echo true || echo false)\" --platform linux/$ARCH . --tag=\"$tag:latest\""
+docker_build_cmd="docker $BUILD_CMD $BUILD_ARGS --load --build-arg INSTALL_EXTRA=\"$(needs_extra_features && echo true || echo false)\" --platform linux/$ARCH . --tag=\"$tag:latest\""
 echo "$docker_build_cmd"
 eval "$docker_build_cmd"
 
