@@ -1,13 +1,16 @@
 import logging
+import mimetypes
 logger = logging.getLogger(__name__)
-from typing import List, Tuple, Iterator, Dict, Any
+from typing import List, Tuple, Iterator, Dict, Any, Optional
 import time
 import pandas as pd
 import os
 from io import StringIO, BytesIO
 import gc
 import base64
+import re
 import requests
+from urllib.parse import urlparse
 from dataclasses import dataclass
 
 import pathlib
@@ -15,7 +18,7 @@ from pdf2image import convert_from_bytes
 from slugify import slugify
 
 from core.summary import TableSummarizer, ImageSummarizer
-from core.utils import detect_file_type, markdown_to_df
+from core.utils import detect_file_type, markdown_to_df, get_headers
 from core.context_utils import extract_image_context
 
 import unstructured as us
@@ -72,8 +75,7 @@ def extract_document_title(filename: str) -> str:
     elif filename.endswith('.pptx'):
         return _extract_pptx_title(filename)
     elif filename.endswith(('.html', '.htm')):
-        # HTML files should use filename fallback per user requirement
-        return ''
+        return _extract_html_title(filename)
     else:
         # Other files return empty for fallback to Title elements or filename
         return ''
@@ -126,6 +128,69 @@ def _extract_pptx_title(filename: str) -> str:
     except Exception as e:
         logger.warning(f"Failed to extract PPTX presentation title from {filename}: {e}")
     return ''
+
+
+def _extract_html_title(filename: str) -> str:
+    """Extract title from HTML <title> tag."""
+    from html.parser import HTMLParser
+
+    class _TitleParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self._in_title = False
+            self.title = ''
+
+        def handle_starttag(self, tag, attrs):
+            if tag.lower() == 'title':
+                self._in_title = True
+
+        def handle_endtag(self, tag):
+            if tag.lower() == 'title':
+                self._in_title = False
+
+        def handle_data(self, data):
+            if self._in_title:
+                self.title += data
+
+    try:
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read(8192)  # <title> is always in the <head>, first 8KB is enough
+        parser = _TitleParser()
+        parser.feed(content)
+        title = parser.title.strip()
+        if title:
+            logger.info(f"Extracted HTML title: '{title}' from file {filename}")
+            return title
+    except Exception as e:
+        logger.warning(f"Failed to extract HTML title from {filename}: {e}")
+    return ''
+
+
+
+
+def _fetch_image_bytes(url: str, timeout: int = 10, headers: Optional[dict] = None) -> Optional[bytes]:
+    """Fetch image bytes from an external URL. Returns None on failure.
+
+    Args:
+        url: Image URL to fetch.
+        timeout: Request timeout in seconds.
+        headers: Optional HTTP headers (e.g. User-Agent, cookies) to send with the
+                 request.  Passing the same headers used by the Playwright session
+                 ensures auth-gated CDNs serve the correct image rather than a
+                 cached fallback.
+    """
+    try:
+        response = requests.get(url, timeout=timeout, stream=True, headers=headers or {})
+        if response.status_code == 200:
+            content_type = response.headers.get('content-type', '')
+            if content_type.startswith('image/'):
+                return response.content
+            logger.debug(f"Skipping non-image response (content-type='{content_type}') for {url}")
+        else:
+            logger.debug(f"Failed to fetch image from {url}: HTTP {response.status_code}")
+    except Exception as e:
+        logger.debug(f"Could not fetch image from {url}: {e}")
+    return None
 
 
 @dataclass
@@ -703,8 +768,58 @@ class DoclingDocumentParser(DocumentParser):
             EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         ) = self._lazy_load_docling()
 
+        from docling.backend.html_backend import HTMLDocumentBackend
+
+        request_headers = get_headers(self.cfg)
+        source_url_holder: dict = {'url': ''}
+
+        class UrlCapturingHtmlBackend(HTMLDocumentBackend):
+            """Fetches remote images with browser headers and correctly resolves
+            root-relative URLs (/path) that Docling's default resolver mishandles.
+
+            Docling's _resolve_relative_path treats /path as a protocol-relative URL
+            and produces "https:/path" (one slash, no domain). This override fixes
+            that by reconstructing the origin from base_path.
+            """
+
+            def __init__(self, in_doc, path_or_stream, options=None):
+                if options is None:
+                    from docling.datamodel.backend_options import HTMLBackendOptions as _HBOpts
+                    options = _HBOpts()
+                super().__init__(in_doc, path_or_stream, options)
+                url = source_url_holder.get('url', '')
+                if url and url.startswith(('http://', 'https://')):
+                    self.base_path = url
+
+            def _resolve_relative_path(self, loc: str) -> str:
+                # Docling treats root-relative /path as protocol-relative //host/path,
+                # producing "https:/path" (single slash). Fix: prepend scheme+netloc.
+                if self.base_path and loc.startswith('/') and not loc.startswith('//'):
+                    parsed = urlparse(self.base_path)
+                    if parsed.scheme and parsed.netloc:
+                        return f"{parsed.scheme}://{parsed.netloc}{loc}"
+                return super()._resolve_relative_path(loc)
+
+            def _load_image_data(self, src_loc: str) -> Optional[bytes]:
+                logger.debug(f"_load_image_data: src_loc={src_loc!r}")
+                if HTMLDocumentBackend._is_remote_url(src_loc):
+                    try:
+                        r = requests.get(src_loc, stream=True, headers=request_headers, timeout=10)
+                        r.raise_for_status()
+                        if r.headers.get("content-type", "").startswith("image/"):
+                            from PIL import Image as _PILImage
+                            data = r.content
+                            # Validate completeness — PIL loads lazily; a truncated image
+                            # only fails during save(), which Docling doesn't catch.
+                            _PILImage.open(BytesIO(data)).load()
+                            return data
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch image from {src_loc}: {e}")
+                    return None
+                return super()._load_image_data(src_loc)
+
         html_opts = PaginatedPipelineOptions()
-        html_opts.generate_page_images = True
+        html_opts.generate_page_images = False  # Avoid page-render crops; use URL fetch instead
         html_opts.images_scale = self.image_scale
 
         pdf_opts = PdfPipelineOptions()
@@ -782,17 +897,25 @@ class DoclingDocumentParser(DocumentParser):
         if self.do_ocr:
             pdf_opts.do_ocr = True
 
+        from docling.datamodel.backend_options import HTMLBackendOptions
+        html_backend_opts = HTMLBackendOptions(fetch_images=True, enable_remote_fetch=True)
+
         self._converter = DocumentConverter(
             allowed_formats=[
                 InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX,
             ],
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts),
-                InputFormat.HTML: HTMLFormatOption(pipeline_options=html_opts),
+                InputFormat.HTML: HTMLFormatOption(
+                    backend=UrlCapturingHtmlBackend,
+                    pipeline_options=html_opts,
+                    backend_options=html_backend_opts,
+                ),
                 InputFormat.PPTX: PowerpointFormatOption(pipeline_options=office_opts),
                 InputFormat.DOCX: WordFormatOption(pipeline_options=office_opts),
             }
         )
+        self._source_url_holder = source_url_holder
         return self._converter
 
     def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
@@ -811,6 +934,9 @@ class DoclingDocumentParser(DocumentParser):
         st = time.time()
 
         converter = self._get_or_create_converter()
+        if hasattr(self, '_source_url_holder'):
+            self._source_url_holder['url'] = source_url
+
         res = converter.convert(filename)
         doc = res.document
         doc_title = extract_document_title(filename)
@@ -877,16 +1003,23 @@ class DoclingDocumentParser(DocumentParser):
                     num_next=self.image_context['num_next_chunks'],
                     text_extractor=lambda x: x.text if hasattr(x, 'text') else None
                 )
-                
+
+                image_binary = None
                 image = item.get_image(doc)
                 if image:
-                    # Convert PIL image to PNG bytes in memory (no disk write)
-                    buf = BytesIO()
-                    image.save(buf, format='PNG')
-                    image_binary = buf.getvalue()
-                    buf.close()
+                    w, h = image.size
+                    if min(w, h) < 100:
+                        logger.debug(f"Skipping small image ({w}×{h}px) — likely icon/avatar")
+                    else:
+                        # Convert PIL image to PNG bytes in memory (no disk write)
+                        buf = BytesIO()
+                        image.save(buf, format='PNG')
+                        image_binary = buf.getvalue()
+                        buf.close()
+                        logger.debug(f"Image {len(image_bytes)}: {w}×{h}px from docling fetch")
                     del image
 
+                if image_binary:
                     image_id = f"docling_page_{page_no}_image_{len(image_bytes)}"
                     image_bytes.append((image_id, image_binary))
 
@@ -902,12 +1035,12 @@ class DoclingDocumentParser(DocumentParser):
                         }
                         # Images get +0.5 offset to appear right after preceding element
                         positioned_elements.append((position + 0.5, image_summary, metadata))
-                        
+
                         if self.verbose:
                             logger.info(f"Image summary at position {position + 0.5}: {image_summary[:MAX_VERBOSE_LENGTH]}...")
                 else:
-                    logger.info("Failed to retrieve image")
-        
+                    logger.debug("Could not retrieve image (no embedded data and no fetchable URL)")
+
         # Process tables before releasing doc (tables need doc.tables)
         tables = []
         if self.parse_tables:

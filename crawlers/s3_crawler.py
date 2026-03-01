@@ -173,8 +173,8 @@ class S3Crawler(Crawler):
             if file_extension in extensions or "*" in extensions:
                 files_to_process.append(s3_file)
 
-        # Pre-filter already-indexed S3 files for crash recovery / resume
-        if self.tracker:
+        # Pre-filter already-indexed S3 files for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
             indexed = self.tracker.get_indexed_ids()
             before = len(files_to_process)
             files_to_process = [f for f in files_to_process if f not in indexed]

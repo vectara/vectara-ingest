@@ -140,7 +140,7 @@ class ImageSummarizer():
         prompt = """
             Analyze all the details in this image, including any diagrams, graphs, or visual data representations. 
             Your task is to provide a comprehensive description of the image with as much detail as possible.
-            Your response should be a paragraph without headings and include:
+            Your response should include:
             - A detailed description of the main focus or subject of the image.
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
@@ -150,11 +150,19 @@ class ImageSummarizer():
             If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
         if previous_text or next_text:
-            prompt += "\nConsider the surrounding text context when summarizing the image."
+            prompt += (
+                "\nIMPORTANT: Base your description strictly on what you directly observe "
+                "in the image. Do not describe or infer content that is not visually present "
+                "in the image itself. If the image is a logo, icon, watermark, or decorative "
+                "element, describe it as such."
+                "\nThe following surrounding text is provided ONLY to help interpret labels "
+                "or values that are visibly shown within the image — do NOT use it to infer "
+                "content not directly visible:"
+            )
         if previous_text:
-            prompt += f"\nThe text before the image is: '{previous_text}'"
+            prompt += f"\nText before image: '{previous_text}'"
         if next_text:
-            prompt += f"\nThe text after the image is: '{next_text}'"
+            prompt += f"\nText after image: '{next_text}'"
 
         try:
             return generate_image_summary(

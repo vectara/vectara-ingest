@@ -135,8 +135,8 @@ class FolderCrawler(Crawler):
                     
                     files_to_process.append((file_path, file_name, file_metadata))
 
-        # Pre-filter already-indexed files for crash recovery / resume
-        if self.tracker:
+        # Pre-filter already-indexed files for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
             indexed = self.tracker.get_indexed_ids()
             before = len(files_to_process)
             files_to_process = [(fp, fn, fm) for fp, fn, fm in files_to_process if fp not in indexed]

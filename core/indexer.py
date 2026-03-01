@@ -643,7 +643,7 @@ class Indexer:
                 res = self.fetch_page_contents(
                     url=url,
                     extract_tables=self.parse_tables,
-                    extract_images=self.summarize_images,
+                    extract_images=False,
                     remove_code=self.remove_code,
                     html_processing=html_processing,
                 )
@@ -667,8 +667,11 @@ class Indexer:
                         if self.verbose:
                             logger.info(f"Processing web content from {url} locally using doc parser: {self.doc_parser}")
 
-                        # Process through index_file which uses the configured document parser
-                        result = self.index_file(temp_html_path, url, metadata)
+                        # Process through index_file which uses the configured document parser.
+                        # Docling captures all images (including those in <p>/<li> tags) natively.
+                        result = self.index_file(
+                            temp_html_path, url, metadata, title_hint=res.get('title', '')
+                        )
                         safe_remove_file(temp_html_path)
                         return result
                     except Exception as e:
@@ -927,18 +930,24 @@ class Indexer:
 
         return self.index_document(document, use_core_indexing)
 
-    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
+    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None, title_hint: str = None,
+                   extra_image_urls: Optional[List[Dict[str, str]]] = None) -> bool:
         """
-        Index a file on local file system by uploading it to the Vectara corpus.
+        Index a local file into the Vectara corpus.
 
         Args:
-            filename (str): Name of the PDF file to create.
-            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
+            filename (str): Path to the local file to index.
+            uri (str): Original URI the file was fetched from; used as the document ID and source URL.
             metadata (dict): Metadata for the document.
-            id (str, optional): Document id for the uploaded document.
+            id (str, optional): Override document id.
+            title_hint (str, optional): Title to use when the parser cannot infer one.
+            extra_image_urls (list, optional): Additional image URLs (e.g. from web extraction) to
+                summarize and append inline to the parent document. Used in the process_locally path
+                to include images that Docling may miss when they are nested inside <p>/<li> tags.
+                Only applied when inline_images=True and summarize_images=True.
 
         Returns:
-            bool: True if the upload was successful, False otherwise.
+            bool: True if indexing was successful, False otherwise.
         """
         if not os.path.exists(filename):
             logger.error(f"File {filename} does not exist")
@@ -1064,7 +1073,7 @@ class Indexer:
 
         # Extract fields from parsed_doc, then release it early
         content_stream = parsed_doc.content_stream
-        doc_title = parsed_doc.title
+        doc_title = parsed_doc.title or title_hint or ''
         doc_tables = parsed_doc.tables
         doc_image_bytes = parsed_doc.image_bytes
         del parsed_doc
@@ -1109,6 +1118,20 @@ class Indexer:
             texts = [content for content, metadata in content_stream]
             metadatas = [metadata for content, metadata in content_stream]
             del content_stream
+
+            # Append summaries for images Docling missed (e.g. nested in <p>/<li> tags)
+            if extra_image_urls and self.summarize_images:
+                image_processor = ImageProcessor(
+                    cfg=self.cfg, model_config=self.model_config, verbose=self.verbose
+                )
+                processed_images, extra_img_bytes = image_processor.process_web_images(
+                    extra_image_urls, uri, {}
+                )
+                for _, image_summary, image_meta in processed_images:
+                    texts.append(image_summary)
+                    metadatas.append(image_meta)
+                if self.add_image_bytes:
+                    doc_image_bytes = (doc_image_bytes or []) + extra_img_bytes
 
             # Force core indexing for standalone image files (short single summary text)
             is_image_file = any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS)

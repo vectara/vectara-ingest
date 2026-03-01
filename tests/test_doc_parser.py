@@ -1,7 +1,7 @@
 import unittest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, call
 
 # Mock cairosvg before it's imported by other modules
 sys.modules['cairosvg'] = MagicMock()
@@ -270,6 +270,82 @@ class TestIntegratedTitleExtraction(unittest.TestCase):
             
             # Should use formatted filename
             self.assertEqual(doc_title, "My Research Paper")
+
+
+class TestFetchImageBytes(unittest.TestCase):
+    """Tests for _fetch_image_bytes — content-type validation and header forwarding."""
+
+    def _make_response(self, status_code: int, content_type: str, content: bytes = b""):
+        mock_resp = Mock()
+        mock_resp.status_code = status_code
+        mock_resp.headers = {'content-type': content_type}
+        mock_resp.content = content
+        return mock_resp
+
+    def test_returns_bytes_for_image_png(self):
+        """Valid image/png response returns content."""
+        from core.doc_parser import _fetch_image_bytes
+        img_bytes = b"\x89PNG\r\n\x1a\n"
+        with patch('requests.get', return_value=self._make_response(200, 'image/png', img_bytes)) as mock_get:
+            result = _fetch_image_bytes("http://example.com/img.png")
+        self.assertEqual(result, img_bytes)
+        mock_get.assert_called_once()
+
+    def test_returns_bytes_for_image_jpeg(self):
+        """Valid image/jpeg response returns content."""
+        from core.doc_parser import _fetch_image_bytes
+        img_bytes = b"\xff\xd8\xff"
+        with patch('requests.get', return_value=self._make_response(200, 'image/jpeg; charset=utf-8', img_bytes)):
+            result = _fetch_image_bytes("http://example.com/img.jpg")
+        self.assertEqual(result, img_bytes)
+
+    def test_rejects_html_content_type(self):
+        """HTTP 200 with text/html (e.g. a login redirect) must return None."""
+        from core.doc_parser import _fetch_image_bytes
+        html_bytes = b"<html><body>Please log in</body></html>"
+        with patch('requests.get', return_value=self._make_response(200, 'text/html', html_bytes)):
+            result = _fetch_image_bytes("http://example.com/attachment")
+        self.assertIsNone(result)
+
+    def test_rejects_empty_content_type(self):
+        """Response with no content-type header must return None."""
+        from core.doc_parser import _fetch_image_bytes
+        with patch('requests.get', return_value=self._make_response(200, '', b"some bytes")):
+            result = _fetch_image_bytes("http://example.com/img")
+        self.assertIsNone(result)
+
+    def test_rejects_non_200_status(self):
+        """Non-200 status codes must return None."""
+        from core.doc_parser import _fetch_image_bytes
+        for status in (403, 404, 500):
+            with self.subTest(status=status):
+                with patch('requests.get', return_value=self._make_response(status, 'image/png', b"data")):
+                    result = _fetch_image_bytes("http://example.com/img.png")
+                self.assertIsNone(result)
+
+    def test_returns_none_on_exception(self):
+        """Network exception must return None without raising."""
+        from core.doc_parser import _fetch_image_bytes
+        with patch('requests.get', side_effect=Exception("connection refused")):
+            result = _fetch_image_bytes("http://example.com/img.png")
+        self.assertIsNone(result)
+
+    def test_passes_headers_to_request(self):
+        """Supplied headers must be forwarded to requests.get."""
+        from core.doc_parser import _fetch_image_bytes
+        headers = {'User-Agent': 'test-agent', 'Cookie': 'session=abc123'}
+        with patch('requests.get', return_value=self._make_response(200, 'image/png', b"x")) as mock_get:
+            _fetch_image_bytes("http://example.com/img.png", headers=headers)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['headers'], headers)
+
+    def test_default_headers_is_empty_dict(self):
+        """When no headers supplied, requests.get receives an empty dict."""
+        from core.doc_parser import _fetch_image_bytes
+        with patch('requests.get', return_value=self._make_response(200, 'image/png', b"x")) as mock_get:
+            _fetch_image_bytes("http://example.com/img.png")
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['headers'], {})
 
 
 if __name__ == '__main__':

@@ -333,14 +333,16 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
 
     logger.info("Crawler instantiated...")
 
-    # Set up crawl tracker
-    output_dir = cfg.vectara.get("output_dir", "vectara_ingest_output")
-    db_dir = get_docker_or_local_path(
-        docker_path=f'/home/vectara/{output_dir}', output_dir=output_dir
-    )
-    db_path = os.path.join(db_dir, "crawl_tracking.db")
-    tracker = CrawlTracker(db_path, crawler_type)
-    crawler.tracker = tracker
+    # Set up crawl tracker (only when enable_crawl_tracking=true in config)
+    tracker = None
+    if cfg.vectara.get("enable_crawl_tracking", False):
+        output_dir = cfg.vectara.get("output_dir", "vectara_ingest_output")
+        db_dir = get_docker_or_local_path(
+            docker_path=f'/home/vectara/{output_dir}', output_dir=output_dir
+        )
+        db_path = os.path.join(db_dir, "crawl_tracking.db")
+        tracker = CrawlTracker(db_path, crawler_type)
+        crawler.tracker = tracker
 
     # Signal handling: first SIGTERM/SIGINT requests pause, second raises KeyboardInterrupt
     shutdown_requested = [False]
@@ -349,7 +351,8 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         if not shutdown_requested[0]:
             shutdown_requested[0] = True
             logger.info("Graceful shutdown requested — pausing crawl...")
-            tracker.request_pause()
+            if tracker:
+                tracker.request_pause()
         else:
             logger.warning("Second signal received — forcing shutdown")
             raise KeyboardInterrupt
@@ -378,21 +381,24 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
     logger.info(f"Starting crawl of type {crawler_type}...")
     try:
         crawler.crawl()
-        tracker.mark_completed()
+        if tracker:
+            tracker.mark_completed()
         logger.info(f"Finished crawl of type {crawler_type}...")
     except Exception as e:
-        tracker.mark_failed()
+        if tracker:
+            tracker.mark_failed()
         logger.error(f"Crawl failed for {crawler_type}: {e}")
         raise
     finally:
-        stats = tracker.get_stats()
-        if stats:
-            logger.info(
-                "Crawl stats: total=%s indexed=%s failed=%s skipped=%s",
-                stats["total_docs"], stats["indexed_docs"],
-                stats["failed_docs"], stats["skipped_docs"],
-            )
-        tracker.close()
+        if tracker:
+            stats = tracker.get_stats()
+            if stats:
+                logger.info(
+                    "Crawl stats: total=%s indexed=%s failed=%s skipped=%s",
+                    stats["total_docs"], stats["indexed_docs"],
+                    stats["failed_docs"], stats["skipped_docs"],
+                )
+            tracker.close()
         crawler.tracker = None
     
 

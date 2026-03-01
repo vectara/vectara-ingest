@@ -355,8 +355,8 @@ class WebsiteCrawler(Crawler):
         """
         Dispatch crawl jobs to Ray workers or process sequentially.
         """
-        # Pre-filter already-indexed URLs for crash recovery / resume
-        if self.tracker:
+        # Pre-filter already-indexed URLs for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
             indexed = self.tracker.get_indexed_ids()
             before = len(urls)
             urls = [u for u in urls if u not in indexed]
