@@ -30,8 +30,8 @@ from core.models import get_api_key
 from core.utils import (
     html_to_text, detect_language, create_session_with_retries,
     safe_remove_file, url_to_filename,
-    get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS
+    get_file_path_from_url, configure_session_for_ssl, configure_session_for_proxy,
+    get_docker_or_local_path, get_headers, normalize_text, normalize_value, IMG_EXTENSIONS
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser
@@ -209,6 +209,7 @@ class Indexer:
     def setup(self, use_playwright: bool = True) -> None:
         self.session = create_session_with_retries()
         configure_session_for_ssl(self.session, self.cfg.vectara)
+        configure_session_for_proxy(self.session, self.cfg.vectara)
 
         # Browser handling is now done by WebContentExtractor
         if self.store_docs:
