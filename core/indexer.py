@@ -668,9 +668,11 @@ class Indexer:
                             logger.info(f"Processing web content from {url} locally using doc parser: {self.doc_parser}")
 
                         # Process through index_file which uses the configured document parser.
-                        # Docling captures all images (including those in <p>/<li> tags) natively.
+                        # Docling misses images nested inside <p>/<li> tags — pass them
+                        # via extra_image_urls so index_file can supplement with web images.
                         result = self.index_file(
-                            temp_html_path, url, metadata, title_hint=res.get('title', '')
+                            temp_html_path, url, metadata, title_hint=res.get('title', ''),
+                            extra_image_urls=res.get('images', [])
                         )
                         safe_remove_file(temp_html_path)
                         return result

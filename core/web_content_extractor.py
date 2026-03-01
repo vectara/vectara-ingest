@@ -404,6 +404,17 @@ class WebContentExtractor(WebExtractorBase):
                     result['title'] = soup.title.string if soup.title else ''
                     result['text'] = static_text
                     result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                    # Extract images with same filtering as the browser path
+                    from urllib.parse import urljoin
+                    for img_tag in soup.find_all('img'):
+                        src = img_tag.get('src', '')
+                        if not src or src.startswith('data:') or src.startswith('blob:'):
+                            continue
+                        w = int(img_tag.get('width', '0') or '0')
+                        h = int(img_tag.get('height', '0') or '0')
+                        if (w > 0 and w < 10) or (h > 0 and h < 10):
+                            continue
+                        result['images'].append({'src': urljoin(url, src), 'alt': img_tag.get('alt', '')})
                     logger.info(f"Static fetch used for {url}: {len(static_text)} chars")
                     logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
                                 f"tables = {len(result['tables'])}, links = {len(result['links'])}")
@@ -413,9 +424,9 @@ class WebContentExtractor(WebExtractorBase):
             logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
 
         page = context = None
-        # Cap at 30s: OS-level Chromium crash (SIGKILL) leaves websocket open, causing
-        # Playwright's goto() to hang until TCP keepalive timeout (~2 min). 30s fails fast.
-        nav_timeout = min(self.timeout * 1000, 30000)
+        # Cap at 90s: OS-level Chromium crash (SIGKILL) leaves websocket open, causing
+        # Playwright's goto() to hang until TCP keepalive timeout (~2 min). 90s fails fast.
+        nav_timeout = min(self.timeout * 1000, 90000)
 
         try:
             self._ensure_browser_ready()

@@ -97,12 +97,20 @@ class ImageProcessor:
                     logger.info(f"Image URL '{image_url}' is not valid, skipping")
                     continue
 
+                # Skip small images (avatars, icons) — consistent with DoclingParser
+                from PIL import Image as _PILImage
+                with _PILImage.open(local_path) as pil_img:
+                    w, h = pil_img.size
+                if min(w, h) < 100:
+                    logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
+                    continue
+
                 # Store binary data
                 with open(local_path, 'rb') as fp:
                     image_binary = fp.read()
                 image_id = f"web_{slugify(url)}_image_{inx}"
                 image_bytes.append((image_id, image_binary))
-                
+
                 # Generate summary from local_path
                 image_summary = image_summarizer.summarize_image(local_path, image_url, None)
                 if not image_summary:
