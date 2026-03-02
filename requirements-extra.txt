@@ -719,6 +719,7 @@ triton==3.3.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
     #   -c requirements.txt
     #   torch
+    # via torch
 typer==0.15.4
     # via
     #   -c requirements.txt

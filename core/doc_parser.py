@@ -684,7 +684,8 @@ class DoclingDocumentParser(DocumentParser):
         image_scale: float = 1.0,
         image_context: dict = None,
         layout_model: str = None,
-        do_formula_enrichment: bool = False
+        do_formula_enrichment: bool = False,
+        fallback_ocr: bool = False
     ):
         super().__init__(
             cfg=cfg,
@@ -701,7 +702,9 @@ class DoclingDocumentParser(DocumentParser):
         self.image_context = image_context or {'num_previous_chunks': 1, 'num_next_chunks': 1}
         self.layout_model = layout_model  # Options: None (default heron), 'heron', 'heron_101', 'v2'
         self.do_formula_enrichment = do_formula_enrichment
+        self.fallback_ocr = fallback_ocr
         self._converter = None
+        self._ocr_converter = None
         if self.verbose:
             layout_info = f", layout_model '{self.layout_model}'" if self.layout_model else ""
             logger.info(f"Using DoclingParser with chunking strategy {self.chunking_strategy} and chunk size {self.chunk_size}{layout_info}")
@@ -736,7 +739,7 @@ class DoclingDocumentParser(DocumentParser):
             EasyOcrOptions, RapidOcrOptions, PaginatedPipelineOptions, layout_model_specs
         )
 
-    def _get_tables(self, tables):
+    def _get_tables(self, tables, doc=None):
         def _get_metadata(table):
             md = {}
             if table.prov:
@@ -744,7 +747,7 @@ class DoclingDocumentParser(DocumentParser):
             return md
         for table in tables:
             try:
-                table_df = table.export_to_dataframe()
+                table_df = table.export_to_dataframe(doc) if doc else table.export_to_dataframe()
                 table_md = table_df.to_markdown()
                 table_summary = self.table_summarizer.summarize_table_text(table_md)
                 yield (table_df, table_summary, '', _get_metadata(table))
@@ -756,11 +759,21 @@ class DoclingDocumentParser(DocumentParser):
         """Release the cached Docling converter and its ML models."""
         super().cleanup()
         self._converter = None
+        self._ocr_converter = None
 
-    def _get_or_create_converter(self):
-        """Build the DocumentConverter once and cache it for reuse across files."""
-        if self._converter is not None:
-            return self._converter
+    def _get_or_create_converter(self, fallback_ocr: bool = False):
+        """Build the DocumentConverter once and cache it for reuse across files.
+
+        Args:
+            fallback_ocr: When True, returns a separate OCR-enabled converter
+                       cached in self._ocr_converter.
+        """
+        if fallback_ocr:
+            if self._ocr_converter is not None:
+                return self._ocr_converter
+        else:
+            if self._converter is not None:
+                return self._converter
 
         (
             DocumentConverter, _, _, PdfPipelineOptions,
@@ -894,7 +907,7 @@ class DoclingDocumentParser(DocumentParser):
         # Always set OCR options to prevent pipeline initialization failure
         pdf_opts.ocr_options = ocr_options
 
-        if self.do_ocr:
+        if self.do_ocr or fallback_ocr:
             pdf_opts.do_ocr = True
 
         from docling.datamodel.backend_options import HTMLBackendOptions
@@ -918,11 +931,18 @@ class DoclingDocumentParser(DocumentParser):
         self._source_url_holder = source_url_holder
         return self._converter
 
-    def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
+        if fallback_ocr:
+            self._ocr_converter = converter
+        else:
+            self._converter = converter
+        return converter
+
+    def _parse_with_converter(self, filename: str, source_url: str, converter) -> ParsedDocument:
         """
-        Parse a local file and return unified content stream with images interleaved in proper order.
-        Tables are extracted separately for structured indexing.
-        Uses position-based ordering to maintain document structure.
+        Core parsing logic shared by the normal and OCR-fallback paths.
+
+        Converts *filename* with *converter*, extracts text / images / tables,
+        applies chunking, and returns a ``ParsedDocument``.
         """
         # Lazy-load docling modules (Python caches imports, so subsequent calls are cheap)
         (
@@ -940,7 +960,7 @@ class DoclingDocumentParser(DocumentParser):
         res = converter.convert(filename)
         doc = res.document
         doc_title = extract_document_title(filename)
-        
+
         # Fallback to Docling document name if no document metadata title found
         if not doc_title and doc.name:
             doc_title = doc.name
@@ -950,7 +970,7 @@ class DoclingDocumentParser(DocumentParser):
         positioned_elements = []  # List of (position, content, metadata) tuples
         all_items = []  # Collect all items for context extraction
         image_bytes = []  # Store image binary data
-        
+
         # First pass: collect all items for context extraction
         element_index = 0
         for item, _ in doc.iterate_items():
@@ -958,10 +978,10 @@ class DoclingDocumentParser(DocumentParser):
             page_no = 0
             if hasattr(item, 'prov') and item.prov:
                 page_no = item.prov[0].page_no
-            
+
             base_position = page_no * 1000
             position = base_position + element_index
-            
+
             # Store item with its position and page info
             all_items.append({
                 'item': item,
@@ -970,7 +990,7 @@ class DoclingDocumentParser(DocumentParser):
                 'index': element_index
             })
             element_index += 1
-        
+
         # Pre-build items list once for context extraction (avoids rebuilding per image)
         items_list = [i['item'] for i in all_items]
 
@@ -1047,7 +1067,7 @@ class DoclingDocumentParser(DocumentParser):
             if self.enable_gmft and filename.endswith('.pdf'):
                 tables = list(self.get_tables_with_gmft(filename))
             else:
-                tables = list(self._get_tables(doc.tables))
+                tables = list(self._get_tables(doc.tables, doc))
 
         # Apply chunking if needed (chunker.chunk needs doc)
         if self.chunking_strategy in ['hybrid', 'hierarchical']:
@@ -1092,15 +1112,40 @@ class DoclingDocumentParser(DocumentParser):
             doc_title = os.path.splitext(basename)[0].replace('_', ' ').replace('-', ' ').title()
             logger.info(f"No title found in document, using filename fallback: '{doc_title}' for file {filename}")
 
-        logger.info(f"DoclingParser: {len(content_stream)} content elements, {len(tables)} tables")
-        logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
-
         return ParsedDocument(
             title=doc_title,
             content_stream=content_stream,
             tables=tables,
             image_bytes=image_bytes
         )
+
+    def parse(self, filename: str, source_url: str = "No URL") -> ParsedDocument:
+        """
+        Parse a local file and return unified content stream with images interleaved in proper order.
+        Tables are extracted separately for structured indexing.
+        Uses position-based ordering to maintain document structure.
+
+        When ``fallback_ocr`` is enabled and the initial (non-OCR) parse of a PDF
+        yields no meaningful text, the file is automatically re-parsed with OCR.
+        """
+        st = time.time()
+
+        converter = self._get_or_create_converter()
+        result = self._parse_with_converter(filename, source_url, converter)
+
+        # Fallback: if content stream is empty for a PDF, retry with OCR
+        if (self.fallback_ocr
+                and not self.do_ocr
+                and filename.lower().endswith('.pdf')
+                and not result.content_stream):
+            logger.info(f"No content elements found in {filename}, retrying with OCR fallback")
+            ocr_converter = self._get_or_create_converter(fallback_ocr=True)
+            result = self._parse_with_converter(filename, source_url, ocr_converter)
+
+        logger.info(f"DoclingParser: {len(result.content_stream)} content elements, {len(result.tables)} tables")
+        logger.info(f"parsing file {filename} with Docling took {time.time()-st:.2f} seconds")
+
+        return result
 
 
 
