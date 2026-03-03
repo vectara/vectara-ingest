@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (doc_id, crawler_type)
 );
-CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_documents_crawler_status ON documents(crawler_type, status);
 
 CREATE TABLE IF NOT EXISTS crawl_state (
     crawler_type  TEXT PRIMARY KEY,

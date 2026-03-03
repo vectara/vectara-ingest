@@ -164,33 +164,6 @@ def _extract_html_title(filename: str) -> str:
     return ''
 
 
-
-
-def _fetch_image_bytes(url: str, timeout: int = 10, headers: Optional[dict] = None) -> Optional[bytes]:
-    """Fetch image bytes from an external URL. Returns None on failure.
-
-    Args:
-        url: Image URL to fetch.
-        timeout: Request timeout in seconds.
-        headers: Optional HTTP headers (e.g. User-Agent, cookies) to send with the
-                 request.  Passing the same headers used by the Playwright session
-                 ensures auth-gated CDNs serve the correct image rather than a
-                 cached fallback.
-    """
-    try:
-        response = requests.get(url, timeout=timeout, stream=True, headers=headers or {})
-        if response.status_code == 200:
-            content_type = response.headers.get('content-type', '')
-            if content_type.startswith('image/'):
-                return response.content
-            logger.debug(f"Skipping non-image response (content-type='{content_type}') for {url}")
-        else:
-            logger.debug(f"Failed to fetch image from {url}: HTTP {response.status_code}")
-    except Exception as e:
-        logger.debug(f"Could not fetch image from {url}: {e}")
-    return None
-
-
 @dataclass
 class ParsedDocument:
     """
