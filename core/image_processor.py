@@ -97,13 +97,15 @@ class ImageProcessor:
                     logger.info(f"Image URL '{image_url}' is not valid, skipping")
                     continue
 
-                # Skip small images (avatars, icons) — consistent with DoclingParser
-                from PIL import Image as _PILImage
-                with _PILImage.open(local_path) as pil_img:
-                    w, h = pil_img.size
-                if min(w, h) < 100:
-                    logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
-                    continue
+                # Skip small raster images (avatars, icons) — consistent with DoclingParser
+                # SVGs are vector and don't have inherent pixel dimensions; skip the size check for them
+                if not image_summarizer._is_svg_file(local_path, image_url):
+                    from PIL import Image as _PILImage
+                    with _PILImage.open(local_path) as pil_img:
+                        w, h = pil_img.size
+                    if min(w, h) < 100:
+                        logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
+                        continue
 
                 # Store binary data
                 with open(local_path, 'rb') as fp:

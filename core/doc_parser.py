@@ -1,5 +1,4 @@
 import logging
-import mimetypes
 logger = logging.getLogger(__name__)
 from typing import List, Tuple, Iterator, Dict, Any, Optional
 import time
@@ -8,7 +7,6 @@ import os
 from io import StringIO, BytesIO
 import gc
 import base64
-import re
 import requests
 from urllib.parse import urlparse
 from dataclasses import dataclass
@@ -931,12 +929,6 @@ class DoclingDocumentParser(DocumentParser):
         self._source_url_holder = source_url_holder
         return self._converter
 
-        if fallback_ocr:
-            self._ocr_converter = converter
-        else:
-            self._converter = converter
-        return converter
-
     def _parse_with_converter(self, filename: str, source_url: str, converter) -> ParsedDocument:
         """
         Core parsing logic shared by the normal and OCR-fallback paths.
@@ -953,7 +945,6 @@ class DoclingDocumentParser(DocumentParser):
 
         st = time.time()
 
-        converter = self._get_or_create_converter()
         if hasattr(self, '_source_url_holder'):
             self._source_url_holder['url'] = source_url
 

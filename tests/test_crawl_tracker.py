@@ -61,12 +61,14 @@ class TestCrawlTrackerTracking(unittest.TestCase):
     """Test document tracking operations."""
 
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
         self.db_path = os.path.join(self.tmpdir, "crawl_tracking.db")
         self.tracker = CrawlTracker(self.db_path, "website")
 
     def tearDown(self):
         self.tracker.close()
+        self._tmpdir.cleanup()
 
     def test_track_indexed_and_is_indexed(self):
         self.assertFalse(self.tracker.is_indexed("doc1"))
@@ -132,12 +134,14 @@ class TestCrawlTrackerPauseResume(unittest.TestCase):
     """Test pause/resume mechanics."""
 
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
         self.db_path = os.path.join(self.tmpdir, "crawl_tracking.db")
         self.tracker = CrawlTracker(self.db_path, "website")
 
     def tearDown(self):
         self.tracker.close()
+        self._tmpdir.cleanup()
 
     def test_pause_and_resume(self):
         """Verify wait_if_paused blocks when paused and unblocks on resume."""
@@ -178,12 +182,14 @@ class TestCrawlTrackerState(unittest.TestCase):
     """Test crawl state transitions."""
 
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
         self.db_path = os.path.join(self.tmpdir, "crawl_tracking.db")
         self.tracker = CrawlTracker(self.db_path, "website")
 
     def tearDown(self):
         self.tracker.close()
+        self._tmpdir.cleanup()
 
     def test_mark_completed(self):
         self.tracker.mark_completed()

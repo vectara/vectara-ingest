@@ -1,7 +1,7 @@
 import unittest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch, MagicMock
 
 # Mock cairosvg before it's imported by other modules
 sys.modules['cairosvg'] = MagicMock()
