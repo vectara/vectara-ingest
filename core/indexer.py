@@ -279,7 +279,7 @@ class Indexer:
             'x-api-key': self.api_key,
             'X-Source': self.x_source
         }
-        encoded_doc_id = urllib.parse.quote(doc_id, safe='')
+        encoded_doc_id = urllib.parse.quote(urllib.parse.unquote(doc_id), safe='')
         response = self.session.get(
             f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
             headers=post_headers)
@@ -310,7 +310,7 @@ class Indexer:
             'X-Source': self.x_source
         }
 
-        encoded_doc_id = urllib.parse.quote(doc_id, safe='')
+        encoded_doc_id = urllib.parse.quote(urllib.parse.unquote(doc_id), safe='')
         response = self.session.delete(
             f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
             headers=post_headers)
