@@ -57,7 +57,7 @@ def extract_document_title(filename: str) -> str:
     - PDF files: Uses pypdf to extract title from PDF metadata
     - DOCX files: Uses python-docx to extract title from document properties  
     - PPTX files: Uses python-pptx to extract title from presentation properties
-    - HTML files: Returns empty (will fallback to filename)
+    - HTML files: Parses the <title> tag from the HTML document
     - Other files: Returns empty (will fallback to filename or Title elements)
     
     Args:
@@ -911,7 +911,7 @@ class DoclingDocumentParser(DocumentParser):
         from docling.datamodel.backend_options import HTMLBackendOptions
         html_backend_opts = HTMLBackendOptions(fetch_images=True, enable_remote_fetch=True)
 
-        self._converter = DocumentConverter(
+        converter = DocumentConverter(
             allowed_formats=[
                 InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX,
             ],
@@ -926,8 +926,12 @@ class DoclingDocumentParser(DocumentParser):
                 InputFormat.DOCX: WordFormatOption(pipeline_options=office_opts),
             }
         )
-        self._source_url_holder = source_url_holder
-        return self._converter
+        if fallback_ocr:
+            self._ocr_converter = converter
+        else:
+            self._converter = converter
+            self._source_url_holder = source_url_holder
+        return converter
 
     def _parse_with_converter(self, filename: str, source_url: str, converter) -> ParsedDocument:
         """
@@ -942,8 +946,6 @@ class DoclingDocumentParser(DocumentParser):
             _, _, _, _, _,
             _, _, _, _
         ) = self._lazy_load_docling()
-
-        st = time.time()
 
         if hasattr(self, '_source_url_holder'):
             self._source_url_holder['url'] = source_url
