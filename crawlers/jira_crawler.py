@@ -258,6 +258,7 @@ class JiraCrawler(Crawler):
 
         issue_count = 0
         res_cnt = max_results
+        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
 
         # API v3 uses token-based pagination, v2 uses offset-based
         next_page_token = None
@@ -297,7 +298,7 @@ class JiraCrawler(Crawler):
             if actual_cnt > 0:
                 for issue in jira_data["issues"]:
                     doc_id = issue["key"]
-                    if self.tracker and self.tracker.is_indexed(doc_id):
+                    if doc_id in indexed_ids:
                         continue
                     self.wait_if_paused()
 

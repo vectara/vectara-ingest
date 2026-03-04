@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Tuple
 from omegaconf import OmegaConf
 from slugify import slugify
 from core.summary import ImageSummarizer
-from core.utils import get_headers
+from core.utils import get_headers, MIN_IMAGE_DIMENSION
 
 import base64
 import mimetypes
@@ -103,7 +103,7 @@ class ImageProcessor:
                     from PIL import Image as _PILImage
                     with _PILImage.open(local_path) as pil_img:
                         w, h = pil_img.size
-                    if min(w, h) < 100:
+                    if min(w, h) < MIN_IMAGE_DIMENSION:
                         logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
                         continue
 

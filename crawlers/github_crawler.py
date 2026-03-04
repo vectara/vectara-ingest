@@ -150,13 +150,14 @@ class GithubCrawler(Crawler):
 
         # create github object
         g = Github(repo, owner, token)
+        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
 
         # Extract and index pull requests
         prs = g.get_pull_requests("all")
         for d_pr in prs:
             pr = Box(d_pr)
             doc_id = f'github-{repo}-pr-{pr.number}'
-            if self.tracker and self.tracker.is_indexed(doc_id):
+            if doc_id in indexed_ids:
                 continue
             self.wait_if_paused()
             doc_metadata = {
@@ -213,7 +214,7 @@ class GithubCrawler(Crawler):
             # Extract issue metadata
             issue = Box(d_issue)
             doc_id = f'github-{repo}-issue-{issue.number}'
-            if self.tracker and self.tracker.is_indexed(doc_id):
+            if doc_id in indexed_ids:
                 continue
             self.wait_if_paused()
             title = issue.title

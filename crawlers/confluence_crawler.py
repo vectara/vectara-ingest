@@ -374,6 +374,7 @@ class ConfluenceCrawler(Crawler):
         confluence_search_url.args['limit'] = limit
         confluence_search_url.args['next'] = 'true'
         count = 0
+        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
         while True:
             logger.info(f"Searching Confluence: {confluence_search_url.url}")
             confluence_search_response = self.session.get(
@@ -387,7 +388,7 @@ class ConfluenceCrawler(Crawler):
             for search_result in confluence_search_data['results']:
                 confluence_id = search_result['id']
                 doc_id = f"{search_result['type']}{confluence_id}"
-                if self.tracker and self.tracker.is_indexed(doc_id):
+                if doc_id in indexed_ids:
                     continue
                 self.wait_if_paused()
                 metadata = {'id':doc_id}

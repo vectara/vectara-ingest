@@ -104,11 +104,12 @@ class NotionCrawler(Crawler):
         notion = Client(auth=self.notion_api_key)
 
         pages = list_all_pages(notion)
+        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
 
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
-            if self.tracker and self.tracker.is_indexed(page_id):
+            if page_id in indexed_ids:
                 continue
             self.wait_if_paused()
             try:

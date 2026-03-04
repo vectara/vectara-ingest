@@ -16,7 +16,7 @@ from pdf2image import convert_from_bytes
 from slugify import slugify
 
 from core.summary import TableSummarizer, ImageSummarizer
-from core.utils import detect_file_type, markdown_to_df, get_headers
+from core.utils import detect_file_type, markdown_to_df, get_headers, MIN_IMAGE_DIMENSION
 from core.context_utils import extract_image_context
 
 import unstructured as us
@@ -994,7 +994,7 @@ class DoclingDocumentParser(DocumentParser):
                 image = item.get_image(doc)
                 if image:
                     w, h = image.size
-                    if min(w, h) < 100:
+                    if min(w, h) < MIN_IMAGE_DIMENSION:
                         logger.debug(f"Skipping small image ({w}×{h}px) — likely icon/avatar")
                     else:
                         # Convert PIL image to PNG bytes in memory (no disk write)
