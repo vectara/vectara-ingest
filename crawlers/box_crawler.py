@@ -39,6 +39,8 @@ except ImportError:
     RAY_AVAILABLE = False
     logging.warning("Ray is not available. Install with: pip install ray")
 
+logging.getLogger("boxsdk").setLevel(logging.ERROR)
+
 
 def create_dataframe_parser(cfg: DictConfig, indexer: Indexer) -> DataframeParser:
     """
