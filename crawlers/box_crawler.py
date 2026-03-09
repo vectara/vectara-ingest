@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from boxsdk import Client, JWTAuth, OAuth2
@@ -453,9 +453,13 @@ class BoxCrawler(Crawler):
         self.collect_permissions = self.box_cfg.get("collect_permissions", False)
         self._permissions_cache: Dict[str, List[Dict[str, Any]]] = {}  # folder_id -> collaborations
 
+        # Incremental update mode
+        self.incremental_update = self.box_cfg.get("incremental_update", False)
+        self.hours_back = self.box_cfg.get("hours_back", None)
+
         # Determine if we should preserve existing CSV files
         # Preserve if: skip_indexed OR retry_failed (both need existing CSV data)
-        preserve_csv = self.skip_indexed or self.retry_failed
+        preserve_csv = self.skip_indexed or self.retry_failed or self.incremental_update
 
         # Initialize CSV tracker
         self.tracker = BoxCrawlerTracker(self.tracking_dir, preserve_existing=preserve_csv)
@@ -960,6 +964,240 @@ class BoxCrawler(Crawler):
         except Exception as e:
             logging.error(f"Error downloading file {file_name}: {str(e)}")
             return None
+
+    @staticmethod
+    def _parse_hours_back(hours_back_str: str) -> timedelta:
+        """Parse hours_back string like '6h', '24h', '2d' into timedelta."""
+        s = str(hours_back_str).strip().lower()
+        if s.endswith("h"):
+            return timedelta(hours=int(s[:-1]))
+        elif s.endswith("d"):
+            return timedelta(days=int(s[:-1]))
+        return timedelta(hours=int(s))
+
+    def _get_all_box_files(self, folder_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Crawl Box folders and return dict of file_id -> {name, modified_at, size, path}.
+
+        Uses the authenticated Box client to traverse all configured folders.
+        Respects file_extensions filter and recursive setting.
+        """
+        all_files: Dict[str, Dict[str, Any]] = {}
+        file_ext_set = set(str(e).lower() for e in self.file_extensions) if self.file_extensions else set()
+
+        def _crawl(fid: str, path: str = ""):
+            try:
+                folder = self.client.folder(fid).get(fields=["name", "id"])
+                current_path = f"{path}/{folder.name}" if path else folder.name
+                items = folder.get_items(fields=["name", "id", "type", "modified_at", "size"])
+                for item in items:
+                    if item.type == "file":
+                        ext = os.path.splitext(item.name)[1].lower()
+                        if file_ext_set and ext not in file_ext_set:
+                            continue
+                        fid_str = str(item.id)
+                        all_files[fid_str] = {
+                            "name": item.name,
+                            "modified_at": str(item.modified_at) if item.modified_at else "",
+                            "size": item.size if hasattr(item, "size") else 0,
+                            "path": current_path,
+                        }
+                    elif item.type == "folder" and self.recursive:
+                        _crawl(str(item.id), current_path)
+            except Exception as e:
+                logging.error(f"Error crawling folder {fid} for incremental check: {e}")
+
+        for folder_id in folder_ids:
+            _crawl(str(folder_id))
+
+        return all_files
+
+    def _crawl_incremental(self, folder_ids: List[str]) -> None:
+        """Run incremental crawl: only index files modified within hours_back, then delete removed files.
+
+        Steps:
+        1. Crawl Box folders to get all current files with modified_at
+        2. Filter files modified within hours_back window
+        3. Download and index only those files through the full pipeline
+        4. Compare Box files vs indexed.csv to detect and delete removed files
+        """
+        delta = self._parse_hours_back(str(self.hours_back))
+        cutoff = datetime.now(timezone.utc) - delta
+        logging.info("=" * 80)
+        logging.info("INCREMENTAL UPDATE MODE")
+        logging.info(f"  hours_back: {self.hours_back} (cutoff: {cutoff.isoformat()})")
+        logging.info(f"  Folders: {folder_ids}")
+        logging.info("=" * 80)
+
+        logging.info("Scanning Box folders for current file state...")
+        box_files = self._get_all_box_files(folder_ids)
+        logging.info(f"Found {len(box_files)} total files in Box")
+
+        modified_files = {}
+        for file_id, info in box_files.items():
+            modified_str = info["modified_at"]
+            if not modified_str:
+                continue
+            try:
+                modified_at = datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
+                if modified_at.tzinfo is None:
+                    modified_at = modified_at.replace(tzinfo=timezone.utc)
+                if modified_at > cutoff:
+                    modified_files[file_id] = info
+            except (ValueError, TypeError):
+                continue
+
+        already_indexed = self.tracker.get_indexed_file_ids()
+        new_files = {fid: info for fid, info in modified_files.items() if fid not in already_indexed}
+        updated_files = {fid: info for fid, info in modified_files.items() if fid in already_indexed}
+
+        logging.info(f"Files modified in last {self.hours_back}: {len(modified_files)}")
+        logging.info(f"  New files: {len(new_files)}")
+        logging.info(f"  Updated files: {len(updated_files)}")
+
+        if modified_files:
+            self.df_parser = create_dataframe_parser(self.cfg, self.indexer)
+
+            for file_id in modified_files:
+                self.indexed_file_ids.discard(file_id)
+
+            index_success = 0
+            index_failed = 0
+            for file_id, info in modified_files.items():
+                file_name = info["name"]
+                extension = os.path.splitext(file_name)[1]
+                url = f"https://app.box.com/file/{file_id}"
+                size = info.get("size", 0)
+                logging.info(f"[INCREMENTAL] Processing: {file_name} (ID: {file_id})")
+
+                try:
+                    file_item = self.client.file(file_id).get(
+                        fields=["name", "id", "size", "modified_at", "created_at", "created_by", "modified_by"]
+                    )
+
+                    inherited_permissions = None
+                    if self.collect_permissions:
+                        try:
+                            file_full = self.client.file(file_id).get(fields=["parent"])
+                            parent_id = file_full.parent.id if file_full.parent else None
+                        except Exception:
+                            parent_id = None
+                        if parent_id:
+                            folder_perms = self._get_folder_collaborations(parent_id, info["path"])
+                            inherited_permissions = folder_perms
+
+                    result = self._download_file(
+                        file_item,
+                        ray_mode=True,
+                        inherited_permissions=inherited_permissions
+                    )
+
+                    if not result:
+                        logging.warning(f"[INCREMENTAL] Download failed: {file_name}")
+                        self.tracker.track_failed(file_id, file_name, url, size, extension, "Download failed")
+                        index_failed += 1
+                        continue
+
+                    file_path, metadata = result
+                    try:
+                        if supported_by_dataframe_parser(file_path):
+                            df_config = self.cfg.get("dataframe_processing", {})
+                            success = process_dataframe_file(
+                                file_path=file_path, metadata=metadata, doc_id=file_id,
+                                df_parser=self.df_parser, df_config=df_config, source_name="box"
+                            )
+                        else:
+                            success = self.indexer.index_file(
+                                filename=file_path, uri=url, metadata=metadata, id=file_id
+                            )
+
+                        if success:
+                            self.tracker.track_indexed(file_id, file_name, url, size, extension)
+                            logging.info(f"[INCREMENTAL] Indexed: {file_name}")
+                            index_success += 1
+                        else:
+                            self.tracker.track_failed(file_id, file_name, url, size, extension, "Indexing returned False")
+                            logging.warning(f"[INCREMENTAL] Failed to index: {file_name}")
+                            index_failed += 1
+                    finally:
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except OSError:
+                                pass
+
+                except Exception as e:
+                    logging.error(f"[INCREMENTAL] Error processing {file_name}: {e}")
+                    self.tracker.track_failed(file_id, file_name, url, size, extension, str(e))
+                    index_failed += 1
+            logging.info(f"Indexing complete: {index_success} succeeded, {index_failed} failed")
+        else:
+            index_success = 0
+            index_failed = 0
+            logging.info("No modified files found — nothing to index")
+
+        self._delete_removed_from_vectara(box_files)
+
+        logging.info("=" * 80)
+        logging.info("INCREMENTAL UPDATE COMPLETE")
+        logging.info(f"  Files in Box:     {len(box_files)}")
+        logging.info(f"  Modified:         {len(modified_files)}")
+        logging.info(f"  New:              {len(new_files)}")
+        logging.info(f"  Updated:          {len(updated_files)}")
+        logging.info(f"  Index succeeded:  {index_success}")
+        logging.info(f"  Index failed:     {index_failed}")
+        logging.info("=" * 80)
+
+    def _delete_removed_from_vectara(self, box_files: Dict[str, Dict[str, Any]]) -> None:
+        """Delete files from Vectara that are in indexed.csv but no longer in Box.
+
+        Compares the current Box file list against indexed.csv entries.
+        Removes deleted files from Vectara and updates indexed.csv.
+        """
+        indexed_csv = os.path.join(self.tracking_dir, "indexed.csv")
+        if not os.path.exists(indexed_csv):
+            logging.info("No indexed.csv found — skipping deletion check")
+            return
+
+        box_file_ids = set(box_files.keys())
+
+        rows_to_keep = []
+        files_to_delete = []
+        with open(indexed_csv, newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                file_id = row.get("file_id", "").strip()
+                if file_id and file_id not in box_file_ids:
+                    files_to_delete.append(row)
+                else:
+                    rows_to_keep.append(row)
+
+        if not files_to_delete:
+            logging.info("No deleted files detected in Box")
+            return
+
+        logging.info(f"Found {len(files_to_delete)} files removed from Box — deleting from Vectara")
+        delete_success = 0
+        delete_failed = 0
+
+        for row in files_to_delete:
+            file_id = row.get("file_id", "")
+            name = row.get("name", "")
+            logging.info(f"[DELETE] Removing from Vectara: {name} (ID: {file_id})")
+
+            if self.indexer.delete_doc(file_id):
+                delete_success += 1
+            else:
+                delete_failed += 1
+                rows_to_keep.append(row)
+
+        with open(indexed_csv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows_to_keep:
+                writer.writerow(row)
+
+        logging.info(f"Deletion complete: {delete_success} deleted, {delete_failed} failed, {len(rows_to_keep)} remaining in indexed.csv")
 
     def _collect_folder_info(self, folder_id: str, path: str = "") -> Dict[str, Any]:
         """
@@ -1649,6 +1887,11 @@ class BoxCrawler(Crawler):
                     actual_folders.append(folder_id_str)
 
             logging.info(f"Starting Box crawl for {len(actual_folders)} folder(s)")
+
+            # Incremental update mode: only process modified files + delete removed
+            if self.incremental_update and self.hours_back:
+                self._crawl_incremental(actual_folders)
+                return
 
             # Generate report or download files
             if self.generate_report:
