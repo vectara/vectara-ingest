@@ -100,7 +100,6 @@ click==8.1.8
     #   -r requirements.in
     #   llama-cloud-services
     #   nltk
-    #   ocrmac
     #   python-oxmsg
     #   ray
     #   typer
@@ -579,12 +578,47 @@ numpy==1.26.4
     #   transformers
     #   unstructured
     #   unstructured-inference
+nvidia-cublas-cu12==12.6.4.1
+    # via
+    #   nvidia-cudnn-cu12
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cuda-cupti-cu12==12.6.80
+    # via torch
+nvidia-cuda-nvrtc-cu12==12.6.77
+    # via torch
+nvidia-cuda-runtime-cu12==12.6.77
+    # via torch
+nvidia-cudnn-cu12==9.5.1.17
+    # via torch
+nvidia-cufft-cu12==11.3.0.4
+    # via torch
+nvidia-cufile-cu12==1.11.1.6
+    # via torch
+nvidia-curand-cu12==10.3.7.77
+    # via torch
+nvidia-cusolver-cu12==11.7.1.2
+    # via torch
+nvidia-cusparse-cu12==12.5.4.2
+    # via
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cusparselt-cu12==0.6.3
+    # via torch
+nvidia-nccl-cu12==2.26.2
+    # via torch
+nvidia-nvjitlink-cu12==12.6.85
+    # via
+    #   nvidia-cufft-cu12
+    #   nvidia-cusolver-cu12
+    #   nvidia-cusparse-cu12
+    #   torch
+nvidia-nvtx-cu12==12.6.77
+    # via torch
 oauthlib==3.2.2
     # via
     #   requests-oauthlib
     #   tweepy
-ocrmac==1.0.0
-    # via docling
 office365-rest-python-client==2.6.2
     # via -r requirements.in
 olefile==0.47
@@ -737,7 +771,6 @@ pillow==12.1.1
     #   imageio
     #   llama-index-core
     #   matplotlib
-    #   ocrmac
     #   pdf2image
     #   pi-heif
     #   pikepdf
@@ -855,23 +888,6 @@ pylatexenc==2.10
     # via docling
 pymysql==1.1.1
     # via -r requirements.in
-pyobjc-core==12.1
-    # via
-    #   pyobjc-framework-cocoa
-    #   pyobjc-framework-coreml
-    #   pyobjc-framework-quartz
-    #   pyobjc-framework-vision
-pyobjc-framework-cocoa==12.1
-    # via
-    #   pyobjc-framework-coreml
-    #   pyobjc-framework-quartz
-    #   pyobjc-framework-vision
-pyobjc-framework-coreml==12.1
-    # via pyobjc-framework-vision
-pyobjc-framework-quartz==12.1
-    # via pyobjc-framework-vision
-pyobjc-framework-vision==12.1
-    # via ocrmac
 pyopenssl==25.3.0
     # via scrapy
 pyparsing==3.2.3
@@ -1067,7 +1083,7 @@ setuptools==80.9.0
     # via
     #   incremental
     #   llama-index-core
-    #   torch
+    #   triton
     #   zope-interface
 sgmllib3k==1.0.0
     # via feedparser
@@ -1203,6 +1219,10 @@ tree-sitter-python==0.25.0
     # via docling-core
 tree-sitter-typescript==0.23.2
     # via docling-core
+triton==3.3.1
+    # via
+    #   openai-whisper
+    #   torch
 tweepy==4.14.0
     # via -r requirements.in
 twisted==24.11.0
@@ -1214,8 +1234,10 @@ typer==0.15.4
     #   docling-core
 typing-extensions==4.14.0
     # via
+    #   aiosignal
     #   aiosqlite
     #   anthropic
+    #   anyio
     #   docling-core
     #   gmft
     #   google-cloud-aiplatform
@@ -1235,9 +1257,11 @@ typing-extensions==4.14.0
     #   pydantic
     #   pydantic-core
     #   pyee
+    #   pyopenssl
     #   python-docx
     #   python-oxmsg
     #   python-pptx
+    #   referencing
     #   sqlalchemy
     #   torch
     #   twisted
