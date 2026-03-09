@@ -966,7 +966,7 @@ rapidfuzz==3.13.0
     #   unstructured-inference
 rapidocr==3.7.0
     # via docling
-ray==2.53.0
+ray==2.54.0
     # via -r requirements.in
 referencing==0.36.2
     # via
