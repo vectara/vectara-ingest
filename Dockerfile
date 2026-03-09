@@ -64,7 +64,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_VISIBLE_DEVICES=""
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # Your original dependencies
     tesseract-ocr \
     ffmpeg \
