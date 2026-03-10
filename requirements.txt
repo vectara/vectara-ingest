@@ -47,7 +47,7 @@ attrs==25.3.0
     #   referencing
     #   service-identity
     #   twisted
-authlib==1.6.5
+authlib==1.6.7
     # via -r requirements.in
 automat==25.4.16
     # via twisted
@@ -309,14 +309,7 @@ griffe==1.7.3
     # via banks
 grpc-google-iam-v1==0.14.3
     # via google-cloud-resource-manager
-grpcio==1.72.1 ; python_full_version < '3.14'
-    # via
-    #   google-api-core
-    #   google-cloud-resource-manager
-    #   googleapis-common-protos
-    #   grpc-google-iam-v1
-    #   grpcio-status
-grpcio==1.78.0 ; python_full_version >= '3.14'
+grpcio==1.78.0
     # via
     #   google-api-core
     #   google-cloud-resource-manager

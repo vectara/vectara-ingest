@@ -24,6 +24,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from boxsdk import Client, JWTAuth, OAuth2
+from slugify import slugify
 from omegaconf import DictConfig, OmegaConf
 
 from core.crawler import Crawler
@@ -1149,11 +1150,51 @@ class BoxCrawler(Crawler):
         logging.info(f"  Index failed:     {index_failed}")
         logging.info("=" * 80)
 
+    def _find_vectara_doc_ids_by_url(self, url: str) -> List[str]:
+        """Find all Vectara doc IDs associated with a Box file URL using metadata_filter.
+
+        A single Box file can have multiple Vectara documents (e.g. Excel sheets
+        like file_id_SheetName, image docs like slug_image_0). This uses the list
+        API with metadata_filter to find them all.
+        """
+        doc_ids = []
+        page_key = None
+        post_headers = {
+            "x-api-key": self.indexer.api_key,
+            "X-Source": self.indexer.x_source,
+        }
+        while True:
+            params = {
+                "limit": 100,
+                "metadata_filter": f"doc.url = '{url}'",
+            }
+            if page_key:
+                params["page_key"] = page_key
+            response = self.indexer.session.get(
+                f"{self.indexer.api_url}/v2/corpora/{self.indexer.corpus_key}/documents",
+                headers=post_headers,
+                params=params,
+            )
+            if response.status_code != 200:
+                logging.warning(f"[DELETE] List docs by URL failed ({response.status_code}): {response.text}")
+                break
+            res = response.json()
+            for doc in res.get("documents", []):
+                doc_ids.append(doc["id"])
+            response_metadata = res.get("metadata", None)
+            if not response_metadata or not response_metadata.get("page_key"):
+                break
+            page_key = response_metadata["page_key"]
+        return doc_ids
+
     def _delete_removed_from_vectara(self, box_files: Dict[str, Dict[str, Any]]) -> None:
         """Delete files from Vectara that are in indexed.csv but no longer in Box.
 
         Compares the current Box file list against indexed.csv entries.
-        Removes deleted files from Vectara and updates indexed.csv.
+        For each file to delete, tries slugify(url) first (standard doc_id for PDFs/docx/pptx).
+        If that fails, uses the list API with metadata_filter to find all docs matching
+        the file's URL (handles Excel sheets, image docs, etc.).
+        Removes deleted files from indexed.csv regardless of Vectara outcome.
         """
         indexed_csv = os.path.join(self.tracking_dir, "indexed.csv")
         if not os.path.exists(indexed_csv):
@@ -1180,18 +1221,35 @@ class BoxCrawler(Crawler):
 
         logging.info(f"Found {len(files_to_delete)} files removed from Box — deleting from Vectara")
         delete_success = 0
-        delete_failed = 0
+        delete_not_found = 0
 
         for row in files_to_delete:
             file_id = row.get("file_id", "")
             name = row.get("name", "")
-            logging.info(f"[DELETE] Removing from Vectara: {name} (ID: {file_id})")
+            url = row.get("url", f"https://app.box.com/file/{file_id}")
+            doc_id = slugify(url)
 
-            if self.indexer.delete_doc(file_id):
+            logging.info(f"[DELETE] Removing from Vectara: {name} (doc_id: {doc_id})")
+            if self.indexer.delete_doc(doc_id):
                 delete_success += 1
+                continue
+
+            logging.info(f"[DELETE] Slugified ID not found, searching by URL metadata: {url}")
+            matching_doc_ids = self._find_vectara_doc_ids_by_url(url)
+            if matching_doc_ids:
+                logging.info(f"[DELETE] Found {len(matching_doc_ids)} docs for {name}: {matching_doc_ids}")
+                all_deleted = True
+                for mid in matching_doc_ids:
+                    if not self.indexer.delete_doc(mid):
+                        logging.warning(f"[DELETE] Failed to delete doc {mid}")
+                        all_deleted = False
+                if all_deleted:
+                    delete_success += 1
+                else:
+                    delete_not_found += 1
             else:
-                delete_failed += 1
-                rows_to_keep.append(row)
+                delete_not_found += 1
+                logging.info(f"[DELETE] Not found in Vectara (already removed or never indexed): {name}")
 
         with open(indexed_csv, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -1199,7 +1257,7 @@ class BoxCrawler(Crawler):
             for row in rows_to_keep:
                 writer.writerow(row)
 
-        logging.info(f"Deletion complete: {delete_success} deleted, {delete_failed} failed, {len(rows_to_keep)} remaining in indexed.csv")
+        logging.info(f"Deletion complete: {delete_success} deleted, {delete_not_found} not found in Vectara, {len(rows_to_keep)} remaining in indexed.csv")
 
     def _collect_folder_info(self, folder_id: str, path: str = "") -> Dict[str, Any]:
         """
