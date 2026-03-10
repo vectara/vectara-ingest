@@ -6,6 +6,7 @@ and a Ray actor wrapper for parallel crawlers.
 """
 
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -54,6 +55,7 @@ class CrawlTracker:
         self.crawler_type = crawler_type
         self._lock = threading.Lock()
 
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
@@ -109,9 +111,12 @@ class CrawlTracker:
             ).fetchone()
 
             self._conn.execute(
-                """INSERT OR REPLACE INTO documents
+                """INSERT INTO documents
                    (doc_id, crawler_type, status, url, title, error, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                   ON CONFLICT(doc_id, crawler_type) DO UPDATE SET
+                       status=excluded.status, url=excluded.url, title=excluded.title,
+                       error=excluded.error, updated_at=datetime('now')""",
                 (doc_id, self.crawler_type, status, url, title, error),
             )
 
@@ -202,7 +207,8 @@ class CrawlTracker:
     def mark_completed(self):
         with self._lock:
             self._conn.execute(
-                "UPDATE crawl_state SET status='completed', updated_at=datetime('now') WHERE crawler_type=?",
+                "UPDATE crawl_state SET status='completed', updated_at=datetime('now') "
+                "WHERE crawler_type=? AND status='running'",
                 (self.crawler_type,),
             )
             self._conn.commit()
@@ -241,10 +247,11 @@ class CrawlTracker:
     # ------------------------------------------------------------------
 
     def close(self):
-        if self._conn:
-            self._conn.commit()
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                self._conn.commit()
+                self._conn.close()
+                self._conn = None
 
 
 class CrawlTrackerActor:
@@ -278,9 +285,6 @@ class CrawlTrackerActor:
                       reason: str = ""):
         self._tracker.track_skipped(doc_id, url=url, title=title, reason=reason)
 
-    def wait_if_paused(self):
-        self._tracker.wait_if_paused()
-
     def should_stop(self) -> bool:
         return self._tracker.should_stop()
 
@@ -297,26 +301,21 @@ class CrawlTrackerActor:
         self._tracker.close()
 
 
-def signal_crawl(db_path: str, crawler_type: str, action: str):
+def signal_crawl(db_path: str, crawler_type: str, action: str) -> int:
     """
     Open a separate connection to send pause/resume signals.
 
     For use by CLI tools and signal handlers that don't own the main tracker.
+    Returns the number of rows updated (0 means no matching crawler found).
     """
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout=5000")
-    if action == "pause":
-        conn.execute(
-            "UPDATE crawl_state SET status='paused', updated_at=datetime('now') WHERE crawler_type=?",
-            (crawler_type,),
-        )
-    elif action == "resume":
-        conn.execute(
-            "UPDATE crawl_state SET status='running', updated_at=datetime('now') WHERE crawler_type=?",
-            (crawler_type,),
-        )
-    else:
-        conn.close()
+    if action not in ("pause", "resume"):
         raise ValueError(f"Unknown action: {action}. Use 'pause' or 'resume'.")
-    conn.commit()
-    conn.close()
+    status = "paused" if action == "pause" else "running"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA busy_timeout=5000")
+        cursor = conn.execute(
+            "UPDATE crawl_state SET status=?, updated_at=datetime('now') WHERE crawler_type=?",
+            (status, crawler_type),
+        )
+        conn.commit()
+        return cursor.rowcount

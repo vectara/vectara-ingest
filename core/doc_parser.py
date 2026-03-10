@@ -413,7 +413,12 @@ class DocupandaDocumentParser(DocumentParser):
                 )
                 
                 bbox = [round(x,2) for x in section['bbox']]
-                img = extracted_images[img_num]
+                page_idx = page_num - 1  # pageNum is 1-based; extracted_images is 0-based
+                if page_idx < 0 or page_idx >= len(extracted_images):
+                    logger.warning(f"Docupanda: page_num {page_num} out of range for rendered pages ({len(extracted_images)}), skipping image")
+                    img_num += 1
+                    continue
+                img = extracted_images[page_idx]
                 image_dims = img.size
                 bbox_pixels = (int(bbox[0] * image_dims[0]), int(bbox[1] * image_dims[1]),
                                int(bbox[2] * image_dims[0]), int(bbox[3] * image_dims[1]))

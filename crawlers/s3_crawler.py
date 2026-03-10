@@ -58,8 +58,7 @@ def create_s3_client(cfg):
     return boto3.client('s3', **client_kwargs)
 
 class FileCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str, cfg):
-        self.crawler = crawler
+    def __init__(self, indexer: Indexer, num_per_second: int, bucket: str, cfg):
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
         self.bucket = bucket
@@ -77,11 +76,11 @@ class FileCrawlWorker(object):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
+        url = f's3://{self.bucket}/{s3_file}'
         logger.info(f"Crawling and indexing {s3_file}")
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
-                url = f's3://{self.bucket}/{s3_file}'
                 metadata.update({
                     'source': source,
                     'title': s3_file,
@@ -188,7 +187,7 @@ class S3Crawler(Crawler):
             logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
+            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
             ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
             batch_size = max(ray_workers * 4, 20)
@@ -207,7 +206,8 @@ class S3Crawler(Crawler):
             ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
         else:
-            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)
+            crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
+            crawl_worker.setup()
             for inx, url in enumerate(files_to_process):
                 self.wait_if_paused()
                 if inx % 100 == 0:

@@ -410,8 +410,14 @@ class WebContentExtractor(WebExtractorBase):
                         src = img_tag.get('src', '')
                         if not src or src.startswith('data:') or src.startswith('blob:'):
                             continue
-                        w = int(img_tag.get('width', '0') or '0')
-                        h = int(img_tag.get('height', '0') or '0')
+                        try:
+                            w = int(img_tag.get('width', '0') or '0')
+                        except (ValueError, TypeError):
+                            w = 0
+                        try:
+                            h = int(img_tag.get('height', '0') or '0')
+                        except (ValueError, TypeError):
+                            h = 0
                         if (w > 0 and w < 10) or (h > 0 and h < 10):
                             continue
                         result['images'].append({'src': urljoin(url, src), 'alt': img_tag.get('alt', '')})
@@ -498,8 +504,9 @@ class WebContentExtractor(WebExtractorBase):
             if "crashed" in str(e).lower() or (self.browser and not self.browser.is_connected()):
                 self._reset_browser_if_needed(force_reset=True)
         else:
-            # Reset failure counter on success
+            # Reset failure counter on success and count usage
             self.consecutive_failures = 0
+            self.browser_use_count += 1
         finally:
             if page:
                 try:
@@ -511,7 +518,6 @@ class WebContentExtractor(WebExtractorBase):
                     context.close()
                 except:
                     pass
-            self.browser_use_count += 1
             self._reset_browser_if_needed()
 
         # If browser also failed, log it — static pre-fetch already ran above.

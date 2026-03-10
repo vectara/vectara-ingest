@@ -41,7 +41,7 @@ def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
         logger.info("Data is not a valid raster image or SVG.")
         return None
         
-def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
+def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> dict:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
@@ -58,9 +58,19 @@ def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
     logger.info(f"get_attributes_from_text() - Calling generate")
     res = generate(cfg, system_prompt, prompt, model_config)
-    if res.strip().startswith("```json"):
-        res = res.strip().removeprefix("```json").removesuffix("```")
-    return json.loads(res)
+    res = res.strip()
+    if res.startswith("```json"):
+        res = res.removeprefix("```json")
+    if res.startswith("```"):
+        res = res.removeprefix("```")
+    if res.endswith("```"):
+        res = res.removesuffix("```")
+    res = res.strip()
+    try:
+        return json.loads(res)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM response as JSON: {e}. Response: {res[:200]}")
+        return {}
 
 class ImageSummarizer():
     def __init__(self, cfg: OmegaConf, image_model_config: dict):

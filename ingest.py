@@ -230,15 +230,18 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
             '(SERVICENOW_.+)': 'servicenow_crawler'
         }
 
+        matched = False
         for pattern, section in patterns.items():
             match = re.match(pattern, k)
             if match:
                 logger.debug(f"Matched '{k}' with '{pattern}'")
                 key = match.group(1)
                 update_omega_conf(cfg, reason, f'{section}.{key.lower()}', v)
+                matched = True
                 break
 
-        update_omega_conf(cfg.vectara, reason, k.lower(), v)
+        if not matched:
+            update_omega_conf(cfg.vectara, reason, k.lower(), v)
 
 
 def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = None, reset_corpus: bool = False) -> None:

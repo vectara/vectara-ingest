@@ -13,6 +13,7 @@ In Docker:
 """
 
 import argparse
+import os
 import sqlite3
 import sys
 
@@ -21,15 +22,17 @@ from core.crawl_tracker import signal_crawl
 
 def get_status(db_path: str, crawler_type: str) -> None:
     """Print current crawl state and document counters."""
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout=5000")
-    row = conn.execute(
-        """SELECT status, total_docs, indexed_docs, failed_docs, skipped_docs,
-                  started_at, updated_at
-           FROM crawl_state WHERE crawler_type=?""",
-        (crawler_type,),
-    ).fetchone()
-    conn.close()
+    if not os.path.exists(db_path):
+        print(f"Database not found: {db_path}")
+        sys.exit(1)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA busy_timeout=5000")
+        row = conn.execute(
+            """SELECT status, total_docs, indexed_docs, failed_docs, skipped_docs,
+                      started_at, updated_at
+               FROM crawl_state WHERE crawler_type=?""",
+            (crawler_type,),
+        ).fetchone()
 
     if not row:
         print(f"No crawl state found for crawler_type='{crawler_type}'")
@@ -55,10 +58,17 @@ def main():
                         help="Crawler type (e.g. website, jira, github)")
     args = parser.parse_args()
 
+    if not os.path.exists(args.db_path):
+        print(f"Database not found: {args.db_path}")
+        sys.exit(1)
+
     if args.action == "status":
         get_status(args.db_path, args.crawler_type)
     else:
-        signal_crawl(args.db_path, args.crawler_type, args.action)
+        rows = signal_crawl(args.db_path, args.crawler_type, args.action)
+        if rows == 0:
+            print(f"Warning: no crawl state found for crawler_type='{args.crawler_type}'")
+            sys.exit(1)
         print(f"Sent '{args.action}' to {args.crawler_type}")
 
 
