@@ -112,7 +112,8 @@ class DocumentBuilder:
                         create_row_items(row) for row in table['rows']
                     ]
                 },
-                'description': table_summary
+                'description': table_summary,
+                'metadata': table.get('metadata', {})
             }
             tables_array.append(table_dict)
             
