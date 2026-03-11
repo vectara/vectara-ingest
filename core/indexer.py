@@ -31,7 +31,7 @@ from core.utils import (
     html_to_text, detect_language, create_session_with_retries,
     safe_remove_file, url_to_filename,
     get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS
+    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS, release_memory
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser
@@ -1064,8 +1064,32 @@ class Indexer:
         #
         # Case B: Process locally and upload to Vectara
         #
+
+        # Ensure file_name is in metadata (needed by split_pdf for part IDs)
+        if 'file_name' not in metadata:
+            metadata['file_name'] = os.path.basename(filename)
+
+        # Split large PDFs before local processing to avoid OOM
+        if self.file_processor.needs_pdf_splitting(filename):
+            logger.info(f"Large PDF detected, splitting before local processing: {filename}")
+            try:
+                pdf_parts = self.file_processor.split_pdf(filename, metadata)
+            except Exception as e:
+                logger.error(f"Failed to split PDF {filename}: {e}")
+                return False
+            overall_success = True
+            for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                try:
+                    part_success = self.index_file(pdf_path, uri, pdf_metadata, id=pdf_id, title_hint=title_hint)
+                    if not part_success:
+                        overall_success = False
+                finally:
+                    safe_file_cleanup(pdf_path)
+                    release_memory()
+            return overall_success
+
         logger.info(f"Parsing file {filename} locally")
-        
+
         try:
             parsed_doc = self.file_processor.process_file(filename, uri)
         except Exception as e:
@@ -1144,7 +1168,7 @@ class Indexer:
             )
 
             succeeded = self.index_segments(
-                doc_id=slugify(uri),
+                doc_id=id if id else slugify(uri),
                 texts=texts,
                 metadatas=metadatas,
                 tables=processed_tables,
@@ -1186,7 +1210,7 @@ class Indexer:
             image_bytes_dict = self._build_image_bytes_dict(doc_image_bytes)
 
             succeeded = self.index_segments(
-                doc_id=slugify(uri),
+                doc_id=id if id else slugify(uri),
                 texts=texts,
                 metadatas=metadatas,
                 tables=processed_tables,
@@ -1199,7 +1223,8 @@ class Indexer:
             # Index images as separate documents
             if image_content:
                 for idx, (image_summary, image_metadata) in enumerate(image_content):
-                    doc_id = f"{slugify(uri)}_image_{idx}"
+                    base_doc_id = id if id else slugify(uri)
+                    doc_id = f"{base_doc_id}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
                     try:
                         # Pass only the single relevant image's bytes (not entire list)
