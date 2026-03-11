@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM python:3.11.9-bookworm AS builder
+FROM python:3.12-slim AS builder
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -47,15 +47,15 @@ RUN find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + 
     && find /usr/local -type d -name '__pycache__' -exec rm -rf '{}' + \
     && rm -rf /root/.cache/* /tmp/*
 
-# Clean up unnecessary filesin site-packages
-RUN find /usr/local/lib/python3.11/site-packages \
+# Clean up unnecessary files in site-packages
+RUN find /usr/local/lib/python3.12/site-packages \
     -type d \( -name 'tests' -o -name 'test' -o -name 'examples' \) -exec rm -rf '{}' + \
-    && find /usr/local/lib/python3.11/site-packages -type d -name '__pycache__' -exec rm -rf '{}' + \
-    && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyc' -exec rm -f '{}' + \
-    && find /usr/local/lib/python3.11/site-packages -type f -name '*.pyo' -exec rm -f '{}' +
+    && find /usr/local/lib/python3.12/site-packages -type d -name '__pycache__' -exec rm -rf '{}' + \
+    && find /usr/local/lib/python3.12/site-packages -type f -name '*.pyc' -exec rm -f '{}' + \
+    && find /usr/local/lib/python3.12/site-packages -type f -name '*.pyo' -exec rm -f '{}' +
 
 # Stage 2: Final image
-FROM python:3.11.9-bookworm
+FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/vectara \
@@ -64,20 +64,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_VISIBLE_DEVICES=""
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
-    # Your original dependencies
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     ffmpeg \
     unixodbc poppler-utils libmagic1 libjpeg62-turbo \
     libfontconfig fonts-noto-color-emoji unifont fonts-indic xfonts-75dpi \
-    # Add Playwright's dependencies manually
     libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libgtk-3-0 libatspi2.0-0 libgbm1 libasound2 \
-    # Clean up in the same layer to save space
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages and application code from the builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install Playwright browsers
