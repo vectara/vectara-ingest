@@ -5,6 +5,8 @@ from core.utils import create_row_items
 
 logger = logging.getLogger(__name__)
 
+MAX_PART_SIZE = 8192
+
 
 class DocumentBuilder:
     """Handles document structure creation for Vectara indexing"""
@@ -118,6 +120,44 @@ class DocumentBuilder:
             
         return tables_array
     
+    @staticmethod
+    def _split_text(text: str) -> List[str]:
+        """Split text into chunks of at most MAX_PART_SIZE characters.
+
+        Tries to split at the last paragraph break (\\n\\n) before the limit,
+        then at the last sentence boundary ('. ') before the limit,
+        falling back to a hard split at MAX_PART_SIZE.
+        """
+        if len(text) <= MAX_PART_SIZE:
+            return [text]
+
+        chunks = []
+        remaining = text
+        while len(remaining) > MAX_PART_SIZE:
+            candidate = remaining[:MAX_PART_SIZE]
+
+            # Try paragraph boundary
+            split_pos = candidate.rfind("\n\n")
+            if split_pos > 0:
+                chunks.append(remaining[:split_pos])
+                remaining = remaining[split_pos + 2:]
+                continue
+
+            # Try sentence boundary
+            split_pos = candidate.rfind(". ")
+            if split_pos > 0:
+                chunks.append(remaining[:split_pos + 1])  # include the period
+                remaining = remaining[split_pos + 2:]
+                continue
+
+            # Hard split
+            chunks.append(candidate)
+            remaining = remaining[MAX_PART_SIZE:]
+
+        if remaining:
+            chunks.append(remaining)
+        return chunks
+
     def _build_core_document(
         self,
         document: Dict[str, Any],
@@ -127,15 +167,12 @@ class DocumentBuilder:
         tables_array: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Build document for core indexing"""
-        # Check text size limits for core indexing
-        if any(len(text) > 16384 for text in texts):
-            logger.warning(f"Document {document['id']} has segments too large for core indexing")
-            return None
-            
-        document["document_parts"] = [
-            {"text": self.normalize_text(text), "metadata": md}
-            for text, md in zip(texts, metadatas)
-        ]
+        document["document_parts"] = []
+        for text, md in zip(texts, metadatas):
+            for chunk in self._split_text(text):
+                document["document_parts"].append(
+                    {"text": self.normalize_text(chunk), "metadata": md}
+                )
         
         if tables_array:
             document["tables"] = tables_array

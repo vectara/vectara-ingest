@@ -52,6 +52,8 @@ def release_memory():
 # =============================================================================
 
 # File extensions
+MIN_IMAGE_DIMENSION = 100  # Skip raster images smaller than this (icons, avatars)
+
 IMG_EXTENSIONS = [".gif", ".jpeg", ".jpg", ".png", ".svg", ".bmp", ".eps", ".ico", ".webp", ".tiff", ".tif"]
 AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"]
 VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".webm", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg", ".m4v", ".3gp", ".f4v"]

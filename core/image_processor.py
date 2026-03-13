@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Tuple
 from omegaconf import OmegaConf
 from slugify import slugify
 from core.summary import ImageSummarizer
-from core.utils import get_headers
+from core.utils import get_headers, MIN_IMAGE_DIMENSION
 
 import base64
 import mimetypes
@@ -97,12 +97,22 @@ class ImageProcessor:
                     logger.info(f"Image URL '{image_url}' is not valid, skipping")
                     continue
 
+                # Skip small raster images (avatars, icons) — consistent with DoclingParser
+                # SVGs are vector and don't have inherent pixel dimensions; skip the size check for them
+                if not image_summarizer._is_svg_file(local_path, image_url):
+                    from PIL import Image as _PILImage
+                    with _PILImage.open(local_path) as pil_img:
+                        w, h = pil_img.size
+                    if min(w, h) < MIN_IMAGE_DIMENSION:
+                        logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
+                        continue
+
                 # Store binary data
                 with open(local_path, 'rb') as fp:
                     image_binary = fp.read()
                 image_id = f"web_{slugify(url)}_image_{inx}"
                 image_bytes.append((image_id, image_binary))
-                
+
                 # Generate summary from local_path
                 image_summary = image_summarizer.summarize_image(local_path, image_url, None)
                 if not image_summary:

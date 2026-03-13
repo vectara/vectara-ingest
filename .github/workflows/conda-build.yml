@@ -269,7 +269,7 @@ jobs:
         run: |
           source $HOME/miniconda/bin/activate
           # Install playwright and then Chromium browser
-          pip install playwright==1.49.1
+          pip install playwright==1.56.0
           playwright install chromium
       
       - name: Upload to Anaconda.org
