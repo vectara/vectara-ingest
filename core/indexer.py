@@ -1070,7 +1070,8 @@ class Indexer:
             metadata['file_name'] = os.path.basename(filename)
 
         # Split large PDFs before local processing to avoid OOM
-        if self.file_processor.needs_pdf_splitting(filename):
+        # Skip if already a split part (has start_page) to prevent infinite recursion
+        if 'start_page' not in metadata and self.file_processor.needs_pdf_splitting(filename):
             logger.info(f"Large PDF detected, splitting before local processing: {filename}")
             try:
                 pdf_parts = self.file_processor.split_pdf(filename, metadata)
