@@ -110,7 +110,12 @@ class ScrapyContentExtractor(WebExtractorBase):
                     for element in soup.find_all(tag):
                         element.decompose()
 
-            # Remove unwanted elements
+            # Capture processed HTML before script/style removal so downstream
+            # consumers (remove_boilerplate, metadata_extractor, etc.) see the
+            # html_processing removals but still have access to structured data.
+            result['html'] = str(soup)
+
+            # Remove unwanted elements for text extraction
             for selector in ['script', 'style', 'header', 'footer', 'nav', 'aside']:
                 for element in soup.find_all(selector):
                     element.decompose()
@@ -119,10 +124,6 @@ class ScrapyContentExtractor(WebExtractorBase):
                 for tag in ['code', 'pre']:
                     for element in soup.find_all(tag):
                         element.decompose()
-
-            # Update result['html'] after all element removals so downstream consumers
-            # (remove_boilerplate, process_locally, etc.) see the processed HTML.
-            result['html'] = str(soup)
 
             # Determine content source: either from target_tag/target_class or default (entire document)
             target_tag = html_processing.get('target_tag') if html_processing else None
