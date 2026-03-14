@@ -112,8 +112,7 @@ class ScrapyContentExtractor(WebExtractorBase):
 
             # Capture processed HTML before script/style removal so downstream
             # consumers (remove_boilerplate, metadata_extractor, etc.) see the
-            # html_processing removals but still have access to structured data
-            # like JSON-LD script tags.
+            # html_processing removals but still have access to structured data.
             result['html'] = str(soup)
 
             # Remove unwanted elements for text extraction
