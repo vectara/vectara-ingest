@@ -492,6 +492,12 @@ class Indexer:
             logger.info(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
+        doc_size = len(data.encode('utf-8'))
+        if doc_size < 1024:
+            logger.info(f"Document '{document['id']}' size: {doc_size} bytes")
+        else:
+            logger.info(f"Document '{document['id']}' size: {doc_size / 1024:.1f} KB")
+
         # Simple approach: POST the document, handle conflicts if reindex is enabled
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
