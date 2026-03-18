@@ -100,13 +100,17 @@ class DocumentBuilder:
                 logger.warning(f"Skipping table {inx} due to empty or missing summary")
                 continue
                 
+            headers = table['headers']
+            if headers and isinstance(headers[0], str):
+                headers = [headers]
+
             table_dict = {
                 'id': 'table_' + str(inx),
                 'title': table.get('title', ''),
                 'data': {
                     'headers': [
                         [{'text_value': str(col)} for col in header]
-                        for header in table['headers']
+                        for header in headers
                     ],
                     'rows': [
                         create_row_items(row) for row in table['rows']
