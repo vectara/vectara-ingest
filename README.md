@@ -352,7 +352,13 @@ doc_processing:
 
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   # NOTE: Automatically enabled when chunking_strategy is not 'none' in document parsers like Unstructured or Docling
-  use_core_indexing: false            
+  use_core_indexing: false
+
+  # Split large PDFs into smaller parts for processing.
+  # Splitting is disabled by default. To enable, set max_pdf_size to the maximum file size (in MB)
+  # above which a PDF will be split. pages_per_pdf controls how many pages per split chunk.
+  # max_pdf_size: 50                  # max PDF size in MB before splitting (default: no splitting)
+  # pages_per_pdf: 100               # number of pages per split chunk (default: 100)
 
   # enable contextual chunking (only for PDF files at the moment)
   contextual_chunking: false            
@@ -562,6 +568,45 @@ To run `vectara-ingest` locally, perform the following steps:
   > `bash run.sh config/<config-file>.yaml <profile>`. 
   
   This command creates the Docker container locally, configures it with the parameters specified in your configuration file (with secrets taken from the appropriate `<profile>` in `secrets.toml`), and starts up the Docker container.
+
+### Pause, Resume, and Crash Recovery
+
+All crawlers automatically write progress to a SQLite tracking database (`crawl_tracking.db`) stored in the output directory. This enables:
+
+* **Resume after crash** — restarting a crawl automatically skips already-indexed documents, picking up where it left off.
+* **Graceful pause** — send `SIGTERM` to the crawl process and it will pause cleanly after finishing the current document or batch. Send a second `SIGTERM` to force-quit immediately.
+* **External resume** — use `crawl_control.py` to resume a paused crawl without restarting the container or process.
+
+#### Controlling a running crawl
+
+```bash
+# Check crawl progress
+python crawl_control.py status \
+  --db-path ~/tmp/mount/crawl_tracking.db \
+  --crawler-type website
+
+# Pause a running crawl (graceful)
+python crawl_control.py pause \
+  --db-path ~/tmp/mount/crawl_tracking.db \
+  --crawler-type website
+
+# Resume a paused crawl
+python crawl_control.py resume \
+  --db-path ~/tmp/mount/crawl_tracking.db \
+  --crawler-type website
+```
+
+From inside a running Docker container:
+
+```bash
+docker exec <container> python3 crawl_control.py pause \
+  --db-path /home/vectara/vectara_ingest_output/crawl_tracking.db \
+  --crawler-type website
+```
+
+The `crawl_tracking.db` file lives inside the mounted output volume (`~/tmp/mount/` on the host by default), so it persists automatically between container restarts.
+
+**Crawlers with full pause/resume support:** Jira, GitHub, Confluence, Notion, Website, Folder, S3.
 
 ### Cloud deployment on Render
 

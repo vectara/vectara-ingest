@@ -93,7 +93,7 @@ class GithubCrawler(Crawler):
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
 
-    def crawl_code_folder(self, base_url: str, repo: str, path: str = "") -> None:
+    def crawl_code_folder(self, base_url: str, repo: str, path: str = "", indexed_ids: set = None) -> None:
         headers = { "Accept": "application/vnd.github+json"}
         if self.github_token:
             headers["Authorization"] = f"token {self.github_token}"
@@ -103,22 +103,32 @@ class GithubCrawler(Crawler):
             logger.info(f"Error fetching {base_url}/contents/{path}: {response.text}")
             return
 
+        if indexed_ids is None:
+            indexed_ids = set()
+
         for item in response.json():
+            self.wait_if_paused()
             if item["type"] == "file":
                 fname = item["path"]
                 url = item["html_url"]
                 if url.lower().endswith(".md") or url.lower().endswith(".mdx"):     # Only index markdown files from the code, not the code itself
+                    doc_id = f'github-{repo}-code-{item["path"]}'
+                    if doc_id in indexed_ids:
+                        continue
                     try:
-                        file_response = self.session.get(item["url"], headers={"Authorization": f"token {self.github_token}"})
+                        file_headers = {"Authorization": f"token {self.github_token}"} if self.github_token else {}
+                        file_response = self.session.get(item["url"], headers=file_headers)
                         file_content = base64.b64decode(file_response.json()["content"]).decode("utf-8")
                     except Exception as e:
                         logger.info(f"Failed to retrieve content for {fname} with url {url}: {e}")
+                        if self.tracker:
+                            self.tracker.track_failed(doc_id, url=url, title=item["name"], error=str(e))
                         continue
 
                     text_content = html_to_text(markdown.markdown(file_content))
                     metadata = {'file': fname, 'source': 'github', 'url': url}
                     code_doc = {
-                        'id': f'github-{repo}-{item["path"]}',
+                        'id': doc_id,
                         'title': item["name"],
                         'description': f'Markdown of {fname}',
                         'metadata': metadata,
@@ -129,9 +139,20 @@ class GithubCrawler(Crawler):
                     }
 
                     logger.info(f"Indexing codebase markdown: {item['path']}")
-                    self.indexer.index_document(code_doc)
+                    try:
+                        succeeded = self.indexer.index_document(code_doc)
+                        if self.tracker:
+                            if succeeded:
+                                self.tracker.track_indexed(doc_id, url=url, title=item["name"])
+                            else:
+                                self.tracker.track_failed(doc_id, url=url, title=item["name"])
+                    except Exception as e:
+                        logger.info(f"Error {e} indexing codebase markdown {item['path']}")
+                        if self.tracker:
+                            self.tracker.track_failed(doc_id, url=url, title=item["name"], error=str(e))
+                        continue
             elif item["type"] == "dir":
-                self.crawl_code_folder(base_url, repo=repo, path=item["path"])
+                self.crawl_code_folder(base_url, repo=repo, path=item["path"], indexed_ids=indexed_ids)
 
     def add_comments(self, doc: dict, comments: List[Any]) -> None:
         for d_comment in comments:
@@ -150,11 +171,16 @@ class GithubCrawler(Crawler):
 
         # create github object
         g = Github(repo, owner, token)
+        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
 
         # Extract and index pull requests
         prs = g.get_pull_requests("all")
         for d_pr in prs:
             pr = Box(d_pr)
+            doc_id = f'github-{repo}-pr-{pr.number}'
+            if doc_id in indexed_ids:
+                continue
+            self.wait_if_paused()
             doc_metadata = {
                 'source': 'github',
                 'id': pr.id,
@@ -191,9 +217,16 @@ class GithubCrawler(Crawler):
 
             # index everything
             try:
-                self.indexer.index_document(pr_doc)
+                succeeded = self.indexer.index_document(pr_doc)
+                if self.tracker:
+                    if succeeded:
+                        self.tracker.track_indexed(doc_id, url=pr.html_url, title=pr.title)
+                    else:
+                        self.tracker.track_failed(doc_id, url=pr.html_url, title=pr.title)
             except Exception as e:
                 logger.info(f"Error {e} indexing comment for repo {repo} document {pr_doc}")
+                if self.tracker:
+                    self.tracker.track_failed(doc_id, url=pr.html_url, title=pr.title, error=str(e))
                 continue
 
         # Extract and index issues and comments
@@ -201,6 +234,10 @@ class GithubCrawler(Crawler):
         for d_issue in issues:
             # Extract issue metadata
             issue = Box(d_issue)
+            doc_id = f'github-{repo}-issue-{issue.number}'
+            if doc_id in indexed_ids:
+                continue
+            self.wait_if_paused()
             title = issue.title
             description = issue.body
             created_at = convert_date(issue.created_at)
@@ -241,16 +278,23 @@ class GithubCrawler(Crawler):
             # index everything
             logger.info(f"Indexing issue: {issue.number}")
             try:
-                self.indexer.index_document(issue_doc)
+                succeeded = self.indexer.index_document(issue_doc)
+                if self.tracker:
+                    if succeeded:
+                        self.tracker.track_indexed(doc_id, url=issue.html_url, title=title)
+                    else:
+                        self.tracker.track_failed(doc_id, url=issue.html_url, title=title)
             except Exception as e:
                 logger.info(f"Error {e} indexing repo {repo}, comment document {issue_doc}")
+                if self.tracker:
+                    self.tracker.track_failed(doc_id, url=issue.html_url, title=title, error=str(e))
                 continue
 
 
         # Extract and index codebase if requested
         if self.crawl_code:
             base_url = f"https://api.github.com/repos/{owner}/{repo}"
-            self.crawl_code_folder(base_url, repo)
+            self.crawl_code_folder(base_url, repo, indexed_ids=indexed_ids)
 
     def crawl(self) -> None:
         for repo in self.repos:
