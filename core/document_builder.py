@@ -208,15 +208,17 @@ class DocumentBuilder:
         if len(text) <= max_chars:
             return [text]
 
+        paragraph_joiner = "\n\n"
         paragraphs = re.split(r'\n\s*\n', text)
         if len(paragraphs) == 1 and '\n' in text:
             paragraphs = re.split(r'\n+', text)
+            paragraph_joiner = "\n"
 
         chunks: List[str] = []
         current = ""
 
         for para in paragraphs:
-            candidate = (current + "\n\n" + para).strip() if current else para
+            candidate = (current + paragraph_joiner + para).strip() if current else para
             if len(candidate) <= max_chars:
                 current = candidate
                 continue

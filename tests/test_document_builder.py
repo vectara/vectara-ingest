@@ -60,7 +60,7 @@ class TestBuildStructuredDocument(unittest.TestCase):
     """Tests for auto-splitting in _build_structured_document."""
 
     def setUp(self):
-        self.builder = DocumentBuilder({})
+        self.builder = DocumentBuilder({}, normalize_text_func=lambda t: t)
 
     def test_small_section_not_split(self):
         doc = {"id": "test", "metadata": {}}
