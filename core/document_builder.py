@@ -1,9 +1,12 @@
 import hashlib
 import logging
+import re
 from typing import Dict, List, Any, Optional, Sequence
 from core.utils import create_row_items
 
 logger = logging.getLogger(__name__)
+
+MAX_SECTION_CHARS = 16384
 
 
 class DocumentBuilder:
@@ -158,19 +161,32 @@ class DocumentBuilder:
         doc_title: str,
         tables_array: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Build document for structured indexing"""
+        """Build document for structured indexing.
+
+        Sections whose normalized text exceeds MAX_SECTION_CHARS are
+        automatically split into multiple sections so the Vectara API
+        does not reject the request.
+        """
         if doc_title and len(doc_title) > 0:
             document["title"] = self.normalize_text(doc_title)
-            
-        document["sections"] = [
-            {
-                "text": self.normalize_text(text),
-                "title": self.normalize_text(title),
-                "metadata": md
-            }
-            for text, title, md in zip(texts, titles, metadatas)
-        ]
-        
+
+        sections = []
+        for text, title, md in zip(texts, titles, metadatas):
+            normalized = self.normalize_text(text)
+            normalized_title = self.normalize_text(title)
+            if len(normalized) <= MAX_SECTION_CHARS:
+                sections.append({"text": normalized, "title": normalized_title, "metadata": md})
+            else:
+                chunks = self._split_text(normalized, MAX_SECTION_CHARS)
+                logger.info(
+                    f"Section text ({len(normalized)} chars) exceeds {MAX_SECTION_CHARS}, "
+                    f"split into {len(chunks)} sections for document {document.get('id', '?')}"
+                )
+                for chunk in chunks:
+                    sections.append({"text": chunk, "title": normalized_title, "metadata": md})
+
+        document["sections"] = sections
+
         if tables_array:
             document["sections"].append({
                 "text": '',
@@ -178,8 +194,74 @@ class DocumentBuilder:
                 "metadata": {},
                 "tables": tables_array
             })
-            
+
         return document
+
+    @staticmethod
+    def _split_text(text: str, max_chars: int) -> List[str]:
+        """Split *text* into chunks of at most *max_chars* characters.
+
+        Tries to break on paragraph boundaries (blank lines) first, then
+        falls back to sentence boundaries, and finally to a hard character
+        cut so that every returned chunk is within the limit.
+        """
+        if len(text) <= max_chars:
+            return [text]
+
+        paragraphs = re.split(r'\n\s*\n', text)
+
+        chunks: List[str] = []
+        current = ""
+
+        for para in paragraphs:
+            candidate = (current + "\n\n" + para).strip() if current else para
+            if len(candidate) <= max_chars:
+                current = candidate
+                continue
+
+            if current:
+                chunks.append(current)
+                current = ""
+
+            if len(para) <= max_chars:
+                current = para
+            else:
+                for sub in DocumentBuilder._split_by_sentences(para, max_chars):
+                    chunks.append(sub)
+
+        if current:
+            chunks.append(current)
+
+        return chunks
+
+    @staticmethod
+    def _split_by_sentences(text: str, max_chars: int) -> List[str]:
+        """Split text on sentence boundaries, with a hard-cut fallback."""
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+
+        chunks: List[str] = []
+        current = ""
+
+        for sentence in sentences:
+            candidate = (current + " " + sentence).strip() if current else sentence
+            if len(candidate) <= max_chars:
+                current = candidate
+                continue
+
+            if current:
+                chunks.append(current)
+                current = ""
+
+            if len(sentence) <= max_chars:
+                current = sentence
+            else:
+                for i in range(0, len(sentence), max_chars):
+                    chunks.append(sentence[i:i + max_chars])
+
+        if current:
+            chunks.append(current)
+
+        return chunks
     
     def create_image_document(
         self,
