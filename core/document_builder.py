@@ -135,7 +135,7 @@ class DocumentBuilder:
     ) -> Dict[str, Any]:
         """Build document for core indexing"""
         # Check text size limits for core indexing
-        if any(len(text) > 16384 for text in texts):
+        if any(len(text) > MAX_SECTION_CHARS for text in texts):
             logger.warning(f"Document {document['id']} has segments too large for core indexing")
             return None
             
@@ -209,6 +209,8 @@ class DocumentBuilder:
             return [text]
 
         paragraphs = re.split(r'\n\s*\n', text)
+        if len(paragraphs) == 1 and '\n' in text:
+            paragraphs = re.split(r'\n+', text)
 
         chunks: List[str] = []
         current = ""
