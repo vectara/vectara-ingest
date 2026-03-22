@@ -32,7 +32,8 @@ class TestSplitText(unittest.TestCase):
     def test_hard_cut_fallback(self):
         text = "A" * 50000
         chunks = DocumentBuilder._split_text(text, MAX_SECTION_CHARS)
-        self.assertEqual(len(chunks), 4)
+        expected_chunks = (50000 + MAX_SECTION_CHARS - 1) // MAX_SECTION_CHARS
+        self.assertEqual(len(chunks), expected_chunks)
         self.assertTrue(all(len(c) <= MAX_SECTION_CHARS for c in chunks))
         self.assertEqual("".join(chunks), text)
 
