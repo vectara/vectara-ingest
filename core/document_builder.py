@@ -6,7 +6,7 @@ from core.utils import create_row_items
 
 logger = logging.getLogger(__name__)
 
-MAX_SECTION_CHARS = 16384
+MAX_SECTION_CHARS = 12000
 
 
 class DocumentBuilder:
