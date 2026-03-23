@@ -945,6 +945,7 @@ class Indexer:
                 split_oversized=True
             )
             if document_retry is not None:
+                self.delete_doc(document_retry['id'])
                 result = self.index_document(document_retry, use_core_indexing)
 
         return result
