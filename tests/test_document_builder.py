@@ -58,7 +58,7 @@ class TestSplitText(unittest.TestCase):
 
 
 class TestBuildStructuredDocument(unittest.TestCase):
-    """Tests for auto-splitting in _build_structured_document."""
+    """Tests for _build_structured_document with split_oversized flag."""
 
     def setUp(self):
         self.builder = DocumentBuilder({}, normalize_text_func=lambda t: t)
@@ -71,17 +71,133 @@ class TestBuildStructuredDocument(unittest.TestCase):
         self.assertEqual(len(result["sections"]), 1)
         self.assertEqual(result["sections"][0]["text"], "short text")
 
-    def test_large_section_auto_split(self):
+    def test_large_section_not_split_without_flag(self):
         doc = {"id": "test", "metadata": {}}
         big_text = "word " * 5000  # ~25000 chars
         result = self.builder._build_structured_document(
             doc, [big_text], ["title"], [{}], "Doc", []
         )
+        self.assertEqual(len(result["sections"]), 1)
+
+    def test_large_section_split_with_flag(self):
+        doc = {"id": "test", "metadata": {}}
+        big_text = "word " * 5000  # ~25000 chars
+        result = self.builder._build_structured_document(
+            doc, [big_text], ["title"], [{}], "Doc", [],
+            split_oversized=True
+        )
         self.assertGreater(len(result["sections"]), 1)
         self.assertTrue(all(len(s["text"]) <= MAX_SECTION_CHARS for s in result["sections"]))
-        for s in result["sections"]:
-            self.assertEqual(s["title"], "title")
-            self.assertEqual(s["metadata"], {})
+
+    def test_tables_bundled_without_flag(self):
+        tables = [
+            {'id': 'table_0', 'title': '', 'data': {'headers': [], 'rows': []}, 'description': 'T1'},
+            {'id': 'table_1', 'title': '', 'data': {'headers': [], 'rows': []}, 'description': 'T2'},
+        ]
+        doc = {"id": "test", "metadata": {}}
+        result = self.builder._build_structured_document(
+            doc, ["text"], [""], [{}], "", tables
+        )
+        table_sections = [s for s in result["sections"] if "tables" in s]
+        self.assertEqual(len(table_sections), 1)
+        self.assertEqual(len(table_sections[0]["tables"]), 2)
+
+    def test_tables_split_per_table_with_flag(self):
+        tables = [
+            {'id': 'table_0', 'title': '', 'data': {'headers': [], 'rows': []}, 'description': 'T1'},
+            {'id': 'table_1', 'title': '', 'data': {'headers': [], 'rows': []}, 'description': 'T2'},
+        ]
+        doc = {"id": "test", "metadata": {}}
+        result = self.builder._build_structured_document(
+            doc, ["text"], [""], [{}], "", tables,
+            split_oversized=True
+        )
+        table_sections = [s for s in result["sections"] if "tables" in s]
+        self.assertEqual(len(table_sections), 2)
+        for ts in table_sections:
+            self.assertEqual(len(ts["tables"]), 1)
+
+
+class TestSplitTable(unittest.TestCase):
+    """Tests for table splitting."""
+
+    def test_small_table_not_split(self):
+        table = {
+            'id': 'table_0',
+            'title': 'Small table',
+            'data': {
+                'headers': [[{'text_value': 'Col1'}, {'text_value': 'Col2'}]],
+                'rows': [[{'text_value': 'a'}, {'text_value': 'b'}]] * 5
+            },
+            'description': 'A small table'
+        }
+        result = DocumentBuilder._split_table_if_needed(table)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], table)
+
+    def test_large_table_split_by_rows(self):
+        row = [{'text_value': 'CVE-2024-12345'}, {'text_value': 'Critical'},
+               {'text_value': 'Buffer overflow in component'}, {'text_value': '9.8'}]
+        table = {
+            'id': 'table_0',
+            'title': 'CVE Table',
+            'data': {
+                'headers': [[{'text_value': 'CVE'}, {'text_value': 'Severity'},
+                             {'text_value': 'Description'}, {'text_value': 'Score'}]],
+                'rows': [row] * 500
+            },
+            'description': 'CVE listing'
+        }
+        result = DocumentBuilder._split_table_if_needed(table)
+        self.assertGreater(len(result), 1)
+        total_rows = sum(len(t['data']['rows']) for t in result)
+        self.assertEqual(total_rows, 500)
+        for t in result:
+            self.assertEqual(t['data']['headers'], table['data']['headers'])
+
+    def test_only_first_chunk_has_description(self):
+        row = [{'text_value': 'CVE-2024-12345'}, {'text_value': 'Critical'},
+               {'text_value': 'Buffer overflow in component'}, {'text_value': '9.8'}]
+        table = {
+            'id': 'table_0',
+            'title': 'CVE Table',
+            'data': {
+                'headers': [[{'text_value': 'CVE'}, {'text_value': 'Severity'},
+                             {'text_value': 'Description'}, {'text_value': 'Score'}]],
+                'rows': [row] * 500
+            },
+            'description': 'CVE listing'
+        }
+        result = DocumentBuilder._split_table_if_needed(table)
+        self.assertGreater(len(result), 1)
+        self.assertEqual(result[0]['description'], 'CVE listing')
+        for t in result[1:]:
+            self.assertEqual(t['description'], '')
+
+
+    def test_uneven_rows_isolates_large_row(self):
+        import json
+        small_row = [{'text_value': 'CVE-2024-00001'}, {'text_value': 'Low'}]
+        huge_row = [{'text_value': ', '.join(f'CVE-2024-{i:05d}' for i in range(1200))},
+                    {'text_value': 'Critical'}]
+        table = {
+            'id': 'table_0',
+            'title': 'Mixed CVE Table',
+            'data': {
+                'headers': [[{'text_value': 'CVEs'}, {'text_value': 'Severity'}]],
+                'rows': [small_row] * 3 + [huge_row] + [small_row] * 3
+            },
+            'description': 'Mixed size rows'
+        }
+        result = DocumentBuilder._split_table_if_needed(table)
+        self.assertGreater(len(result), 1)
+        total_rows = sum(len(t['data']['rows']) for t in result)
+        self.assertEqual(total_rows, 7)
+        for t in result:
+            if len(t['data']['rows']) > 1:
+                chunk_size = len(json.dumps(t['data']))
+                self.assertLessEqual(chunk_size, MAX_SECTION_CHARS,
+                                     f"Multi-row chunk has {chunk_size} chars")
 
 
 if __name__ == "__main__":

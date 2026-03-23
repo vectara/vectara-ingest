@@ -129,7 +129,7 @@ function has_buildx() {
   docker buildx version > /dev/null 2>&1
 }
 if has_buildx; then
-  BUILD_CMD="buildx build"
+  BUILD_CMD="buildx build --load"
   echo "Building for $ARCH with buildx"
 else
   BUILD_CMD="build"
