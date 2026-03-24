@@ -450,6 +450,7 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
+        self._last_response_status = None
         api_endpoint = f"{self.api_url}/v2/corpora/{self.corpus_key}/documents"
 
         # Prepare the document data

@@ -155,7 +155,7 @@ class TestSplitTable(unittest.TestCase):
         for t in result:
             self.assertEqual(t['data']['headers'], table['data']['headers'])
 
-    def test_only_first_chunk_has_description(self):
+    def test_all_chunks_have_description(self):
         row = [{'text_value': 'CVE-2024-12345'}, {'text_value': 'Critical'},
                {'text_value': 'Buffer overflow in component'}, {'text_value': '9.8'}]
         table = {
@@ -170,12 +170,11 @@ class TestSplitTable(unittest.TestCase):
         }
         result = DocumentBuilder._split_table_if_needed(table)
         self.assertGreater(len(result), 1)
-        self.assertEqual(result[0]['description'], 'CVE listing')
-        for t in result[1:]:
-            self.assertEqual(t['description'], '')
+        for t in result:
+            self.assertEqual(t['description'], 'CVE listing')
 
 
-    def test_uneven_rows_isolates_large_row(self):
+    def test_uneven_rows_all_chunks_under_limit(self):
         import json
         small_row = [{'text_value': 'CVE-2024-00001'}, {'text_value': 'Low'}]
         huge_row = [{'text_value': ', '.join(f'CVE-2024-{i:05d}' for i in range(1200))},
@@ -191,13 +190,20 @@ class TestSplitTable(unittest.TestCase):
         }
         result = DocumentBuilder._split_table_if_needed(table)
         self.assertGreater(len(result), 1)
-        total_rows = sum(len(t['data']['rows']) for t in result)
-        self.assertEqual(total_rows, 7)
         for t in result:
-            if len(t['data']['rows']) > 1:
-                chunk_size = len(json.dumps(t['data']))
-                self.assertLessEqual(chunk_size, MAX_SECTION_CHARS,
-                                     f"Multi-row chunk has {chunk_size} chars")
+            chunk_size = len(json.dumps(t['data']))
+            self.assertLessEqual(chunk_size, MAX_SECTION_CHARS,
+                                 f"Chunk has {len(t['data']['rows'])} rows, {chunk_size} chars")
+
+    def test_oversized_row_split(self):
+        import json
+        huge_row = [{'text_value': 'A' * 20000}, {'text_value': 'Critical'}]
+        result = DocumentBuilder._split_oversized_row(huge_row, 12800)
+        self.assertGreater(len(result), 1)
+        for row in result:
+            self.assertEqual(len(row), 2)
+        self.assertEqual(result[0][1]['text_value'], 'Critical')
+        self.assertEqual(result[1][1]['text_value'], '')
 
 
 if __name__ == "__main__":

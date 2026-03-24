@@ -243,11 +243,20 @@ class DocumentBuilder:
         if len(description) > MAX_SECTION_CHARS:
             description = description[:MAX_SECTION_CHARS]
 
+        row_budget = budget - headers_size
+        split_rows = []
+        for row in rows:
+            row_size = len(json.dumps(row))
+            if row_size > row_budget:
+                split_rows.extend(DocumentBuilder._split_oversized_row(row, row_budget))
+            else:
+                split_rows.append(row)
+
         chunks = []
         current_rows = []
         current_size = headers_size
 
-        for row in rows:
+        for row in split_rows:
             row_size = len(json.dumps(row))
             if current_rows and current_size + row_size > budget:
                 is_first = (len(chunks) == 0)
@@ -255,7 +264,7 @@ class DocumentBuilder:
                     'id': table['id'] + ('' if is_first else f'_part{len(chunks)}'),
                     'title': table.get('title', ''),
                     'data': {'headers': headers, 'rows': current_rows},
-                    'description': description if is_first else ''
+                    'description': description
                 })
                 current_rows = []
                 current_size = headers_size
@@ -269,7 +278,7 @@ class DocumentBuilder:
                 'id': table['id'] + ('' if is_first else f'_part{len(chunks)}'),
                 'title': table.get('title', ''),
                 'data': {'headers': headers, 'rows': current_rows},
-                'description': description if is_first else ''
+                'description': description
             })
 
         logger.info(
@@ -277,6 +286,49 @@ class DocumentBuilder:
             f"split into {len(chunks)} chunks"
         )
         return chunks
+
+    @staticmethod
+    def _split_oversized_row(row: List[Dict[str, Any]], max_row_chars: int) -> List[List[Dict[str, Any]]]:
+        """Split a single oversized row into multiple rows.
+
+        Finds the largest cell and splits its text_value across multiple rows,
+        keeping the other cells' values only in the first resulting row (empty
+        in subsequent rows).
+        """
+        import json
+        largest_idx = 0
+        largest_size = 0
+        for i, cell in enumerate(row):
+            cell_size = len(json.dumps(cell))
+            if cell_size > largest_size:
+                largest_size = cell_size
+                largest_idx = i
+
+        large_text = row[largest_idx].get('text_value', '')
+        overhead = len(json.dumps(row)) - len(json.dumps(large_text))
+        chunk_size = max(100, max_row_chars - overhead)
+
+        text_chunks = []
+        for i in range(0, len(large_text), chunk_size):
+            text_chunks.append(large_text[i:i + chunk_size])
+
+        result_rows = []
+        for ci, chunk in enumerate(text_chunks):
+            new_row = []
+            for i, cell in enumerate(row):
+                if i == largest_idx:
+                    new_row.append({'text_value': chunk})
+                elif ci == 0:
+                    new_row.append(dict(cell))
+                else:
+                    new_row.append({'text_value': ''})
+            result_rows.append(new_row)
+
+        logger.info(
+            f"Split oversized row ({largest_size} chars in cell {largest_idx}) "
+            f"into {len(result_rows)} rows"
+        )
+        return result_rows
 
     @staticmethod
     def _split_text(text: str, max_chars: int) -> List[str]:
