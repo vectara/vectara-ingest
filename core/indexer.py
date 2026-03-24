@@ -76,6 +76,7 @@ class Indexer:
         self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
+        self._last_response_status: Optional[int] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.scrape_method = scrape_method  # Store scrape_method for web extractor
         self.whisper_model = None
@@ -449,6 +450,7 @@ class Indexer:
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
+        self._last_response_status = None
         api_endpoint = f"{self.api_url}/v2/corpora/{self.corpus_key}/documents"
 
         # Prepare the document data
@@ -499,6 +501,8 @@ class Indexer:
             logger.info(f"Exception {e} while indexing document {document['id']}")
             return False
 
+        self._last_response_status = response.status_code
+
         # Handle the response
         if response.status_code == 201:
             if self.verbose:
@@ -518,6 +522,7 @@ class Indexer:
                     # Retry the upload
                     try:
                         response = self.session.post(api_endpoint, data=data, headers=post_headers)
+                        self._last_response_status = response.status_code
                         if response.status_code == 201:
                             if self.verbose:
                                 logger.info(f"Document {document['id']} re-indexed successfully")
@@ -925,7 +930,26 @@ class Indexer:
         if self.verbose:
             logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
 
-        return self.index_document(document, use_core_indexing)
+        result = self.index_document(document, use_core_indexing)
+
+        if not result and not use_core_indexing and self._last_response_status == 400:
+            logger.info(f"Document {doc_id} failed with 400, retrying with split_oversized=True")
+            document_retry = document_builder.build_document(
+                doc_id=doc_id,
+                texts=texts,
+                titles=titles,
+                metadatas=metadatas,
+                doc_metadata=doc_metadata,
+                doc_title=doc_title,
+                tables=tables,
+                use_core_indexing=use_core_indexing,
+                split_oversized=True
+            )
+            if document_retry is not None:
+                self.delete_doc(document_retry['id'])
+                result = self.index_document(document_retry, use_core_indexing)
+
+        return result
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
