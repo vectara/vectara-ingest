@@ -26,10 +26,10 @@ class Crawler(object):
         self.verbose = cfg.vectara.get("verbose", False)
         self.tracker = None  # Set by ingest.py after instantiation
     
-    def wait_if_paused(self):
-        """Block if paused. No-op if tracker is None."""
+    def check_shutdown(self):
+        """Raise CrawlPausedException if shutdown was requested. No-op if tracker is None."""
         if self.tracker:
-            self.tracker.wait_if_paused()
+            self.tracker.check_shutdown()
 
     def __del__(self):
         """Cleanup indexer and tracker resources when crawler is destroyed"""

@@ -111,7 +111,7 @@ class NotionCrawler(Crawler):
             page_id = page["id"]
             if page_id in indexed_ids:
                 continue
-            self.wait_if_paused()
+            self.check_shutdown()
             try:
                 blocks = notion.blocks.children.list(page_id)
                 all_text = ""

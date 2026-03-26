@@ -160,7 +160,7 @@ class FolderCrawler(Crawler):
             pool = ray.util.ActorPool(actors)
             batch_size = ray_workers * 4
             for batch_start in range(0, len(files_to_process), batch_size):
-                self.wait_if_paused()
+                self.check_shutdown()
                 batch = files_to_process[batch_start:batch_start + batch_size]
                 results = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
                 if self.tracker:
@@ -176,7 +176,7 @@ class FolderCrawler(Crawler):
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
             crawl_worker.setup()
             for inx, (file_path, file_name, file_metadata) in enumerate(files_to_process):
-                self.wait_if_paused()
+                self.check_shutdown()
                 if (inx + 1) % 100 == 0:
                     logger.info(f"Crawling file number {inx+1} out of {len(files_to_process)}")
                 result = crawl_worker.process(file_path, file_name, file_metadata)

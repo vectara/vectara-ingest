@@ -398,7 +398,7 @@ class WebsiteCrawler(Crawler):
         pool = ray.util.ActorPool(actors)
         batch_size = max(ray_workers * 4, 20)
         for batch_start in range(0, len(urls), batch_size):
-            self.wait_if_paused()
+            self.check_shutdown()
             batch = urls[batch_start:batch_start + batch_size]
             results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
             if self.tracker:
@@ -432,7 +432,7 @@ class WebsiteCrawler(Crawler):
         )
         crawl_worker.setup()
         for inx, url in enumerate(urls):
-            self.wait_if_paused()
+            self.check_shutdown()
             if inx % 100 == 0:
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
             result = crawl_worker.process(url, source=source)

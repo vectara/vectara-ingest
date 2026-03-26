@@ -390,7 +390,7 @@ class ConfluenceCrawler(Crawler):
                 doc_id = f"{search_result['type']}{confluence_id}"
                 if doc_id in indexed_ids:
                     continue
-                self.wait_if_paused()
+                self.check_shutdown()
                 metadata = {'id':doc_id}
                 metadata.update({k: search_result[k] for k in ('type', 'status') if k in search_result})
                 content = None

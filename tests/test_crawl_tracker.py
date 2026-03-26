@@ -2,11 +2,10 @@ import unittest
 import tempfile
 import os
 import sqlite3
-import threading
 import time
 import signal
 
-from core.crawl_tracker import CrawlTracker, signal_crawl
+from core.crawl_tracker import CrawlTracker, CrawlShutdownException
 
 
 class TestCrawlTrackerInit(unittest.TestCase):
@@ -130,8 +129,8 @@ class TestCrawlTrackerTracking(unittest.TestCase):
         self.assertEqual(stats["total_docs"], 4)
 
 
-class TestCrawlTrackerPauseResume(unittest.TestCase):
-    """Test pause/resume mechanics."""
+class TestCrawlTrackerShutdown(unittest.TestCase):
+    """Test graceful shutdown mechanics."""
 
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -143,37 +142,24 @@ class TestCrawlTrackerPauseResume(unittest.TestCase):
         self.tracker.close()
         self._tmpdir.cleanup()
 
-    def test_pause_and_resume(self):
-        """Verify wait_if_paused blocks when paused and unblocks on resume."""
-        self.tracker.request_pause()
-        unblocked = threading.Event()
+    def test_check_shutdown_raises_when_stopped(self):
+        """check_shutdown should raise CrawlShutdownException when shutdown requested."""
+        self.tracker.request_shutdown()
+        with self.assertRaises(CrawlShutdownException):
+            self.tracker.check_shutdown()
 
-        def waiter():
-            self.tracker.wait_if_paused()
-            unblocked.set()
+    def test_shutdown_exception_preserves_db_status(self):
+        """After CrawlShutdownException, DB status should still be 'stopped'."""
+        self.tracker.request_shutdown()
+        with self.assertRaises(CrawlShutdownException):
+            self.tracker.check_shutdown()
+        stats = self.tracker.get_stats()
+        self.assertEqual(stats["status"], "stopped")
 
-        t = threading.Thread(target=waiter)
-        t.start()
-
-        # Should still be blocked after a short wait
-        self.assertFalse(unblocked.wait(timeout=1.0))
-
-        # Resume and verify it unblocks
-        self.tracker.request_resume()
-        self.assertTrue(unblocked.wait(timeout=5.0))
-        t.join(timeout=5.0)
-
-    def test_should_stop(self):
-        self.assertFalse(self.tracker.should_stop())
-        self.tracker.request_pause()
-        self.assertTrue(self.tracker.should_stop())
-        self.tracker.request_resume()
-        self.assertFalse(self.tracker.should_stop())
-
-    def test_wait_if_paused_noop_when_running(self):
-        """wait_if_paused should return immediately when status is running."""
+    def test_check_shutdown_noop_when_running(self):
+        """check_shutdown should return immediately when status is running."""
         start = time.monotonic()
-        self.tracker.wait_if_paused()
+        self.tracker.check_shutdown()
         elapsed = time.monotonic() - start
         self.assertLess(elapsed, 1.0)
 
@@ -270,42 +256,11 @@ class TestCrawlTrackerConcurrency(unittest.TestCase):
             jira.close()
 
 
-class TestSignalCrawl(unittest.TestCase):
-    """Test the signal_crawl static helper."""
-
-    def test_signal_pause_and_resume(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, "crawl_tracking.db")
-            tracker = CrawlTracker(db_path, "website")
-
-            # External process pauses via signal_crawl
-            signal_crawl(db_path, "website", "pause")
-
-            conn = sqlite3.connect(db_path)
-            row = conn.execute(
-                "SELECT status FROM crawl_state WHERE crawler_type='website'"
-            ).fetchone()
-            conn.close()
-            self.assertEqual(row[0], "paused")
-
-            # External process resumes
-            signal_crawl(db_path, "website", "resume")
-
-            conn = sqlite3.connect(db_path)
-            row = conn.execute(
-                "SELECT status FROM crawl_state WHERE crawler_type='website'"
-            ).fetchone()
-            conn.close()
-            self.assertEqual(row[0], "running")
-
-            tracker.close()
-
-
 class TestSignalHandler(unittest.TestCase):
-    """Test that SIGTERM triggers pause state via signal handling."""
+    """Test that SIGTERM triggers graceful shutdown."""
 
-    def test_signal_handler_sets_pause(self):
-        """Verify the signal handler pattern sets pause state."""
+    def test_signal_handler_requests_shutdown(self):
+        """Verify the signal handler pattern sets stopped state."""
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "crawl_tracking.db")
             tracker = CrawlTracker(db_path, "website")
@@ -316,7 +271,7 @@ class TestSignalHandler(unittest.TestCase):
             def handler(signum, frame):
                 if not shutdown_requested[0]:
                     shutdown_requested[0] = True
-                    tracker.request_pause()
+                    tracker.request_shutdown()
                 else:
                     raise KeyboardInterrupt
 
@@ -324,7 +279,8 @@ class TestSignalHandler(unittest.TestCase):
             try:
                 os.kill(os.getpid(), signal.SIGTERM)
                 self.assertTrue(shutdown_requested[0])
-                self.assertTrue(tracker.should_stop())
+                stats = tracker.get_stats()
+                self.assertEqual(stats["status"], "stopped")
             finally:
                 signal.signal(signal.SIGTERM, old_handler)
                 tracker.close()

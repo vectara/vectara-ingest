@@ -14,6 +14,11 @@ from typing import Set
 
 logger = logging.getLogger(__name__)
 
+
+class CrawlShutdownException(Exception):
+    """Raised when a graceful shutdown is requested, signaling the process should exit cleanly."""
+
+
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS documents (
     doc_id        TEXT NOT NULL,
@@ -31,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_crawler_status ON documents(crawler_typ
 CREATE TABLE IF NOT EXISTS crawl_state (
     crawler_type  TEXT PRIMARY KEY,
     status        TEXT NOT NULL DEFAULT 'running'
-                  CHECK(status IN ('running', 'paused', 'completed', 'failed')),
+                  CHECK(status IN ('running', 'stopped', 'completed', 'failed')),
     started_at    TEXT,
     updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
     total_docs    INTEGER DEFAULT 0,
@@ -153,52 +158,29 @@ class CrawlTracker:
         self._track_document(doc_id, "skipped", url=url, title=title, error=reason)
 
     # ------------------------------------------------------------------
-    # Pause / resume
+    # Graceful shutdown
     # ------------------------------------------------------------------
 
-    def wait_if_paused(self):
-        """Block while crawl_state status is 'paused'. Returns when resumed."""
-        last_log = 0.0
-        while True:
-            with self._lock:
-                row = self._conn.execute(
-                    "SELECT status FROM crawl_state WHERE crawler_type=?",
-                    (self.crawler_type,),
-                ).fetchone()
-            if not row or row[0] != "paused":
-                return
-            now = time.monotonic()
-            if now - last_log >= 30:
-                logger.info("Crawl paused for %s — waiting for resume...", self.crawler_type)
-                last_log = now
-            time.sleep(2)
-
-    def should_stop(self) -> bool:
-        """Return True if status is 'paused' (for breaking out of loops)."""
+    def check_shutdown(self):
+        """Raise CrawlShutdownException if a graceful shutdown has been requested."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT status FROM crawl_state WHERE crawler_type=?",
                 (self.crawler_type,),
             ).fetchone()
-            return row is not None and row[0] == "paused"
+        if row and row[0] == "stopped":
+            logger.info("Crawl stopped for %s — exiting cleanly.", self.crawler_type)
+            raise CrawlShutdownException(f"Crawl stopped for {self.crawler_type}")
 
-    def request_pause(self):
+    def request_shutdown(self):
+        """Set status to 'stopped' to signal a graceful shutdown."""
         with self._lock:
             self._conn.execute(
-                "UPDATE crawl_state SET status='paused', updated_at=datetime('now') WHERE crawler_type=?",
+                "UPDATE crawl_state SET status='stopped', updated_at=datetime('now') WHERE crawler_type=?",
                 (self.crawler_type,),
             )
             self._conn.commit()
-        logger.info("Pause requested for %s", self.crawler_type)
-
-    def request_resume(self):
-        with self._lock:
-            self._conn.execute(
-                "UPDATE crawl_state SET status='running', updated_at=datetime('now') WHERE crawler_type=?",
-                (self.crawler_type,),
-            )
-            self._conn.commit()
-        logger.info("Resume requested for %s", self.crawler_type)
+        logger.info("Shutdown requested for %s", self.crawler_type)
 
     # ------------------------------------------------------------------
     # Final state
@@ -285,15 +267,6 @@ class CrawlTrackerActor:
                       reason: str = ""):
         self._tracker.track_skipped(doc_id, url=url, title=title, reason=reason)
 
-    def should_stop(self) -> bool:
-        return self._tracker.should_stop()
-
-    def request_pause(self):
-        self._tracker.request_pause()
-
-    def request_resume(self):
-        self._tracker.request_resume()
-
     def get_stats(self) -> dict:
         return self._tracker.get_stats()
 
@@ -301,21 +274,3 @@ class CrawlTrackerActor:
         self._tracker.close()
 
 
-def signal_crawl(db_path: str, crawler_type: str, action: str) -> int:
-    """
-    Open a separate connection to send pause/resume signals.
-
-    For use by CLI tools and signal handlers that don't own the main tracker.
-    Returns the number of rows updated (0 means no matching crawler found).
-    """
-    if action not in ("pause", "resume"):
-        raise ValueError(f"Unknown action: {action}. Use 'pause' or 'resume'.")
-    status = "paused" if action == "pause" else "running"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA busy_timeout=5000")
-        cursor = conn.execute(
-            "UPDATE crawl_state SET status=?, updated_at=datetime('now') WHERE crawler_type=?",
-            (status, crawler_type),
-        )
-        conn.commit()
-        return cursor.rowcount

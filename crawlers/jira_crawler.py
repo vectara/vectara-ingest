@@ -300,7 +300,7 @@ class JiraCrawler(Crawler):
                     doc_id = issue["key"]
                     if doc_id in indexed_ids:
                         continue
-                    self.wait_if_paused()
+                    self.check_shutdown()
 
                     # Collect as much metadata as possible
                     # Use safe navigation to handle None values

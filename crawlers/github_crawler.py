@@ -107,7 +107,7 @@ class GithubCrawler(Crawler):
             indexed_ids = set()
 
         for item in response.json():
-            self.wait_if_paused()
+            self.check_shutdown()
             if item["type"] == "file":
                 fname = item["path"]
                 url = item["html_url"]
@@ -180,7 +180,7 @@ class GithubCrawler(Crawler):
             doc_id = f'github-{repo}-pr-{pr.number}'
             if doc_id in indexed_ids:
                 continue
-            self.wait_if_paused()
+            self.check_shutdown()
             doc_metadata = {
                 'source': 'github',
                 'id': pr.id,
@@ -237,7 +237,7 @@ class GithubCrawler(Crawler):
             doc_id = f'github-{repo}-issue-{issue.number}'
             if doc_id in indexed_ids:
                 continue
-            self.wait_if_paused()
+            self.check_shutdown()
             title = issue.title
             description = issue.body
             created_at = convert_date(issue.created_at)

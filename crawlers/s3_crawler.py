@@ -192,7 +192,7 @@ class S3Crawler(Crawler):
             pool = ray.util.ActorPool(actors)
             batch_size = max(ray_workers * 4, 20)
             for batch_start in range(0, len(files_to_process), batch_size):
-                self.wait_if_paused()
+                self.check_shutdown()
                 batch = files_to_process[batch_start:batch_start + batch_size]
                 results = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), batch))
                 if self.tracker:
@@ -209,7 +209,7 @@ class S3Crawler(Crawler):
             crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
             crawl_worker.setup()
             for inx, url in enumerate(files_to_process):
-                self.wait_if_paused()
+                self.check_shutdown()
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
                 result = crawl_worker.process(url, metadata=metadata, source=source)

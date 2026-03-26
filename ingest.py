@@ -14,7 +14,7 @@ from omegaconf import OmegaConf, DictConfig
 from authlib.integrations.requests_client import OAuth2Session
 
 from core.crawler import Crawler
-from core.crawl_tracker import CrawlTracker
+from core.crawl_tracker import CrawlTracker, CrawlShutdownException
 from core.utils import setup_logging, normalize_vectara_endpoint, load_config, get_docker_or_local_path
 
 app = typer.Typer()
@@ -347,15 +347,15 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         tracker = CrawlTracker(db_path, crawler_type)
         crawler.tracker = tracker
 
-    # Signal handling: first SIGTERM/SIGINT requests pause, second raises KeyboardInterrupt
+    # Signal handling: first SIGTERM/SIGINT requests graceful shutdown, second forces it
     shutdown_requested = [False]
 
     def _shutdown_handler(signum, frame):
         if not shutdown_requested[0]:
             shutdown_requested[0] = True
-            logger.info("Graceful shutdown requested — pausing crawl...")
+            logger.info("Graceful shutdown requested — will exit after current document/batch...")
             if tracker:
-                tracker.request_pause()
+                tracker.request_shutdown()
         else:
             logger.warning("Second signal received — forcing shutdown")
             raise KeyboardInterrupt
@@ -387,6 +387,8 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         if tracker:
             tracker.mark_completed()
         logger.info(f"Finished crawl of type {crawler_type}...")
+    except CrawlShutdownException:
+        logger.info("Crawl stopped for %s — exiting. Restart will skip already-indexed documents.", crawler_type)
     except Exception as e:
         if tracker:
             tracker.mark_failed()
