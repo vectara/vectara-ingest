@@ -40,9 +40,10 @@ class FileCrawlWorker(object):
 
     def process(self, file_path: str, file_name: str, metadata: dict):
         extension = pathlib.Path(file_path).suffix
+        succeeded = False
         try:
             if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
-                self.indexer.index_media_file(file_path, metadata=metadata)
+                succeeded = self.indexer.index_media_file(file_path, metadata=metadata)
 
             elif supported_by_dataframe_parser(file_path):
                 logger.info(f"Parsing dataframe {file_path}")
@@ -67,9 +68,11 @@ class FileCrawlWorker(object):
                         sheet_doc_title = f"{doc_title} - {sheet_name}"
                         self.df_parser.process_dataframe(df, doc_id=sheet_doc_id, doc_title=sheet_doc_title, metadata=metadata)
 
+                succeeded = True  # process_dataframe has no return value; assume success if no exception
+
             else:
                 uri_to_use = file_name if "url" not in metadata else metadata["url"]
-                self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata)
+                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata))
 
         except Exception as e:
             import traceback
@@ -77,7 +80,7 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
-        return 0
+        return 0 if succeeded else 1
 
 
 class FolderCrawler(Crawler):
@@ -132,6 +135,13 @@ class FolderCrawler(Crawler):
                     
                     files_to_process.append((file_path, file_name, file_metadata))
 
+        # Pre-filter already-indexed files for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed = self.tracker.get_indexed_ids()
+            before = len(files_to_process)
+            files_to_process = [(fp, fn, fm) for fp, fn, fm in files_to_process if fp not in indexed]
+            logger.info(f"Skipping {before - len(files_to_process)} already-indexed files ({len(files_to_process)} remaining)")
+
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
@@ -150,8 +160,15 @@ class FolderCrawler(Crawler):
             pool = ray.util.ActorPool(actors)
             batch_size = ray_workers * 4
             for batch_start in range(0, len(files_to_process), batch_size):
+                self.check_shutdown()
                 batch = files_to_process[batch_start:batch_start + batch_size]
-                _ = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
+                results = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
+                if self.tracker:
+                    for (file_path, file_name, _fm), result in zip(batch, results):
+                        if result == 0:
+                            self.tracker.track_indexed(file_path, title=file_name)
+                        else:
+                            self.tracker.track_failed(file_path, title=file_name)
                 logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
             ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
@@ -159,6 +176,13 @@ class FolderCrawler(Crawler):
             crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
             crawl_worker.setup()
             for inx, (file_path, file_name, file_metadata) in enumerate(files_to_process):
+                self.check_shutdown()
                 if (inx + 1) % 100 == 0:
                     logger.info(f"Crawling file number {inx+1} out of {len(files_to_process)}")
-                crawl_worker.process(file_path, file_name, file_metadata)
+                result = crawl_worker.process(file_path, file_name, file_metadata)
+                if self.tracker:
+                    if result == 0:
+                        self.tracker.track_indexed(file_path, title=file_name)
+                    else:
+                        self.tracker.track_failed(file_path, title=file_name)
+            crawl_worker.cleanup()

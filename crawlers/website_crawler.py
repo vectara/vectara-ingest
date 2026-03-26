@@ -59,7 +59,6 @@ class PageCrawlWorker(object):
                 raise ValueError("SAML authentication requires 'SAML_USERNAME' and 'SAML_PASSWORD' in secrets.toml")
             
             try:
-                from crawlers.auth.saml_manager import SAMLAuthManager
                 auth_manager = SAMLAuthManager(config=self.saml_config, secrets=saml_secrets)
                 self.session = auth_manager.get_authenticated_session()
                 logging.info(f"[Worker {worker_pid}] SAML authentication successful.")
@@ -84,9 +83,10 @@ class PageCrawlWorker(object):
         if not self.indexer:
             logging.error(f"[Worker {os.getpid()}] Indexer not set up. Call setup() before process().")
             return -1
-            
+
         metadata = {"source": source, "url": url}
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
+        succeeded = False
         try:
             with self.rate_limiter:
                 succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.html_processing)
@@ -100,7 +100,7 @@ class PageCrawlWorker(object):
                 f"[Worker {os.getpid()}] Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return -1
-        return 0
+        return 0 if succeeded else 1
 
 class WebsiteCrawler(Crawler):
     def __init__(self, cfg, *args, **kwargs):
@@ -355,6 +355,13 @@ class WebsiteCrawler(Crawler):
         """
         Dispatch crawl jobs to Ray workers or process sequentially.
         """
+        # Pre-filter already-indexed URLs for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed = self.tracker.get_indexed_ids()
+            before = len(urls)
+            urls = [u for u in urls if u not in indexed]
+            logger.info(f"Skipping {before - len(urls)} already-indexed URLs ({len(urls)} remaining)")
+
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
         ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         source = self.cfg.website_crawler.get("source", "website")
@@ -389,7 +396,18 @@ class WebsiteCrawler(Crawler):
         ) for _ in range(ray_workers)]
         ray.get([a.setup.remote() for a in actors])
         pool = ray.util.ActorPool(actors)
-        _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), urls))
+        batch_size = max(ray_workers * 4, 20)
+        for batch_start in range(0, len(urls), batch_size):
+            self.check_shutdown()
+            batch = urls[batch_start:batch_start + batch_size]
+            results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+            if self.tracker:
+                for url, result in zip(batch, results):
+                    if result == 0:
+                        self.tracker.track_indexed(url, url=url)
+                    else:
+                        self.tracker.track_failed(url, url=url)
+            logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
         # Cleanup Ray workers
         for a in actors:
             ray.get(a.cleanup.remote())
@@ -414,9 +432,15 @@ class WebsiteCrawler(Crawler):
         )
         crawl_worker.setup()
         for inx, url in enumerate(urls):
+            self.check_shutdown()
             if inx % 100 == 0:
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
-            crawl_worker.process(url, source=source)
+            result = crawl_worker.process(url, source=source)
+            if self.tracker:
+                if result == 0:
+                    self.tracker.track_indexed(url, url=url)
+                else:
+                    self.tracker.track_failed(url, url=url)
         # Cleanup worker
         crawl_worker.cleanup()
 

@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from typing import Dict, List, Optional
+import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from omegaconf import OmegaConf
 from core.utils import get_headers
@@ -56,6 +57,7 @@ class WebContentExtractor(WebExtractorBase):
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-setuid-sandbox',
+                    '--no-zygote',
                     '--disable-gpu',
                     '--disable-web-security',
                     '--disable-features=site-per-process',
@@ -336,7 +338,12 @@ class WebContentExtractor(WebExtractorBase):
                 
                 function extractImages(root) {
                     root.querySelectorAll("img").forEach(img => {
-                        images.push({ src: img.src, alt: img.alt || "" });
+                        const src = img.src;
+                        if (!src || src.startsWith('data:') || src.startsWith('blob:')) return;
+                        const w = parseInt(img.getAttribute('width') || '0');
+                        const h = parseInt(img.getAttribute('height') || '0');
+                        if ((w > 0 && w < 10) || (h > 0 && h < 10)) return;
+                        images.push({ src: src, alt: img.alt || "" });
                     });
                     root.querySelectorAll("*").forEach(el => {
                         if (el.shadowRoot) {
@@ -367,8 +374,7 @@ class WebContentExtractor(WebExtractorBase):
         """
         if html_processing is None:
             html_processing = {}
-            
-        page = context = None
+
         result = {
             'text': '',
             'html': '',
@@ -378,7 +384,56 @@ class WebContentExtractor(WebExtractorBase):
             'images': [],
             'tables': []
         }
-        
+
+        # Static pre-fetch: try requests.get() first. SSR pages (forums, documentation
+        # sites) return clean HTML that Docling parses well. The live browser DOM is SPA-
+        # structured (Angular/React elements) which Docling cannot parse into content —
+        # JS-evaluating document.innerText gives rich text but page.content() gives
+        # framework tags, not real HTML. We fall through to the browser only if static
+        # content is sparse (<500 chars), indicating a true SPA needing JS rendering.
+        try:
+            from bs4 import BeautifulSoup
+            static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
+            static_resp.raise_for_status()
+            if 'text/html' in static_resp.headers.get('content-type', '').lower():
+                soup = BeautifulSoup(static_resp.text, 'html.parser')
+                static_text = soup.get_text(separator=' ', strip=True)
+                if len(static_text.strip()) > 500:
+                    result['html'] = static_resp.text
+                    result['url'] = static_resp.url
+                    result['title'] = soup.title.string if soup.title else ''
+                    result['text'] = static_text
+                    result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                    # Extract images with same filtering as the browser path
+                    from urllib.parse import urljoin
+                    for img_tag in soup.find_all('img'):
+                        src = img_tag.get('src', '')
+                        if not src or src.startswith('data:') or src.startswith('blob:'):
+                            continue
+                        try:
+                            w = int(img_tag.get('width', '0') or '0')
+                        except (ValueError, TypeError):
+                            w = 0
+                        try:
+                            h = int(img_tag.get('height', '0') or '0')
+                        except (ValueError, TypeError):
+                            h = 0
+                        if (w > 0 and w < 10) or (h > 0 and h < 10):
+                            continue
+                        result['images'].append({'src': urljoin(url, src), 'alt': img_tag.get('alt', '')})
+                    logger.info(f"Static fetch used for {url}: {len(static_text)} chars")
+                    logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
+                                f"tables = {len(result['tables'])}, links = {len(result['links'])}")
+                    return result
+                logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
+        except Exception as e:
+            logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
+
+        page = context = None
+        # Cap at 90s: OS-level Chromium crash (SIGKILL) leaves websocket open, causing
+        # Playwright's goto() to hang until TCP keepalive timeout (~2 min). 90s fails fast.
+        nav_timeout = min(self.timeout * 1000, 90000)
+
         try:
             self._ensure_browser_ready()
             # Create context with resource limits
@@ -416,10 +471,12 @@ class WebContentExtractor(WebExtractorBase):
             if debug:
                 page.on('console', lambda msg: logger.info(f"playwright debug: {msg.text}"))
             
-            page.goto(url, timeout=self.timeout * 1000, wait_until="domcontentloaded")
+            logger.debug(f"Starting browser navigation to {url} (timeout={nav_timeout}ms)")
+            page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+            logger.debug(f"Navigation complete for {url}, starting post-load processing")
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)
-            
+
             result['title'] = page.title()
             result['url'] = page.url
 
@@ -430,15 +487,15 @@ class WebContentExtractor(WebExtractorBase):
             # Extract content
             result['text'] = self._extract_text_content(page, remove_code)
             result['links'] = self._extract_links(page)
-            
+
             if extract_tables:
                 result['tables'] = self._extract_tables(page)
-            
+
             if extract_images:
                 result['images'] = self._extract_images(page)
-                
+
         except PlaywrightTimeoutError:
-            logger.info(f"Page loading timed out for {url} after {self.timeout} seconds")
+            logger.info(f"Page loading timed out for {url} after {nav_timeout}ms")
             self.consecutive_failures += 1
         except Exception as e:
             logger.info(f"Page loading failed for {url} with exception '{e}'")
@@ -447,8 +504,9 @@ class WebContentExtractor(WebExtractorBase):
             if "crashed" in str(e).lower() or (self.browser and not self.browser.is_connected()):
                 self._reset_browser_if_needed(force_reset=True)
         else:
-            # Reset failure counter on success
+            # Reset failure counter on success and count usage
             self.consecutive_failures = 0
+            self.browser_use_count += 1
         finally:
             if page:
                 try:
@@ -460,9 +518,12 @@ class WebContentExtractor(WebExtractorBase):
                     context.close()
                 except:
                     pass
-            self.browser_use_count += 1
             self._reset_browser_if_needed()
-        
+
+        # If browser also failed, log it — static pre-fetch already ran above.
+        if not result['html']:
+            logger.warning(f"Both static and browser fetch failed for {url}")
+
         logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
                    f"tables = {len(result['tables'])}, links = {len(result['links'])}")
         
@@ -471,10 +532,26 @@ class WebContentExtractor(WebExtractorBase):
     def check_download_or_pdf(self, url: str, headers: dict = None, timeout: int = 5000):
         """Check if URL triggers download or serves PDF content directly"""
         from playwright._impl._errors import TargetClosedError, Error as PlaywrightError
-        
+
         if headers is None:
             headers = get_headers(self.cfg)
-        
+
+        # Fast path: HEAD request to determine content-type without launching a browser.
+        # This avoids Chromium crashes on heavy SPAs where the renderer dies under Docker
+        # resource constraints before we ever reach fetch_page_contents.
+        try:
+            head = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+            ct = head.headers.get('content-type', '').lower()
+            if 'text/html' in ct:
+                logger.debug(f"HEAD confirmed HTML for {url}, skipping browser download check")
+                return {"type": "html", "url": head.url, "response": None}
+            if 'application/pdf' in ct:
+                resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+                return {"type": "pdf", "url": resp.url, "content": resp.content,
+                        "headers": dict(resp.headers)}
+        except Exception as e:
+            logger.debug(f"HEAD request failed for {url}, falling back to browser: {e}")
+
         max_retries = 3
         retry_delay = 1
         

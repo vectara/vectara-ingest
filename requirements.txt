@@ -795,7 +795,7 @@ platformdirs==4.3.8
     #   jupyter-core
     #   llama-cloud-services
     #   llama-index-core
-playwright==1.49.1
+playwright==1.56.0
     # via -r requirements.in
 pluggy==1.6.0
     # via docling
@@ -882,7 +882,7 @@ pydispatcher==2.0.7 ; platform_python_implementation == 'CPython'
     # via scrapy
 pydub==0.25.1
     # via -r requirements.in
-pyee==12.0.0
+pyee==13.0.1
     # via playwright
 pygments==2.19.1
     # via

@@ -31,7 +31,7 @@ from core.utils import (
     html_to_text, detect_language, create_session_with_retries,
     safe_remove_file, url_to_filename,
     get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
-    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS
+    get_headers, normalize_text, normalize_value, IMG_EXTENSIONS, release_memory
 )
 from core.extract import get_article_content
 from core.doc_parser import UnstructuredDocumentParser
@@ -494,6 +494,12 @@ class Indexer:
             logger.info(f"Can't serialize document {document} (error {e}), skipping")
             return False
 
+        doc_size = len(data.encode('utf-8'))
+        if doc_size < 1024:
+            logger.info(f"Document '{document['id']}' size: {doc_size} bytes")
+        else:
+            logger.info(f"Document '{document['id']}' size: {doc_size / 1024:.1f} KB")
+
         # Simple approach: POST the document, handle conflicts if reindex is enabled
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
@@ -648,7 +654,7 @@ class Indexer:
                 res = self.fetch_page_contents(
                     url=url,
                     extract_tables=self.parse_tables,
-                    extract_images=self.summarize_images,
+                    extract_images=False,
                     remove_code=self.remove_code,
                     html_processing=html_processing,
                 )
@@ -672,8 +678,13 @@ class Indexer:
                         if self.verbose:
                             logger.info(f"Processing web content from {url} locally using doc parser: {self.doc_parser}")
 
-                        # Process through index_file which uses the configured document parser
-                        result = self.index_file(temp_html_path, url, metadata)
+                        # Process through index_file which uses the configured document parser.
+                        # Docling misses images nested inside <p>/<li> tags — pass them
+                        # via extra_image_urls so index_file can supplement with web images.
+                        result = self.index_file(
+                            temp_html_path, url, metadata, title_hint=res.get('title', ''),
+                            extra_image_urls=res.get('images', [])
+                        )
                         safe_remove_file(temp_html_path)
                         return result
                     except Exception as e:
@@ -951,18 +962,24 @@ class Indexer:
 
         return result
 
-    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
+    def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None, title_hint: str = None,
+                   extra_image_urls: Optional[List[Dict[str, str]]] = None) -> bool:
         """
-        Index a file on local file system by uploading it to the Vectara corpus.
+        Index a local file into the Vectara corpus.
 
         Args:
-            filename (str): Name of the PDF file to create.
-            uri (str): URI for where the document originated. In some cases the local file name is not the same, and we want to include this in the index.
+            filename (str): Path to the local file to index.
+            uri (str): Original URI the file was fetched from; used as the document ID and source URL.
             metadata (dict): Metadata for the document.
-            id (str, optional): Document id for the uploaded document.
+            id (str, optional): Override document id.
+            title_hint (str, optional): Title to use when the parser cannot infer one.
+            extra_image_urls (list, optional): Additional image URLs (e.g. from web extraction) to
+                summarize and append inline to the parent document. Used in the process_locally path
+                to include images that Docling may miss when they are nested inside <p>/<li> tags.
+                Only applied when inline_images=True and summarize_images=True.
 
         Returns:
-            bool: True if the upload was successful, False otherwise.
+            bool: True if indexing was successful, False otherwise.
         """
         if not os.path.exists(filename):
             logger.error(f"File {filename} does not exist")
@@ -1077,8 +1094,33 @@ class Indexer:
         #
         # Case B: Process locally and upload to Vectara
         #
+
+        # Ensure file_name is in metadata (needed by split_pdf for part IDs)
+        if 'file_name' not in metadata:
+            metadata['file_name'] = os.path.basename(filename)
+
+        # Split large PDFs before local processing to avoid OOM
+        # Skip if already a split part (has start_page) to prevent infinite recursion
+        if 'start_page' not in metadata and self.file_processor.needs_pdf_splitting(filename):
+            logger.info(f"Large PDF detected, splitting before local processing: {filename}")
+            try:
+                pdf_parts = self.file_processor.split_pdf(filename, metadata)
+            except Exception as e:
+                logger.error(f"Failed to split PDF {filename}: {e}")
+                return False
+            overall_success = True
+            for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                try:
+                    part_success = self.index_file(pdf_path, uri, pdf_metadata, id=pdf_id, title_hint=title_hint)
+                    if not part_success:
+                        overall_success = False
+                finally:
+                    safe_file_cleanup(pdf_path)
+                    release_memory()
+            return overall_success
+
         logger.info(f"Parsing file {filename} locally")
-        
+
         try:
             parsed_doc = self.file_processor.process_file(filename, uri)
         except Exception as e:
@@ -1088,7 +1130,7 @@ class Indexer:
 
         # Extract fields from parsed_doc, then release it early
         content_stream = parsed_doc.content_stream
-        doc_title = parsed_doc.title
+        doc_title = parsed_doc.title or title_hint or ''
         doc_tables = parsed_doc.tables
         doc_image_bytes = parsed_doc.image_bytes
         del parsed_doc
@@ -1134,6 +1176,20 @@ class Indexer:
             metadatas = [metadata for content, metadata in content_stream]
             del content_stream
 
+            # Append summaries for images Docling missed (e.g. nested in <p>/<li> tags)
+            if extra_image_urls and self.summarize_images:
+                image_processor = ImageProcessor(
+                    cfg=self.cfg, model_config=self.model_config, verbose=self.verbose
+                )
+                processed_images, extra_img_bytes = image_processor.process_web_images(
+                    extra_image_urls, uri, {}
+                )
+                for _, image_summary, image_meta in processed_images:
+                    texts.append(image_summary)
+                    metadatas.append(image_meta)
+                if self.add_image_bytes:
+                    doc_image_bytes = (doc_image_bytes or []) + extra_img_bytes
+
             # Force core indexing for standalone image files (short single summary text)
             is_image_file = any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS)
             use_core_for_indexing = (
@@ -1143,7 +1199,7 @@ class Indexer:
             )
 
             succeeded = self.index_segments(
-                doc_id=slugify(uri),
+                doc_id=id if id else slugify(uri),
                 texts=texts,
                 metadatas=metadatas,
                 tables=processed_tables,
@@ -1185,7 +1241,7 @@ class Indexer:
             image_bytes_dict = self._build_image_bytes_dict(doc_image_bytes)
 
             succeeded = self.index_segments(
-                doc_id=slugify(uri),
+                doc_id=id if id else slugify(uri),
                 texts=texts,
                 metadatas=metadatas,
                 tables=processed_tables,
@@ -1198,7 +1254,8 @@ class Indexer:
             # Index images as separate documents
             if image_content:
                 for idx, (image_summary, image_metadata) in enumerate(image_content):
-                    doc_id = f"{slugify(uri)}_image_{idx}"
+                    base_doc_id = id if id else slugify(uri)
+                    doc_id = f"{base_doc_id}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
                     try:
                         # Pass only the single relevant image's bytes (not entire list)
@@ -1253,8 +1310,8 @@ class Indexer:
         }
         if metadata:
             doc['metadata'] = metadata
-        self.index_document(doc)
-        
+        return self.index_document(doc)
+
     def cleanup(self):
         """Clean up resources used by the indexer"""
         if self.web_extractor:

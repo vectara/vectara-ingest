@@ -58,8 +58,7 @@ def create_s3_client(cfg):
     return boto3.client('s3', **client_kwargs)
 
 class FileCrawlWorker(object):
-    def __init__(self, indexer: Indexer, crawler: Crawler, num_per_second: int, bucket: str, cfg):
-        self.crawler = crawler
+    def __init__(self, indexer: Indexer, num_per_second: int, bucket: str, cfg):
         self.indexer = indexer
         self.rate_limiter = RateLimiter(num_per_second)
         self.bucket = bucket
@@ -77,11 +76,11 @@ class FileCrawlWorker(object):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
+        url = f's3://{self.bucket}/{s3_file}'
         logger.info(f"Crawling and indexing {s3_file}")
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
-                url = f's3://{self.bucket}/{s3_file}'
                 metadata.update({
                     'source': source,
                     'title': s3_file,
@@ -103,7 +102,7 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
-        return 0
+        return 0 if succeeded else 1
 
 
 def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[str]:
@@ -162,7 +161,6 @@ class S3Crawler(Crawler):
             metadata = {row['filename'].strip(): row.drop('filename').to_dict() for _, row in df.iterrows()}
         else:
             metadata = {}
-        self.model = None
 
         # process all files
         s3_files = list_files_in_s3_bucket(bucket, key, self.cfg)
@@ -174,6 +172,13 @@ class S3Crawler(Crawler):
             if file_extension in extensions or "*" in extensions:
                 files_to_process.append(s3_file)
 
+        # Pre-filter already-indexed S3 files for crash recovery / resume (skip when reindex=True)
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed = self.tracker.get_indexed_ids()
+            before = len(files_to_process)
+            files_to_process = [f for f in files_to_process if f not in indexed]
+            logger.info(f"Skipping {before - len(files_to_process)} already-indexed S3 files ({len(files_to_process)} remaining)")
+
         # Now process all files
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -182,15 +187,35 @@ class S3Crawler(Crawler):
             logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, self, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
+            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
             ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), files_to_process))
+            batch_size = max(ray_workers * 4, 20)
+            for batch_start in range(0, len(files_to_process), batch_size):
+                self.check_shutdown()
+                batch = files_to_process[batch_start:batch_start + batch_size]
+                results = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), batch))
+                if self.tracker:
+                    for s3_file, result in zip(batch, results):
+                        s3_url = f's3://{bucket}/{s3_file}'
+                        if result == 0:
+                            self.tracker.track_indexed(s3_file, url=s3_url, title=s3_file)
+                        else:
+                            self.tracker.track_failed(s3_file, url=s3_url, title=s3_file)
+                logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} S3 files")
             ray.get([a.cleanup.remote() for a in actors])
             ray.shutdown()
         else:
-            crawl_worker = FileCrawlWorker(self.indexer, self, num_per_second, bucket, self.cfg)
+            crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
+            crawl_worker.setup()
             for inx, url in enumerate(files_to_process):
+                self.check_shutdown()
                 if inx % 100 == 0:
                     logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
-                crawl_worker.process(url, metadata=metadata, source=source)
+                result = crawl_worker.process(url, metadata=metadata, source=source)
+                if self.tracker:
+                    s3_url = f's3://{bucket}/{url}'
+                    if result == 0:
+                        self.tracker.track_indexed(url, url=s3_url, title=url)
+                    else:
+                        self.tracker.track_failed(url, url=s3_url, title=url)

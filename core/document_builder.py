@@ -6,7 +6,7 @@ from core.utils import create_row_items
 
 logger = logging.getLogger(__name__)
 
-MAX_SECTION_CHARS = 16000
+MAX_PART_SIZE = 8192
 
 
 class DocumentBuilder:
@@ -140,15 +140,12 @@ class DocumentBuilder:
         tables_array: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Build document for core indexing"""
-        # Check text size limits for core indexing
-        if any(len(text) > MAX_SECTION_CHARS for text in texts):
-            logger.warning(f"Document {document['id']} has segments too large for core indexing")
-            return None
-            
-        document["document_parts"] = [
-            {"text": self.normalize_text(text), "metadata": md}
-            for text, md in zip(texts, metadatas)
-        ]
+        document["document_parts"] = []
+        for text, md in zip(texts, metadatas):
+            for chunk in self._split_text(text, MAX_PART_SIZE):
+                document["document_parts"].append(
+                    {"text": self.normalize_text(chunk), "metadata": md}
+                )
         
         if tables_array:
             document["tables"] = tables_array

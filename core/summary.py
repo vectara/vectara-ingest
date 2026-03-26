@@ -41,7 +41,7 @@ def _get_image_shape(data_b64: str) -> Optional[Tuple[int, int]]:
         logger.info("Data is not a valid raster image or SVG.")
         return None
         
-def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> Set[str]:
+def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list[dict], model_config: dict) -> dict:
     """
     Given a text string, ask GPT-4o to answer a set of questions from the text
     Returns a dictionary of question/answer pairs.
@@ -58,9 +58,19 @@ def get_attributes_from_text(cfg: OmegaConf, text: str, metadata_questions: list
     prompt += "Your response should be as a dictionary of attribute/value pairs in JSON format, and include only the JSON output without any additional text."
     logger.info(f"get_attributes_from_text() - Calling generate")
     res = generate(cfg, system_prompt, prompt, model_config)
-    if res.strip().startswith("```json"):
-        res = res.strip().removeprefix("```json").removesuffix("```")
-    return json.loads(res)
+    res = res.strip()
+    if res.startswith("```json"):
+        res = res.removeprefix("```json")
+    if res.startswith("```"):
+        res = res.removeprefix("```")
+    if res.endswith("```"):
+        res = res.removesuffix("```")
+    res = res.strip()
+    try:
+        return json.loads(res)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM response as JSON: {e}. Response: {res[:200]}")
+        return {}
 
 class ImageSummarizer():
     def __init__(self, cfg: OmegaConf, image_model_config: dict):
@@ -140,7 +150,7 @@ class ImageSummarizer():
         prompt = """
             Analyze all the details in this image, including any diagrams, graphs, or visual data representations. 
             Your task is to provide a comprehensive description of the image with as much detail as possible.
-            Your response should be a paragraph without headings and include:
+            Your response should include:
             - A detailed description of the main focus or subject of the image.
             - For any diagrams or graphs: what information they convey, a detailed description of the data, and any observed trends or conclusions that can be drawn.
             - Any other detail or information that a human observer would find useful or relevant.
@@ -150,11 +160,19 @@ class ImageSummarizer():
             If you are unable to summarize it, respond with an empty string. Do not respond with "I can't do that" or similar.
         """
         if previous_text or next_text:
-            prompt += "\nConsider the surrounding text context when summarizing the image."
+            prompt += (
+                "\nIMPORTANT: Base your description strictly on what you directly observe "
+                "in the image. Do not describe or infer content that is not visually present "
+                "in the image itself. If the image is a logo, icon, watermark, or decorative "
+                "element, describe it as such."
+                "\nThe following surrounding text is provided ONLY to help interpret labels "
+                "or values that are visibly shown within the image — do NOT use it to infer "
+                "content not directly visible:"
+            )
         if previous_text:
-            prompt += f"\nThe text before the image is: '{previous_text}'"
+            prompt += f"\nText before image: '{previous_text}'"
         if next_text:
-            prompt += f"\nThe text after the image is: '{next_text}'"
+            prompt += f"\nText after image: '{next_text}'"
 
         try:
             return generate_image_summary(

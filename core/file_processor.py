@@ -66,12 +66,25 @@ class FileProcessor:
             (self.contextual_chunking or self.summarize_images or self.enable_gmft)
         )
     
+    def _parse_max_pdf_size(self, value) -> int:
+        """Parse max_pdf_size config value, handling formats like '20MB', '20', 20."""
+        if isinstance(value, (int, float)):
+            return int(value)
+        s = str(value).strip().upper()
+        for suffix in ('MB', 'M'):
+            if s.endswith(suffix):
+                s = s[:-len(suffix)].strip()
+                break
+        return int(s)
+
     def needs_pdf_splitting(self, filename: str) -> bool:
         """Check if PDF needs to be split due to size"""
-        # Only PDFs can be split
         if not filename.lower().endswith('.pdf'):
             return False
-        max_pdf_size = int(self.cfg.doc_processing.get('max_pdf_size', 50))
+        max_pdf_size = self.cfg.doc_processing.get('max_pdf_size', None)
+        if max_pdf_size is None:
+            return False
+        max_pdf_size = self._parse_max_pdf_size(max_pdf_size)
         filesize_mb = get_file_size_in_MB(filename)
         return filesize_mb > max_pdf_size
     
@@ -184,6 +197,7 @@ class FileProcessor:
                 layout_model=self.docling_config.get('layout_model', None),
                 do_formula_enrichment=self.docling_config.get('do_formula_enrichment', False),
                 fallback_ocr=self.fallback_ocr,
+                pdf_batch_size=self.cfg.doc_processing.get('pdf_batch_size', 300),
             )
         else:
             parser = UnstructuredDocumentParser(
