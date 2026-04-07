@@ -374,7 +374,9 @@ class ConfluenceCrawler(Crawler):
         confluence_search_url.args['limit'] = limit
         confluence_search_url.args['next'] = 'true'
         count = 0
-        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
+        indexed_ids = set()
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed_ids = self.tracker.get_indexed_ids()
         while True:
             logger.info(f"Searching Confluence: {confluence_search_url.url}")
             confluence_search_response = self.session.get(

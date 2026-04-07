@@ -1,5 +1,6 @@
 from omegaconf import OmegaConf, DictConfig
 from core.indexer import Indexer
+from core.crawl_tracker import CrawlShutdownException
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,12 @@ class Crawler(object):
         self.indexer = Indexer(cfg, endpoint, corpus_key, api_key)
         self.verbose = cfg.vectara.get("verbose", False)
         self.tracker = None  # Set by ingest.py after instantiation
-    
+        self.shutdown_requested = False  # Set by signal handler
+
     def check_shutdown(self):
-        """Raise CrawlPausedException if shutdown was requested. No-op if tracker is None."""
+        """Raise CrawlShutdownException if shutdown was requested."""
+        if self.shutdown_requested:
+            raise CrawlShutdownException("Graceful shutdown requested")
         if self.tracker:
             self.tracker.check_shutdown()
 

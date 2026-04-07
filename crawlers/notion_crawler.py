@@ -104,7 +104,9 @@ class NotionCrawler(Crawler):
         notion = Client(auth=self.notion_api_key)
 
         pages = list_all_pages(notion)
-        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
+        indexed_ids = set()
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed_ids = self.tracker.get_indexed_ids()
 
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:

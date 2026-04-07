@@ -258,7 +258,9 @@ class JiraCrawler(Crawler):
 
         issue_count = 0
         res_cnt = max_results
-        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
+        indexed_ids = set()
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed_ids = self.tracker.get_indexed_ids()
 
         # API v3 uses token-based pagination, v2 uses offset-based
         next_page_token = None

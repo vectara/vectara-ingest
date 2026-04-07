@@ -171,7 +171,9 @@ class GithubCrawler(Crawler):
 
         # create github object
         g = Github(repo, owner, token)
-        indexed_ids = self.tracker.get_indexed_ids() if self.tracker else set()
+        indexed_ids = set()
+        if self.tracker and not self.cfg.vectara.get("reindex", False):
+            indexed_ids = self.tracker.get_indexed_ids()
 
         # Extract and index pull requests
         prs = g.get_pull_requests("all")

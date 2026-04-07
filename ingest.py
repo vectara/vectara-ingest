@@ -348,11 +348,9 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
         crawler.tracker = tracker
 
     # Signal handling: first SIGTERM/SIGINT requests graceful shutdown, second forces it
-    shutdown_requested = [False]
-
     def _shutdown_handler(signum, frame):
-        if not shutdown_requested[0]:
-            shutdown_requested[0] = True
+        if not crawler.shutdown_requested:
+            crawler.shutdown_requested = True
             logger.info("Graceful shutdown requested — will exit after current document/batch...")
             if tracker:
                 tracker.request_shutdown()

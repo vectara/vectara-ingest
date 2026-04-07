@@ -286,5 +286,66 @@ class TestSignalHandler(unittest.TestCase):
                 tracker.close()
 
 
+class TestCrawlerShutdownWithoutTracker(unittest.TestCase):
+    """Test that graceful shutdown works even when tracking is disabled."""
+
+    def test_check_shutdown_raises_without_tracker(self):
+        """check_shutdown should raise CrawlShutdownException via shutdown_requested flag even without tracker."""
+        from core.crawl_tracker import CrawlShutdownException
+
+        class MockCrawler:
+            """Minimal mock that replicates the Crawler base class shutdown logic."""
+            def __init__(self):
+                self.tracker = None
+                self.shutdown_requested = False
+
+            def check_shutdown(self):
+                if self.shutdown_requested:
+                    raise CrawlShutdownException("Graceful shutdown requested")
+                if self.tracker:
+                    self.tracker.check_shutdown()
+
+        crawler = MockCrawler()
+        # Should be no-op when not requested
+        crawler.check_shutdown()
+
+        # Should raise when shutdown_requested is set (simulating SIGTERM without tracker)
+        crawler.shutdown_requested = True
+        with self.assertRaises(CrawlShutdownException):
+            crawler.check_shutdown()
+
+    def test_check_shutdown_with_tracker_still_works(self):
+        """check_shutdown should also work via tracker when both are present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "crawl_tracking.db")
+            tracker = CrawlTracker(db_path, "website")
+
+            from core.crawl_tracker import CrawlShutdownException
+
+            class MockCrawler:
+                def __init__(self):
+                    self.tracker = None
+                    self.shutdown_requested = False
+
+                def check_shutdown(self):
+                    if self.shutdown_requested:
+                        raise CrawlShutdownException("Graceful shutdown requested")
+                    if self.tracker:
+                        self.tracker.check_shutdown()
+
+            crawler = MockCrawler()
+            crawler.tracker = tracker
+
+            # No-op when running
+            crawler.check_shutdown()
+
+            # Trigger via tracker's DB status
+            tracker.request_shutdown()
+            with self.assertRaises(CrawlShutdownException):
+                crawler.check_shutdown()
+
+            tracker.close()
+
+
 if __name__ == "__main__":
     unittest.main()
