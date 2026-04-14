@@ -7,6 +7,7 @@ from core.utils import create_row_items
 logger = logging.getLogger(__name__)
 
 MAX_PART_SIZE = 8192
+MAX_SECTION_CHARS = 16000
 
 
 class DocumentBuilder:
