@@ -126,6 +126,8 @@ class UserWorker(object):
             shared_cache: SharedCache,
             date_threshold: datetime,
             permissions: List = DEFAULT_PERMISSIONS,
+            folder_id: Optional[str] = None,
+            crawl_subfolders: bool = True,
             use_ray: bool = False) -> None:
         # Convert cfg back to OmegaConf if it's a dict (from Ray serialization)
         if isinstance(cfg, dict):
@@ -140,13 +142,73 @@ class UserWorker(object):
         self.shared_cache = shared_cache
         self.date_threshold = date_threshold
         self.permissions = permissions
+        self.folder_id = folder_id
+        self.crawl_subfolders = crawl_subfolders
         self.use_ray = use_ray
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
         setup_logging()
 
+    def list_files_in_folder(self, service: Resource, folder_id: str, date_threshold: Optional[str] = None) -> List[dict]:
+        """List all files in a specific folder, optionally including subfolders."""
+        results = []
+        folders_to_process = [folder_id]
+        processed_folders = set()
+
+        while folders_to_process:
+            current_folder = folders_to_process.pop(0)
+            if current_folder in processed_folders:
+                continue
+            processed_folders.add(current_folder)
+
+            page_token = None
+            query = f"'{current_folder}' in parents and trashed=false"
+            if date_threshold:
+                query += f" and modifiedTime > '{date_threshold}'"
+
+            while True:
+                try:
+                    params = {
+                        'fields': 'nextPageToken, files(id, name, mimeType, permissions, modifiedTime, createdTime, owners, size)',
+                        'q': query,
+                        'corpora': 'allDrives',
+                        'includeItemsFromAllDrives': True,
+                        'supportsAllDrives': True
+                    }
+                    if page_token:
+                        params['pageToken'] = page_token
+                    response = service.files().list(**params).execute()
+                    files = response.get('files', [])
+
+                    for file in files:
+                        if file['mimeType'] == 'application/vnd.google-apps.folder':
+                            if self.crawl_subfolders:
+                                folders_to_process.append(file['id'])
+                        else:
+                            # If permissions list is empty, skip permission filtering
+                            if not self.permissions:
+                                results.append(file)
+                            else:
+                                file_permissions = file.get('permissions', [])
+                                if any(p.get('displayName') in self.permissions for p in file_permissions):
+                                    results.append(file)
+
+                    page_token = response.get('nextPageToken', None)
+                    if not page_token:
+                        break
+                except Exception as error:
+                    logger.warning(f"An HTTP error occurred listing folder {current_folder}: {error}")
+                    break
+
+        return results
+
     def list_files(self, service: Resource, date_threshold: Optional[str] = None) -> List[dict]:
+        """List files - either from a specific folder or all accessible files."""
+        if self.folder_id:
+            logger.info(f"Listing files from folder: {self.folder_id} (crawl_subfolders={self.crawl_subfolders})")
+            return self.list_files_in_folder(service, self.folder_id, date_threshold)
+
         results = []
         page_token = None
         query = f"((('root' in parents) or sharedWithMe or ('me' in owners) or ('me' in writers) or ('me' in readers)) and trashed=false and modifiedTime > '{date_threshold}')"
@@ -166,9 +228,13 @@ class UserWorker(object):
                 files = response.get('files', [])
 
                 for file in files:
-                    permissions = file.get('permissions', [])
-                    if any(p.get('displayName') in self.permissions for p in permissions):
+                    # If permissions list is empty, skip permission filtering
+                    if not self.permissions:
                         results.append(file)
+                    else:
+                        file_permissions = file.get('permissions', [])
+                        if any(p.get('displayName') in self.permissions for p in file_permissions):
+                            results.append(file)
                 page_token = response.get('nextPageToken', None)
                 if not page_token:
                     break
@@ -236,7 +302,9 @@ class UserWorker(object):
         name = file['name']
         permissions = file.get('permissions', [])
 
-        if not any(p.get('displayName') == 'Vectara' or p.get('displayName') == 'all' for p in permissions):
+        # Skip permission check if permissions list is empty (no filtering)
+        # Otherwise check if file has any of the allowed permissions
+        if self.permissions and not any(p.get('displayName') in self.permissions for p in permissions):
             logger.info(f"Skipping restricted file: {name}")
             return None
 
@@ -363,6 +431,11 @@ class GdriveCrawler(Crawler):
             logger.info(f"Crawling documents from {date_threshold.date()}")
         ray_workers = self.cfg.gdrive_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         permissions = self.cfg.gdrive_crawler.get("permissions", ['Vectara', 'all'])
+        folder_id = self.cfg.gdrive_crawler.get("folder_id", None)
+        crawl_subfolders = self.cfg.gdrive_crawler.get("crawl_subfolders", True)
+
+        if folder_id:
+            logger.info(f"Crawling specific folder: {folder_id} (crawl_subfolders={crawl_subfolders})")
 
         if ray_workers > 0:
             logger.info(f"Using {ray_workers} ray workers")
@@ -371,7 +444,7 @@ class GdriveCrawler(Crawler):
             shared_cache = ray.remote(SharedCache).remote()
             # Convert OmegaConf to dict for proper Ray serialization
             cfg_dict = OmegaConf.to_container(self.cfg, resolve=True)
-            actors = [ray.remote(UserWorker).remote(cfg_dict, self.indexer, self, shared_cache, date_threshold, permissions, use_ray=True) for _ in range(ray_workers)]
+            actors = [ray.remote(UserWorker).remote(cfg_dict, self.indexer, self, shared_cache, date_threshold, permissions, folder_id, crawl_subfolders, use_ray=True) for _ in range(ray_workers)]
             for a in actors:
                 a.setup.remote()
             pool = ray.util.ActorPool(actors)
@@ -380,7 +453,7 @@ class GdriveCrawler(Crawler):
 
         else:
             shared_cache = SharedCache()
-            crawl_worker = UserWorker(self.cfg, self.indexer, self, shared_cache, date_threshold, permissions, use_ray=False)
+            crawl_worker = UserWorker(self.cfg, self.indexer, self, shared_cache, date_threshold, permissions, folder_id, crawl_subfolders, use_ray=False)
             for user in self.delegated_users:
                 logger.info(f"Crawling for user {user}")
                 crawl_worker.process(user)
