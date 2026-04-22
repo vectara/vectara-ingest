@@ -25,12 +25,52 @@ gdrive_crawler:
   # Default: 7 days if not specified
   days_back: 7
 
-  # Permission filtering
-  # Files must be shared with at least one of these to be crawled
-  # Default: ['Vectara', 'all'] - only files shared with 'Vectara' group or 'all' (public)
-  permissions:
+  # Crawl-time displayName gate. Only files whose permissions contain a display
+  # name from this list are indexed. Set to null or [] to disable the gate and
+  # rely solely on ABAC metadata + query-time filters.
+  # Default: ['Vectara', 'all']. The legacy key `permissions` is still honored
+  # but deprecated.
+  permission_display_filter:
     - Vectara
     - all
+
+  # Attribute-based access control (ABAC) metadata
+  #
+  # When enabled, each indexed document is tagged with filterable ACL fields:
+  #   acl_owners, acl_readers, acl_groups, acl_expanded_users, acl_domains,
+  #   acl_is_public, acl_is_org_wide, acl_labels, acl_source,
+  #   acl_inherited_resolved
+  #
+  # The corpus admin must register these as filter attributes on the Vectara
+  # corpus before ABAC filter queries will work.
+  abac:
+    # Emit acl_* metadata on every indexed document.
+    enabled: true
+
+    # My Drive files don't receive inherited permissions via the API. When true,
+    # the crawler walks each file's parent folders and unions their ACLs.
+    # Adds API round-trips; folder lookups are cached per worker.
+    # (Shared Drive files already include inherited grants and aren't affected.)
+    resolve_inherited: false
+
+    # Treat `type=anyone` grants as public (sets acl_is_public=true).
+    include_anyone: true
+
+    # Resolve `type=group` grants into concrete member emails via the Google
+    # Admin Directory API. Requires `admin_delegated_user` below to be a
+    # Workspace admin with directory read access, and the
+    # `admin.directory.group.member.readonly` scope authorized for the service
+    # account. Service-account auth only.
+    expand_groups: false
+
+    # Workspace admin email to impersonate for the Admin Directory API.
+    # Required when expand_groups=true.
+    admin_delegated_user: ""
+
+    # Fetch Drive Labels per file and store them as `<LabelTitle>=<Value>`
+    # strings in acl_labels. Adds one round-trip per file, plus one
+    # definitions fetch per worker. Requires the `drive.labels.readonly` scope.
+    fetch_labels: false
 
   # Optional: Ray workers for parallel processing (default: 0)
   # 0 = no parallelization, >0 = number of workers
