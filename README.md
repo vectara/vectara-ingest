@@ -22,6 +22,7 @@ Vectara is the trusted GenAI platform providing simple [APIs](https://docs.vecta
 * RSS feeds
 * Jira tickets
 * Notion notes
+* Wolken KB articles
 * Docusaurus documentation sites
 * Slack
 * And many others...
@@ -501,6 +502,16 @@ MOTION_API_KEY="<YOUR-NOTION-API-KEY>
 The use of the `toml` standard allows easy secrets management when you have multiple crawl jobs that may not share the same secrets. For example when you have a different Vectara API key for indexing differnet corpora.
 
 Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the `secrets.toml` file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
+
+For the Wolken KB crawler, add these secrets prefixed with `WOLKEN_`:
+```
+WOLKEN_API_ENDPOINT="https://api-mycompany.wolkenservicedesk.com"
+WOLKEN_DOMAIN="mycompany"
+WOLKEN_CLIENT_ID="your-client-id"
+WOLKEN_SERVICE_ACCOUNT="service@mycompany.com"
+WOLKEN_AUTH_CODE="Basic ..."
+WOLKEN_REFRESH_TOKEN="your-refresh-token"
+```
 
 If you are using the table summarization, image summarization or contextual retreival features, 
 you have to provide your own LLM key (either OPENAI_API_KEY or ANTHROPIC_API_KEY). 

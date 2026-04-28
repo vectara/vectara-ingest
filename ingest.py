@@ -221,6 +221,9 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         if k.startswith('aws_'):
             update_omega_conf(cfg, reason, f's3_crawler.{k.lower()}', v)
             continue
+        if k.startswith('WOLKEN_'):
+            update_omega_conf(cfg, reason, f'wolken_crawler.{k[7:].lower()}', v)
+            continue
 
         patterns = {
             'VECTARA_(.+)': 'vectara',

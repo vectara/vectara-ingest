@@ -1,0 +1,36 @@
+vectara:
+  corpus_key: wolken-kb
+  reindex: false
+  create_corpus: true
+
+crawling:
+  crawler_type: wolken
+
+wolken_crawler:
+  # API endpoint for your Wolken instance (e.g. https://api-mycompany.wolkenservicedesk.com)
+  api_endpoint: ""
+  # Domain name for the Wolken instance
+  domain: ""
+  # OAuth client ID
+  client_id: ""
+  # Service account email
+  service_account: ""
+  # Basic auth code for token endpoint (e.g. "Basic ...")
+  auth_code: ""
+  # Refresh token for authentication
+  refresh_token: ""
+
+  # Optional: filter categories by KB source ID
+  # kb_source_id: 1
+
+  # Number of items per API page
+  batch_size: 100
+
+  # Content fields to extract from article details (in order).
+  # Available fields: introduction, cause, environment, resolution, additionalInfo, internalNotes
+  content_fields:
+    - introduction
+    - cause
+    - environment
+    - resolution
+    - additionalInfo
