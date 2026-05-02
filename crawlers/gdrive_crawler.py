@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import os
+import re
 import warnings
 import requests
 from datetime import datetime, timedelta
@@ -19,7 +20,13 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 from core.crawler import Crawler
+from core.dataframe_parser import (
+    DataframeParser,
+    supported_by_dataframe_parser,
+    process_dataframe_file,
+)
 from core.indexer import Indexer
+from core.summary import TableSummarizer
 from core.utils import setup_logging, safe_remove_file, get_docker_or_local_path
 
 logger = logging.getLogger(__name__)
@@ -27,7 +34,6 @@ logger = logging.getLogger(__name__)
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
-ADMIN_GROUP_MEMBER_SCOPE = "https://www.googleapis.com/auth/admin.directory.group.member.readonly"
 DRIVE_LABELS_SCOPE = "https://www.googleapis.com/auth/drive.labels.readonly"
 SERVICE_ACCOUNT_FILE = '/home/vectara/env/credentials.json'
 
@@ -49,19 +55,34 @@ ACL_SOURCE_SHARED_DRIVE = 'shared_drive'
 ACL_SOURCE_MY_DRIVE_DIRECT = 'my_drive_direct'
 ACL_SOURCE_MY_DRIVE_RESOLVED = 'my_drive_resolved'
 ACL_SOURCE_MY_DRIVE_PARTIAL = 'my_drive_partial'
-_AUTHORITATIVE_SOURCES = frozenset({ACL_SOURCE_SHARED_DRIVE, ACL_SOURCE_MY_DRIVE_RESOLVED})
+
+FOLDER_MIME = 'application/vnd.google-apps.folder'
+SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+
+_FOLDER_ID_PATTERN = re.compile(r'/folders/([a-zA-Z0-9_-]+)')
+
+
+def extract_folder_id(value: Optional[str]) -> Optional[str]:
+    """Return the Drive folder id from a URL like
+    `https://drive.google.com/drive/folders/<id>` (query/hash tolerated),
+    or pass a bare id through unchanged. Returns the input for falsy values.
+    """
+    if not value:
+        return value
+    m = _FOLDER_ID_PATTERN.search(value)
+    return m.group(1) if m else value.strip()
 
 
 def build_scopes(abac_cfg: Optional[Any] = None) -> List[str]:
     """Return the OAuth scopes required given the ABAC configuration.
 
-    Adds Admin Directory and Drive Labels scopes only when the corresponding
-    features are enabled, so unused features don't force extra consent.
+    Adds the Drive Labels scope only when label fetching is enabled, so unused
+    features don't force extra consent. Group membership is intentionally not
+    resolved here — the query layer is expected to enumerate the requesting
+    user's groups (transitively) and filter against `acl_groups` directly.
     """
     scopes = [DRIVE_READONLY_SCOPE]
     if abac_cfg is not None:
-        if abac_cfg.get('expand_groups', False):
-            scopes.append(ADMIN_GROUP_MEMBER_SCOPE)
         if abac_cfg.get('fetch_labels', False):
             scopes.append(DRIVE_LABELS_SCOPE)
     return scopes
@@ -160,7 +181,6 @@ def get_gdrive_url(file_id: str, mime_type: str = '') -> str:
 def extract_acl_metadata(
     file_obj: Dict[str, Any],
     parent_permissions: Optional[List[Dict[str, Any]]] = None,
-    group_members: Optional[Dict[str, Set[str]]] = None,
     labels: Optional[List[str]] = None,
     include_anyone: bool = True,
     source: str = ACL_SOURCE_MY_DRIVE_DIRECT,
@@ -169,15 +189,18 @@ def extract_acl_metadata(
 
     Merges direct permissions with optional inherited permissions from parent
     folders (deduped by permission id), filters out deleted grants, buckets the
-    survivors by grantee type and role, and appends any pre-resolved group
-    members and label strings. `source` becomes `acl_source` verbatim and
-    determines whether `acl_inherited_resolved` is true.
+    survivors by grantee type and role, and appends any label strings. Group
+    grants are recorded in `acl_groups`; resolution to individual members is
+    intentionally deferred to the query layer (which knows the requesting
+    user's live group membership). `source` becomes `acl_source` verbatim;
+    callers can derive completeness from it (`shared_drive` and
+    `my_drive_resolved` reflect a full ACL; `my_drive_direct` and
+    `my_drive_partial` may be missing inherited grants).
     """
     owners: Set[str] = set()
     readers: Set[str] = set()
     groups: Set[str] = set()
     domains: Set[str] = set()
-    expanded: Set[str] = set()
     is_public = False
 
     direct = list(file_obj.get('permissions') or [])
@@ -206,8 +229,6 @@ def extract_acl_metadata(
                 readers.add(email)
         elif ptype == 'group' and email:
             groups.add(email)
-            if group_members and email in group_members:
-                expanded.update(m for m in group_members[email] if m)
         elif ptype == 'domain':
             if domain:
                 domains.add(domain)
@@ -219,13 +240,11 @@ def extract_acl_metadata(
         'acl_owners': sorted(owners),
         'acl_readers': sorted(readers),
         'acl_groups': sorted(groups),
-        'acl_expanded_users': sorted(expanded),
         'acl_domains': sorted(domains),
         'acl_is_public': bool(is_public),
         'acl_is_org_wide': bool(domains),
         'acl_labels': list(labels or []),
         'acl_source': source,
-        'acl_inherited_resolved': source in _AUTHORITATIVE_SOURCES,
     }
 
 
@@ -259,15 +278,34 @@ class UserWorker(object):
         self._abac_enabled = self.abac.get('enabled', True)
         self._abac_resolve_inherited = self.abac.get('resolve_inherited', False)
         self._abac_include_anyone = self.abac.get('include_anyone', True)
-        self._abac_expand_groups = self.abac.get('expand_groups', False)
         self._abac_fetch_labels = self.abac.get('fetch_labels', False)
+
+        # Optional: restrict the crawl to a subtree rooted at this folder.
+        root_folder_raw = (
+            self.cfg.gdrive_crawler.get('root_folder', None)
+            if hasattr(self.cfg, 'gdrive_crawler') else None
+        )
+        self._root_folder_id = extract_folder_id(root_folder_raw) if root_folder_raw else None
 
         # Caches populated during a worker's lifetime
         self._folder_acl_cache: Dict[str, Tuple[List[Dict[str, Any]], List[str]]] = {}
-        self._group_member_cache: Dict[str, Set[str]] = {}
-        self._admin_service: Optional[Resource] = None
         self._label_defs: Optional[Dict[str, Dict[str, Any]]] = None
-        self._group_expansion_warned: bool = False
+
+        # Standalone images are routed through the indexer's ImageFileParser,
+        # but only when a vision-capable summarizer is enabled. Gating on this
+        # flag avoids downloading images we'd have to drop at index time.
+        doc_processing = self.cfg.get('doc_processing', {}) if hasattr(self.cfg, 'get') else {}
+        self._summarize_images = bool(doc_processing.get('summarize_images', False))
+
+        # Shared DataframeParser for routing .csv/.xls/.xlsx (and native Google
+        # Sheets exported as .xlsx). Matches the pattern in box/sharepoint/folder.
+        model_config = doc_processing.get('model_config', {})
+        self.df_parser = DataframeParser(
+            self.cfg,
+            self.cfg.get('dataframe_processing', {}),
+            self.indexer,
+            TableSummarizer(self.cfg, model_config.get('text')),
+        )
 
     def setup(self):
         self.indexer.setup(use_playwright=False)
@@ -313,6 +351,75 @@ class UserWorker(object):
             except Exception as error:
                 logger.warning(f"An HTTP error occurred: {error}")
                 break
+        return results
+
+    def _list_subtree(self, service: Resource, root_folder_id: str,
+                      date_threshold: str) -> List[dict]:
+        """BFS the folder subtree rooted at `root_folder_id`.
+
+        Descends into every subfolder regardless of its modifiedTime (old
+        folders may still contain recently-modified files), but filters leaf
+        files server-side by `modifiedTime`. Shortcuts are not followed, so
+        the crawl stays strictly inside the chosen subtree. Folder ids are
+        tracked to avoid cycles from pathological parent/child loops.
+        """
+        results: List[dict] = []
+        fields = (
+            'nextPageToken, files(id, name, mimeType, modifiedTime, createdTime, '
+            'owners, size, parents, driveId, ' + _PERM_FIELDS + ')'
+        )
+
+        seen: Set[str] = set()
+        frontier: List[str] = [root_folder_id]
+
+        while frontier:
+            next_frontier: List[str] = []
+            for current in frontier:
+                if current in seen:
+                    continue
+                seen.add(current)
+
+                query = (
+                    f"'{current}' in parents and trashed=false and "
+                    f"(mimeType='{FOLDER_MIME}' or modifiedTime > '{date_threshold}')"
+                )
+                page_token: Optional[str] = None
+                while True:
+                    try:
+                        params = {
+                            'fields': fields,
+                            'q': query,
+                            'corpora': 'allDrives',
+                            'includeItemsFromAllDrives': True,
+                            'supportsAllDrives': True,
+                        }
+                        if page_token:
+                            params['pageToken'] = page_token
+                        response = service.files().list(**params).execute()
+                        children = response.get('files', []) or []
+
+                        for f in children:
+                            mime = f.get('mimeType')
+                            if mime == FOLDER_MIME:
+                                fid = f.get('id')
+                                if fid and fid not in seen:
+                                    next_frontier.append(fid)
+                            elif mime == SHORTCUT_MIME:
+                                continue
+                            else:
+                                if self._passes_display_filter(f.get('permissions', [])):
+                                    results.append(f)
+
+                        page_token = response.get('nextPageToken')
+                        if not page_token:
+                            break
+                    except Exception as error:
+                        logger.warning(
+                            f"Error listing children of folder {current}: {error}"
+                        )
+                        break
+
+            frontier = next_frontier
         return results
 
     def _resolve_parent_acl(self, file_obj: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
@@ -375,86 +482,6 @@ class UserWorker(object):
 
         source = ACL_SOURCE_MY_DRIVE_PARTIAL if partial else ACL_SOURCE_MY_DRIVE_RESOLVED
         return list(collected.values()), source
-
-    def _get_admin_service(self) -> Optional[Resource]:
-        """Build (and cache) an Admin Directory SDK service for group expansion."""
-        if self._admin_service is not None:
-            return self._admin_service
-        admin_user = self.abac.get('admin_delegated_user', '') or ''
-        if not admin_user:
-            if not self._group_expansion_warned:
-                logger.warning(
-                    "abac.expand_groups=true but abac.admin_delegated_user is empty; "
-                    "skipping group expansion"
-                )
-                self._group_expansion_warned = True
-            return None
-        auth_type = self.cfg.gdrive_crawler.get("auth_type", "service_account")
-        if auth_type != "service_account":
-            if not self._group_expansion_warned:
-                logger.warning(
-                    "abac.expand_groups requires service_account auth; skipping group expansion"
-                )
-                self._group_expansion_warned = True
-            return None
-        try:
-            admin_creds = get_credentials(
-                admin_user,
-                config_path=self.cfg.gdrive_crawler.credentials_file,
-                scopes=[ADMIN_GROUP_MEMBER_SCOPE],
-            )
-            self._admin_service = build(
-                'admin', 'directory_v1', credentials=admin_creds, cache_discovery=False
-            )
-            return self._admin_service
-        except Exception as e:
-            logger.warning(f"Failed to build Admin SDK service: {e}; skipping group expansion")
-            self._group_expansion_warned = True
-            return None
-
-    def _expand_group(self, group_email: str) -> Set[str]:
-        """Return the set of member email addresses for a Google Group.
-
-        Uses Admin Directory API with `includeDerivedMembership=true` so nested
-        groups are expanded server-side. Results are cached per-worker.
-        """
-        key = (group_email or '').lower()
-        if not key:
-            return set()
-        if key in self._group_member_cache:
-            return self._group_member_cache[key]
-
-        admin_service = self._get_admin_service()
-        if admin_service is None:
-            self._group_member_cache[key] = set()
-            return set()
-
-        members: Set[str] = set()
-        page_token: Optional[str] = None
-        try:
-            while True:
-                params = {
-                    'groupKey': key,
-                    'includeDerivedMembership': True,
-                    'maxResults': 200,
-                }
-                if page_token:
-                    params['pageToken'] = page_token
-                resp = admin_service.members().list(**params).execute()
-                for m in resp.get('members', []) or []:
-                    email = m.get('email')
-                    if email and m.get('type') != 'GROUP':
-                        members.add(email.lower())
-                page_token = resp.get('nextPageToken')
-                if not page_token:
-                    break
-        except HttpError as e:
-            logger.info(f"Group expansion failed for {group_email}: {e}")
-        except Exception as e:
-            logger.info(f"Group expansion error for {group_email}: {e}")
-
-        self._group_member_cache[key] = members
-        return members
 
     def _load_label_defs(self) -> Dict[str, Dict[str, Any]]:
         """Fetch and cache Drive Labels definitions keyed by labelId."""
@@ -612,11 +639,24 @@ class UserWorker(object):
             local_file_path = self.save_local_file(file_id, name + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         elif mime_type == 'application/vnd.google-apps.presentation':
             local_file_path = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        elif mime_type == 'application/vnd.google-apps.spreadsheet':
+            local_file_path = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         else:
             local_file_path = self.save_local_file(file_id, name)
 
+        if not local_file_path:
+            return
+
+        # Route by type: dataframes go through DataframeParser; images use the
+        # indexer's standalone-image auto-routing (ImageFileParser) — but only
+        # when summarize_images is enabled.
         supported_extensions = ['.doc', '.docx', '.ppt', '.pptx', '.pdf', '.odt', '.txt', '.html', '.md', '.rtf', '.epub', '.lxml']
-        if (not local_file_path) or (not any(local_file_path.endswith(extension) for extension in supported_extensions)):
+        if self._summarize_images:
+            supported_extensions += ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.svg', '.ico', '.eps']
+
+        is_dataframe = supported_by_dataframe_parser(local_file_path)
+        if not is_dataframe and not any(local_file_path.endswith(ext) for ext in supported_extensions):
+            safe_remove_file(local_file_path)
             return
 
         if self.crawler.verbose:
@@ -643,15 +683,6 @@ class UserWorker(object):
         if self._abac_enabled:
             parent_perms, source = self._resolve_parent_acl(file)
 
-            group_members: Dict[str, Set[str]] = {}
-            if self._abac_expand_groups:
-                for perm in list(file.get('permissions') or []) + parent_perms:
-                    if perm.get('deleted') or perm.get('type') != 'group':
-                        continue
-                    email = (perm.get('emailAddress') or '').lower()
-                    if email and email not in group_members:
-                        group_members[email] = self._expand_group(email)
-
             labels: List[str] = []
             if self._abac_fetch_labels:
                 labels = self._fetch_labels(file_id)
@@ -659,14 +690,23 @@ class UserWorker(object):
             file_metadata.update(extract_acl_metadata(
                 file_obj=file,
                 parent_permissions=parent_perms,
-                group_members=group_members,
                 labels=labels,
                 include_anyone=self._abac_include_anyone,
                 source=source,
             ))
 
         try:
-            self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
+            if is_dataframe:
+                process_dataframe_file(
+                    file_path=local_file_path,
+                    metadata=file_metadata,
+                    doc_id=file_id,
+                    df_parser=self.df_parser,
+                    df_config=self.cfg.get('dataframe_processing', {}),
+                    source_name='gdrive',
+                )
+            else:
+                self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
         except Exception as e:
             logger.warning(f"Error {e} indexing document for file {name}, file_id {file_id}")
 
@@ -701,7 +741,12 @@ class UserWorker(object):
 
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
 
-        files = self.list_files(self.service, date_threshold=self.date_threshold.isoformat() + 'Z')
+        date_threshold_str = self.date_threshold.isoformat() + 'Z'
+        if self._root_folder_id:
+            logger.info(f"Restricting crawl to folder subtree: {self._root_folder_id}")
+            files = self._list_subtree(self.service, self._root_folder_id, date_threshold_str)
+        else:
+            files = self.list_files(self.service, date_threshold=date_threshold_str)
         if self.use_ray:
             files = [file for file in files if not ray.get(self.shared_cache.contains.remote(file['id']))]
         else:
@@ -709,12 +754,14 @@ class UserWorker(object):
 
         # remove mime types we don't want to crawl
         mime_prefix_to_remove = [
-            'image', 'audio', 'video',
+            'audio', 'video',
             'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
             'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
             'application/x-executable',
             'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script',
         ]
+        if not self._summarize_images:
+            mime_prefix_to_remove.append('image')
         files = [file for file in files if not any(file['mimeType'].startswith(mime_type) for mime_type in mime_prefix_to_remove)]
 
         if self.crawler.verbose:
