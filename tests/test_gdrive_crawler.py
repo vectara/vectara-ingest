@@ -1,0 +1,612 @@
+import sys
+import unittest
+from unittest.mock import MagicMock
+
+# Some transitive imports (core.summary) require cairosvg, which pulls in a
+# native libcairo that isn't present in all dev environments. Stub it out.
+sys.modules.setdefault('cairosvg', MagicMock())
+
+from googleapiclient.errors import HttpError
+
+from crawlers.gdrive_crawler import (
+    DRIVE_LABELS_SCOPE,
+    DRIVE_READONLY_SCOPE,
+    GdriveCrawler,
+    UserWorker,
+    build_scopes,
+    extract_acl_metadata,
+    extract_folder_id,
+)
+
+
+def _make_http_error(status: int) -> HttpError:
+    resp = MagicMock()
+    resp.status = status
+    resp.reason = "mocked"
+    return HttpError(resp=resp, content=b"{}")
+
+
+def _perm(pid, **kw):
+    out = {"id": pid}
+    out.update(kw)
+    return out
+
+
+class TestBuildScopes(unittest.TestCase):
+    def test_default_only_drive_readonly(self):
+        self.assertEqual(build_scopes(None), [DRIVE_READONLY_SCOPE])
+        self.assertEqual(build_scopes({}), [DRIVE_READONLY_SCOPE])
+
+    def test_fetch_labels_alone_does_not_add_labels_scope(self):
+        """fetch_labels without enabled should NOT request the extra Labels
+        consent — labels are only ever read inside the ABAC-enabled branch."""
+        scopes = build_scopes({"fetch_labels": True})
+        self.assertNotIn(DRIVE_LABELS_SCOPE, scopes)
+
+    def test_enabled_and_fetch_labels_adds_labels_scope(self):
+        scopes = build_scopes({"enabled": True, "fetch_labels": True})
+        self.assertIn(DRIVE_LABELS_SCOPE, scopes)
+
+    def test_enabled_without_fetch_labels_omits_labels_scope(self):
+        scopes = build_scopes({"enabled": True})
+        self.assertEqual(scopes, [DRIVE_READONLY_SCOPE])
+
+
+class TestExtractAclMetadata(unittest.TestCase):
+    def test_anyone_only_marks_public(self):
+        f = {"permissions": [_perm("p1", type="anyone", role="reader")]}
+        meta = extract_acl_metadata(f)
+        self.assertTrue(meta["acl_is_public"])
+        self.assertFalse(meta["acl_is_org_wide"])
+        self.assertEqual(meta["acl_owners"], [])
+        self.assertEqual(meta["acl_readers"], [])
+
+    def test_anyone_suppressed_when_include_anyone_false(self):
+        f = {"permissions": [_perm("p1", type="anyone", role="reader")]}
+        meta = extract_acl_metadata(f, include_anyone=False)
+        self.assertFalse(meta["acl_is_public"])
+
+    def test_domain_grant_sets_org_wide(self):
+        f = {
+            "permissions": [
+                _perm("p1", type="domain", role="reader", domain="vectara.com"),
+            ]
+        }
+        meta = extract_acl_metadata(f)
+        self.assertEqual(meta["acl_domains"], ["vectara.com"])
+        self.assertTrue(meta["acl_is_org_wide"])
+        self.assertFalse(meta["acl_is_public"])
+
+    def test_owner_and_readers_bucketed_and_deleted_excluded(self):
+        f = {
+            "permissions": [
+                _perm("p1", type="user", role="owner", emailAddress="A@x.com"),
+                _perm("p2", type="user", role="writer", emailAddress="b@x.com"),
+                _perm("p3", type="user", role="commenter", emailAddress="c@x.com"),
+                _perm("p4", type="user", role="reader", emailAddress="d@x.com", deleted=True),
+            ]
+        }
+        meta = extract_acl_metadata(f)
+        self.assertEqual(meta["acl_owners"], ["a@x.com"])
+        self.assertEqual(meta["acl_readers"], ["b@x.com", "c@x.com"])
+        self.assertNotIn("d@x.com", meta["acl_readers"])
+
+    def test_shared_drive_source_recorded(self):
+        f = {
+            "permissions": [
+                _perm(
+                    "p1",
+                    type="user",
+                    role="reader",
+                    emailAddress="u@x.com",
+                    permissionDetails=[{"inherited": True}],
+                )
+            ]
+        }
+        meta = extract_acl_metadata(f, source="shared_drive")
+        self.assertEqual(meta["acl_source"], "shared_drive")
+        self.assertEqual(meta["acl_readers"], ["u@x.com"])
+        self.assertNotIn("acl_inherited_resolved", meta)
+
+    def test_group_grant_recorded_without_expansion(self):
+        f = {
+            "permissions": [
+                _perm("p1", type="group", role="reader", emailAddress="eng@x.com"),
+            ]
+        }
+        meta = extract_acl_metadata(f)
+        self.assertEqual(meta["acl_groups"], ["eng@x.com"])
+        self.assertNotIn("acl_expanded_users", meta)
+
+    def test_parent_permissions_merged_and_deduped(self):
+        f = {
+            "permissions": [_perm("p1", type="user", role="reader", emailAddress="a@x.com")]
+        }
+        parent = [
+            _perm("p1", type="user", role="reader", emailAddress="a@x.com"),  # dup by id
+            _perm("p2", type="group", role="reader", emailAddress="eng@x.com"),
+        ]
+        meta = extract_acl_metadata(f, parent_permissions=parent)
+        self.assertEqual(meta["acl_readers"], ["a@x.com"])
+        self.assertEqual(meta["acl_groups"], ["eng@x.com"])
+
+    def test_labels_pass_through(self):
+        f = {"permissions": []}
+        meta = extract_acl_metadata(f, labels=["Sensitivity=Confidential"])
+        self.assertEqual(meta["acl_labels"], ["Sensitivity=Confidential"])
+
+def _make_worker(abac=None, permission_display_filter=None, root_folder_id=None):
+    """Construct a UserWorker without touching the real __init__ path."""
+    worker = UserWorker.__new__(UserWorker)
+    worker.cfg = MagicMock()
+    worker.cfg.gdrive_crawler = MagicMock()
+    worker.cfg.gdrive_crawler.credentials_file = "/nope"
+    worker.cfg.gdrive_crawler.get = MagicMock(
+        side_effect=lambda key, default=None: {"auth_type": "service_account"}.get(key, default)
+    )
+    worker.crawler = MagicMock()
+    worker.indexer = MagicMock()
+    worker.creds = MagicMock()
+    worker.service = MagicMock()
+    worker.access_token = None
+    worker.shared_cache = MagicMock()
+    worker.date_threshold = None
+    worker.permission_display_filter = permission_display_filter
+    worker.use_ray = False
+    worker.abac = abac or {}
+    worker._abac_enabled = worker.abac.get('enabled', True)
+    worker._abac_resolve_inherited = worker.abac.get('resolve_inherited', False)
+    worker._abac_include_anyone = worker.abac.get('include_anyone', True)
+    worker._abac_fetch_labels = worker.abac.get('fetch_labels', False)
+    worker._root_folder_id = root_folder_id
+    worker._folder_acl_cache = {}
+    worker._label_defs = None
+    return worker
+
+
+class TestPermissionDisplayFilter(unittest.TestCase):
+    def test_empty_filter_passes_all(self):
+        w = _make_worker(permission_display_filter=None)
+        self.assertTrue(w._passes_display_filter([]))
+        self.assertTrue(w._passes_display_filter([{"displayName": "Random"}]))
+
+    def test_filter_allows_matching_display_name(self):
+        w = _make_worker(permission_display_filter=["Vectara", "all"])
+        self.assertTrue(w._passes_display_filter([{"displayName": "Vectara"}]))
+        self.assertTrue(w._passes_display_filter([{"displayName": "all"}]))
+
+    def test_filter_rejects_non_matching(self):
+        w = _make_worker(permission_display_filter=["Vectara"])
+        self.assertFalse(w._passes_display_filter([{"displayName": "Other"}]))
+        self.assertFalse(w._passes_display_filter([]))
+
+
+class TestResolvePermissionDisplayFilter(unittest.TestCase):
+    """Boundary check on the config-loading path: misconfigured scalar strings
+    must fail loudly instead of being silently split into characters."""
+
+    def _crawler(self, gdrive_dict):
+        c = GdriveCrawler.__new__(GdriveCrawler)
+        c.cfg = MagicMock()
+        c.cfg.gdrive_crawler = gdrive_dict
+        return c
+
+    def test_string_value_raises_typeerror(self):
+        c = self._crawler({"permission_display_filter": "Vectara"})
+        with self.assertRaises(TypeError):
+            c._resolve_permission_display_filter()
+
+    def test_list_value_passes_through(self):
+        c = self._crawler({"permission_display_filter": ["Vectara", "all"]})
+        self.assertEqual(
+            c._resolve_permission_display_filter(), ["Vectara", "all"]
+        )
+
+    def test_explicit_null_disables_filter(self):
+        c = self._crawler({"permission_display_filter": None})
+        self.assertIsNone(c._resolve_permission_display_filter())
+
+
+class TestResolveParentAcl(unittest.TestCase):
+    def test_shared_drive_skips_walk(self):
+        w = _make_worker(abac={"resolve_inherited": True})
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(perms, [])
+        self.assertEqual(source, "shared_drive")
+        w.service.files().get.assert_not_called()
+
+    def test_my_drive_direct_when_resolve_disabled(self):
+        w = _make_worker(abac={"resolve_inherited": False})
+        perms, source = w._resolve_parent_acl({"parents": ["F1"]})
+        self.assertEqual(perms, [])
+        self.assertEqual(source, "my_drive_direct")
+        w.service.files().get.assert_not_called()
+
+    def test_three_level_walk_unions_and_caches(self):
+        w = _make_worker(abac={"resolve_inherited": True})
+
+        folder_responses = {
+            "F1": {"id": "F1", "parents": ["F2"], "permissions": [_perm("a", type="group", role="reader", emailAddress="eng@x.com")]},
+            "F2": {"id": "F2", "parents": ["F3"], "permissions": [_perm("b", type="user", role="reader", emailAddress="alice@x.com")]},
+            "F3": {"id": "F3", "parents": [], "permissions": [_perm("c", type="domain", role="reader", domain="x.com")]},
+        }
+
+        def fake_get(fileId, fields, supportsAllDrives):
+            exec_mock = MagicMock()
+            exec_mock.execute.return_value = folder_responses[fileId]
+            return exec_mock
+
+        w.service.files = MagicMock()
+        w.service.files.return_value.get = MagicMock(side_effect=fake_get)
+
+        perms, source = w._resolve_parent_acl({"parents": ["F1"]})
+        self.assertEqual(source, "my_drive_resolved")
+        ids = sorted(p["id"] for p in perms)
+        self.assertEqual(ids, ["a", "b", "c"])
+
+        # Second call should hit the cache: no new get invocations
+        before = w.service.files.return_value.get.call_count
+        perms2, source2 = w._resolve_parent_acl({"parents": ["F1"]})
+        after = w.service.files.return_value.get.call_count
+        self.assertEqual(before, after)
+        self.assertEqual(sorted(p["id"] for p in perms2), ["a", "b", "c"])
+        self.assertEqual(source2, "my_drive_resolved")
+
+    def test_walk_http_error_yields_partial(self):
+        w = _make_worker(abac={"resolve_inherited": True})
+
+        def fake_get(fileId, fields, supportsAllDrives):
+            exec_mock = MagicMock()
+            exec_mock.execute.side_effect = _make_http_error(403)
+            return exec_mock
+
+        w.service.files = MagicMock()
+        w.service.files.return_value.get = MagicMock(side_effect=fake_get)
+
+        perms, source = w._resolve_parent_acl({"parents": ["F1"]})
+        self.assertEqual(perms, [])
+        self.assertEqual(source, "my_drive_partial")
+
+
+class TestFetchLabels(unittest.TestCase):
+    def test_selection_label_renders_title_equals_value(self):
+        w = _make_worker(abac={"fetch_labels": True})
+        w._label_defs = {
+            "L1": {
+                "title": "Sensitivity",
+                "fields": {
+                    "F1": {
+                        "title": "Level",
+                        "choices": {"C1": "Confidential"},
+                    }
+                },
+            }
+        }
+        resp = {
+            "labels": [
+                {"id": "L1", "fields": {"F1": {"selection": ["C1"]}}},
+            ]
+        }
+        exec_mock = MagicMock()
+        exec_mock.execute.return_value = resp
+        w.service.files.return_value.listLabels = MagicMock(return_value=exec_mock)
+
+        out = w._fetch_labels("file1")
+        self.assertEqual(out, ["Sensitivity=Confidential"])
+
+    def test_listlabels_error_returns_empty(self):
+        w = _make_worker(abac={"fetch_labels": True})
+        w._label_defs = {}
+        exec_mock = MagicMock()
+        exec_mock.execute.side_effect = _make_http_error(403)
+        w.service.files.return_value.listLabels = MagicMock(return_value=exec_mock)
+        self.assertEqual(w._fetch_labels("file1"), [])
+
+
+class TestExtractFolderId(unittest.TestCase):
+    def test_bare_id_passed_through(self):
+        self.assertEqual(extract_folder_id("1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ"),
+                         "1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ")
+
+    def test_standard_folder_url(self):
+        url = "https://drive.google.com/drive/folders/1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ"
+        self.assertEqual(extract_folder_id(url), "1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ")
+
+    def test_user_scoped_folder_url(self):
+        url = "https://drive.google.com/drive/u/0/folders/1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ"
+        self.assertEqual(extract_folder_id(url), "1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ")
+
+    def test_url_with_query_and_hash(self):
+        url = "https://drive.google.com/drive/folders/abc_DEF-123?resourcekey=xyz#shared"
+        self.assertEqual(extract_folder_id(url), "abc_DEF-123")
+
+    def test_trailing_slash(self):
+        url = "https://drive.google.com/drive/folders/abc_DEF-123/"
+        self.assertEqual(extract_folder_id(url), "abc_DEF-123")
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(extract_folder_id(""), "")
+        self.assertIsNone(extract_folder_id(None))
+
+
+class TestListSubtree(unittest.TestCase):
+    """BFS traversal of a folder's descendants via `files().list`."""
+
+    FOLDER_MIME = "application/vnd.google-apps.folder"
+    SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+
+    def _wire_service(self, worker, tree):
+        """Install a fake files().list that returns `tree[folder_id]` per query.
+
+        `tree` maps parent folder id -> list of child file dicts (each with id,
+        name, mimeType, and whatever else the test cares about). The query is
+        parsed for the `'<id>' in parents` term to pick which bucket to return.
+        """
+        def fake_list(**params):
+            q = params.get("q", "")
+            parent = q.split("'")[1]  # "'<id>' in parents and ..."
+            children = tree.get(parent, [])
+            exec_mock = MagicMock()
+            exec_mock.execute.return_value = {"files": list(children), "nextPageToken": None}
+            return exec_mock
+
+        worker.service.files = MagicMock()
+        worker.service.files.return_value.list = MagicMock(side_effect=fake_list)
+        return worker.service.files.return_value.list
+
+    def test_bfs_collects_files_across_subfolders(self):
+        w = _make_worker(root_folder_id="ROOT")
+        tree = {
+            "ROOT": [
+                {"id": "F1", "name": "sub1", "mimeType": self.FOLDER_MIME},
+                {"id": "D1", "name": "a.pdf", "mimeType": "application/pdf", "permissions": []},
+            ],
+            "F1": [
+                {"id": "F2", "name": "sub2", "mimeType": self.FOLDER_MIME},
+                {"id": "D2", "name": "b.pdf", "mimeType": "application/pdf", "permissions": []},
+            ],
+            "F2": [
+                {"id": "D3", "name": "c.pdf", "mimeType": "application/pdf", "permissions": []},
+            ],
+        }
+        self._wire_service(w, tree)
+
+        files = w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+        ids = sorted(f["id"] for f in files)
+        self.assertEqual(ids, ["D1", "D2", "D3"])
+
+    def test_shortcuts_are_not_followed(self):
+        w = _make_worker(root_folder_id="ROOT")
+        tree = {
+            "ROOT": [
+                {"id": "S1", "name": "link", "mimeType": self.SHORTCUT_MIME,
+                 "shortcutDetails": {"targetId": "OUTSIDE"}},
+                {"id": "D1", "name": "a.pdf", "mimeType": "application/pdf", "permissions": []},
+            ],
+            # If the crawler wrongly followed the shortcut target, this would surface.
+            "OUTSIDE": [
+                {"id": "LEAK", "name": "leak.pdf", "mimeType": "application/pdf", "permissions": []},
+            ],
+        }
+        list_mock = self._wire_service(w, tree)
+
+        files = w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+        ids = [f["id"] for f in files]
+        self.assertEqual(ids, ["D1"])
+        # Ensure we never queried children of OUTSIDE.
+        queried_parents = [call.kwargs["q"].split("'")[1] for call in list_mock.call_args_list]
+        self.assertNotIn("OUTSIDE", queried_parents)
+
+    def test_query_filters_files_by_mtime_but_keeps_folders(self):
+        """Server-side query must retain folders regardless of modifiedTime."""
+        w = _make_worker(root_folder_id="ROOT")
+        self._wire_service(w, {"ROOT": []})
+        w._list_subtree(w.service, "ROOT", "2026-01-01T00:00:00Z")
+
+        list_mock = w.service.files.return_value.list
+        q = list_mock.call_args.kwargs["q"]
+        self.assertIn("'ROOT' in parents", q)
+        self.assertIn("trashed=false", q)
+        self.assertIn("mimeType='application/vnd.google-apps.folder'", q)
+        self.assertIn("modifiedTime > '2026-01-01T00:00:00Z'", q)
+
+    def test_display_filter_applied_to_files(self):
+        w = _make_worker(root_folder_id="ROOT", permission_display_filter=["Vectara"])
+        tree = {
+            "ROOT": [
+                {"id": "D1", "name": "a.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Vectara"}]},
+                {"id": "D2", "name": "b.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Other"}]},
+            ],
+        }
+        self._wire_service(w, tree)
+        files = w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+        self.assertEqual([f["id"] for f in files], ["D1"])
+
+    def test_cycle_does_not_infinite_loop(self):
+        w = _make_worker(root_folder_id="ROOT")
+        # F1 is a child of ROOT and (pathologically) lists ROOT as a child too.
+        tree = {
+            "ROOT": [{"id": "F1", "name": "sub", "mimeType": self.FOLDER_MIME}],
+            "F1":   [{"id": "ROOT", "name": "cycle", "mimeType": self.FOLDER_MIME}],
+        }
+        self._wire_service(w, tree)
+        files = w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+        self.assertEqual(files, [])
+
+
+# ----- crawl_file routing: images, CSV/XLSX, Google Sheets -----
+
+from unittest.mock import patch
+
+
+def _make_crawl_worker(summarize_images=False):
+    """Worker wired for crawl_file tests (df_parser, summarize_images, no ABAC)."""
+    w = _make_worker()
+    w._summarize_images = summarize_images
+    w.df_parser = MagicMock()
+    w._abac_enabled = False
+    w.crawler = MagicMock()
+    w.crawler.verbose = False
+    w.cfg.get = MagicMock(return_value={})
+    return w
+
+
+class TestCrawlFileRouting(unittest.TestCase):
+    """Covers the three gaps that dropped 4/12 files from the demo dataset:
+    Google Sheets export, CSV/XLSX dataframe routing, standalone image admission."""
+
+    def _fake_save(self, path):
+        """save_local_file replacement: records (file_id, name, mime) and returns a path."""
+        calls = []
+
+        def save(file_id, name, mime_type=None):
+            calls.append((file_id, name, mime_type))
+            return path
+
+        return save, calls
+
+    def test_google_sheet_exports_as_xlsx(self):
+        """Native Sheets must be exported with the xlsx MIME type + name suffix,
+        mirroring the Docs->docx and Slides->pptx branches."""
+        w = _make_crawl_worker()
+        save, calls = self._fake_save("/tmp/budget-tracker.xlsx")
+
+        file = {
+            "id": "SHEET_ID",
+            "name": "Budget Tracker",
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            pdf_mock.return_value = True
+            w.crawl_file(file)
+
+        self.assertEqual(len(calls), 1)
+        _, passed_name, passed_mime = calls[0]
+        self.assertEqual(passed_name, "Budget Tracker.xlsx")
+        self.assertEqual(
+            passed_mime,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        # Sheet exported as xlsx flows through the dataframe route, not index_file.
+        pdf_mock.assert_called_once()
+        w.indexer.index_file.assert_not_called()
+
+    def test_csv_routes_to_dataframe_path(self):
+        """A .csv file must go through process_dataframe_file, not index_file."""
+        w = _make_crawl_worker()
+        save, _ = self._fake_save("/tmp/salaries.csv")
+
+        file = {
+            "id": "CSV_ID",
+            "name": "salaries.csv",
+            "mimeType": "text/csv",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            pdf_mock.return_value = True
+            w.crawl_file(file)
+
+        pdf_mock.assert_called_once()
+        self.assertEqual(pdf_mock.call_args.kwargs["file_path"], "/tmp/salaries.csv")
+        self.assertEqual(pdf_mock.call_args.kwargs["doc_id"], "CSV_ID")
+        self.assertEqual(pdf_mock.call_args.kwargs["source_name"], "gdrive")
+        self.assertIs(pdf_mock.call_args.kwargs["df_parser"], w.df_parser)
+        w.indexer.index_file.assert_not_called()
+
+    def test_xlsx_routes_to_dataframe_path(self):
+        """An .xlsx (incl. Sheets exported to xlsx) must go through the dataframe route."""
+        w = _make_crawl_worker()
+        save, _ = self._fake_save("/tmp/budget-tracker.xlsx")
+
+        file = {
+            "id": "XLSX_ID",
+            "name": "Budget Tracker",  # Sheet export adds .xlsx to name
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            pdf_mock.return_value = True
+            w.crawl_file(file)
+
+        pdf_mock.assert_called_once()
+        self.assertEqual(pdf_mock.call_args.kwargs["file_path"], "/tmp/budget-tracker.xlsx")
+        w.indexer.index_file.assert_not_called()
+
+    def test_png_admitted_when_summarize_images_enabled(self):
+        """With summarize_images=True the crawler passes images to index_file,
+        where file_processor routes them to ImageFileParser."""
+        w = _make_crawl_worker(summarize_images=True)
+        save, _ = self._fake_save("/tmp/logo.png")
+
+        file = {
+            "id": "PNG_ID",
+            "name": "logo.png",
+            "mimeType": "image/png",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        w.indexer.index_file.assert_called_once()
+        self.assertEqual(w.indexer.index_file.call_args.kwargs["filename"], "/tmp/logo.png")
+
+    def test_png_rejected_when_summarize_images_disabled(self):
+        """Without the flag, images are filtered at the extension-whitelist step
+        (the process-stage MIME filter also removes them; this guards crawl_file)."""
+        w = _make_crawl_worker(summarize_images=False)
+        save, _ = self._fake_save("/tmp/logo.png")
+
+        file = {
+            "id": "PNG_ID",
+            "name": "logo.png",
+            "mimeType": "image/png",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        w.indexer.index_file.assert_not_called()
+        pdf_mock.assert_not_called()
+
+    def test_docx_still_uses_index_file(self):
+        """Regression guard: Google Docs (exported as .docx) must continue
+        to use the standard index_file path, not the dataframe route."""
+        w = _make_crawl_worker()
+        save, calls = self._fake_save("/tmp/meeting-notes.docx")
+
+        file = {
+            "id": "DOC_ID",
+            "name": "Meeting Notes",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        # Export called with .docx suffix and wordprocessingml mime.
+        _, passed_name, passed_mime = calls[0]
+        self.assertEqual(passed_name, "Meeting Notes.docx")
+        self.assertEqual(
+            passed_mime,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        w.indexer.index_file.assert_called_once()
+        pdf_mock.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

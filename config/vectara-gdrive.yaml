@@ -25,12 +25,60 @@ gdrive_crawler:
   # Default: 7 days if not specified
   days_back: 7
 
-  # Permission filtering
-  # Files must be shared with at least one of these to be crawled
-  # Default: ['Vectara', 'all'] - only files shared with 'Vectara' group or 'all' (public)
-  permissions:
+  # Optional: restrict the crawl to a single folder and all of its descendants.
+  # Accepts either a Drive folder URL (e.g.
+  # https://drive.google.com/drive/folders/<id>) or the bare folder id. When
+  # unset, the crawler sweeps root, sharedWithMe, and files owned/shared with
+  # the user, as before. Shortcuts inside the subtree are not followed, so the
+  # crawl stays strictly within the chosen folder. `days_back` still applies
+  # to files; subfolders are always traversed so old folders containing
+  # recent files are not missed.
+  # root_folder: https://drive.google.com/drive/folders/1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ
+
+  # Crawl-time displayName gate. Only files whose permissions contain a display
+  # name from this list are indexed. Set to null or [] to disable the gate and
+  # rely solely on ABAC metadata + query-time filters.
+  # Default: ['Vectara', 'all']. The legacy key `permissions` is still honored
+  # but deprecated.
+  permission_display_filter:
     - Vectara
     - all
+
+  # Attribute-based access control (ABAC) metadata
+  #
+  # When enabled, each indexed document is tagged with filterable ACL fields:
+  #   acl_owners, acl_readers, acl_groups, acl_domains, acl_is_public,
+  #   acl_is_org_wide, acl_labels, acl_source
+  #
+  # The corpus admin must register these as filter attributes on the Vectara
+  # corpus before ABAC filter queries will work. List-valued fields
+  # (acl_owners, acl_readers, acl_groups, acl_domains, acl_labels) should be
+  # registered as `Text List` so membership filters (`'x' IN doc.field`) work.
+  #
+  # Group resolution is the query layer's responsibility. The crawler records
+  # the literal group emails granted on the file in `acl_groups`. At query
+  # time, look up the requesting user's **transitive** group membership (e.g.
+  # via Admin SDK `groups.list(userKey=email)` or `members.hasMember` with
+  # nested-group expansion) and OR each group into the filter against
+  # `acl_groups`. This avoids stale-membership leaks the crawler-side
+  # expansion would otherwise cause on group removal.
+  abac:
+    # Emit acl_* metadata on every indexed document.
+    enabled: false
+
+    # My Drive files don't receive inherited permissions via the API. When true,
+    # the crawler walks each file's parent folders and unions their ACLs.
+    # Adds API round-trips; folder lookups are cached per worker.
+    # (Shared Drive files already include inherited grants and aren't affected.)
+    resolve_inherited: false
+
+    # Treat `type=anyone` grants as public (sets acl_is_public=true).
+    include_anyone: true
+
+    # Fetch Drive Labels per file and store them as `<LabelTitle>=<Value>`
+    # strings in acl_labels. Adds one round-trip per file, plus one
+    # definitions fetch per worker. Requires the `drive.labels.readonly` scope.
+    fetch_labels: false
 
   # Optional: Ray workers for parallel processing (default: 0)
   # 0 = no parallelization, >0 = number of workers
