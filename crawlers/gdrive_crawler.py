@@ -275,7 +275,7 @@ class UserWorker(object):
         self.abac = self.cfg.gdrive_crawler.get('abac', {}) if hasattr(self.cfg, 'gdrive_crawler') else {}
 
         # Hoist config flags out of the per-file hot path.
-        self._abac_enabled = self.abac.get('enabled', True)
+        self._abac_enabled = self.abac.get('enabled', False)
         self._abac_resolve_inherited = self.abac.get('resolve_inherited', False)
         self._abac_include_anyone = self.abac.get('include_anyone', True)
         self._abac_fetch_labels = self.abac.get('fetch_labels', False)

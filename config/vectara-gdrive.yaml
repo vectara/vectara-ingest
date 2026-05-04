@@ -64,7 +64,7 @@ gdrive_crawler:
   # expansion would otherwise cause on group removal.
   abac:
     # Emit acl_* metadata on every indexed document.
-    enabled: true
+    enabled: false
 
     # My Drive files don't receive inherited permissions via the API. When true,
     # the crawler walks each file's parent folders and unions their ACLs.
