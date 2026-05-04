@@ -76,13 +76,15 @@ def extract_folder_id(value: Optional[str]) -> Optional[str]:
 def build_scopes(abac_cfg: Optional[Any] = None) -> List[str]:
     """Return the OAuth scopes required given the ABAC configuration.
 
-    Adds the Drive Labels scope only when label fetching is enabled, so unused
-    features don't force extra consent. Group membership is intentionally not
-    resolved here — the query layer is expected to enumerate the requesting
-    user's groups (transitively) and filter against `acl_groups` directly.
+    Adds the Drive Labels scope only when ABAC is enabled AND label fetching is
+    enabled, so a stale `fetch_labels: true` left in config doesn't force an
+    extra OAuth consent that no code path actually uses. Group membership is
+    intentionally not resolved here — the query layer is expected to enumerate
+    the requesting user's groups (transitively) and filter against `acl_groups`
+    directly.
     """
     scopes = [DRIVE_READONLY_SCOPE]
-    if abac_cfg is not None:
+    if abac_cfg is not None and abac_cfg.get('enabled', False):
         if abac_cfg.get('fetch_labels', False):
             scopes.append(DRIVE_LABELS_SCOPE)
     return scopes
@@ -820,6 +822,11 @@ class GdriveCrawler(Crawler):
 
         if value is None:
             return None
+        if isinstance(value, str):
+            raise TypeError(
+                "gdrive_crawler.permission_display_filter must be a list of displayName "
+                f"strings, got a single string {value!r}. Wrap it as [{value!r}]."
+            )
         resolved = list(value)
         return resolved or None
 

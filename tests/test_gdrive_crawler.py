@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 from crawlers.gdrive_crawler import (
     DRIVE_LABELS_SCOPE,
     DRIVE_READONLY_SCOPE,
+    GdriveCrawler,
     UserWorker,
     build_scopes,
     extract_acl_metadata,
@@ -36,9 +37,19 @@ class TestBuildScopes(unittest.TestCase):
         self.assertEqual(build_scopes(None), [DRIVE_READONLY_SCOPE])
         self.assertEqual(build_scopes({}), [DRIVE_READONLY_SCOPE])
 
-    def test_fetch_labels_adds_labels_scope(self):
+    def test_fetch_labels_alone_does_not_add_labels_scope(self):
+        """fetch_labels without enabled should NOT request the extra Labels
+        consent — labels are only ever read inside the ABAC-enabled branch."""
         scopes = build_scopes({"fetch_labels": True})
+        self.assertNotIn(DRIVE_LABELS_SCOPE, scopes)
+
+    def test_enabled_and_fetch_labels_adds_labels_scope(self):
+        scopes = build_scopes({"enabled": True, "fetch_labels": True})
         self.assertIn(DRIVE_LABELS_SCOPE, scopes)
+
+    def test_enabled_without_fetch_labels_omits_labels_scope(self):
+        scopes = build_scopes({"enabled": True})
+        self.assertEqual(scopes, [DRIVE_READONLY_SCOPE])
 
 
 class TestExtractAclMetadata(unittest.TestCase):
@@ -168,6 +179,32 @@ class TestPermissionDisplayFilter(unittest.TestCase):
         w = _make_worker(permission_display_filter=["Vectara"])
         self.assertFalse(w._passes_display_filter([{"displayName": "Other"}]))
         self.assertFalse(w._passes_display_filter([]))
+
+
+class TestResolvePermissionDisplayFilter(unittest.TestCase):
+    """Boundary check on the config-loading path: misconfigured scalar strings
+    must fail loudly instead of being silently split into characters."""
+
+    def _crawler(self, gdrive_dict):
+        c = GdriveCrawler.__new__(GdriveCrawler)
+        c.cfg = MagicMock()
+        c.cfg.gdrive_crawler = gdrive_dict
+        return c
+
+    def test_string_value_raises_typeerror(self):
+        c = self._crawler({"permission_display_filter": "Vectara"})
+        with self.assertRaises(TypeError):
+            c._resolve_permission_display_filter()
+
+    def test_list_value_passes_through(self):
+        c = self._crawler({"permission_display_filter": ["Vectara", "all"]})
+        self.assertEqual(
+            c._resolve_permission_display_filter(), ["Vectara", "all"]
+        )
+
+    def test_explicit_null_disables_filter(self):
+        c = self._crawler({"permission_display_filter": None})
+        self.assertIsNone(c._resolve_permission_display_filter())
 
 
 class TestResolveParentAcl(unittest.TestCase):
@@ -443,7 +480,9 @@ class TestCrawlFileRouting(unittest.TestCase):
         }
 
         with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
              patch("crawlers.gdrive_crawler.safe_remove_file"):
+            pdf_mock.return_value = True
             w.crawl_file(file)
 
         self.assertEqual(len(calls), 1)
@@ -454,7 +493,7 @@ class TestCrawlFileRouting(unittest.TestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         # Sheet exported as xlsx flows through the dataframe route, not index_file.
-        w.df_parser.process_dataframe.assert_not_called()  # process_dataframe_file calls it internally
+        pdf_mock.assert_called_once()
         w.indexer.index_file.assert_not_called()
 
     def test_csv_routes_to_dataframe_path(self):
