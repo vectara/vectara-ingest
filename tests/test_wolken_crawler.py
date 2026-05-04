@@ -1,17 +1,21 @@
 import sys
+import importlib.machinery
 import unittest
 from unittest.mock import MagicMock, patch
 
-# Mock heavy dependencies before importing the crawler
-for mod in [
-    "cairosvg", "whisper", "pdf2image",
-    "playwright", "playwright.sync_api",
-    "core.summary", "core.indexer", "core.web_content_extractor",
-]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
+# Mock only third-party deps that may be missing in the test env. Do NOT inject
+# MagicMocks for `core.*` modules — that pollutes sys.modules and makes the rest
+# of the suite order-dependent (other tests would get the mock instead of the
+# real class). `nbconvert` calls `importlib.util.find_spec("playwright")` at
+# import time, so the playwright mock needs a real ModuleSpec.
+for mod in ["cairosvg", "whisper", "pdf2image"]:
+    sys.modules.setdefault(mod, MagicMock())
+_playwright_mock = MagicMock()
+_playwright_mock.__spec__ = importlib.machinery.ModuleSpec("playwright", None)
+sys.modules.setdefault("playwright", _playwright_mock)
+sys.modules.setdefault("playwright.sync_api", MagicMock())
 
-from crawlers.wolken_crawler import WolkenCrawler, clean_html
+from crawlers.wolken_crawler import WolkenCrawler, clean_html, _str_or_empty
 
 
 class TestCleanHtml(unittest.TestCase):
@@ -155,6 +159,81 @@ class TestApiHeaders(unittest.TestCase):
         headers = crawler._api_headers()
         self.assertEqual(headers["Authorization"], "Bearer new-token")
         crawler.session.post.assert_called_once()
+
+    def test_short_lived_token_does_not_expire_immediately(self):
+        """Regression: if expires_in < safety margin, the clamp must keep the token usable."""
+        crawler = _make_crawler()
+        crawler.access_token = None
+        crawler.token_expires_at = 0
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "access_token": "short-token",
+            "expires_in": 60,  # less than the 120s safety margin
+        }
+        mock_response.raise_for_status = MagicMock()
+        crawler.session.post.return_value = mock_response
+
+        import time as _time
+        before = _time.time()
+        crawler._ensure_token()
+        # token_expires_at must be in the future, otherwise we'd refresh on every call
+        self.assertGreater(crawler.token_expires_at, before)
+
+
+class TestStrOrEmpty(unittest.TestCase):
+
+    def test_none_becomes_empty(self):
+        self.assertEqual(_str_or_empty(None), "")
+
+    def test_int_stringified(self):
+        self.assertEqual(_str_or_empty(42), "42")
+
+    def test_empty_string_passthrough(self):
+        self.assertEqual(_str_or_empty(""), "")
+
+    def test_zero_stringified(self):
+        # zero is not None — must keep "0", not collapse to ""
+        self.assertEqual(_str_or_empty(0), "0")
+
+
+class TestMetadataNoneHandling(unittest.TestCase):
+    """Regression: dict.get returns None when key exists with None value, not the default."""
+
+    def test_null_status_id_does_not_become_string_none(self):
+        crawler = _make_crawler()
+        crawler.indexer.index_segments = MagicMock(return_value=True)
+
+        def mock_get(path, params=None):
+            if "categories" in path:
+                return {"data": [{"catId": 1, "catName": "General"}]}
+            elif "/api/kb/articles/1/" in path:
+                return {"data": [{"articleId": 101, "articleTitle": "T"}]}
+            elif "/api/kb/articles/101" in path:
+                return {"data": {
+                    "articleTitle": "T",
+                    "articleOtherInfo": {
+                        "introduction": "Some intro",
+                        "validationStatusId": None,
+                        "publishedDate": None,
+                    },
+                    "createdTime": None,
+                    "updatedTime": None,
+                    "statusId": None,
+                }}
+            return {"data": []}
+
+        crawler._get = mock_get
+        crawler.crawl()
+
+        metadata = crawler.indexer.index_segments.call_args.kwargs["doc_metadata"]
+        self.assertEqual(metadata["status_id"], "")
+        self.assertEqual(metadata["validation_status_id"], "")
+        self.assertEqual(metadata["created_time"], "")
+        self.assertEqual(metadata["updated_time"], "")
+        self.assertEqual(metadata["published_date"], "")
+        # Sanity: nothing should be the literal string "None"
+        self.assertNotIn("None", metadata.values())
 
 
 class TestCrawlFlow(unittest.TestCase):

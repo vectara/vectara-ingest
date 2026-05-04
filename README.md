@@ -503,8 +503,10 @@ The use of the `toml` standard allows easy secrets management when you have mult
 
 Many of the crawlers have their own secrets, for example Notion, Discourse, Jira, or GitHub. These are also kept in the `secrets.toml` file in the appropriate section and need to be all upper case (e.g. `NOTION_API_KEY` or `JIRA_PASSWORD`).
 
-For the Wolken KB crawler, add these secrets prefixed with `WOLKEN_`:
+For the Wolken KB crawler, add these secrets prefixed with `WOLKEN_` under your profile section:
 ```
+[profile1]
+api_key="<VECTARA-API-KEY>"
 WOLKEN_API_ENDPOINT="https://api-mycompany.wolkenservicedesk.com"
 WOLKEN_DOMAIN="mycompany"
 WOLKEN_CLIENT_ID="your-client-id"

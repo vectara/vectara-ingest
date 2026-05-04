@@ -32,6 +32,11 @@ def clean_html(text: str) -> str:
     return text
 
 
+def _str_or_empty(v) -> str:
+    """Convert a value to string, mapping None to empty string (avoids 'None' literal in metadata)."""
+    return "" if v is None else str(v)
+
+
 class WolkenCrawler(Crawler):
 
     def __init__(self, cfg, endpoint, corpus_key, api_key):
@@ -82,7 +87,9 @@ class WolkenCrawler(Crawler):
             raise ValueError("No access_token in response")
 
         expires_in = int(token_data.get("expires_in", 3600))
-        self.token_expires_at = time.time() + expires_in - 120
+        # Use a 120s safety margin, but for short-lived tokens degrade to half the lifetime
+        # so we don't refresh on every request.
+        self.token_expires_at = time.time() + max(expires_in - 120, expires_in / 2)
         logger.info("Access token obtained (expires_in=%s)", expires_in)
 
     def _api_headers(self) -> dict:
@@ -264,11 +271,11 @@ class WolkenCrawler(Crawler):
                         "source": "wolken_kb",
                         "article_id": str(article_id),
                         "category": cat_name,
-                        "created_time": details.get("createdTime", ""),
-                        "updated_time": details.get("updatedTime", ""),
-                        "status_id": str(details.get("statusId", "")),
-                        "validation_status_id": str(other_info.get("validationStatusId", "")),
-                        "published_date": other_info.get("publishedDate", ""),
+                        "created_time": _str_or_empty(details.get("createdTime")),
+                        "updated_time": _str_or_empty(details.get("updatedTime")),
+                        "status_id": _str_or_empty(details.get("statusId")),
+                        "validation_status_id": _str_or_empty(other_info.get("validationStatusId")),
+                        "published_date": _str_or_empty(other_info.get("publishedDate")),
                     }
 
                     # Build article URL if available
