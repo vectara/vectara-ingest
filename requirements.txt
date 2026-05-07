@@ -55,6 +55,8 @@ automat==25.4.16
     # via twisted
 backoff==2.2.1
     # via unstructured
+backports-tarfile==1.2.0 ; python_full_version < '3.12'
+    # via jaraco-context
 banks==2.2.0
     # via llama-index-core
 beautifulsoup4==4.12.3
@@ -380,6 +382,8 @@ itemadapter==0.11.0
     #   scrapy
 itemloaders==1.3.2
     # via scrapy
+jaraco-context==6.1.2
+    # via -r requirements.in
 jinja2==3.1.6
     # via
     #   banks
@@ -979,7 +983,7 @@ python-magic==0.4.27
     # via
     #   -r requirements.in
     #   unstructured
-python-multipart==0.0.22
+python-multipart==0.0.27
     # via
     #   -r requirements.in
     #   unstructured-inference
@@ -1224,8 +1228,10 @@ torchvision==0.22.1
     #   easyocr
     #   effdet
     #   timm
-tornado==6.5.1
-    # via jupyter-client
+tornado==6.5.5
+    # via
+    #   -r requirements.in
+    #   jupyter-client
 tqdm==4.67.1
     # via
     #   datasets
