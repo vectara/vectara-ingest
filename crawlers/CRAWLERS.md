@@ -106,6 +106,7 @@ Note that ray with docker does not work on Mac M1/M2 machines.
 - `playwright` (default): Uses Playwright browser automation for JavaScript-heavy sites, SPAs, and dynamic content
 - `scrapy`: Uses Scrapy for faster, lightweight extraction of static HTML content
 
+**SAML-protected sites** (optional): the website crawler can authenticate via SAML before crawling. To enable, add a `saml_auth` block to `website_crawler` (an opaque config consumed by `crawlers/auth/saml_manager.py` — see that module for fields), and either embed `saml_username` / `saml_password` directly under `website_crawler` or — recommended — place `SAML_USERNAME` / `SAML_PASSWORD` in `secrets.toml`. SAML works with both `internal` and `scrapy` crawl methods; if SAML setup fails on the Scrapy path the crawler falls back to the internal crawler.
 
 ### Database crawler
 
@@ -120,24 +121,24 @@ database_crawler:
     text_columns: [business_name, review_text]
     metadata_columns: [city, state, postal_code]
 ```
-The database crawler can be used to read data from a relational database and index relevant columns into Vectara.
-This has two modes: `element` or `table`
-- In the `table` mode, the complete table content is ingested into Vectara as a single table entity.
-  Note that table size is limited to 1000 rows and 100 columns
-- In the `element` mode, each row in the table is ingested as a separate "document", whose structure depends on the following:
-  - `db_url` specifies the database URI including the type of database, host/port, username and password if needed.
-    - For MySQL: "mysql://username:password@host:port/database"
-    - For PostgreSQL:"postgresql://username:password@host:port/database"
-    - For Microsoft SQL Server: "mssql+pyodbc://username:password@host:port/database"
-    - For Oracle: "oracle+cx_oracle://username:password@host:port/database"
-  - `db_table` the table name in the database
-  - `select_condition` optional condition to filter rows in the table by
-  - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this
-    value into a single Vectara document. The crawler will also use the content in these columns (concatenated) as the title for that row in the Vectara document. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
-  - `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
-  - `title_column` is an optional column name that will hold textual information to be used as title at the document level.
-  - `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
-  - `metadata_columns` a list of column names that we want to use as metadata.
+The database crawler reads from a relational database and indexes relevant columns into Vectara. Two modes are supported (selected via `mode`, default `"table"`):
+
+- **`mode: table`** — the complete table is summarized and indexed as a single table document, truncated to at most `max_rows` × `max_cols` (defaults `500` × `20`; controlled by `max_rows`, `max_cols`, `truncate_table_if_over_max`).
+- **`mode: element`** — each row is ingested into Vectara, with the following options:
+  - `db_url`: the SQLAlchemy database URI including type/host/port/credentials.
+    - MySQL: `mysql://username:password@host:port/database`
+    - PostgreSQL: `postgresql://username:password@host:port/database`
+    - Microsoft SQL Server: `mssql+pyodbc://username:password@host:port/database`
+    - Oracle: `oracle+cx_oracle://username:password@host:port/database`
+  - `db_table`: the table name to read from.
+  - `select_condition`: optional SQL `WHERE` clause (string is interpolated into `SELECT … FROM <db_table> WHERE <select_condition>`). Use parameterized values you trust — this is concatenated into the SQL string.
+  - `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document. If omitted, rows are chunked every `rows_per_chunk` rows.
+  - `text_columns`: columns whose text is concatenated as the indexed body for each row.
+  - `title_column`: optional column to use as the document-level title.
+  - `use_title_for_doc_only` (default `false`): when `true`, `title_column` is used only as the doc title and not duplicated as a section title.
+  - `metadata_columns`: columns to attach as metadata.
+  - `column_types`: optional dict mapping column name to type (`int`, `float`, `str`).
+  - `rows_per_chunk` (default `500`): chunk size when `doc_id_columns` is not set.
 
 In the above example, the crawler would
 1. Include all rows in the database "yelp" that are from the city of New Orleans (`SELECT * FROM yelp WHERE city='New Orleans'`)
@@ -158,17 +159,18 @@ hfdataset_crawler:
     text_columns: [review]
     metadata_columns: [city, hotel]
 ```
-The huggingface crawler can be used to read data from a HF dataset and index relevant columns into Vectara.
-- `dataset_name` the huggingface dataset name
-- `split` the "split" of the dataset in the HF datasets hub (e.g. "train", or "test", or "corpus"; look at DS card to determine)
-- `select_condition` optional condition to filter rows in the table by
-- `start_row` if specified skips the specified number of rows from the start of the dataset
-- `num_rows` if specified limits the dataset size by number of specified rows
-- `id_column` optional column for the ID of the dataset. Must be unique if used
-- `text_columns` a list of column names that include textual information we want to use as the main text indexed into vectara. The code concatenates these columns for each row.
-- `title_column` is an optional column name that will hold textual information to be used as title at the document level.
-- `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
-- `metadata_columns` a list of column names that we want to use as metadata.
+The huggingface crawler reads a Hugging Face dataset and indexes selected columns into Vectara. Unlike the database/csv crawlers, this crawler uses a simple per-row indexer (not the dataframe parser), so `mode`, `column_types`, and `use_title_for_doc_only` are not honored here.
+
+- `dataset_name`: Hugging Face dataset name (e.g., `coeuslearning/hotel_reviews`).
+- `split`: dataset split (e.g., `"train"`, `"test"`, `"corpus"`). Default: `"corpus"`.
+- `select_condition`: optional simple `column='value'` filter (a naïve `key='value'` parser is used — no compound conditions or `df.query()` syntax).
+- `start_row`: number of rows to skip from the start.
+- `num_rows`: max number of rows to index (after `start_row`).
+- `id_column`: optional column whose value is used as each row's document ID. Must be unique if specified.
+- `text_columns`: columns whose text is concatenated as the indexed body.
+- `title_column`: optional column to use as the per-row title.
+- `metadata_columns`: columns to attach as metadata.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes across N workers, `-1` uses all CPU cores.
 
 In the above example, the crawler would
 1. Include all rows in the dataset that are from NYC
@@ -182,51 +184,58 @@ In the above example, the crawler would
 csv_crawler:
     mode: element
     file_path: "/path/to/Game_of_Thrones_Script.csv"
-    select_condition: "Season='Season 1'"
+    select_condition: "Season=='Season 1'"
     doc_id_columns: [Season, Episode]
     text_columns: [Name, Sentence]
     metadata_columns: ["Season", "Episode", "Episode Title"]
-    column_types: []
-    separator: ','
-    sheet_name: "my-sheet"
+    column_types: {Season: str, Episode: int}
     sheet_names: ["my-sheet"]
+    # Table-mode tuning
+    max_rows: 500
+    max_cols: 20
+    truncate_table_if_over_max: true
 ```
-The csv crawler is similar to the database crawler, but instead of pulling data from a database, it uses a local CSV or XLSX file.
-This has two modes: `element` or `table`
-- In the `table` mode, the complete CSV table (or each named sheet if XLSX) is ingested into Vectara as a complete table
-  Note that table size is limited to 10000 rows and 100 columns
-- In the `element` mode, each row in the table is ingested as a separate "document", whose structure depends on the following:
-  - `select_condition` optional condition to filter rows of the table. If applied only selected rows are included.
-  - `doc_id_columns` defines one or more columns that will be used as a document ID, and will aggregate all rows associated with this
-    value into a single Vectara document. This will also be used as the title. If this is not specified, the code will aggregate every `rows_per_chunk` (default 500) rows.
-  - `text_columns` a list of column names that include textual information we want to use
-  - `title_column` is an optional column name that will hold textual information to be used as title
-  - `use_title_for_doc_only` (default: false) - when true, uses `title_column` only for the document title, not as a section title. This prevents title duplication in the document text. When false (default), the title appears both as the document title and as a section title in the text.
-  - `metadata_columns` a list of column names that we want to use as metadata
-  - `column_types` an optional dictionary of column name and type (int, float, str). If unspecified, or for columns not included, the default type is str.
-  - `separator` a string that will be used as a separator in the CSV file (default ',') (relevant only for CSV files)
-- `sheet_names` a list of the sheets in the XLSX file to use (relevant only for XLSX files).
-  if sheet_names is unspecified, all sheets are indexed.
-- `mode`: element or table as specified above.
 
-In the above example, the crawler would work in element mode as follows:
-1. Read all the data from the local CSV file under `/path/to/Game_of_Thrones_Script.csv`
-2. Group all rows that have the same values for both `Season` and `Episode` into the same Vectara document
-3. Each such Vectara document that is indexed, will include several sections (one per row), each representing the textual fields `Name` and `Sentence` and including the meta-data fields `Season`, `Episode` and `Episode Title`.
-4. Since this is a CSV file, sheet_names is ignored.
+The CSV crawler is the file-based counterpart to the database crawler — it reads a local CSV/TSV/PSV/XLSX file and indexes it. The file type is determined by extension; the column separator is auto-detected from the extension (`.csv` → `,`, `.tsv` → tab, `.psv`/`.pipe` → `|`) and is **not** configurable. There are two modes:
 
-Note that the type of file is determined by it's extension (e.g. CSV vs XLSX)
+- **`mode: table`** — the entire file (or each sheet if XLSX) is summarized and indexed as a single table document. Tables larger than `max_rows` × `max_cols` are truncated when `truncate_table_if_over_max` is `true`.
+- **`mode: element`** — each row becomes part of a document, controlled by the column options below.
+
+Element-mode columns:
+- `select_condition`: optional pandas `df.query()`-style condition for filtering rows (e.g., `"Season=='Season 1'"`).
+- `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document. If omitted, rows are chunked every `rows_per_chunk` rows.
+- `text_columns`: columns whose text becomes the indexed body.
+- `title_column`: optional column to use as the document title.
+- `use_title_for_doc_only` (default `false`): when `true`, `title_column` is used only as the doc title and not duplicated as a section title.
+- `metadata_columns`: columns to attach as metadata.
+- `column_types`: optional dict mapping column name to type (`int`, `float`, `str`). Columns not listed default to `str`.
+
+XLSX-only:
+- `sheet_names`: list of sheet names to ingest. If omitted, all sheets are processed. (For CSV/TSV/PSV files, this is ignored.)
+
+Shared limits/tuning (apply to both modes):
+- `max_rows` (default `500`): truncation cap on rows in table mode; also default chunk size in element mode.
+- `max_cols` (default `20`): truncation cap on columns in table mode.
+- `truncate_table_if_over_max` (default `true`): if `false`, oversized tables are dropped instead of truncated.
+- `rows_per_chunk` (default `500`): chunk size when `doc_id_columns` is not set in element mode.
+
+In the example above, in element mode the crawler would: (1) read the CSV; (2) group rows that share both `Season` and `Episode` into the same Vectara document; (3) each document includes one section per row, with `Name` and `Sentence` as text and `Season`/`Episode`/`Episode Title` as metadata.
+
+> **Note**: previous versions of this doc listed `separator` and `sheet_name` as options. Neither is read by the code — the separator is auto-detected from the extension, and only `sheet_names` (plural) is supported.
 
 ### Bulk Upload crawler
 
 ```yaml
 ...
 bulkupload_crawler:
-    json_path: "/path/to/file.JSON"
+    json_path: "/path/to/file.json"
 ```
-The Bulk Upload crawler accepts a single JSON file that is an array of Vectara JSON document objects as specified [here](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats). It then iterates through these document objects, and uploads them one by one to Vectara.
 
-This bulk upload crawler has no parameters.
+The Bulk Upload crawler reads a single JSON file containing an **array** of Vectara document objects (in the [Vectara file-upload document format](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/format-for-upload#sample-document-formats)) and uploads each object to Vectara one at a time.
+
+- `json_path`: local path to the JSON array file. Like `folder_crawler.path`, this path is bind-mounted into the Docker container automatically.
+
+Each object in the array must include `id` and `sections` — entries missing either are skipped with a warning. The file must be a JSON array (a single object will be rejected).
 
 ### RSS crawler
 
@@ -254,6 +263,7 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 - `days_past` specifies the number of days backward to crawl; for example with a value of 90 as in this example, the crawler will only index news items that have been published no earlier than 90 days in the past.
 - `delay` defines the number of seconds to wait between news articles, so as to make the crawl more friendly to the hosting site.
 - `scrape_method` defines the extraction backend for processing article content ("playwright" or "scrapy").
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes URL fetching/indexing across N workers, `-1` uses all CPU cores.
 
 ### Hackernews crawler
 
@@ -261,15 +271,15 @@ The RSS crawler can be used to crawl URLs listed in RSS feeds such as on news si
 ...
 hackernews_crawler:
   max_articles: 1000
-  days_past: 3
-  days_past_comprehensive: false
+  days_back: 3
+  days_back_comprehensive: false
 ```
 
-The hackernews crawler can be used to crawl stories and comments from hacker news.
-- `max_articles` specifies a limit to the number of stories crawled. 
-- `days_past` specifies the number of days backward to crawl, based on the top, new, ask, show and best story lists. For example with a value of 3 as in this example, the crawler will only index stories if the story or any comment in the story was published or updated in the last 3 days.
-- `days_past_comprehensive` if true, then the crawler performs a comprehensive search for ALL stories published within the last `days_past` days (which takes longer to run)
-- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
+The hackernews crawler can be used to crawl stories and comments from Hacker News.
+- `max_articles` specifies a limit to the number of stories crawled.
+- `days_back` (default `3`) specifies the number of days backward to crawl. By default the crawler walks the top/new/ask/show/best story lists, and only indexes stories where the story itself or any of its comments was published or updated in the last `days_back` days.
+- `days_back_comprehensive` if `true`, the crawler performs a comprehensive search for ALL stories published within the last `days_back` days (slower).
+- `ssl_verify`: If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
 ### Docs crawler
 
 ```yaml
@@ -283,7 +293,7 @@ The hackernews crawler can be used to crawl stories and comments from hacker new
     docs_system: docusaurus
     crawl_method: internal  # "internal" (default) or "scrapy"
     scrape_method: playwright  # "playwright" (default) or "scrapy" - for docs content extraction
-    remove_code: true
+    max_depth: 3            # only when crawl_method: scrapy
     html_processing:
       ids_to_remove: []
       tags_to_remove: [footer]
@@ -299,6 +309,7 @@ It has the following parameters:
 - `neg_regex` defines one or more (optional) regex patterns for URL exclusion. Uses the same matching behavior as website crawler (see regex documentation above)
 - `extensions_to_ignore` specifies one or more file extensions that we want to ignore and not index into Vectara.
 - `docs_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
+- `max_depth` is the BFS depth limit when `crawl_method: scrapy`. Default: `3`. **Not honored by the internal crawler**, which traverses unbounded.
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
 - `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
@@ -321,24 +332,37 @@ The `html_processing` configuration defines a set of special instructions that c
     base_url: "https://discuss.vectara.com"
 ```
 
-The discourse forums crawler requires a single parameter, `base_url`, which specifies the home page for the public forum we want to crawl.
-In the `secrets.toml` file you should have DISCOURSE_API_KEY="<YOUR_DISCOURSE_KEY>" which will provide the needed authentication for the crawler to access this data.
+The Discourse forums crawler iterates the site's `/latest.json` endpoint and indexes each topic (with all of its posts) as a single document.
+
+- `base_url`: home page of the Discourse forum to crawl.
+- `ssl_verify`: see standard SSL handling.
+
+Place `DISCOURSE_API_KEY` in `secrets.toml`. The crawler authenticates via `api_key` plus `api_username` query parameters; the `api_username` is currently hardcoded in the source — this is something to be aware of if you want to crawl as a non-default user.
 
 ### Mediawiki crawler
 
-The mediawiki crawler can crawl content in any wikimedia-powered website such as Wikipedia or others, and index it into Vectara.
+The mediawiki crawler can crawl content in any MediaWiki-powered website (Wikipedia or otherwise) by walking the link graph from one or more seed pages and indexing each page's plain-text extract into Vectara.
 
 ```yaml
 ...
-  wikimedia_crawler:
-    project: "en.wikipedia"
+  mediawiki_crawler:
     api_url: "https://en.wikipedia.org/w/api.php"
-    n_pages: 1000
+    source_urls:
+      - "https://en.wikipedia.org/wiki/Information_retrieval"
+      - "https://en.wikipedia.org/wiki/Vector_database"
+    depth: 2
+    n_pages: 500
 ```
 
-The mediawiki crawler first looks at media statistics to determine the most viewed pages in the last 7 days, and then based on that picks the top `n_pages` to crawl.
-- `api_url` defines the base URL for the wiki
-- `project` defines the mediawiki project name.
+Starting from the page titles in `source_urls`, the crawler does a BFS over outgoing article links (namespace 0 only) up to `depth` hops, indexing up to `n_pages` pages total. Traversal is restricted to the same domain as each seed URL.
+
+- `api_url`: base URL of the wiki's `api.php` endpoint (e.g. `https://en.wikipedia.org/w/api.php`).
+- `source_urls`: list of full wiki page URLs to start from. The crawler extracts the page title from each URL's path.
+- `depth`: maximum BFS depth from the seed pages (`0` = only seeds).
+- `n_pages`: maximum number of pages to index (capped at 1000 internally).
+- `ssl_verify`: optional, see standard SSL handling.
+
+A bearer token must be provided at the top level of the config as `mediawiki_api_key` (read at the root of `cfg`, not inside `mediawiki_crawler`); place it in `secrets.toml` as `MEDIAWIKI_API_KEY`. The crawler also sleeps 1 second between requests for polite crawling (not configurable).
 
 ### GitHub crawler
 
@@ -349,17 +373,15 @@ The mediawiki crawler first looks at media statistics to determine the most view
     repos: ["getting-started", "protos", "slackbot", "magazine-search-demo", "web-crawler", "Search-UI", "hotel-reviews-demo"]
     crawl_code: false
     num_per_second: 2
-
 ```
 
-The GitHub crawler indexes content from GitHub repositories into Vectara. 
-- `repos`: list of repository names to crawl
-- `owner`: GitHub repository owner
-- `crawl_code`: by default the crawler indexes only issues and comments; if this is set to True it will also index the source code (but that's usually not recommended).
-- `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
+The GitHub crawler indexes issues, pull requests, and their comments from one or more GitHub repositories into Vectara, and optionally the source code.
 
-
-It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file under the specific profile you're going to use. The GITHUB_TOKEN (see [here](https://docs.github.com/en/enterprise-server@3.10/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for how to create one for yourself) ensures you don't run against rate limits.
+- `owner`: GitHub repository owner (org or user).
+- `repos`: list of repository names (under `owner`) to crawl.
+- `crawl_code`: when `true`, also recursively walks the repository tree and indexes individual source files. Default: `false` (issues + PRs only).
+- `num_per_second`: rate limit for GitHub API calls. **Default: `2`** (do not exceed without a token).
+- `github_token` (optional): GitHub Personal Access Token. Can be set here directly, or — recommended — placed in `secrets.toml` as `GITHUB_TOKEN` so the value is not committed. See [GitHub docs](https://docs.github.com/en/enterprise-server@3.10/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for how to create one. Without a token you will hit GitHub's anonymous rate limits very quickly.
 
 ### Jira crawler
 
@@ -371,70 +393,129 @@ It is highly recommended to add a `GITHUB_TOKEN` to your `secret.toml` file unde
     jira_jql: "created > -365d"
     
     # Optional API configuration parameters
-    api_version: "3"           # Default: "3" (Jira REST API version)
-    api_endpoint: "search"     # Default: "search" (API endpoint)
-    fields: "*all"             # Default: "*all" (fields to retrieve)
-    max_results: 100           # Default: 100 (results per page)
-    start_at: 0                # Default: 0 (starting index for pagination)
+    api_version: "3"                       # Default: "3" (Jira REST API version)
+    api_endpoint: "search"                 # Default: "search" (API endpoint)
+    fields: "*all"                         # Default: "*all" (fields to retrieve)
+    max_results: 100                       # Default: 100 (results per page)
+    start_at: 0                            # Default: 0 (starting index for pagination)
+
+    # Optional attachment processing
+    include_image_attachments: true        # Default: true
+    include_document_attachments: false    # Default: false
 ```
 
-The JIRA crawler indexes issues and comments into Vectara. 
-- `jira_base_url`: the Jira base_url
-- `jira_username`: the user name that the crawler should use (`JIRA_PASSWORD` should be separately defined in the `secrets.toml` file)
-- `jira_jql`: a Jira JQL condition on the issues identified; in this example it is configured to only include items from the last year.
-- `api_version`: (optional) Jira REST API version to use (default: "3")
-- `api_endpoint`: (optional) API endpoint to use for searching (default: "search")
-- `fields`: (optional) Fields to retrieve from Jira issues (default: "*all" for all fields)
-- `max_results`: (optional) Maximum number of results per API request (default: 100)
-- `start_at`: (optional) Starting index for pagination (default: 0)
-- `ssl_verify`: If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used. 
+The JIRA crawler indexes issues, comments, and (optionally) attachments into Vectara.
+- `jira_base_url`: the Jira base URL.
+- `jira_username`: the account email used for HTTP Basic Auth. The matching API token must be defined as `JIRA_PASSWORD` in `secrets.toml`.
+- `jira_jql`: a JQL expression selecting the issues to index (e.g., `"created > -365d"` for the last year).
+- `api_version`: Jira REST API version. Default: `"3"`.
+- `api_endpoint`: search endpoint to call. Default: `"search"`.
+- `fields`: fields to retrieve from each issue. Default: `"*all"`.
+- `max_results`: results per page. Default: `100`.
+- `start_at`: starting index for pagination. Default: `0`.
+- `include_image_attachments`: when `true` (default), downloads image attachments and indexes them. Image-to-text descriptions require `doc_processing.summarize_images` to be enabled at the top level.
+- `include_document_attachments`: when `true`, downloads document attachments (PDF, Office files, etc.). Default: `false`.
+- `ssl_verify`: see standard SSL handling.
+
+The crawler also parses Atlassian Document Format (ADF) for rich-text fields so descriptions/comments retain their plain-text content.
 ### Confluence crawler
 
 ```yaml
   confluence_crawler:
     confluence_base_url: "https://vectara.atlassian.net/wiki"
-    confluence_cql: 'space = Test and LastModified > now("-365d") and type IN (blogpost, page)'
+    confluence_username: "<email>"
+    confluence_password: "<api-token>"
+    confluence_cql: 'space = "TEST" and LastModified > now("-365d") and type IN (blogpost, page)'
     confluence_include_attachments: true
 ```
 
-This Python crawler is designed to pull content from a Confluence instance and index it into Vectara. It queries Confluence using a [CQL query](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/), 
-retrieves pages and blogposts (including attachments if configured), extracts relevant metadata (e.g., labels, authors, space information).  
+This crawler pulls content from an Atlassian Confluence Cloud instance and indexes it into Vectara. It queries Confluence using a [CQL query](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/), retrieves matching pages and blog posts (and their attachments if configured), and extracts metadata (labels, authors, space, version history). For Confluence Data Center / on-prem, see the **Confluence Data Center crawler** below.
 
-- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
+- `confluence_base_url`: base URL of the Confluence Cloud wiki (e.g., `https://yourcompany.atlassian.net/wiki`).
+- `confluence_username`: account email for HTTP Basic Auth. Required.
+- `confluence_password`: an Atlassian **API token** (not your account password). Required. Place in `secrets.toml` (`CONFLUENCE_USERNAME`, `CONFLUENCE_PASSWORD`) so they are not committed.
+- `confluence_cql`: a [CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/) expression selecting the content to crawl.
+- `confluence_include_attachments`: when `true`, downloads each page's attachments (PDF/DOCX/PPTX/CSV/XLSX/etc.) and indexes them as separate documents.
+- `ssl_verify`: If `False`, SSL verification is disabled (not recommended for production). If a string, treated as a path to a custom CA certificate file. Default: `True`.
+
+**Notes on behavior:** the crawler resolves author/owner account IDs to display names via additional API calls (transparent but adds round-trips). Search pagination is fixed at 25 results per page in the code.
+
+### Confluence Data Center crawler
+
+```yaml
+crawling:
+  crawler_type: confluencedatacenter
+
+confluencedatacenter:
+  base_url: "http://confluence.internal:8090"
+  confluence_datacenter_username: "<username>"
+  confluence_datacenter_password: "<password>"
+  confluence_cql: 'space = "TEST" and type IN (page, blogpost)'
+
+  confluence_include_attachments: true
+  include_image_attachments: true
+  include_document_attachments: true
+  body_view: "export_view"
+  limit: 25
+
+  # Optional: route CSV/Excel attachments through the dataframe parser
+  dataframe_processing:
+    mode: "element"
+```
+
+This crawler is the on-prem / self-hosted counterpart of the Confluence (Cloud) crawler. It targets a Confluence Data Center instance via its REST API and HTTP Basic Auth. Note: the YAML key is `confluencedatacenter` (not `confluencedatacenter_crawler`), and `crawling.crawler_type: confluencedatacenter`.
+
+- `base_url`: base URL of your Confluence Data Center instance (e.g., `http://confluence.internal:8090`).
+- `confluence_datacenter_username` / `confluence_datacenter_password`: HTTP Basic Auth credentials. Place in `secrets.toml` (`CONFLUENCEDATACENTER_USERNAME`, `CONFLUENCEDATACENTER_PASSWORD`) so they are not committed.
+- `confluence_cql`: a [CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/) query selecting the content to crawl.
+- `confluence_include_attachments`: when `true`, also indexes attachments. Default: `false`.
+- `include_image_attachments`: process image attachments (PNG/JPG/etc.). Default: `false`. Image-to-text descriptions require `doc_processing.summarize_images` at the top level.
+- `include_document_attachments`: process document attachments (PDF/DOCX/PPTX/etc.). Default: `true`.
+- `body_view`: which Confluence body view to fetch. Default: `"export_view"`. Options: `export_view`, `styled_view`, `storage`, `editor`.
+- `limit`: page size for the search API. Default: `25`.
+- `dataframe_processing`: optional dataframe-parser config applied to CSV/XLSX attachments. Same shape as in the SharePoint and CSV crawlers (`mode`, `doc_id_columns`, `text_columns`, `metadata_columns`, etc.).
+- `ssl_verify`: see standard SSL handling.
+
+Each indexed document gets metadata for `type` (page/blogpost/attachment), `id`, `last_updates`, `version`, `updated_by`, `space` (id/key/name), `url`, plus `filename` and `attachment_type` for attachments.
 
 ### Twitter crawler
 
 ```yaml
 ...
   twitter_crawler:
-    bearer_token: the Twitter API bearer token. see https://developer.twitter.com/en/docs/twitter-api/getting-started/getting-access-to-the-twitter-api'
-    userhandles: a list of user handles to pull tweets from
-    num_tweets: number of most recent tweets to pull from each user handle
-    clean_tweets: whether to remove username / handles from tweet text (default: True)
+    twitter_bearer_token: "<bearer-token>"  # see https://developer.twitter.com/en/docs/twitter-api/getting-started/getting-access-to-the-twitter-api
+    userhandles: ["vectara"]
+    num_tweets: 100
+    clean_tweets: true
 ```
 
-The twitter crawler indexes top `num_tweeets` mentions from twitter
-- `bearer_token`: the Twitter developer authentication token
-- `userhandles`: a list of user handles to look for in mentions
-- `num_tweets`: number of recent tweets mentioning each handle to pull
-- `clean_tweets` if True removes all username/handle
+The Twitter crawler indexes recent tweets that **mention** each given user handle (one document per handle, one section per tweet). Retweets are excluded from the search.
+
+- `twitter_bearer_token`: Twitter API bearer token (the YAML key is `twitter_bearer_token`, not `bearer_token`).
+- `userhandles`: list of user handles whose mentions to pull.
+- `num_tweets`: number of recent mentions to fetch per handle.
+- `clean_tweets`: if `true` (default), strips usernames/handles from tweet text.
 
 
 ### Notion crawler
 
-To setup Notion you will have to setup a [Notion integration](https://www.notion.so/help/create-integrations-with-the-notion-api),
-and [share the pages](https://www.notion.so/help/add-and-manage-connections-with-the-api) you want indexed with this connection.
+To set up Notion, create a [Notion integration](https://www.notion.so/help/create-integrations-with-the-notion-api) and [share the pages](https://www.notion.so/help/add-and-manage-connections-with-the-api) you want indexed with that integration.
 
 ```yaml
 ...
   notion_crawler:
     remove_old_content: false
+    crawl_report: false
+    output_dir: vectara_ingest_output
 ```
 
-The notion crawler indexes notion pages into Vectara:
-- `remove_old_content`: if true, removes any document that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
+The Notion crawler discovers all pages reachable by the integration via the Notion `search` API, fetches each page's block tree, and indexes the text content. Child pages (`child_page` blocks) are skipped during recursion to avoid duplicate indexing — they are picked up directly via `search`.
 
-For this crawler, you need to specify `NOTION_API_KEY` (which is associated with your custom integration) in the `secrets.toml` file. 
+- `remove_old_content`: if `true`, removes any document that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
+- `crawl_report`: if `true`, writes a `pages_indexed.txt` file under `output_dir` listing the pages indexed.
+- `output_dir`: directory for the crawl report. Default: `vectara_ingest_output`.
+
+You must place `NOTION_API_KEY` (the integration's secret) in `secrets.toml`.
 
 
 ### HubSpot crawler
@@ -551,38 +632,52 @@ HUBSPOT_API_KEY = "your-private-app-key"
     # Path to credentials.json file (used for both auth types)
     credentials_file: /path/to/credentials.json
 
-    # Configuration parameters
-    permissions: ['Vectara', 'all']
-    days_back: 365
+    # Crawl-time filters
+    days_back: 7
+    permission_display_filter: ['Vectara', 'all']
+
+    # Optional: restrict the crawl to a folder subtree
+    # root_folder: https://drive.google.com/drive/folders/<folder_id>
+
+    # Optional: parallelize across delegated users with Ray
     ray_workers: 0
 
     # For service_account mode only
     delegated_users:
       - user1@example.com
       - user2@example.com
+
+    # Optional: emit ACL metadata for query-time access control
+    abac:
+      enabled: false
+      resolve_inherited: false
+      include_anyone: true
+      fetch_labels: false
 ```
 
-The gdrive crawler indexes content from Google Drive with support for two authentication methods:
+The gdrive crawler indexes content from Google Drive with support for two authentication methods.
 
 **Common Parameters:**
-- `days_back`: include only files modified within the last N days
-- `permissions`: list of `displayName` values to include. We recommend including your company name (e.g. `Vectara`) and `all` to include all non-restricted files.
-- `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
-- `credentials_file`: Path to credentials JSON file (format depends on auth_type)
+- `auth_type`: `service_account` (default) or `oauth`. See "Authentication Methods" below.
+- `credentials_file`: path to the credentials JSON file. The exact contents depend on `auth_type` (service-account JSON vs. OAuth token JSON).
+- `days_back`: include only files modified within the last N days. **Default: 7.**
+- `permission_display_filter`: list of permission `displayName` values to include. A file is indexed only if at least one of its Drive permissions has a matching `displayName` (a typical pattern is your company name, e.g. `Vectara`, plus `all` to admit files shared with `anyone`/the whole organization, since those grants are surfaced with `displayName: "all"`). Set to `null` or `[]` to disable this crawl-time gate and rely solely on ABAC metadata + query-time filters. **Default: `['Vectara', 'all']`.** The legacy key `permissions` is still honored but deprecated — rename it to `permission_display_filter`.
+- `root_folder` (optional): restrict the crawl to a single folder and all of its descendants. Accepts either a Drive folder URL (e.g. `https://drive.google.com/drive/folders/<id>`) or the bare folder id. When unset, the crawler sweeps `root`, `sharedWithMe`, and files owned/shared with each delegated user. `days_back` still applies to leaf files; subfolders are always traversed so old folders containing recent files are not missed. Shortcuts inside the subtree are not followed, so the crawl stays strictly within the chosen folder.
+- `ray_workers`: `0` to disable Ray (default), `>0` to parallelize across `delegated_users` with that many Ray workers, `-1` to use all cores. Only meaningful for service-account mode with multiple users.
 
 **Authentication Methods:**
 
-**1. Service Account Mode (`auth_type: service_account`)** - Default
-- Requires Google Workspace with domain-wide delegation
-- Supports multiple users via `delegated_users` list
-- `credentials.json` should contain service account credentials
-- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials"
+**1. Service Account Mode (`auth_type: service_account`)** — default
+- Requires Google Workspace with domain-wide delegation.
+- Supports multiple users via `delegated_users` list — the crawler impersonates each one in turn.
+- `credentials_file` must point at a service-account JSON key.
+- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials".
 
 **2. OAuth Mode (`auth_type: oauth`)**
-- Use when you don't have Google Workspace domain-wide delegation
-- Supports single user only (the user who authorized the app)
-- `credentials.json` should contain OAuth token
-- The token will be automatically refreshed when it expires
+- Use when you don't have Google Workspace domain-wide delegation.
+- Supports a single user only (the user who authorized the app); `delegated_users` is ignored.
+- `credentials_file` must point at an OAuth token JSON (see format below).
+- The token is automatically refreshed and re-saved to `credentials_file` when it expires.
 
 **OAuth Setup:**
 
@@ -605,7 +700,7 @@ To generate the OAuth token:
 4. Authorize in the browser
 5. The token is saved to `credentials.json` automatically
 
-For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`
+For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`.
 
 **OAuth Configuration Example:**
 ```yaml
@@ -613,14 +708,35 @@ gdrive_crawler:
   auth_type: oauth
   credentials_file: credentials.json
   days_back: 7
-  permissions: ['Vectara', 'all']
+  permission_display_filter: ['Vectara', 'all']
 ```
 
+**Attribute-Based Access Control (ABAC):**
+
+When `abac.enabled: true`, every indexed document is tagged with filterable ACL fields derived from the file's Drive permissions. The corpus admin must register these as filter attributes on the Vectara corpus before ABAC filter queries will work. List-valued fields should be registered as `Text List` so membership filters (`'x' IN doc.field`) work.
+
+| Metadata field    | Type      | Meaning                                                                                  |
+|-------------------|-----------|------------------------------------------------------------------------------------------|
+| `acl_owners`      | Text List | Email addresses with the `owner` role.                                                   |
+| `acl_readers`     | Text List | Emails with read-or-above access (`reader`, `commenter`, `writer`, `fileOrganizer`, `organizer`). |
+| `acl_groups`      | Text List | Group emails granted access. **Resolution to individual members is the query layer's responsibility** — the crawler does not expand group membership, so look up the requesting user's transitive groups at query time and OR each one against `acl_groups`. This avoids stale-membership leaks on group removal. |
+| `acl_domains`     | Text List | Domains granted access (e.g. `example.com`).                                             |
+| `acl_is_public`   | Boolean   | `true` if the file is shared with `type=anyone` (and `include_anyone` is true).          |
+| `acl_is_org_wide` | Boolean   | `true` if any domain grant is present.                                                   |
+| `acl_labels`      | Text List | Drive Labels as `<LabelTitle>=<Value>` strings (only populated when `fetch_labels: true`). |
+| `acl_source`      | Text      | Provenance of the ACL: `shared_drive`, `my_drive_direct`, `my_drive_resolved`, or `my_drive_partial`. `shared_drive` and `my_drive_resolved` reflect a complete ACL; `my_drive_direct` and `my_drive_partial` may be missing inherited grants. |
+
+**ABAC sub-options:**
+- `abac.enabled`: emit `acl_*` metadata on every indexed document. Default: `false`.
+- `abac.resolve_inherited`: My Drive files don't receive inherited permissions via the API. When `true`, the crawler walks each file's parent folders and unions their ACLs (folder lookups are cached per worker; adds API round-trips). Shared Drive files already include inherited grants and are unaffected. Default: `false`.
+- `abac.include_anyone`: treat `type=anyone` grants as public (sets `acl_is_public=true`). Default: `true`.
+- `abac.fetch_labels`: fetch Drive Labels per file and store them in `acl_labels`. Adds one round-trip per file plus one definitions fetch per worker, and requires the `drive.labels.readonly` OAuth scope (added automatically when this flag is on). Default: `false`.
+
 **Important Notes:**
-- OAuth mode only supports a single user account
-- For multi-user crawling, use `service_account` mode
-- The OAuth token will auto-refresh and save itself when it expires
-- Both authentication modes use the same `credentials_file` field
+- OAuth mode only supports a single user account; for multi-user crawling, use `service_account` mode.
+- Both authentication modes use the same `credentials_file` field, but the file's contents differ.
+- The OAuth token auto-refreshes and is rewritten back to `credentials_file` when it expires.
+- Audio, video, archives, executables, and source-code-style text files are skipped by mime type. Standalone images are skipped unless `doc_processing.summarize_images` is enabled.
 
 
 ### Folder crawler
@@ -632,15 +748,20 @@ gdrive_crawler:
     extensions: ['.pdf']
     source: 'my-folder'
     metadata_file: '/path/to/metadata.csv'
+    num_per_second: 10
+    ray_workers: 0
 ```
 
-The folder crawler indexes all files specified from a local folder.
-- `path`: the local folder location
-- `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
-- `source`: a string that is added to each file's metadata under the "source" field
-- `metadata_file`: an optional CSV file for metadata. Each row should have a `filename` column as key to match the file in the folder, and 1 or more additional columns used as metadata. This file should be in the `path` folder, but will be ignored for indexing purposes.
+The folder crawler walks a local folder **recursively** (`os.walk`) and indexes every file whose extension matches `extensions`. CSV/Excel files are routed through the dataframe parser (configurable via a `dataframe_processing` section, just like the SharePoint and Confluence crawlers).
 
-Note that the local path you specify is mapped into a fixed location in the docker container `/home/vectara/data`, but that is a detail of the implementation that you don't need to worry about in most cases, just specify the path to your local folder and this mapping happens automatically.
+- `path`: local folder to crawl. The path is bind-mounted into the Docker container at `/home/vectara/data` automatically.
+- `extensions`: list of file extensions to include. Use `["*"]` (the default if omitted) to include every file regardless of extension.
+- `source`: string added to each file's metadata under the `"source"` field.
+- `metadata_file`: optional CSV file for per-file metadata. Each row needs a `filename` column matching a file in the folder; the remaining columns become metadata. The metadata file must live inside `path` and is itself excluded from indexing.
+- `num_per_second`: rate limit when indexing files in parallel. Default: `10`.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes indexing across N workers, `-1` uses all CPU cores.
+
+The crawler also auto-attaches `created_at`, `last_updated`, `file_size`, `parent_folder`, and `folder_path` metadata to every indexed file.
 
 ### S3 crawler
 
@@ -649,25 +770,48 @@ Note that the local path you specify is mapped into a fixed location in the dock
   s3_crawler:
     s3_path: s3://my-bucket/files
     extensions: ['*']
+    # Optional: AWS credentials (otherwise standard boto3 credential chain is used)
+    aws_access_key_id: "<AKIA...>"
+    aws_secret_access_key: "<secret>"
+    # Optional: custom endpoint for S3-compatible services (MinIO, Wasabi, R2, etc.)
+    endpoint_url: "https://s3.us-east-1.amazonaws.com"
+    num_per_second: 10
+    ray_workers: 0
+    source: "S3"
 ```
 
-The S3 crawler indexes all content that's in a specified S3 bucket path.
-- `s3_path`: a valid S3 location where the files to index reside
-- `extensions`: list of file extensions to be included. If one of those extensions is '*' then all files would be crawled, disregarding any other extensions in that list.
-- `metadata_file`: an optional CSV file for metadata. Each row should have a `filename` column as key to match the file in the folder, and 1 or more additional columns used as metadata. This file should be in the same `s3_path` folder, but will be ignored for indexing purposes.
+The S3 crawler indexes content under a given S3 path. AWS credentials are picked up from the standard boto3 chain (env vars, profile, IAM role) unless explicitly provided in config.
 
-**Note**: The S3 crawler respects the `ssl_verify` setting from the `vectara` configuration section. If `ssl_verify: false` is set in your configuration, SSL certificate verification will be disabled for S3 connections as well. This is useful when connecting to S3-compatible services with self-signed certificates.
+- `s3_path`: S3 URI of the form `s3://bucket/prefix` whose files should be indexed.
+- `extensions`: list of file extensions to include. Use `['*']` to include every file regardless of extension.
+- `metadata_file`: optional CSV file under the same `s3_path` providing per-file metadata. Each row needs a `filename` column matching an object key; remaining columns become metadata. The metadata file itself is excluded from indexing.
+- `aws_access_key_id` / `aws_secret_access_key`: optional. When set, used directly. Otherwise, boto3 credential resolution applies.
+- `endpoint_url`: optional. Use for S3-compatible services (MinIO, Cloudflare R2, Wasabi, etc.). Either credentials *or* an `endpoint_url` must resolve, otherwise the crawler errors out.
+- `num_per_second`: rate limit when downloading/indexing. Default: `10`.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes across N workers, `-1` uses all CPU cores.
+- `source`: source label attached to each document's metadata. Default: `"S3"`.
+
+**SSL note:** the crawler respects `vectara.ssl_verify`. If set to `false`, SSL verification is disabled for S3 calls (useful for self-signed S3-compatible endpoints). If set to a string, the path is `~`-expanded and used as a CA bundle.
 
 ### Youtube crawler
 
 ```yaml
 ...
   yt_crawler:
-    playlist_url: <some-youtube-playlist-url>
+    playlist_url: "<some-youtube-playlist-url>"
+    num_videos: 50
+    merge_subtitles_gap: 0.5
+    max_subtitle_duration: 30.0
 ```
 
-The Youtube crawler loads all videos from a playlist, extracts the subtitles into text (or transcribes the audio if subtitles don't exist), and indexes that text.
-- `playlist_url`: a valid youtube playlist URL
+The YouTube crawler iterates videos from a playlist. For each video it first tries the YouTube transcript API (English subtitles only — language is hardcoded), and falls back to downloading the audio and transcribing it locally with Whisper if no transcript is available. Adjacent subtitle entries are merged together so the indexed text reads more naturally.
+
+- `playlist_url`: YouTube playlist URL.
+- `num_videos`: maximum number of videos to process from the playlist. Optional — when omitted, the entire playlist is processed.
+- `merge_subtitles_gap`: max gap (in seconds) between adjacent subtitle entries before they are merged into a single segment. Default: `0.5`.
+- `max_subtitle_duration`: maximum duration (in seconds) of a merged subtitle segment before it is split. Default: `30.0`.
+
+The Whisper model used for the audio fallback is taken from the top-level `vectara.whisper_model` config (e.g., `"base"`, `"small"`, `"medium"`, `"large"`); see the main README for that setting.
 
 ### Slack crawler
 
@@ -677,7 +821,17 @@ slack_crawler:
   days_past: 30
   channels_to_skip: ["alerts"]
   retries: 5
+  ray_workers: 0
+  workspace_url: "https://vectara.slack.com"
 ```
+
+The Slack crawler walks every channel the bot has joined and indexes each message (with its threaded replies merged in). Bot user IDs are resolved to display names so the indexed text reads naturally; bot-message attachments are indexed when the main message text is empty.
+
+- `days_past`: only index messages newer than N days.
+- `channels_to_skip`: list of channel names to exclude (filtered after enumeration — this isn't an API-level filter).
+- `retries`: number of retries on rate-limit (HTTP 429) and `IncompleteRead` errors. Default: `5`.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes message indexing across N workers, `-1` uses all CPU cores.
+- `workspace_url`: workspace URL used to construct message permalinks for metadata. Default: `"https://vectara.slack.com"`.
 
 To use the slack crawler you need to create slack bot app and give it permissions. Following are the steps.
 - **Create a Slack App**: Log in to your Slack workspace and navigate to the Slack API website. Click on "Your Apps" and then "Create New App." Provide a name for your app, select the workspace where you want to install it, and click "Create App."
@@ -698,25 +852,77 @@ To use the slack crawler you need to create slack bot app and give it permission
 ```yaml
 servicenow_crawler:
   servicenow_instance_url: "https://dev189594.service-now.com/"
+  servicenow_username: "<username>"
+  servicenow_password: "<password>"
   servicenow_process_attachments: true
+  servicenow_pagesize: 100
+  servicenow_query: "workflow_state=published"
+  servicenow_ignore_fields: ['text', 'short_description']
 ```
 
-This crawler indexes articles (and optional file attachments) from a ServiceNow Knowledge Base into [Vectara](https://vectara.com). It uses 
-the [ServiceNow Table API](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI) to fetch data from the `kb_knowledge` 
-table in batches and then sends each article's content to Vectara for indexing. If enabled, it will also retrieve attachments via ServiceNow's 
-attachment API and index them in Vectara as well.
+This crawler indexes articles (and optional file attachments) from a ServiceNow Knowledge Base into [Vectara](https://vectara.com). It uses the [ServiceNow Table API](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI) to fetch records from the `kb_knowledge` table (this is hardcoded — the table is **not** a configurable option) and indexes each article's HTML content. If enabled, it then retrieves attachments via the [Attachment API](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_AttachmentAPI) and indexes them as separate documents.
 
-- `servicenow_instance_url`: The base URL of the ServiceNow instance (e.g., "https://dev12345.service-now.com/").
-- `servicenow_process_attachments`: Boolean flag indicating whether to retrieve and index file attachments in addition to the article content.
-- `servicenow_batch_size` (if present): The number of articles to fetch in each API call. Default: 100.
-- `servicenow_table` (if present):The ServiceNow table to query for articles. Default: `"kb_knowledge"`.
-- `servicenow_query` (if present): A query (e.g., `sysparm_query`) for filtering the knowledge-base articles returned by the ServiceNow API.
-- `ssl_verify`  If `False`, SSL verification is disabled (not recommended for production). If a string, it is treated as the path to a custom CA certificate file. If `True` or not provided, default SSL verification is used.
+- `servicenow_instance_url`: base URL of the ServiceNow instance (e.g., `https://dev12345.service-now.com/`).
+- `servicenow_username` / `servicenow_password`: HTTP Basic Auth credentials. Required. Place them in `secrets.toml` (`SERVICENOW_USERNAME`, `SERVICENOW_PASSWORD`) so they are not committed to YAML.
+- `servicenow_process_attachments`: when `true`, also retrieves and indexes file attachments. Required.
+- `servicenow_pagesize`: page size for the article-listing API call. Default: `100`.
+- `servicenow_query`: optional `sysparm_query` string for filtering KB articles (e.g., `workflow_state=published`).
+- `servicenow_ignore_fields`: optional set of article field names to drop from the indexed metadata. Default: `{'text', 'short_description'}` — the article body and title are already captured separately, so they're excluded from metadata.
+- `ssl_verify`: If `False`, SSL verification is disabled (not recommended for production). If a string, treated as a path to a custom CA certificate file. Default: `True`.
+
+> **Note**: previous versions of this doc listed `servicenow_table` and `servicenow_batch_size`. Neither is read by the code — the table is hardcoded to `kb_knowledge`, and pagination is controlled by `servicenow_pagesize`.
 
 - **[Table API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_TableAPI)**  
   Contains details on the various endpoints, query parameters, and usage examples for retrieving data from ServiceNow tables.
 - **[Attachment API Reference](https://developer.servicenow.com/dev.do#!/reference/api/rome/rest/c_AttachmentAPI)**  
   Covers how to list and download attachments from ServiceNow records.
+
+### Wolken KB crawler
+
+```yaml
+...
+  wolken_crawler:
+    api_endpoint: "https://api-mycompany.wolkenservicedesk.com"
+    domain: "mycompany"
+    client_id: "your-client-id"
+    service_account: "service@mycompany.com"
+    auth_code: "Basic ..."
+    refresh_token: "your-refresh-token"
+
+    batch_size: 100
+    # kb_source_id: 1
+    content_fields:
+      - introduction
+      - cause
+      - environment
+      - resolution
+      - additionalInfo
+```
+
+The Wolken KB crawler indexes Knowledge Base articles from a [Wolken ServiceDesk](https://www.wolkensoftware.com/) instance using the [public Wolken KB REST API](https://developer-beta.wolkensoftware.com/kb/docs.html). It authenticates via OAuth2 refresh-token flow, walks every KB category, and for each article fetches the full details and indexes them as a structured document in Vectara (one section per content field). The access token is auto-refreshed on expiry and on `401` responses.
+
+**Authentication parameters** (all required; obtain from your Wolken administrator):
+- `api_endpoint`: base URL of your Wolken instance (e.g. `https://api-mycompany.wolkenservicedesk.com`).
+- `domain`: Wolken tenant domain name, sent as the `domain` header.
+- `client_id`: OAuth client ID, sent as the `clientId` header.
+- `service_account`: service-account email, sent as the `serviceAccount` header.
+- `auth_code`: full Basic-auth header value used against the token endpoint (e.g. `Basic dXNlcjpwYXNz`). The crawler sends it verbatim as the `Authorization` header — include the `Basic ` prefix.
+- `refresh_token`: OAuth refresh token; exchanged for an access token at `/wolken-secure/oauth/token`.
+
+These can also be supplied via `secrets.toml` using the `WOLKEN_` prefix (e.g. `WOLKEN_REFRESH_TOKEN`); the prefix is stripped and lowercased to map onto `wolken_crawler.*`.
+
+**Crawl parameters:**
+- `batch_size`: page size for paginated category and article listings. Default: `100`.
+- `kb_source_id` (optional): when set, restricts category listing to a single KB source via the `kbSourceId` query parameter. Default: unset (all sources).
+- `content_fields`: ordered list of fields read from each article's `articleOtherInfo`. Each non-empty field becomes a separate section in the indexed document, with the field's human title used as the section title. Available values: `introduction`, `cause`, `environment`, `resolution`, `additionalInfo`, `internalNotes`. Default: `[introduction, cause, environment, resolution, additionalInfo]`. If none of the configured fields contain text, the crawler falls back to the article's `description` and `summary`.
+
+**Indexed document shape:**
+- Document ID: `wolken-kb-{articleId}` (stable, so `reindex: false` skips already-indexed articles).
+- Title: the article's `articleTitle`.
+- Sections: one per non-empty content field, with HTML stripped and whitespace collapsed.
+- Metadata: `source` (`"wolken_kb"`), `article_id`, `category`, `created_time`, `updated_time`, `status_id`, `validation_status_id`, `published_date`, and `url` (when the article exposes `articleUrlName`).
+
+For step-by-step setup, secrets-file usage, and the full API reference, see [`docs/wolken-kb-setup.md`](../docs/wolken-kb-setup.md).
 
 ### SharePoint Crawler
 
@@ -791,10 +997,11 @@ This Python crawler ingests documents from SharePoint sites and indexes them int
 - **Use when**: Your files are stored as attachments to list items (not in document libraries)
 - **Configuration**: Requires `target_list` name and `list_item_metadata_properties`
 
-**Authentication Options:**
-- **`user_credentials`**: Username and password authentication (supports NTLM for on-premises)
-- **`client_credentials`**: App-only authentication using client_id and client_secret
-- **`client_certificate`**: Certificate-based authentication for enhanced security. Provide client_id, tenant_id, cert_thumbprint, cert_path, and optionally cert_passphrase
+**Authentication Options** (all credentials should live in `secrets.toml`, not the YAML config):
+- **`user_credentials`**: requires `username` + `password`. Supports NTLM for on-premises (`allow_ntlm: true`).
+- **`client_credentials`**: app-only auth. Requires `client_id` + `client_secret`.
+- **`client_certificate`**: certificate-based auth. Requires `client_id`, `tenant_id`, `cert_thumbprint`, `cert_path`, and optionally `cert_passphrase`.
+- `auto_refresh_session` (default `true`): when `true`, the crawler retries on a 401 by re-acquiring a session before failing.
 
 **Document Processing:**
 - **Supported file types**: `.pdf`, `.md`, `.odt`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.txt`, `.html`, `.htm`, `.lxml`, `.rtf`, `.epub`, `.csv`, `.xlsx`, `.xls`
@@ -890,35 +1097,180 @@ sharepoint_crawler:
 
 ```yaml
 pmc_crawler:
-  n_pmc_papers: 100
-  search_query: "covid-19 treatment"
+  topics:
+    - "covid-19 treatment"
+    - "long covid"
+  n_papers: 100
   num_per_second: 3
+  index_medline_plus: false
   scrape_method: playwright  # "playwright" (default) or "scrapy" - for web content extraction
 ```
 
-The PMC (PubMed Central) crawler indexes medical research articles from PubMed Central into Vectara:
-- `n_pmc_papers`: Maximum number of papers to index
-- `search_query`: Search query to find relevant papers
-- `num_per_second`: Rate limiting for API calls (default: 3)
-- `scrape_method`: Extraction backend for processing article content ("playwright" or "scrapy")
+The PMC (PubMed Central) crawler indexes medical research articles from PubMed Central into Vectara. For each topic in `topics`, it queries the NCBI E-utilities to find up to `n_papers` matching papers and indexes their content.
+
+- `topics`: list of search query strings. The crawler indexes papers per topic, so a list with one entry is fine.
+- `n_papers`: maximum number of papers to index **per topic**.
+- `num_per_second`: rate limiting for NCBI/web calls. Default: `3`.
+- `index_medline_plus`: when `true`, also indexes related MedlinePlus consumer-health pages for each topic. Default: `false`.
+- `scrape_method`: extraction backend for processing article content (`"playwright"` or `"scrapy"`).
+- `ssl_verify`: optional, see standard SSL handling.
 
 ### Arxiv Crawler
 
 ```yaml
 arxiv_crawler:
-  query_terms: "machine learning"
+  arxiv_category: "cs"
+  query_terms: ["machine", "learning"]
   n_papers: 50
   start_year: 2020
-  scrape_method: scrapy  # "playwright" (default) or "scrapy" - for metadata extraction
+  sort_by: "date"             # "date" or "citations"
+  scrape_method: scrapy        # "playwright" (default) or "scrapy"
 ```
 
-The Arxiv crawler indexes academic papers from arXiv.org into Vectara:
-- `query_terms`: Search terms to find relevant papers
-- `n_papers`: Maximum number of papers to index
-- `start_year`: Only index papers published after this year
-- `scrape_method`: Extraction backend for processing web content ("playwright" or "scrapy")
+The Arxiv crawler queries the arXiv API and indexes matching papers into Vectara.
 
-## Other crawlers:
+- `arxiv_category`: arXiv category code (e.g., `"cs"`, `"math"`, `"physics"`, or a sub-category like `"cs.IR"`). **Required.** The crawler validates this against the official category list and exits if unknown.
+- `query_terms`: list of search terms (each is wrapped as `all:<term>` and AND-ed together, then AND-ed with the category).
+- `n_papers`: maximum number of papers to index.
+- `start_year`: only index papers published in `start_year` or later.
+- `sort_by`: `"date"` (newest first) or `"citations"` (the crawler over-fetches 100× then ranks by Semantic Scholar citation count). **Required** — accessed without a default.
+- `scrape_method`: `"playwright"` (default) or `"scrapy"` — selects the indexer backend used when fetching paper PDFs/HTML.
 
-- `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara
-- `fmp` crawler: crawls information about public companies using the [FMP](https://site.financialmodelingprep.com/developer/docs/) API
+### Box crawler
+
+```yaml
+crawling:
+  crawler_type: box
+
+box_crawler:
+  auth_type: jwt                      # "jwt" (recommended) or "oauth"
+  jwt_config_file: box_config.json    # for auth_type: jwt
+  # OAuth alternative:
+  # oauth_credentials_file: oauth_creds.json
+  # OR set client_id / client_secret / access_token directly
+
+  folder_ids: ["0"]                   # "0" = all root-level folders accessible to the auth'd user
+  download_path: /data/box_downloads  # local scratch dir for downloads
+  tracking_dir: /data/box_tracking    # dir for indexed.csv / failed.csv / skipped.csv
+
+  file_extensions: []                 # whitelist (empty = all)
+  exclude_extensions: [".csv"]        # blacklist (skipped without download)
+
+  recursive: true
+  max_files: 0                        # 0 = unlimited
+  delete_after_index: true
+  ray_workers: 0
+
+  # Optional behaviors
+  collect_permissions: false          # include group-collab permissions in metadata
+  generate_report: false              # write a folder-tree report instead of indexing
+  retry_failed: false                 # retry only files in failed.csv
+  use_existing_downloads: false       # reuse files already in download_path
+  skip_indexed: false                 # resume mode: skip files in indexed.csv
+  skip_indexing: false                # download only, do not index
+  incremental_update: false
+  hours_back: 24                      # for incremental_update
+  as_user_id: "<box-user-id>"         # impersonate a Box user (enterprise)
+```
+
+The Box crawler indexes files from [Box](https://box.com) cloud storage. It supports JWT (recommended; no token expiration) or OAuth 2.0 authentication, and can run in **as-user** mode to access enterprise folders without that user's password. The architecture is a streaming producer/consumer: the main thread downloads files sequentially (to respect Box rate limits) while Ray workers index in parallel.
+
+**Authentication:**
+- `auth_type: jwt` — provide `jwt_config_file` pointing at the JSON key downloaded from the Box Developer Console. JWT credentials don't expire.
+- `auth_type: oauth` — either set `oauth_credentials_file` to a saved-token JSON, or provide `client_id` + `client_secret` + `access_token` directly.
+- `as_user_id` (optional): Box user ID to impersonate. Requires the Box app to be in "App + Enterprise Access" mode with "Perform Actions as Users" enabled.
+
+**What to crawl:**
+- `folder_ids`: list of Box folder IDs. Use `"0"` for the user's root.
+- `recursive` (default `true`): traverse subfolders.
+- `file_extensions`: extension whitelist (empty = include all). `exclude_extensions`: blacklist (excluded files are recorded in `skipped.csv` without ever being downloaded).
+- `max_files`: cap on files to download. `0` = unlimited.
+
+**Where it writes:**
+- `download_path`: scratch dir for downloaded files (default `/tmp/box_downloads`). Auto-mounted by `run.sh` to `$HOME/tmp/box_data/downloads` under Docker.
+- `tracking_dir`: dir for the three CSV ledgers — `indexed.csv`, `failed.csv`, `skipped.csv` — used to track progress and enable resume (default `/tmp/box_tracking`).
+- `delete_after_index` (default `true`): remove downloaded files after indexing.
+
+**Resume / re-run modes:**
+- `skip_indexed`: skip files that appear in `indexed.csv` (resume after interruption).
+- `retry_failed`: process only files in `failed.csv` (retry just the failures).
+- `use_existing_downloads`: skip downloading; index files already present in `download_path`.
+- `skip_indexing`: download files but do not push to Vectara.
+- `generate_report`: write a folder-tree structure report instead of crawling.
+- `incremental_update` + `hours_back`: only consider files modified in the last N hours.
+
+**Other:**
+- `collect_permissions`: when `true`, walks parent folders and includes group-based collaboration permissions in each document's metadata.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes indexing across N workers, `-1` uses all CPU cores.
+
+**Indexed metadata:** `source` = `"Box"`, `title` (filename), `file_id`, `url` (`https://app.box.com/file/<file_id>`), `size_bytes`, `modified_date`, and (when `collect_permissions: true`) `permissions` (list of group names).
+
+### Edgar crawler
+
+```yaml
+crawling:
+  crawler_type: edgar
+
+edgar_crawler:
+  tickers: ["AAPL", "MSFT", "GOOGL"]
+  start_date: "2022-01-01"
+  end_date: "2024-12-31"
+  filing_types: ["10-K", "10-Q", "8-K", "DEF 14A"]
+  ray_workers: 0
+```
+
+The Edgar crawler downloads SEC filings (10-K, 10-Q, 8-K, DEF 14A by default) for the given ticker symbols and filing date range, and indexes them into Vectara. It uses anonymous access to SEC.gov via the `sec_downloader` library — no API key is required.
+
+- `tickers`: list of stock tickers. The crawler maps tickers to CIKs by downloading SEC's `ticker.txt`.
+- `start_date` / `end_date`: filing date range (`YYYY-MM-DD`).
+- `filing_types`: SEC form types to fetch. Default: `["10-K", "10-Q", "8-K", "DEF 14A"]`.
+- `ray_workers`: `0` disables Ray (default), `>0` parallelizes indexing across N workers, `-1` uses all cores.
+
+**Indexed metadata:** `source` = `"edgar"`, `url` (the SEC primary doc URL), `title`, `ticker`, `company`, `filing_type`, `date`, `year`.
+
+### FMP crawler
+
+```yaml
+crawling:
+  crawler_type: fmp
+
+fmp_crawler:
+  tickers: ["AAPL", "MSFT"]
+  start_year: 2022
+  end_year: 2024
+  fmp_api_key: "<your-fmp-api-key>"
+  index_10k: true
+  index_call_transcripts: true
+```
+
+The FMP crawler indexes financial data from the [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs/) API — structured 10-K filings and quarterly earnings call transcripts — for a list of tickers across a year range.
+
+- `tickers`: list of stock tickers.
+- `start_year` / `end_year`: inclusive year range.
+- `fmp_api_key`: FMP API key. Place in `secrets.toml` as `FMP_API_KEY` so it is not committed.
+- `index_10k`: when `true`, indexes structured 10-K filings from the FMP `financial-reports-json` endpoint. Default: `false`.
+- `index_call_transcripts`: when `true` (default), indexes earnings-call transcripts (one document per quarter, four quarters per year).
+
+**Indexed metadata:** `source` (lowercase ticker), `title`, `ticker`, `company name`, `year`, `type` (`filing` or `transcript`), and either `filing_type: "10-K"` + `url` (SEC link) for filings or `quarter` for transcripts.
+
+### Synapse crawler
+
+```yaml
+crawling:
+  crawler_type: synapse
+
+synapse_crawler:
+  synapse_token: "<synapse-personal-access-token>"
+  programs_id: "syn12345678"
+  studies_id: "syn87654321"
+  source: "tables"
+```
+
+The Synapse crawler indexes research programs, studies, and study methods from the Synapse [AD Knowledge Portal](https://adknowledgeportal.synapse.org/). It queries two Synapse tables (programs and studies) via SQL, fetches associated wiki markdown for each entry, converts it to plain text, and indexes the result.
+
+- `synapse_token`: a Synapse personal-access token (used as `authToken` for `synapseclient.Synapse.login`). Place in `secrets.toml` as `SYNAPSE_TOKEN`.
+- `programs_id`: Synapse table ID containing programs (e.g., `syn12345678`).
+- `studies_id`: Synapse table ID containing studies and their methods.
+- `source`: source label attached to each indexed document. Default: `"tables"`.
+
+**Indexed metadata:** `url` (the AD Knowledge Portal URL), `source`, `created` (wiki creation timestamp). Documents are written for programs, studies, and methods individually.
