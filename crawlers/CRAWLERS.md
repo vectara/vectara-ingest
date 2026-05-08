@@ -551,38 +551,52 @@ HUBSPOT_API_KEY = "your-private-app-key"
     # Path to credentials.json file (used for both auth types)
     credentials_file: /path/to/credentials.json
 
-    # Configuration parameters
-    permissions: ['Vectara', 'all']
-    days_back: 365
+    # Crawl-time filters
+    days_back: 7
+    permission_display_filter: ['Vectara', 'all']
+
+    # Optional: restrict the crawl to a folder subtree
+    # root_folder: https://drive.google.com/drive/folders/<folder_id>
+
+    # Optional: parallelize across delegated users with Ray
     ray_workers: 0
 
     # For service_account mode only
     delegated_users:
       - user1@example.com
       - user2@example.com
+
+    # Optional: emit ACL metadata for query-time access control
+    abac:
+      enabled: false
+      resolve_inherited: false
+      include_anyone: true
+      fetch_labels: false
 ```
 
-The gdrive crawler indexes content from Google Drive with support for two authentication methods:
+The gdrive crawler indexes content from Google Drive with support for two authentication methods.
 
 **Common Parameters:**
-- `days_back`: include only files modified within the last N days
-- `permissions`: list of `displayName` values to include. We recommend including your company name (e.g. `Vectara`) and `all` to include all non-restricted files.
-- `ray_workers`: 0 if not using Ray, otherwise specifies the number of Ray workers to use.
-- `credentials_file`: Path to credentials JSON file (format depends on auth_type)
+- `auth_type`: `service_account` (default) or `oauth`. See "Authentication Methods" below.
+- `credentials_file`: path to the credentials JSON file. The exact contents depend on `auth_type` (service-account JSON vs. OAuth token JSON).
+- `days_back`: include only files modified within the last N days. **Default: 7.**
+- `permission_display_filter`: list of permission `displayName` values to include. A file is indexed only if at least one of its Drive permissions has a matching `displayName` (a typical pattern is your company name, e.g. `Vectara`, plus `all` to admit files shared with `anyone`/the whole organization, since those grants are surfaced with `displayName: "all"`). Set to `null` or `[]` to disable this crawl-time gate and rely solely on ABAC metadata + query-time filters. **Default: `['Vectara', 'all']`.** The legacy key `permissions` is still honored but deprecated — rename it to `permission_display_filter`.
+- `root_folder` (optional): restrict the crawl to a single folder and all of its descendants. Accepts either a Drive folder URL (e.g. `https://drive.google.com/drive/folders/<id>`) or the bare folder id. When unset, the crawler sweeps `root`, `sharedWithMe`, and files owned/shared with each delegated user. `days_back` still applies to leaf files; subfolders are always traversed so old folders containing recent files are not missed. Shortcuts inside the subtree are not followed, so the crawl stays strictly within the chosen folder.
+- `ray_workers`: `0` to disable Ray (default), `>0` to parallelize across `delegated_users` with that many Ray workers, `-1` to use all cores. Only meaningful for service-account mode with multiple users.
 
 **Authentication Methods:**
 
-**1. Service Account Mode (`auth_type: service_account`)** - Default
-- Requires Google Workspace with domain-wide delegation
-- Supports multiple users via `delegated_users` list
-- `credentials.json` should contain service account credentials
-- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials"
+**1. Service Account Mode (`auth_type: service_account`)** — default
+- Requires Google Workspace with domain-wide delegation.
+- Supports multiple users via `delegated_users` list — the crawler impersonates each one in turn.
+- `credentials_file` must point at a service-account JSON key.
+- For setup instructions, see [Google documentation](https://developers.google.com/workspace/guides/create-credentials) under "Service account credentials".
 
 **2. OAuth Mode (`auth_type: oauth`)**
-- Use when you don't have Google Workspace domain-wide delegation
-- Supports single user only (the user who authorized the app)
-- `credentials.json` should contain OAuth token
-- The token will be automatically refreshed when it expires
+- Use when you don't have Google Workspace domain-wide delegation.
+- Supports a single user only (the user who authorized the app); `delegated_users` is ignored.
+- `credentials_file` must point at an OAuth token JSON (see format below).
+- The token is automatically refreshed and re-saved to `credentials_file` when it expires.
 
 **OAuth Setup:**
 
@@ -605,7 +619,7 @@ To generate the OAuth token:
 4. Authorize in the browser
 5. The token is saved to `credentials.json` automatically
 
-For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`
+For detailed setup instructions, see: `docs/gdrive-oauth-setup.md`.
 
 **OAuth Configuration Example:**
 ```yaml
@@ -613,14 +627,35 @@ gdrive_crawler:
   auth_type: oauth
   credentials_file: credentials.json
   days_back: 7
-  permissions: ['Vectara', 'all']
+  permission_display_filter: ['Vectara', 'all']
 ```
 
+**Attribute-Based Access Control (ABAC):**
+
+When `abac.enabled: true`, every indexed document is tagged with filterable ACL fields derived from the file's Drive permissions. The corpus admin must register these as filter attributes on the Vectara corpus before ABAC filter queries will work. List-valued fields should be registered as `Text List` so membership filters (`'x' IN doc.field`) work.
+
+| Metadata field    | Type      | Meaning                                                                                  |
+|-------------------|-----------|------------------------------------------------------------------------------------------|
+| `acl_owners`      | Text List | Email addresses with the `owner` role.                                                   |
+| `acl_readers`     | Text List | Emails with read-or-above access (`reader`, `commenter`, `writer`, `fileOrganizer`, `organizer`). |
+| `acl_groups`      | Text List | Group emails granted access. **Resolution to individual members is the query layer's responsibility** — the crawler does not expand group membership, so look up the requesting user's transitive groups at query time and OR each one against `acl_groups`. This avoids stale-membership leaks on group removal. |
+| `acl_domains`     | Text List | Domains granted access (e.g. `example.com`).                                             |
+| `acl_is_public`   | Boolean   | `true` if the file is shared with `type=anyone` (and `include_anyone` is true).          |
+| `acl_is_org_wide` | Boolean   | `true` if any domain grant is present.                                                   |
+| `acl_labels`      | Text List | Drive Labels as `<LabelTitle>=<Value>` strings (only populated when `fetch_labels: true`). |
+| `acl_source`      | Text      | Provenance of the ACL: `shared_drive`, `my_drive_direct`, `my_drive_resolved`, or `my_drive_partial`. `shared_drive` and `my_drive_resolved` reflect a complete ACL; `my_drive_direct` and `my_drive_partial` may be missing inherited grants. |
+
+**ABAC sub-options:**
+- `abac.enabled`: emit `acl_*` metadata on every indexed document. Default: `false`.
+- `abac.resolve_inherited`: My Drive files don't receive inherited permissions via the API. When `true`, the crawler walks each file's parent folders and unions their ACLs (folder lookups are cached per worker; adds API round-trips). Shared Drive files already include inherited grants and are unaffected. Default: `false`.
+- `abac.include_anyone`: treat `type=anyone` grants as public (sets `acl_is_public=true`). Default: `true`.
+- `abac.fetch_labels`: fetch Drive Labels per file and store them in `acl_labels`. Adds one round-trip per file plus one definitions fetch per worker, and requires the `drive.labels.readonly` OAuth scope (added automatically when this flag is on). Default: `false`.
+
 **Important Notes:**
-- OAuth mode only supports a single user account
-- For multi-user crawling, use `service_account` mode
-- The OAuth token will auto-refresh and save itself when it expires
-- Both authentication modes use the same `credentials_file` field
+- OAuth mode only supports a single user account; for multi-user crawling, use `service_account` mode.
+- Both authentication modes use the same `credentials_file` field, but the file's contents differ.
+- The OAuth token auto-refreshes and is rewritten back to `credentials_file` when it expires.
+- Audio, video, archives, executables, and source-code-style text files are skipped by mime type. Standalone images are skipped unless `doc_processing.summarize_images` is enabled.
 
 
 ### Folder crawler
