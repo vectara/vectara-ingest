@@ -132,7 +132,7 @@ The database crawler reads from a relational database and indexes relevant colum
     - Oracle: `oracle+cx_oracle://username:password@host:port/database`
   - `db_table`: the table name to read from.
   - `select_condition`: optional SQL `WHERE` clause (string is interpolated into `SELECT … FROM <db_table> WHERE <select_condition>`). Use parameterized values you trust — this is concatenated into the SQL string.
-  - `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document (and serve as the row's title within that document). If omitted, rows are chunked every `rows_per_chunk` rows.
+  - `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document. If omitted, rows are chunked every `rows_per_chunk` rows.
   - `text_columns`: columns whose text is concatenated as the indexed body for each row.
   - `title_column`: optional column to use as the document-level title.
   - `use_title_for_doc_only` (default `false`): when `true`, `title_column` is used only as the doc title and not duplicated as a section title.
@@ -203,7 +203,7 @@ The CSV crawler is the file-based counterpart to the database crawler — it rea
 
 Element-mode columns:
 - `select_condition`: optional pandas `df.query()`-style condition for filtering rows (e.g., `"Season=='Season 1'"`).
-- `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document (and serve as the doc title). If omitted, rows are chunked every `rows_per_chunk` rows.
+- `doc_id_columns`: one or more columns whose concatenated values group rows into the same Vectara document. If omitted, rows are chunked every `rows_per_chunk` rows.
 - `text_columns`: columns whose text becomes the indexed body.
 - `title_column`: optional column to use as the document title.
 - `use_title_for_doc_only` (default `false`): when `true`, `title_column` is used only as the doc title and not duplicated as a section title.
