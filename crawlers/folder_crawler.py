@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import ray
 import psutil
+from slugify import slugify
 
 from core.crawler import Crawler
 from core.indexer import Indexer
@@ -72,7 +73,13 @@ class FileCrawlWorker(object):
 
             else:
                 uri_to_use = file_name if "url" not in metadata else metadata["url"]
-                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata))
+                # Use a stable doc_id derived from the file path so that re-indexing
+                # after metadata changes (e.g. adding a "url" field) updates the
+                # existing document instead of creating a new one with a URL-derived id.
+                doc_id = slugify(file_name)
+                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata, id=doc_id))
+
+            logger.info(f"Finished indexing {file_path} with metadata={metadata}")
 
         except Exception as e:
             import traceback
