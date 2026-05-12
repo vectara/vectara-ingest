@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 from crawlers.gdrive_crawler import (
     DRIVE_LABELS_SCOPE,
     DRIVE_READONLY_SCOPE,
+    FILTER_STAGES,
     GdriveCrawler,
     UserWorker,
     build_scopes,
@@ -161,6 +162,7 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_id=None)
     worker._root_folder_id = root_folder_id
     worker._folder_acl_cache = {}
     worker._label_defs = None
+    worker._stats = {k: 0 for k in FILTER_STAGES}
     return worker
 
 
@@ -204,6 +206,13 @@ class TestResolvePermissionDisplayFilter(unittest.TestCase):
 
     def test_explicit_null_disables_filter(self):
         c = self._crawler({"permission_display_filter": None})
+        self.assertIsNone(c._resolve_permission_display_filter())
+
+    def test_unset_defaults_to_no_filter(self):
+        """Pinning the default: when the config key is absent, no display-name
+        gate is applied. Earlier versions defaulted to ['Vectara','all'], which
+        silently dropped most files for non-Vectara tenants."""
+        c = self._crawler({})
         self.assertIsNone(c._resolve_permission_display_filter())
 
 
@@ -434,6 +443,79 @@ class TestListSubtree(unittest.TestCase):
         self._wire_service(w, tree)
         files = w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
         self.assertEqual(files, [])
+
+
+class TestFilterCounters(unittest.TestCase):
+    """Each filter gate must (a) increment the right bucket and (b) leave
+    the other buckets alone. Without this, the per-user summary line silently
+    drifts from reality the moment a new gate is added."""
+
+    FOLDER_MIME = "application/vnd.google-apps.folder"
+
+    def _wire_service(self, worker, tree):
+        def fake_list(**params):
+            parent = params.get("q", "").split("'")[1]
+            children = tree.get(parent, [])
+            exec_mock = MagicMock()
+            exec_mock.execute.return_value = {"files": list(children), "nextPageToken": None}
+            return exec_mock
+
+        worker.service.files = MagicMock()
+        worker.service.files.return_value.list = MagicMock(side_effect=fake_list)
+
+    def test_listed_counts_every_file_returned_by_drive(self):
+        """listed must reflect pre-display-filter Drive output, not survivors."""
+        w = _make_worker(root_folder_id="ROOT", permission_display_filter=["Vectara"])
+        tree = {
+            "ROOT": [
+                {"id": "D1", "name": "ok.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Vectara"}]},
+                {"id": "D2", "name": "blocked.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Other"}]},
+                {"id": "D3", "name": "blocked2.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Random"}]},
+            ],
+        }
+        self._wire_service(w, tree)
+        w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+
+        self.assertEqual(w._stats['listed'], 3)
+        self.assertEqual(w._stats['display_name_dropped'], 2)
+
+    def test_record_drop_rejects_unknown_bucket(self):
+        """Typo guard: misspelled bucket names must blow up the test suite,
+        not silently increment a phantom counter."""
+        w = _make_worker()
+        with self.assertRaises(KeyError):
+            w._record_drop('typo_dropped', {'id': 'x', 'name': 'y', 'mimeType': 'z'}, 'reason')
+
+    def test_summary_logs_all_stages(self):
+        """The summary line is the operator's primary diagnostic — every
+        bucket must be present so a drop never goes unreported."""
+        w = _make_worker()
+        w._stats['listed'] = 4
+        w._stats['display_name_dropped'] = 1
+        w._stats['indexed'] = 3
+
+        import logging as _logging
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._log_filter_summary("user@example.com")
+
+        summary = next(line for line in cm.output if "filter summary" in line)
+        self.assertIn("user=user@example.com", summary)
+        for stage in FILTER_STAGES:
+            self.assertIn(f"{stage}=", summary)
+        self.assertIn("listed=4", summary)
+        self.assertIn("display_name_dropped=1", summary)
+        self.assertIn("indexed=3", summary)
+
+    def test_record_indexed_increments_only_indexed(self):
+        w = _make_worker()
+        w._record_indexed({'id': 'x', 'name': 'y'})
+        self.assertEqual(w._stats['indexed'], 1)
+        for stage in FILTER_STAGES:
+            if stage != 'indexed':
+                self.assertEqual(w._stats[stage], 0, f"unexpected increment of {stage}")
 
 
 # ----- crawl_file routing: images, CSV/XLSX, Google Sheets -----

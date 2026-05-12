@@ -634,7 +634,9 @@ HUBSPOT_API_KEY = "your-private-app-key"
 
     # Crawl-time filters
     days_back: 7
-    permission_display_filter: ['Vectara', 'all']
+    # Optional crawl-time displayName gate (default: unset, i.e. no filter).
+    # When set, files are kept only if a permission's displayName matches.
+    # permission_display_filter: ['Vectara', 'all']
 
     # Optional: restrict the crawl to a folder subtree
     # root_folder: https://drive.google.com/drive/folders/<folder_id>
@@ -661,7 +663,7 @@ The gdrive crawler indexes content from Google Drive with support for two authen
 - `auth_type`: `service_account` (default) or `oauth`. See "Authentication Methods" below.
 - `credentials_file`: path to the credentials JSON file. The exact contents depend on `auth_type` (service-account JSON vs. OAuth token JSON).
 - `days_back`: include only files modified within the last N days. **Default: 7.**
-- `permission_display_filter`: list of permission `displayName` values to include. A file is indexed only if at least one of its Drive permissions has a matching `displayName` (a typical pattern is your company name, e.g. `Vectara`, plus `all` to admit files shared with `anyone`/the whole organization, since those grants are surfaced with `displayName: "all"`). Set to `null` or `[]` to disable this crawl-time gate and rely solely on ABAC metadata + query-time filters. **Default: `['Vectara', 'all']`.** The legacy key `permissions` is still honored but deprecated — rename it to `permission_display_filter`.
+- `permission_display_filter`: optional list of permission `displayName` values to include. When set, a file is indexed only if at least one of its Drive permissions has a matching `displayName` (a typical pattern would be your company name plus `all` to admit files shared with `anyone`/the whole organization, since those grants are surfaced with `displayName: "all"`). **Default: unset (no filter)** — every file the delegated user can read flows through; use ABAC metadata for access control. Set to `null` or `[]` explicitly to disable. The legacy key `permissions` is still honored but deprecated — rename it to `permission_display_filter`.
 - `root_folder` (optional): restrict the crawl to a single folder and all of its descendants. Accepts either a Drive folder URL (e.g. `https://drive.google.com/drive/folders/<id>`) or the bare folder id. When unset, the crawler sweeps `root`, `sharedWithMe`, and files owned/shared with each delegated user. `days_back` still applies to leaf files; subfolders are always traversed so old folders containing recent files are not missed. Shortcuts inside the subtree are not followed, so the crawl stays strictly within the chosen folder.
 - `ray_workers`: `0` to disable Ray (default), `>0` to parallelize across `delegated_users` with that many Ray workers, `-1` to use all cores. Only meaningful for service-account mode with multiple users.
 
@@ -708,7 +710,7 @@ gdrive_crawler:
   auth_type: oauth
   credentials_file: credentials.json
   days_back: 7
-  permission_display_filter: ['Vectara', 'all']
+  # permission_display_filter: ['<your company>', 'all']   # opt-in; default is no filter
 ```
 
 **Attribute-Based Access Control (ABAC):**
@@ -737,6 +739,18 @@ When `abac.enabled: true`, every indexed document is tagged with filterable ACL 
 - Both authentication modes use the same `credentials_file` field, but the file's contents differ.
 - The OAuth token auto-refreshes and is rewritten back to `credentials_file` when it expires.
 - Audio, video, archives, executables, and source-code-style text files are skipped by mime type. Standalone images are skipped unless `doc_processing.summarize_images` is enabled.
+
+**Filter Pipeline:**
+
+Each file passes through several gates between Drive and the indexer. A drop at any stage is logged at INFO with the file name, id, mime type, and reason; a per-user summary line of the form `gdrive filter summary for user=<u> :: listed=N display_name_dropped=N cache_skipped=N mime_dropped=N unsupported_ext_dropped=N download_failed=N index_error=N indexed=N` is emitted when the user is done. The stages, in order:
+
+1. **Drive API query** — server-side `trashed=false AND modifiedTime > now - days_back`. Files outside the window are never returned by Drive and so are not counted.
+2. **`permission_display_filter`** — optional. When set, keeps a file only if some permission's `displayName` matches the allowlist. **Default: unset (no filter).** Use this only for legacy gating; prefer ABAC metadata + query-time filters for new deployments.
+3. **Shared cache** — when multiple `delegated_users` are crawled, the second-seen user skips files already indexed by the first.
+4. **MIME prefix blocklist** — `audio*`, `video*`, folders, `application/x-adobe-indesign`, `application/zip`, `application/x-rar-compressed`, `application/x-7z-compressed`, `application/x-executable`, `text/php|javascript|css|xml|x-sql|x-python-script`, and `image*` unless `doc_processing.summarize_images: true`.
+5. **Extension allowlist (post-download)** — file is rejected unless it's a dataframe (`.csv/.xls/.xlsx`) or extension is in `{.doc, .docx, .ppt, .pptx, .pdf, .odt, .txt, .html, .md, .rtf, .epub, .lxml}` (plus image extensions when `summarize_images` is on).
+6. **Download/export** — files whose Drive download or Workspace export fails (e.g. `exportSizeLimitExceeded` with no PDF fallback) are counted as `download_failed`.
+7. **Indexing** — `indexer.index_file` returning `False` or raising is counted as `index_error`; success is counted as `indexed`.
 
 
 ### Folder crawler
