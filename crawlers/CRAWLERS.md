@@ -747,7 +747,7 @@ When `abac.enabled: true`, every indexed document is tagged with filterable ACL 
     path: "/Users/ofer/Downloads/some-interesting-content/"
     extensions: ['.pdf']
     source: 'my-folder'
-    metadata_file: '/path/to/metadata.csv'
+    metadata_file: 'metadata.csv'   # relative to `path` (e.g. 'subdir/meta.csv'); must NOT be absolute
     num_per_second: 10
     ray_workers: 0
 ```
@@ -757,7 +757,7 @@ The folder crawler walks a local folder **recursively** (`os.walk`) and indexes 
 - `path`: local folder to crawl. The path is bind-mounted into the Docker container at `/home/vectara/data` automatically.
 - `extensions`: list of file extensions to include. Use `["*"]` (the default if omitted) to include every file regardless of extension.
 - `source`: string added to each file's metadata under the `"source"` field.
-- `metadata_file`: optional CSV file for per-file metadata. Each row needs a `filename` column matching a file in the folder; the remaining columns become metadata. The metadata file must live inside `path` and is itself excluded from indexing.
+- `metadata_file`: optional CSV file for per-file metadata, given as a **relative path under `path`** (e.g. `metadata.csv` or `subdir/meta.csv`) — absolute paths will not resolve correctly. Each row needs a `filename` column matching a file in the folder; the remaining columns become metadata. The metadata file is itself excluded from indexing.
 - `num_per_second`: rate limit when indexing files in parallel. Default: `10`.
 - `ray_workers`: `0` disables Ray (default), `>0` parallelizes indexing across N workers, `-1` uses all CPU cores.
 
@@ -785,8 +785,8 @@ The S3 crawler indexes content under a given S3 path. AWS credentials are picked
 - `s3_path`: S3 URI of the form `s3://bucket/prefix` whose files should be indexed.
 - `extensions`: list of file extensions to include. Use `['*']` to include every file regardless of extension.
 - `metadata_file`: optional CSV file under the same `s3_path` providing per-file metadata. Each row needs a `filename` column matching an object key; remaining columns become metadata. The metadata file itself is excluded from indexing.
-- `aws_access_key_id` / `aws_secret_access_key`: optional. When set, used directly. Otherwise, boto3 credential resolution applies.
-- `endpoint_url`: optional. Use for S3-compatible services (MinIO, Cloudflare R2, Wasabi, etc.). Either credentials *or* an `endpoint_url` must resolve, otherwise the crawler errors out.
+- `aws_access_key_id` / `aws_secret_access_key`: optional, **must be set together or both omitted**. When set, used directly. Otherwise, the standard boto3 credential chain applies (env vars `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, shared config `~/.aws/credentials`, IAM role / EC2 instance metadata). If no credentials resolve, boto3 raises `NoCredentialsError` on the first S3 call.
+- `endpoint_url`: optional. Use for S3-compatible services (MinIO, Cloudflare R2, Wasabi, etc.). When omitted, boto3 talks to AWS S3 directly.
 - `num_per_second`: rate limit when downloading/indexing. Default: `10`.
 - `ray_workers`: `0` disables Ray (default), `>0` parallelizes across N workers, `-1` uses all CPU cores.
 - `source`: source label attached to each document's metadata. Default: `"S3"`.

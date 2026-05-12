@@ -28,9 +28,14 @@ def create_s3_client(cfg):
     if aws_access_key_id and aws_secret_access_key:
         client_kwargs['aws_access_key_id'] = aws_access_key_id
         client_kwargs['aws_secret_access_key'] = aws_secret_access_key
-    
-    else:
-        raise ValueError("No AWS credentials found!")
+    elif aws_access_key_id or aws_secret_access_key:
+        raise ValueError(
+            "S3 crawler: aws_access_key_id and aws_secret_access_key must be set together. "
+            "Provide both or omit both (to use the boto3 default credential chain)."
+        )
+    # else: both omitted — fall through and let boto3 resolve credentials from
+    # the standard chain (env vars, shared config, IAM role, instance metadata).
+    # boto3 will raise NoCredentialsError at the first call site if nothing resolves.
     
     # Handle SSL verification based on vectara config
     ssl_verify = cfg.vectara.get("ssl_verify", None)
