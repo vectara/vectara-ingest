@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import pathlib
@@ -5,6 +6,7 @@ import time
 import pandas as pd
 import ray
 import psutil
+from slugify import slugify
 
 from core.crawler import Crawler
 from core.indexer import Indexer
@@ -19,6 +21,14 @@ from core.dataframe_parser import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _doc_id_for_file(file_name: str) -> str:
+    # slugify is lossy ("a/b.txt" and "a-b.txt" both produce "a-b-txt"), so we
+    # append a short hash of the original file_name to keep ids unique while
+    # remaining human-readable in logs and the admin UI.
+    path_hash = hashlib.sha256(file_name.encode("utf-8")).hexdigest()[:12]
+    return f"{slugify(file_name)}-{path_hash}"
 
 class FileCrawlWorker(object):
     def __init__(self, cfg: DictConfig, crawler_config: DictConfig, indexer: Indexer, num_per_second: int):
@@ -72,7 +82,13 @@ class FileCrawlWorker(object):
 
             else:
                 uri_to_use = file_name if "url" not in metadata else metadata["url"]
-                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata))
+                # Stable doc_id derived from the relative file_name so that re-indexing
+                # after metadata changes (e.g. adding a "url" field) updates the
+                # existing document instead of creating a new one with a URL-derived id.
+                doc_id = _doc_id_for_file(file_name)
+                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata, id=doc_id))
+
+            logger.info(f"Finished indexing {file_path} with metadata={metadata}")
 
         except Exception as e:
             import traceback
