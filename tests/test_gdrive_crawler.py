@@ -517,6 +517,30 @@ class TestFilterCounters(unittest.TestCase):
             if stage != 'indexed':
                 self.assertEqual(w._stats[stage], 0, f"unexpected increment of {stage}")
 
+    def test_dataframe_failure_records_index_error_not_indexed(self):
+        """process_dataframe_file returns False on parser-init failure, unsupported
+        files, and caught exceptions — none of which re-raise. The outer code must
+        honor that signal, otherwise the summary line over-reports indexed and
+        never increments index_error for dataframe failures."""
+        from unittest.mock import patch
+        w = _make_worker()
+        w._summarize_images = False
+        w.df_parser = MagicMock()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = False
+        w.cfg.get = MagicMock(return_value={})
+
+        file = {"id": "CSV_ID", "name": "salaries.csv", "mimeType": "text/csv"}
+
+        with patch.object(w, "save_local_file", return_value="/tmp/salaries.csv"), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file", return_value=False), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        self.assertEqual(w._stats['indexed'], 0)
+        self.assertEqual(w._stats['index_error'], 1)
+
 
 # ----- crawl_file routing: images, CSV/XLSX, Google Sheets -----
 

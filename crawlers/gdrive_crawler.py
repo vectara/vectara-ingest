@@ -765,7 +765,7 @@ class UserWorker(object):
 
         try:
             if is_dataframe:
-                process_dataframe_file(
+                ok = process_dataframe_file(
                     file_path=local_file_path,
                     metadata=file_metadata,
                     doc_id=file_id,
@@ -773,7 +773,10 @@ class UserWorker(object):
                     df_config=self.cfg.get('dataframe_processing', {}),
                     source_name='gdrive',
                 )
-                self._record_indexed(file)
+                if ok:
+                    self._record_indexed(file)
+                else:
+                    self._record_drop('index_error', file, "process_dataframe_file returned False")
             else:
                 ok = self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
                 if ok:
