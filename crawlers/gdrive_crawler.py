@@ -358,9 +358,13 @@ class UserWorker(object):
 
     def _record_indexed(self, file_obj: Dict[str, Any]) -> None:
         self._stats['indexed'] += 1
-        logger.info(
-            f"gdrive indexed file='{file_obj.get('name', '?')}' id={file_obj.get('id', '?')}"
-        )
+        # Per-file success line is gated behind verbose: on large corpora the
+        # summary counter is the signal operators want, and one INFO per
+        # indexed file dominates log volume on healthy runs.
+        if self.crawler.verbose:
+            logger.info(
+                f"gdrive indexed file='{file_obj.get('name', '?')}' id={file_obj.get('id', '?')}"
+            )
 
     def _log_filter_summary(self, user: str) -> None:
         parts = ' '.join(f"{k}={self._stats[k]}" for k in FILTER_STAGES)
@@ -677,19 +681,25 @@ class UserWorker(object):
 
             return None
 
-    def save_local_file(self, file_id: str, name: str, mime_type: Optional[str] = None) -> Optional[str]:
+    def save_local_file(
+        self, file_id: str, name: str, mime_type: Optional[str] = None
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Download a Drive file to /tmp. Returns (local_path, error_reason);
+        on success error_reason is None, on failure local_path is None and
+        error_reason names the failing stage so callers can surface it."""
         path, extension = os.path.splitext(name)
         sanitized_name = f"{slugify(path)}{extension}"
         file_path = os.path.join("/tmp", sanitized_name)
         try:
             byte_stream = self.download_or_export_file(file_id, mime_type)
-            if byte_stream:
-                with open(file_path, 'wb') as f:
-                    f.write(byte_stream.read())
-                return file_path
+            if byte_stream is None:
+                return None, "download_or_export_file returned no bytes"
+            with open(file_path, 'wb') as f:
+                f.write(byte_stream.read())
+            return file_path, None
         except Exception as e:
             logger.warning(f"Error saving local file: {e}")
-        return None
+            return None, f"local file write failed: {e}"
 
     def crawl_file(self, file: dict) -> None:
         file_id = file['id']
@@ -698,16 +708,16 @@ class UserWorker(object):
 
         url = get_gdrive_url(file_id, mime_type)
         if mime_type == 'application/vnd.google-apps.document':
-            local_file_path = self.save_local_file(file_id, name + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            local_file_path, download_error = self.save_local_file(file_id, name + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         elif mime_type == 'application/vnd.google-apps.presentation':
-            local_file_path = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+            local_file_path, download_error = self.save_local_file(file_id, name + '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
-            local_file_path = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            local_file_path, download_error = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         else:
-            local_file_path = self.save_local_file(file_id, name)
+            local_file_path, download_error = self.save_local_file(file_id, name)
 
         if not local_file_path:
-            self._record_drop('download_failed', file, "download_or_export_file returned no bytes")
+            self._record_drop('download_failed', file, download_error or "unknown save_local_file failure")
             return
 
         # Route by type: dataframes go through DataframeParser; images use the

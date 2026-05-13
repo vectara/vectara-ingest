@@ -748,7 +748,7 @@ Each file passes through several gates between Drive and the indexer. A drop at 
 2. **`permission_display_filter`** — optional. When set, keeps a file only if some permission's `displayName` matches the allowlist. **Default: unset (no filter).** Use this only for legacy gating; prefer ABAC metadata + query-time filters for new deployments.
 3. **Shared cache** — when multiple `delegated_users` are crawled, the second-seen user skips files already indexed by the first.
 4. **MIME prefix blocklist** — `audio*`, `video*`, folders, `application/x-adobe-indesign`, `application/zip`, `application/x-rar-compressed`, `application/x-7z-compressed`, `application/x-executable`, `text/php|javascript|css|xml|x-sql|x-python-script`, and `image*` unless `doc_processing.summarize_images: true`.
-5. **Extension allowlist (post-download)** — file is rejected unless it's a dataframe (`.csv/.xls/.xlsx`) or extension is in `{.doc, .docx, .ppt, .pptx, .pdf, .odt, .txt, .html, .md, .rtf, .epub, .lxml}` (plus image extensions when `summarize_images` is on).
+5. **Extension allowlist (post-download)** — file is rejected unless it's a dataframe (`.csv`, `.tsv`, `.psv`, `.pipe`, `.xls`, `.xlsx` — see `supported_by_dataframe_parser` in `core/dataframe_parser.py`) or extension is in `{.doc, .docx, .ppt, .pptx, .pdf, .odt, .txt, .html, .md, .rtf, .epub, .lxml}` (plus image extensions when `summarize_images` is on).
 6. **Download/export** — files whose Drive download or Workspace export fails (e.g. `exportSizeLimitExceeded` with no PDF fallback) are counted as `download_failed`.
 7. **Indexing** — `indexer.index_file` returning `False` or raising is counted as `index_error`; success is counted as `indexed`.
 

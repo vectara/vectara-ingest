@@ -533,7 +533,7 @@ class TestFilterCounters(unittest.TestCase):
 
         file = {"id": "CSV_ID", "name": "salaries.csv", "mimeType": "text/csv"}
 
-        with patch.object(w, "save_local_file", return_value="/tmp/salaries.csv"), \
+        with patch.object(w, "save_local_file", return_value=("/tmp/salaries.csv", None)), \
              patch("crawlers.gdrive_crawler.process_dataframe_file", return_value=False), \
              patch("crawlers.gdrive_crawler.safe_remove_file"):
             w.crawl_file(file)
@@ -564,12 +564,12 @@ class TestCrawlFileRouting(unittest.TestCase):
     Google Sheets export, CSV/XLSX dataframe routing, standalone image admission."""
 
     def _fake_save(self, path):
-        """save_local_file replacement: records (file_id, name, mime) and returns a path."""
+        """save_local_file replacement: records (file_id, name, mime) and returns (path, None)."""
         calls = []
 
         def save(file_id, name, mime_type=None):
             calls.append((file_id, name, mime_type))
-            return path
+            return path, None
 
         return save, calls
 
