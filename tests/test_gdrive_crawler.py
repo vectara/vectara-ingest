@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 from crawlers.gdrive_crawler import (
     DRIVE_LABELS_SCOPE,
     DRIVE_READONLY_SCOPE,
+    FILTER_STAGES,
     GdriveCrawler,
     UserWorker,
     build_scopes,
@@ -161,6 +162,7 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_id=None)
     worker._root_folder_id = root_folder_id
     worker._folder_acl_cache = {}
     worker._label_defs = None
+    worker._stats = {k: 0 for k in FILTER_STAGES}
     return worker
 
 
@@ -204,6 +206,13 @@ class TestResolvePermissionDisplayFilter(unittest.TestCase):
 
     def test_explicit_null_disables_filter(self):
         c = self._crawler({"permission_display_filter": None})
+        self.assertIsNone(c._resolve_permission_display_filter())
+
+    def test_unset_defaults_to_no_filter(self):
+        """Pinning the default: when the config key is absent, no display-name
+        gate is applied. Earlier versions defaulted to ['Vectara','all'], which
+        silently dropped most files for non-Vectara tenants."""
+        c = self._crawler({})
         self.assertIsNone(c._resolve_permission_display_filter())
 
 
@@ -436,6 +445,205 @@ class TestListSubtree(unittest.TestCase):
         self.assertEqual(files, [])
 
 
+class TestFilterCounters(unittest.TestCase):
+    """Each filter gate must (a) increment the right bucket and (b) leave
+    the other buckets alone. Without this, the per-user summary line silently
+    drifts from reality the moment a new gate is added."""
+
+    FOLDER_MIME = "application/vnd.google-apps.folder"
+
+    def _wire_service(self, worker, tree):
+        def fake_list(**params):
+            parent = params.get("q", "").split("'")[1]
+            children = tree.get(parent, [])
+            exec_mock = MagicMock()
+            exec_mock.execute.return_value = {"files": list(children), "nextPageToken": None}
+            return exec_mock
+
+        worker.service.files = MagicMock()
+        worker.service.files.return_value.list = MagicMock(side_effect=fake_list)
+
+    def test_listed_counts_every_file_returned_by_drive(self):
+        """listed must reflect pre-display-filter Drive output, not survivors."""
+        w = _make_worker(root_folder_id="ROOT", permission_display_filter=["Vectara"])
+        tree = {
+            "ROOT": [
+                {"id": "D1", "name": "ok.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Vectara"}]},
+                {"id": "D2", "name": "blocked.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Other"}]},
+                {"id": "D3", "name": "blocked2.pdf", "mimeType": "application/pdf",
+                 "permissions": [{"displayName": "Random"}]},
+            ],
+        }
+        self._wire_service(w, tree)
+        w._list_subtree(w.service, "ROOT", "2020-01-01T00:00:00Z")
+
+        self.assertEqual(w._stats['listed'], 3)
+        self.assertEqual(w._stats['display_name_dropped'], 2)
+
+    def test_record_drop_rejects_unknown_bucket(self):
+        """Typo guard: misspelled bucket names must blow up the test suite,
+        not silently increment a phantom counter."""
+        w = _make_worker()
+        with self.assertRaises(KeyError):
+            w._record_drop('typo_dropped', {'id': 'x', 'name': 'y', 'mimeType': 'z'}, 'reason')
+
+    def test_summary_logs_all_stages(self):
+        """The summary line is the operator's primary diagnostic — every
+        bucket must be present so a drop never goes unreported."""
+        w = _make_worker()
+        w._stats['listed'] = 4
+        w._stats['display_name_dropped'] = 1
+        w._stats['indexed'] = 3
+
+        import logging as _logging
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._log_filter_summary("user@example.com")
+
+        summary = next(line for line in cm.output if "filter summary" in line)
+        self.assertIn("user=user@example.com", summary)
+        for stage in FILTER_STAGES:
+            self.assertIn(f"{stage}=", summary)
+        self.assertIn("listed=4", summary)
+        self.assertIn("display_name_dropped=1", summary)
+        self.assertIn("indexed=3", summary)
+
+    def test_record_indexed_increments_only_indexed(self):
+        w = _make_worker()
+        w._record_indexed({'id': 'x', 'name': 'y'})
+        self.assertEqual(w._stats['indexed'], 1)
+        for stage in FILTER_STAGES:
+            if stage != 'indexed':
+                self.assertEqual(w._stats[stage], 0, f"unexpected increment of {stage}")
+
+    def test_record_indexed_verbose_logs_acl_fields(self):
+        """When ABAC is on and verbose is true, the per-file indexed line must
+        carry every acl_* value so operators can confirm what the indexer
+        shipped to the corpus."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = True
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        file_metadata = {
+            'acl_owners': ['a@x.com'],
+            'acl_readers': ['b@x.com', 'c@x.com'],
+            'acl_groups': ['eng@x.com'],
+            'acl_domains': ['x.com'],
+            'acl_is_public': False,
+            'acl_is_org_wide': True,
+            'acl_labels': ['Sensitivity=Confidential'],
+            'acl_source': 'shared_drive',
+        }
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertIn("file='y'", line)
+        self.assertIn("id=x", line)
+        self.assertIn("acl_source='shared_drive'", line)
+        self.assertIn("acl_is_public=False", line)
+        self.assertIn("acl_is_org_wide=True", line)
+        self.assertIn("acl_owners=['a@x.com']", line)
+        self.assertIn("'b@x.com'", line)
+        self.assertIn("'c@x.com'", line)
+        self.assertIn("acl_groups=['eng@x.com']", line)
+        self.assertIn("acl_domains=['x.com']", line)
+        self.assertIn("acl_labels=['Sensitivity=Confidential']", line)
+
+    def test_record_indexed_verbose_logs_raw_permissions(self):
+        """Raw permissions[] must appear on the verbose indexed line regardless
+        of ABAC state, so operators can debug acl_* derivation (and inspect what
+        Drive actually returned) even when ABAC is off. parent_permissions
+        is appended only when non-empty."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        perms = [
+            {'id': 'p1', 'type': 'user', 'role': 'owner', 'emailAddress': 'a@x.com'},
+            {'id': 'p2', 'type': 'domain', 'role': 'reader', 'domain': 'x.com'},
+        ]
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y', 'permissions': perms})
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertIn("permissions=", line)
+        self.assertIn("'a@x.com'", line)
+        self.assertIn("'domain'", line)
+        self.assertNotIn("parent_permissions=", line)
+
+        # Non-empty parent_permissions => the parent_permissions= token appears.
+        parent = [{'id': 'pp1', 'type': 'group', 'role': 'reader', 'emailAddress': 'eng@x.com'}]
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm2:
+            w._record_indexed(
+                {'id': 'x', 'name': 'y', 'permissions': perms},
+                parent_permissions=parent,
+            )
+        line2 = next(l for l in cm2.output if 'gdrive indexed' in l)
+        self.assertIn("parent_permissions=", line2)
+        self.assertIn("'eng@x.com'", line2)
+
+    def test_record_indexed_verbose_no_acl_when_abac_disabled(self):
+        """ABAC off => keep the line compact even if file_metadata is passed.
+        Guards against accidentally bloating the log for non-ABAC corpora."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        file_metadata = {'acl_source': 'shared_drive', 'acl_owners': ['a@x.com']}
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertNotIn('acl_', line)
+
+    def test_record_indexed_not_verbose_emits_no_line(self):
+        """Verbose gate stays in force regardless of ABAC state."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = True
+        w.crawler = MagicMock()
+        w.crawler.verbose = False
+        # assertLogs requires at least one record; emit a sentinel so the
+        # context manager doesn't raise, then confirm no 'gdrive indexed' line.
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            _logging.getLogger('crawlers.gdrive_crawler').info('sentinel')
+            w._record_indexed({'id': 'x', 'name': 'y'}, {'acl_source': 'shared_drive'})
+
+        self.assertFalse(any('gdrive indexed' in l for l in cm.output))
+
+    def test_dataframe_failure_records_index_error_not_indexed(self):
+        """process_dataframe_file returns False on parser-init failure, unsupported
+        files, and caught exceptions — none of which re-raise. The outer code must
+        honor that signal, otherwise the summary line over-reports indexed and
+        never increments index_error for dataframe failures."""
+        from unittest.mock import patch
+        w = _make_worker()
+        w._summarize_images = False
+        w.df_parser = MagicMock()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = False
+        w.cfg.get = MagicMock(return_value={})
+
+        file = {"id": "CSV_ID", "name": "salaries.csv", "mimeType": "text/csv"}
+
+        with patch.object(w, "save_local_file", return_value=("/tmp/salaries.csv", None)), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file", return_value=False), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        self.assertEqual(w._stats['indexed'], 0)
+        self.assertEqual(w._stats['index_error'], 1)
+
+
 # ----- crawl_file routing: images, CSV/XLSX, Google Sheets -----
 
 from unittest.mock import patch
@@ -458,12 +666,12 @@ class TestCrawlFileRouting(unittest.TestCase):
     Google Sheets export, CSV/XLSX dataframe routing, standalone image admission."""
 
     def _fake_save(self, path):
-        """save_local_file replacement: records (file_id, name, mime) and returns a path."""
+        """save_local_file replacement: records (file_id, name, mime) and returns (path, None)."""
         calls = []
 
         def save(file_id, name, mime_type=None):
             calls.append((file_id, name, mime_type))
-            return path
+            return path, None
 
         return save, calls
 
