@@ -356,15 +356,49 @@ class UserWorker(object):
             f"id={file_obj.get('id', '?')} mime={file_obj.get('mimeType', '?')} :: {reason}"
         )
 
-    def _record_indexed(self, file_obj: Dict[str, Any]) -> None:
+    def _record_indexed(
+        self,
+        file_obj: Dict[str, Any],
+        file_metadata: Optional[Dict[str, Any]] = None,
+        parent_permissions: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         self._stats['indexed'] += 1
         # Per-file success line is gated behind verbose: on large corpora the
         # summary counter is the signal operators want, and one INFO per
         # indexed file dominates log volume on healthy runs.
-        if self.crawler.verbose:
-            logger.info(
-                f"gdrive indexed file='{file_obj.get('name', '?')}' id={file_obj.get('id', '?')}"
+        if not self.crawler.verbose:
+            return
+
+        line = (
+            f"gdrive indexed file='{file_obj.get('name', '?')}' "
+            f"id={file_obj.get('id', '?')}"
+        )
+        # Raw permissions are logged independent of ABAC so operators can debug
+        # acl_* derivation (or just inspect what Drive returned) even with ABAC
+        # off. parent_permissions is appended only when non-empty to keep the
+        # line tight for Shared Drive files and non-resolve_inherited runs.
+        line += f" permissions={file_obj.get('permissions', [])!r}"
+        if parent_permissions:
+            line += f" parent_permissions={parent_permissions!r}"
+        # When ABAC is on, append the resolved acl_* values so operators can
+        # confirm per-file what the indexer actually shipped to the corpus
+        # (inheritance source, public/org-wide flags, group/domain grants,
+        # labels). Order is stable for grep-ability.
+        if self._abac_enabled and file_metadata is not None:
+            acl_keys = (
+                'acl_source',
+                'acl_is_public',
+                'acl_is_org_wide',
+                'acl_owners',
+                'acl_readers',
+                'acl_groups',
+                'acl_domains',
+                'acl_labels',
             )
+            line += ' ' + ' '.join(
+                f"{k}={file_metadata[k]!r}" for k in acl_keys if k in file_metadata
+            )
+        logger.info(line)
 
     def _log_filter_summary(self, user: str) -> None:
         parts = ' '.join(f"{k}={self._stats[k]}" for k in FILTER_STAGES)
@@ -758,6 +792,7 @@ class UserWorker(object):
             'source': 'gdrive'
         }
 
+        parent_perms: Optional[List[Dict[str, Any]]] = None
         if self._abac_enabled:
             parent_perms, source = self._resolve_parent_acl(file)
 
@@ -784,13 +819,13 @@ class UserWorker(object):
                     source_name='gdrive',
                 )
                 if ok:
-                    self._record_indexed(file)
+                    self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
                     self._record_drop('index_error', file, "process_dataframe_file returned False")
             else:
                 ok = self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
                 if ok:
-                    self._record_indexed(file)
+                    self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
                     self._record_drop('index_error', file, "indexer.index_file returned False")
         except Exception as e:
@@ -907,6 +942,11 @@ class GdriveCrawler(Crawler):
         if auth_type == "oauth":
             self.delegated_users = ["oauth_user"]  # Dummy user for OAuth mode
         else:
+            if "delegated_users" not in cfg.gdrive_crawler:
+                raise ValueError(
+                    "gdrive_crawler.delegated_users is required for auth_type='service_account'. "
+                    "Provide a list of user emails to impersonate, or set auth_type: oauth."
+                )
             self.delegated_users = cfg.gdrive_crawler.delegated_users
 
     def _resolve_permission_display_filter(self) -> Optional[List[str]]:

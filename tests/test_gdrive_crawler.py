@@ -517,6 +517,108 @@ class TestFilterCounters(unittest.TestCase):
             if stage != 'indexed':
                 self.assertEqual(w._stats[stage], 0, f"unexpected increment of {stage}")
 
+    def test_record_indexed_verbose_logs_acl_fields(self):
+        """When ABAC is on and verbose is true, the per-file indexed line must
+        carry every acl_* value so operators can confirm what the indexer
+        shipped to the corpus."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = True
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        file_metadata = {
+            'acl_owners': ['a@x.com'],
+            'acl_readers': ['b@x.com', 'c@x.com'],
+            'acl_groups': ['eng@x.com'],
+            'acl_domains': ['x.com'],
+            'acl_is_public': False,
+            'acl_is_org_wide': True,
+            'acl_labels': ['Sensitivity=Confidential'],
+            'acl_source': 'shared_drive',
+        }
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertIn("file='y'", line)
+        self.assertIn("id=x", line)
+        self.assertIn("acl_source='shared_drive'", line)
+        self.assertIn("acl_is_public=False", line)
+        self.assertIn("acl_is_org_wide=True", line)
+        self.assertIn("acl_owners=['a@x.com']", line)
+        self.assertIn("'b@x.com'", line)
+        self.assertIn("'c@x.com'", line)
+        self.assertIn("acl_groups=['eng@x.com']", line)
+        self.assertIn("acl_domains=['x.com']", line)
+        self.assertIn("acl_labels=['Sensitivity=Confidential']", line)
+
+    def test_record_indexed_verbose_logs_raw_permissions(self):
+        """Raw permissions[] must appear on the verbose indexed line regardless
+        of ABAC state, so operators can debug acl_* derivation (and inspect what
+        Drive actually returned) even when ABAC is off. parent_permissions
+        is appended only when non-empty."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        perms = [
+            {'id': 'p1', 'type': 'user', 'role': 'owner', 'emailAddress': 'a@x.com'},
+            {'id': 'p2', 'type': 'domain', 'role': 'reader', 'domain': 'x.com'},
+        ]
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y', 'permissions': perms})
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertIn("permissions=", line)
+        self.assertIn("'a@x.com'", line)
+        self.assertIn("'domain'", line)
+        self.assertNotIn("parent_permissions=", line)
+
+        # Non-empty parent_permissions => the parent_permissions= token appears.
+        parent = [{'id': 'pp1', 'type': 'group', 'role': 'reader', 'emailAddress': 'eng@x.com'}]
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm2:
+            w._record_indexed(
+                {'id': 'x', 'name': 'y', 'permissions': perms},
+                parent_permissions=parent,
+            )
+        line2 = next(l for l in cm2.output if 'gdrive indexed' in l)
+        self.assertIn("parent_permissions=", line2)
+        self.assertIn("'eng@x.com'", line2)
+
+    def test_record_indexed_verbose_no_acl_when_abac_disabled(self):
+        """ABAC off => keep the line compact even if file_metadata is passed.
+        Guards against accidentally bloating the log for non-ABAC corpora."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = False
+        w.crawler = MagicMock()
+        w.crawler.verbose = True
+        file_metadata = {'acl_source': 'shared_drive', 'acl_owners': ['a@x.com']}
+
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
+
+        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        self.assertNotIn('acl_', line)
+
+    def test_record_indexed_not_verbose_emits_no_line(self):
+        """Verbose gate stays in force regardless of ABAC state."""
+        import logging as _logging
+        w = _make_worker()
+        w._abac_enabled = True
+        w.crawler = MagicMock()
+        w.crawler.verbose = False
+        # assertLogs requires at least one record; emit a sentinel so the
+        # context manager doesn't raise, then confirm no 'gdrive indexed' line.
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            _logging.getLogger('crawlers.gdrive_crawler').info('sentinel')
+            w._record_indexed({'id': 'x', 'name': 'y'}, {'acl_source': 'shared_drive'})
+
+        self.assertFalse(any('gdrive indexed' in l for l in cm.output))
+
     def test_dataframe_failure_records_index_error_not_indexed(self):
         """process_dataframe_file returns False on parser-init failure, unsupported
         files, and caught exceptions — none of which re-raise. The outer code must
