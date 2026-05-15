@@ -815,6 +815,115 @@ class TestCrawlFileRouting(unittest.TestCase):
         w.indexer.index_file.assert_called_once()
         pdf_mock.assert_not_called()
 
+    def test_extension_synthesized_from_mime_when_name_lacks_extension(self):
+        # Regression: Drive files uploaded without a filename extension were
+        # being dropped as `unsupported_ext_dropped` even when the mime type
+        # was authoritative (e.g. "Burlington office floor plan" with mime
+        # application/pdf). Now the crawler appends an extension derived from
+        # the mime so the downstream extension whitelist accepts the file.
+        w = _make_crawl_worker()
+        save, calls = self._fake_save("/tmp/burlington-office-floor-plan.pdf")
+
+        file = {
+            "id": "PDF_ID",
+            "name": "Burlington office floor plan",
+            "mimeType": "application/pdf",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file") as pdf_mock, \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        # save_local_file was called with a .pdf-suffixed name even though
+        # the original Drive name had no extension.
+        self.assertEqual(len(calls), 1)
+        _, passed_name, _ = calls[0]
+        self.assertTrue(passed_name.endswith('.pdf'),
+                        f"expected .pdf-suffixed name, got {passed_name!r}")
+        # File was admitted to indexing (not dropped).
+        w.indexer.index_file.assert_called_once()
+        pdf_mock.assert_not_called()
+
+
+class TestDiagnosticPropagation(unittest.TestCase):
+    """When indexer.index_file / process_dataframe_file return False the gdrive
+    crawler should surface the underlying reason (Indexer.last_error /
+    DataframeParser.last_error) in the [index_error] drop record — not the
+    generic "returned False" string."""
+
+    def test_index_file_failure_surfaces_indexer_last_error(self):
+        w = _make_crawl_worker()
+        w.indexer.index_file.return_value = False
+        w.indexer.last_error = "_index_file failed: HTTP 503 from Vectara API"
+
+        file = {"id": "PDF_ID", "name": "report.pdf", "mimeType": "application/pdf"}
+
+        captured = []
+        original = w._record_drop
+
+        def capture(bucket, file_obj, reason):
+            captured.append((bucket, reason))
+            return original(bucket, file_obj, reason)
+
+        with patch.object(w, "save_local_file", return_value=("/tmp/report.pdf", None)), \
+             patch.object(w, "_record_drop", side_effect=capture), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        self.assertEqual(len(captured), 1)
+        bucket, reason = captured[0]
+        self.assertEqual(bucket, 'index_error')
+        self.assertIn("HTTP 503", reason)
+
+    def test_dataframe_failure_surfaces_df_parser_last_error(self):
+        w = _make_crawl_worker()
+        w.df_parser.last_error = "process_dataframe_file exception: bad header row"
+
+        file = {"id": "CSV_ID", "name": "data.csv", "mimeType": "text/csv"}
+
+        captured = []
+        original = w._record_drop
+
+        def capture(bucket, file_obj, reason):
+            captured.append((bucket, reason))
+            return original(bucket, file_obj, reason)
+
+        with patch.object(w, "save_local_file", return_value=("/tmp/data.csv", None)), \
+             patch("crawlers.gdrive_crawler.process_dataframe_file", return_value=False), \
+             patch.object(w, "_record_drop", side_effect=capture), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        self.assertEqual(len(captured), 1)
+        bucket, reason = captured[0]
+        self.assertEqual(bucket, 'index_error')
+        self.assertIn("bad header row", reason)
+
+    def test_download_failure_surfaces_http_error_reason(self):
+        # save_local_file now propagates the actual HTTP error from
+        # download_or_export_file rather than the generic "no bytes" string.
+        w = _make_crawl_worker()
+
+        file = {"id": "PDF_ID", "name": "report.pdf", "mimeType": "application/pdf"}
+
+        captured = []
+        original = w._record_drop
+
+        def capture(bucket, file_obj, reason):
+            captured.append((bucket, reason))
+            return original(bucket, file_obj, reason)
+
+        with patch.object(w, "save_local_file", return_value=(None, "HttpError 403: insufficientFilePermissions")), \
+             patch.object(w, "_record_drop", side_effect=capture), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        self.assertEqual(len(captured), 1)
+        bucket, reason = captured[0]
+        self.assertEqual(bucket, 'download_failed')
+        self.assertIn("HttpError 403", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

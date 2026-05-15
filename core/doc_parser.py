@@ -68,13 +68,13 @@ def extract_document_title(filename: str) -> str:
     Returns:
         str: Document title from metadata, or empty string if not found or on error
     """
-    if filename.endswith('.pdf'):
+    if filename.lower().endswith('.pdf'):
         return _extract_pdf_title(filename)
-    elif filename.endswith('.docx'):
+    elif filename.lower().endswith('.docx'):
         return _extract_docx_title(filename)
-    elif filename.endswith('.pptx'):
+    elif filename.lower().endswith('.pptx'):
         return _extract_pptx_title(filename)
-    elif filename.endswith(('.html', '.htm')):
+    elif filename.lower().endswith(('.html', '.htm')):
         return _extract_html_title(filename)
     else:
         # Other files return empty for fallback to Title elements or filename
@@ -342,7 +342,7 @@ class DocumentParser():
         raise NotImplementedError("Subclasses must implement parse() method")
 
     def get_tables_with_gmft(self, filename: str) -> List[Tuple[pd.DataFrame, str, str, dict]]:
-        if not filename.endswith('.pdf'):
+        if not filename.lower().endswith('.pdf'):
             logger.warning(f"GMFT: only PDF files are supported, skipping {filename}")
             return []
 
@@ -748,7 +748,7 @@ class LlamaParseDocumentParser(DocumentParser):
         # Process tables separately for structured indexing
         tables = []
         if self.parse_tables:
-            if self.enable_gmft and filename.endswith('.pdf'):
+            if self.enable_gmft and filename.lower().endswith('.pdf'):
                 tables = list(self.get_tables_with_gmft(filename))
             else:
                 # Collect table data, then parallel-summarize
@@ -953,7 +953,7 @@ class DoclingDocumentParser(DocumentParser):
                     try:
                         r = requests.get(src_loc, stream=True, headers=request_headers, timeout=10)
                         r.raise_for_status()
-                        if r.headers.get("content-type", "").startswith("image/"):
+                        if r.headers.get("content-type", "").lower().startswith("image/"):
                             from PIL import Image as _PILImage
                             data = r.content
                             # Validate completeness — PIL loads lazily; a truncated image
@@ -1153,7 +1153,7 @@ class DoclingDocumentParser(DocumentParser):
 
         # Process tables (needs doc.tables)
         tables = []
-        if self.parse_tables and not (self.enable_gmft and self._current_filename.endswith('.pdf')):
+        if self.parse_tables and not (self.enable_gmft and self._current_filename.lower().endswith('.pdf')):
             tables = list(self._get_tables(doc.tables, doc))
 
         return positioned_elements, image_tasks, tables, image_counter
@@ -1247,7 +1247,7 @@ class DoclingDocumentParser(DocumentParser):
         release_memory()
 
         # GMFT tables (needs the file on disk, not the doc object)
-        if self.parse_tables and self.enable_gmft and filename.endswith('.pdf'):
+        if self.parse_tables and self.enable_gmft and filename.lower().endswith('.pdf'):
             tables = list(self.get_tables_with_gmft(filename))
 
         # Parallel image summarization (runs after doc is freed)
@@ -1345,7 +1345,7 @@ class DoclingDocumentParser(DocumentParser):
                 release_memory()
 
         # GMFT tables (processes entire file, only once)
-        if self.parse_tables and self.enable_gmft and filename.endswith('.pdf'):
+        if self.parse_tables and self.enable_gmft and filename.lower().endswith('.pdf'):
             all_tables = list(self.get_tables_with_gmft(filename))
 
         # Load image bytes back from disk now that docling memory is freed
@@ -1885,7 +1885,7 @@ class UnstructuredDocumentParser(DocumentParser):
         doc_title = extract_document_title(filename)
         
         # For files without metadata title, look for Title elements (except PDF/DOCX/PPTX which skip Title elements)
-        if not doc_title and not filename.endswith(('.pdf', '.docx', '.pptx')):
+        if not doc_title and not filename.lower().endswith(('.pdf', '.docx', '.pptx')):
             title_elements = raw_tables_images if is_chunking else elements
             titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x).strip()) > 3]
             if titles:
@@ -1901,7 +1901,7 @@ class UnstructuredDocumentParser(DocumentParser):
         # Process tables separately for structured indexing
         tables = []
         if self.parse_tables:
-            if self.enable_gmft and filename.endswith('.pdf'):
+            if self.enable_gmft and filename.lower().endswith('.pdf'):
                 tables = list(self.get_tables_with_gmft(filename))
             else:
                 # Use raw elements for table extraction when chunking

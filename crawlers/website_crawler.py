@@ -319,7 +319,7 @@ class WebsiteCrawler(Crawler):
         urls = [
             url for url in all_urls 
             if (url.startswith('http') and 
-                not any(url.endswith(ext) for ext in excluded_extensions) and
+                not any(url.lower().endswith(ext) for ext in excluded_extensions) and
                 url_matches_patterns(url, self.pos_patterns, self.neg_patterns))
         ]
         urls = list(set(urls))

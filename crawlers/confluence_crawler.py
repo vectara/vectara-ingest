@@ -280,7 +280,7 @@ class ConfluenceCrawler(Crawler):
         for result in attachment_data['results']:
             title = result['title']
             filename, file_extension = os.path.splitext(title)
-            if file_extension not in supported_extensions:
+            if file_extension.lower() not in supported_extensions:
                 logger.warning(f"Extension not supported, skipping. '{file_extension}' title:{title}")
                 continue
             attachment_metadata = {}

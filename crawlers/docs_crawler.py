@@ -131,7 +131,7 @@ class DocsCrawler(Crawler):
                             continue
                         abs_url = self.concat_url_and_href(url, href)
                         if (abs_url.startswith(("http://", "https://")) and len(urlparse(abs_url).fragment) == 0 and
-                            not any(abs_url.endswith(ext) for ext in self.extensions_to_ignore) and
+                            not any(abs_url.lower().endswith(ext) for ext in self.extensions_to_ignore) and
                             any(r.search(abs_url) for r in self.pos_regex) and             # match any of the positive regexes
                             not any([r.search(abs_url) for r in self.neg_regex])):         # don't match any of the negative regexes
                             if abs_url not in self.crawled_urls and abs_url not in new_urls:
@@ -147,7 +147,7 @@ class DocsCrawler(Crawler):
     def crawl(self) -> None:
         self.crawled_urls: Set[str] = set()
         self.ignored_urls: Set[str] = set()
-        self.extensions_to_ignore = list(set(self.cfg.docs_crawler.extensions_to_ignore + binary_extensions))
+        self.extensions_to_ignore = list({e.lower() if isinstance(e, str) else e for e in (self.cfg.docs_crawler.extensions_to_ignore + binary_extensions)})
         self.pos_regex = [re.compile(r) for r in self.cfg.docs_crawler.get("pos_regex", [])]
         self.neg_regex = [re.compile(r) for r in self.cfg.docs_crawler.get("neg_regex", [])]
         self.html_processing = self.cfg.docs_crawler.get('html_processing', {})
@@ -167,7 +167,7 @@ class DocsCrawler(Crawler):
                 negative_regexes = self.cfg.docs_crawler.get("neg_regex", []),
                 max_depth = self.cfg.docs_crawler.get("max_depth", 3),
             )
-            all_urls = [u for u in all_urls if u.startswith('http') and not any([u.endswith(ext) for ext in self.extensions_to_ignore])]
+            all_urls = [u for u in all_urls if u.startswith('http') and not any([u.lower().endswith(ext) for ext in self.extensions_to_ignore])]
         else:
             logger.info("Using internal mechanism for crawling the docs")
             all_urls = []

@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import mimetypes
 import os
 import re
 import warnings
@@ -676,7 +677,7 @@ class UserWorker(object):
                         out.append(f"{label_title}={v}")
         return out
 
-    def download_or_export_file(self, file_id: str, mime_type: Optional[str] = None) -> Optional[io.BytesIO]:
+    def download_or_export_file(self, file_id: str, mime_type: Optional[str] = None) -> Tuple[Optional[io.BytesIO], Optional[str]]:
         try:
             if mime_type:
                 request = self.service.files().export_media(fileId=file_id, mimeType=mime_type)
@@ -689,7 +690,7 @@ class UserWorker(object):
             while not done:
                 _, done = downloader.next_chunk()
             byte_stream.seek(0)
-            return byte_stream
+            return byte_stream, None
 
         except HttpError as error:
             if error.resp.status == 403 and \
@@ -707,13 +708,16 @@ class UserWorker(object):
                         pdf_response = requests.get(pdf_link, headers=headers)
                         if pdf_response.status_code == 200:
                             logger.info(f"Downloaded file {file_id} via link (as pdf)")
-                            return io.BytesIO(pdf_response.content)
+                            return io.BytesIO(pdf_response.content), None
                         else:
+                            reason = f"export link returned HTTP {pdf_response.status_code}"
                             logger.error(f"An error occurred loading via link: {pdf_response.status_code}")
-            else:
-                logger.error(f"An error occurred downloading file: {error}")
-
-            return None
+                            return None, reason
+                    return None, "no application/pdf export link available"
+                return None, f"exportLinks lookup returned HTTP {response.status_code}"
+            reason = f"HttpError {error.resp.status}: {error}"
+            logger.error(f"An error occurred downloading file: {error}")
+            return None, reason
 
     def save_local_file(
         self, file_id: str, name: str, mime_type: Optional[str] = None
@@ -725,9 +729,9 @@ class UserWorker(object):
         sanitized_name = f"{slugify(path)}{extension}"
         file_path = os.path.join("/tmp", sanitized_name)
         try:
-            byte_stream = self.download_or_export_file(file_id, mime_type)
+            byte_stream, download_reason = self.download_or_export_file(file_id, mime_type)
             if byte_stream is None:
-                return None, "download_or_export_file returned no bytes"
+                return None, download_reason or "download_or_export_file returned no bytes"
             with open(file_path, 'wb') as f:
                 f.write(byte_stream.read())
             return file_path, None
@@ -748,7 +752,16 @@ class UserWorker(object):
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             local_file_path, download_error = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         else:
-            local_file_path, download_error = self.save_local_file(file_id, name)
+            # Drive often surfaces files without a filename extension (e.g. a PDF
+            # uploaded with just a title). The mime type is authoritative — use it
+            # to synthesize the extension so the downstream filter at line 765 can
+            # route the file.
+            name_for_save = name
+            if mime_type and not os.path.splitext(name)[1]:
+                guessed_ext = mimetypes.guess_extension(mime_type)
+                if guessed_ext:
+                    name_for_save = name + guessed_ext
+            local_file_path, download_error = self.save_local_file(file_id, name_for_save)
 
         if not local_file_path:
             self._record_drop('download_failed', file, download_error or "unknown save_local_file failure")
@@ -762,7 +775,7 @@ class UserWorker(object):
             supported_extensions += ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.svg', '.ico', '.eps']
 
         is_dataframe = supported_by_dataframe_parser(local_file_path)
-        if not is_dataframe and not any(local_file_path.endswith(ext) for ext in supported_extensions):
+        if not is_dataframe and not any(local_file_path.lower().endswith(ext) for ext in supported_extensions):
             self._record_drop(
                 'unsupported_ext_dropped',
                 file,
@@ -821,13 +834,15 @@ class UserWorker(object):
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
-                    self._record_drop('index_error', file, "process_dataframe_file returned False")
+                    reason = self.df_parser.last_error or "process_dataframe_file returned False"
+                    self._record_drop('index_error', file, reason)
             else:
                 ok = self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
-                    self._record_drop('index_error', file, "indexer.index_file returned False")
+                    reason = self.indexer.last_error or "indexer.index_file returned False"
+                    self._record_drop('index_error', file, reason)
         except Exception as e:
             logger.warning(f"Error {e} indexing document for file {name}, file_id {file_id}")
             self._record_drop('index_error', file, f"exception: {e}")

@@ -209,13 +209,35 @@ class TestDocumentTitleExtraction(unittest.TestCase):
     def test_unsupported_files_return_empty(self):
         """Test that unsupported files return empty string"""
         from core.doc_parser import extract_document_title
-        
+
         unsupported_files = ["test.txt", "test.csv", "test.json"]
-        
+
         for filename in unsupported_files:
             with self.subTest(filename=filename):
                 doc_title = extract_document_title(filename)
                 self.assertEqual(doc_title, "", f"Unsupported file {filename} should return empty title")
+
+    def test_uppercase_extensions_route_to_correct_extractor(self):
+        # Regression: extract_document_title used to skip the PDF/DOCX/PPTX/HTML
+        # branches when filenames had uppercase extensions (e.g. Report.PDF
+        # from Google Drive), silently producing an empty title.
+        with patch('core.doc_parser._extract_pdf_title', return_value='pdf-title') as mock_pdf, \
+             patch('core.doc_parser._extract_docx_title', return_value='docx-title') as mock_docx, \
+             patch('core.doc_parser._extract_pptx_title', return_value='pptx-title') as mock_pptx, \
+             patch('core.doc_parser._extract_html_title', return_value='html-title') as mock_html:
+            from core.doc_parser import extract_document_title
+
+            self.assertEqual(extract_document_title('Report.PDF'), 'pdf-title')
+            mock_pdf.assert_called_once_with('Report.PDF')
+
+            self.assertEqual(extract_document_title('Notes.DOCX'), 'docx-title')
+            mock_docx.assert_called_once_with('Notes.DOCX')
+
+            self.assertEqual(extract_document_title('Slides.PPTX'), 'pptx-title')
+            mock_pptx.assert_called_once_with('Slides.PPTX')
+
+            self.assertEqual(extract_document_title('Page.HTML'), 'html-title')
+            mock_html.assert_called_once_with('Page.HTML')
 
 
 class TestIntegratedTitleExtraction(unittest.TestCase):

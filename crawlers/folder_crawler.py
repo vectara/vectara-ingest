@@ -49,7 +49,7 @@ class FileCrawlWorker(object):
         release_memory()
 
     def process(self, file_path: str, file_name: str, metadata: dict):
-        extension = pathlib.Path(file_path).suffix
+        extension = pathlib.Path(file_path).suffix.lower()
         succeeded = False
         try:
             if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
@@ -108,7 +108,7 @@ class FolderCrawler(Crawler):
 
         folder = get_docker_or_local_path(docker_path=docker_path, config_path=config_path)
 
-        extensions = folder_config.get("extensions", ["*"])
+        extensions = [e.lower() if isinstance(e, str) else e for e in folder_config.get("extensions", ["*"])]
         metadata_file = folder_config.get("metadata_file", None)
         ray_workers = folder_config.get("ray_workers", 0)
         num_per_second = max(folder_config.get("num_per_second", 10), 1)
@@ -128,7 +128,7 @@ class FolderCrawler(Crawler):
                 if metadata_file and file.endswith(metadata_file):
                     continue
 
-                file_extension = pathlib.Path(file).suffix
+                file_extension = pathlib.Path(file).suffix.lower()
                 if "*" in extensions or file_extension in extensions:
                     file_path = os.path.join(root, file)
                     file_name = os.path.relpath(file_path, folder)

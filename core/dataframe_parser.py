@@ -121,7 +121,7 @@ def supported_by_dataframe_parser(file_path: str) -> bool:
         True if the file extension is supported, False otherwise.
     """
     _, extension = os.path.splitext(file_path)
-    return extension in supported_dataframe_extensions
+    return extension.lower() in supported_dataframe_extensions
 
 
 def determine_dataframe_type(file_path: str) -> Optional[str]:
@@ -143,6 +143,7 @@ def determine_dataframe_type(file_path: str) -> Optional[str]:
         f"determine_dataframe_type('{file_path}') - determining dataframe type."
     )
     _, extension = os.path.splitext(file_path)
+    extension = extension.lower()
 
     if extension in supported_dataframe_extensions:
         return supported_dataframe_extensions[extension]
@@ -179,6 +180,10 @@ class DataframeParser:
         self.indexer: Indexer = indexer
         self.table_summarizer: TableSummarizer = table_summarizer
         self.select_condition = self.crawler_config.get("select_condition", None)
+        # Diagnostic: reason for most recent process_dataframe_file() failure
+        # (set by the free function below). Callers should read this immediately
+        # after a False return to enrich drop/error records.
+        self.last_error: Optional[str] = None
 
     def process_dataframe(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict):
         """
@@ -351,8 +356,10 @@ def process_dataframe_file(
         logger.error("DataframeParser not initialized. Cannot process dataframe file.")
         return False
 
+    df_parser.last_error = None
     try:
         if not supported_by_dataframe_parser(file_path):
+            df_parser.last_error = f"unsupported extension for dataframe parser: {file_path}"
             logger.error(f"'{file_path}' is not supported by DataframeParser.")
             return False
 
@@ -412,5 +419,6 @@ def process_dataframe_file(
         return True
 
     except Exception as e:
+        df_parser.last_error = f"process_dataframe_file exception: {e}"
         logger.error(f"Error processing dataframe file {file_path}: {e}")
         return False
