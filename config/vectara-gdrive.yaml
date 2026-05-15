@@ -25,15 +25,23 @@ gdrive_crawler:
   # Default: 7 days if not specified
   days_back: 7
 
-  # Optional: restrict the crawl to a single folder and all of its descendants.
-  # Accepts either a Drive folder URL (e.g.
-  # https://drive.google.com/drive/folders/<id>) or the bare folder id. When
-  # unset, the crawler sweeps root, sharedWithMe, and files owned/shared with
-  # the user, as before. Shortcuts inside the subtree are not followed, so the
-  # crawl stays strictly within the chosen folder. `days_back` still applies
-  # to files; subfolders are always traversed so old folders containing
-  # recent files are not missed.
+  # Optional: restrict the crawl to one or more subtrees. Accepts either a
+  # single Drive folder URL/id or a list of them, so a config can mix a
+  # My-Drive folder with a Shared Drive id in one run. When unset, the
+  # crawler sweeps root, sharedWithMe, and files owned/shared with the user,
+  # as before. Shortcuts inside a subtree are not followed, so the crawl
+  # stays strictly within the chosen folders. `days_back` still applies to
+  # files; subfolders are always traversed so old folders containing recent
+  # files are not missed. A file reachable from more than one configured
+  # root is indexed once.
+  #
+  # Single-folder form (legacy, still supported):
   # root_folder: https://drive.google.com/drive/folders/1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ
+  #
+  # Multi-folder form (My Drive subtree + a Shared Drive):
+  # root_folder:
+  #   - https://drive.google.com/drive/folders/1Z5X4D5DFIeo-xEThXTkN0V4tL96EqORQ
+  #   - 0AJb-TGGUWsU4Uk9PVA
 
   # Crawl-time displayName gate. Only files whose permissions contain a display
   # name from this list are indexed. Set to null or [] to disable the gate and
@@ -69,7 +77,13 @@ gdrive_crawler:
     # My Drive files don't receive inherited permissions via the API. When true,
     # the crawler walks each file's parent folders and unions their ACLs.
     # Adds API round-trips; folder lookups are cached per worker.
-    # (Shared Drive files already include inherited grants and aren't affected.)
+    #
+    # Shared Drive files take a separate, unconditional path: `files.list` does
+    # not propagate drive-member grants onto a file's `permissions` array, so
+    # the crawler issues one `permissions.list(fileId=<driveId>)` per drive
+    # (cached per worker) and merges those members in. That call needs the
+    # delegated user to have at least `fileOrganizer` on the drive; on 403 the
+    # file is still indexed but tagged `acl_source: shared_drive_partial`.
     resolve_inherited: false
 
     # Treat `type=anyone` grants as public (sets acl_is_public=true).
