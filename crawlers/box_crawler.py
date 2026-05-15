@@ -978,16 +978,24 @@ class BoxCrawler(Crawler):
             return timedelta(days=int(s[:-1]))
         return timedelta(hours=int(s))
 
-    def _get_all_box_files(self, folder_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Crawl Box folders and return dict of file_id -> {name, modified_at, size, path}.
+    def _get_all_box_files(self, folder_ids: List[str]) -> Tuple[Dict[str, Dict[str, Any]], bool]:
+        """Crawl Box folders and return (file map, listing_complete).
 
         Uses the authenticated Box client to traverse all configured folders.
         Respects file_extensions filter and recursive setting.
+
+        The ``listing_complete`` flag is ``False`` if any folder (top-level or
+        recursive subfolder) failed to list. Callers must not infer "this file
+        was removed from Box" from the returned map when the flag is ``False``,
+        because a transient listing failure would otherwise look like a deletion
+        of every file under the unreachable folder.
         """
         all_files: Dict[str, Dict[str, Any]] = {}
         file_ext_set = set(str(e).lower() for e in self.file_extensions) if self.file_extensions else set()
 
-        def _crawl(fid: str, path: str = ""):
+        def _crawl(fid: str, path: str = "") -> bool:
+            """Return True if this folder and all reachable subfolders listed successfully."""
+            complete = True
             try:
                 folder = self.client.folder(fid).get(fields=["name", "id"])
                 current_path = f"{path}/{folder.name}" if path else folder.name
@@ -1005,14 +1013,19 @@ class BoxCrawler(Crawler):
                             "path": current_path,
                         }
                     elif item.type == "folder" and self.recursive:
-                        _crawl(str(item.id), current_path)
+                        if not _crawl(str(item.id), current_path):
+                            complete = False
             except Exception as e:
                 logging.error(f"Error crawling folder {fid} for incremental check: {e}")
+                return False
+            return complete
 
+        listing_complete = True
         for folder_id in folder_ids:
-            _crawl(str(folder_id))
+            if not _crawl(str(folder_id)):
+                listing_complete = False
 
-        return all_files
+        return all_files, listing_complete
 
     def _crawl_incremental(self, folder_ids: List[str]) -> None:
         """Run incremental crawl: only index files modified within hours_back, then delete removed files.
@@ -1022,6 +1035,8 @@ class BoxCrawler(Crawler):
         2. Filter files modified within hours_back window
         3. Download and index only those files through the full pipeline
         4. Compare Box files vs indexed.csv to detect and delete removed files
+           (skipped if the Box listing was incomplete, to avoid mass-deleting
+           documents when Box returns errors for whole folders).
         """
         delta = self._parse_hours_back(str(self.hours_back))
         cutoff = datetime.now(timezone.utc) - delta
@@ -1032,7 +1047,7 @@ class BoxCrawler(Crawler):
         logging.info("=" * 80)
 
         logging.info("Scanning Box folders for current file state...")
-        box_files = self._get_all_box_files(folder_ids)
+        box_files, listing_complete = self._get_all_box_files(folder_ids)
         logging.info(f"Found {len(box_files)} total files in Box")
 
         modified_files = {}
@@ -1138,7 +1153,15 @@ class BoxCrawler(Crawler):
             index_failed = 0
             logging.info("No modified files found — nothing to index")
 
-        self._delete_removed_from_vectara(box_files)
+        if listing_complete:
+            self._delete_removed_from_vectara(box_files)
+        else:
+            logging.warning(
+                "Skipping deletion pass: Box folder listing was incomplete "
+                "(one or more folders failed to list). Refusing to infer "
+                "deletions from a partial view of Box to avoid wiping the "
+                "corpus when Box returns errors."
+            )
 
         logging.info("=" * 80)
         logging.info("INCREMENTAL UPDATE COMPLETE")
