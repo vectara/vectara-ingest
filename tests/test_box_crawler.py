@@ -1,23 +1,20 @@
+import importlib.machinery
 import logging
 import sys
 import unittest
 from unittest.mock import MagicMock
 
-# box_crawler imports many heavy optional dependencies at module load time.
-# They are all present in requirements.txt (so CI imports the real modules),
-# but stub any that are missing so the units under test can be imported and
-# exercised in a lean environment. setdefault never shadows an installed module.
-for _optional in (
-    "psutil", "boxsdk", "slugify", "omegaconf", "nbconvert", "nbformat",
-    "markdown", "whisper", "PIL", "cairosvg", "openai", "anthropic", "magic",
-    "pandas", "bs4", "langdetect", "goose3", "goose3.text", "justext",
-    "pdf2image", "unstructured", "unstructured.partition",
-    "unstructured.partition.pdf", "unstructured.partition.html",
-    "unstructured.partition.pptx", "unstructured.partition.docx",
-    "nest_asyncio", "llama_parse", "gmft", "gmft.pdf_bindings", "gmft.auto",
-    "nltk", "pypdf",
-):
-    sys.modules.setdefault(_optional, MagicMock())
+# Mock only third-party deps that may be missing in the test env. Do NOT inject
+# MagicMocks for modules other tests rely on (slugify, pandas, omegaconf, ...) —
+# that pollutes sys.modules and makes the rest of the suite order-dependent.
+# `nbconvert` calls `importlib.util.find_spec("playwright")` at import time, so
+# the playwright mock needs a real ModuleSpec.
+for mod in ["cairosvg", "whisper", "pdf2image"]:
+    sys.modules.setdefault(mod, MagicMock())
+_playwright_mock = MagicMock()
+_playwright_mock.__spec__ = importlib.machinery.ModuleSpec("playwright", None)
+sys.modules.setdefault("playwright", _playwright_mock)
+sys.modules.setdefault("playwright.sync_api", MagicMock())
 
 from crawlers.box_crawler import BoxCrawler
 
