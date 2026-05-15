@@ -595,7 +595,7 @@ class WebContentExtractor(WebExtractorBase):
                             raise
                         # No download triggered, check content type
                         response = page.goto(url, wait_until="domcontentloaded")
-                        content_type = response.headers.get("content-type", "")
+                        content_type = response.headers.get("content-type", "").lower()
                         if "application/pdf" in content_type:
                             pdf_bytes = response.body()
                             # Close resources before returning

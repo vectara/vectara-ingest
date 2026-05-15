@@ -58,12 +58,63 @@ class TestDataFrameParser(unittest.TestCase):
         self.assertEqual("xls", determine_dataframe_type("test.xlsx"))
         self.assertIsNone(determine_dataframe_type("test.txt"))
 
+    def test_determine_dataframe_type_uppercase_extension(self):
+        # Files arriving from sources that preserve case (e.g. Google Drive,
+        # raw S3 keys) must route the same as their lowercase siblings.
+        self.assertEqual("csv", determine_dataframe_type("test.CSV"))
+        self.assertEqual("xls", determine_dataframe_type("test.XLSX"))
+        self.assertEqual("csv", determine_dataframe_type("Quarterly.TSV"))
+
     def test_supported_by_dataframe_parser(self):
         self.assertTrue(supported_by_dataframe_parser('test.csv'))
         self.assertTrue(supported_by_dataframe_parser('test.tsv'))
         self.assertTrue(supported_by_dataframe_parser('test.xls'))
         self.assertTrue(supported_by_dataframe_parser('test.xlsx'))
         self.assertFalse(supported_by_dataframe_parser('test.pdf'))
+
+    def test_supported_by_dataframe_parser_uppercase_extension(self):
+        self.assertTrue(supported_by_dataframe_parser('test.CSV'))
+        self.assertTrue(supported_by_dataframe_parser('test.Xlsx'))
+        self.assertTrue(supported_by_dataframe_parser('Sales.TSV'))
+        self.assertFalse(supported_by_dataframe_parser('test.PDF'))
+
+    def test_process_dataframe_file_sets_last_error_on_unsupported_ext(self):
+        # When process_dataframe_file rejects a file as unsupported, df_parser.last_error
+        # must be populated so callers can surface the reason in their drop records.
+        from core.dataframe_parser import process_dataframe_file
+        df_parser = MagicMock()
+        df_parser.last_error = "stale value should be cleared"
+
+        ok = process_dataframe_file(
+            file_path="/tmp/whatever.pdf",
+            metadata={},
+            doc_id="X",
+            df_parser=df_parser,
+            df_config={},
+        )
+
+        self.assertFalse(ok)
+        self.assertIsNotNone(df_parser.last_error)
+        self.assertIn("unsupported extension", df_parser.last_error)
+
+    def test_process_dataframe_file_clears_last_error_at_start(self):
+        # Stale errors from prior calls must not leak into the current call when
+        # the parser fails early for a non-exception reason.
+        from core.dataframe_parser import process_dataframe_file
+        df_parser = MagicMock()
+        df_parser.last_error = None
+
+        ok = process_dataframe_file(
+            file_path="/tmp/whatever.pdf",  # unsupported - fails the early check
+            metadata={},
+            doc_id="X",
+            df_parser=df_parser,
+            df_config={},
+        )
+
+        # last_error must be set (not None) so the failure is diagnosable.
+        self.assertFalse(ok)
+        self.assertIsNotNone(df_parser.last_error)
 
     def run_dataframe_parser_test(self, *test_config_path: str):
         config = _load_config(*test_config_path)

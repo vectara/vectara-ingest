@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import mimetypes
 import os
 import re
 import warnings
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import ray
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, ListConfig
 from slugify import slugify
 
 from google.auth.transport.requests import Request
@@ -52,6 +53,7 @@ _PERM_FIELDS = (
 
 # Values for the acl_source metadata field. Persisted in the corpus, so stable.
 ACL_SOURCE_SHARED_DRIVE = 'shared_drive'
+ACL_SOURCE_SHARED_DRIVE_PARTIAL = 'shared_drive_partial'
 ACL_SOURCE_MY_DRIVE_DIRECT = 'my_drive_direct'
 ACL_SOURCE_MY_DRIVE_RESOLVED = 'my_drive_resolved'
 ACL_SOURCE_MY_DRIVE_PARTIAL = 'my_drive_partial'
@@ -71,6 +73,44 @@ def extract_folder_id(value: Optional[str]) -> Optional[str]:
         return value
     m = _FOLDER_ID_PATTERN.search(value)
     return m.group(1) if m else value.strip()
+
+
+def resolve_root_folders(value: Any) -> List[str]:
+    """Normalize `gdrive_crawler.root_folder` into a list of folder ids.
+
+    Accepts either a single string (URL or bare id) or a list of strings,
+    so a single config key can scope the crawl to one folder, a Shared Drive
+    id, or any combination. Misconfigured scalars (int, dict, etc.) raise
+    TypeError — the same loud-fail pattern as the displayName gate; an
+    empty crawl is harder to debug than a startup exception.
+    """
+    if value is None or value == "" or value == []:
+        return []
+    if isinstance(value, str):
+        items: List[Any] = [value]
+    elif isinstance(value, (list, tuple, ListConfig)):
+        # OmegaConf wraps YAML lists as ListConfig, not list. Without it here
+        # a multi-root YAML config crashes the crawler at __init__.
+        items = list(value)
+    else:
+        raise TypeError(
+            "gdrive_crawler.root_folder must be a string or list of strings, "
+            f"got {type(value).__name__}"
+        )
+
+    seen: Set[str] = set()
+    out: List[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise TypeError(
+                "gdrive_crawler.root_folder list entries must be strings, "
+                f"got {type(item).__name__}"
+            )
+        fid = extract_folder_id(item)
+        if fid and fid not in seen:
+            seen.add(fid)
+            out.append(fid)
+    return out
 
 
 def build_scopes(abac_cfg: Optional[Any] = None) -> List[str]:
@@ -298,15 +338,24 @@ class UserWorker(object):
         self._abac_include_anyone = self.abac.get('include_anyone', True)
         self._abac_fetch_labels = self.abac.get('fetch_labels', False)
 
-        # Optional: restrict the crawl to a subtree rooted at this folder.
+        # Optional: restrict the crawl to one or more subtrees. Accepts either
+        # a single Drive folder URL/id (legacy form) or a list of them, so a
+        # config can mix a My-Drive folder with a Shared Drive id without
+        # needing a second config key. Empty/unset means "sweep everything
+        # the delegated user can see," as before.
         root_folder_raw = (
             self.cfg.gdrive_crawler.get('root_folder', None)
             if hasattr(self.cfg, 'gdrive_crawler') else None
         )
-        self._root_folder_id = extract_folder_id(root_folder_raw) if root_folder_raw else None
+        self._root_folder_ids = resolve_root_folders(root_folder_raw)
 
         # Caches populated during a worker's lifetime
         self._folder_acl_cache: Dict[str, Tuple[List[Dict[str, Any]], List[str]]] = {}
+        # Per-Shared-Drive cache of (drive-level permissions, acl_source).
+        # The source is cached too so a failed permissions.list (e.g. 403 when
+        # the delegated user lacks fileOrganizer on the drive) doesn't get
+        # retried once per file in that drive.
+        self._drive_perms_cache: Dict[str, Tuple[List[Dict[str, Any]], str]] = {}
         self._label_defs: Optional[Dict[str, Dict[str, Any]]] = None
 
         # Per-user filter pipeline counters. Reset at the start of process();
@@ -522,14 +571,98 @@ class UserWorker(object):
             frontier = next_frontier
         return results
 
-    def _resolve_parent_acl(self, file_obj: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
-        """Resolve inherited permissions for My Drive files by walking parent folders.
+    def _collect_listable_files(self, date_threshold_str: str) -> List[dict]:
+        """Initial listing dispatch.
 
-        Returns (union of ancestor permissions, source discriminator).
+        With no `root_folder` configured, fall back to the user-wide
+        list_files() sweep. With one or more configured, walk each subtree
+        and union the results, deduping by file id so a document that lives
+        under two configured roots (e.g. via shortcut) is indexed only once.
         """
-        # Shared Drive files already receive inherited permissions on the file itself.
-        if file_obj.get('driveId'):
-            return [], ACL_SOURCE_SHARED_DRIVE
+        if not self._root_folder_ids:
+            return self.list_files(self.service, date_threshold=date_threshold_str)
+
+        seen: Set[str] = set()
+        out: List[dict] = []
+        for root_id in self._root_folder_ids:
+            logger.info(f"Restricting crawl to folder subtree: {root_id}")
+            for f in self._list_subtree(self.service, root_id, date_threshold_str):
+                fid = f.get('id')
+                if fid and fid not in seen:
+                    seen.add(fid)
+                    out.append(f)
+        return out
+
+    def _fetch_drive_permissions(self, drive_id: str) -> Tuple[List[Dict[str, Any]], str]:
+        """Return (members, source) for a Shared Drive, with per-worker caching.
+
+        Drive's `files.list` does not propagate drive-level member grants onto
+        a file's `permissions` array — so a Shared Drive file whose access is
+        purely inherited from the drive comes back from list() with
+        `permissions=[]`, which downstream renders as an empty acl_*. To
+        recover the true ACL we fetch `permissions.list(fileId=<driveId>)`
+        once per drive and let the caller merge those grants in.
+
+        Caveat: enumerating a Shared Drive's full member list requires the
+        delegated user to have at least the `fileOrganizer` role on that
+        drive. Lower roles get a 403; we mark the source as
+        `shared_drive_partial` and cache that outcome so we don't hammer
+        Drive once per file. Sub-folder-level overrides within the drive
+        are out of scope here — they would need an ancestor walk like the
+        My Drive path, which is the existing `_folder_acl_cache` flow.
+        """
+        cached = self._drive_perms_cache.get(drive_id)
+        if cached is not None:
+            return cached
+
+        fields = (
+            'nextPageToken,' + _PERM_FIELDS
+        )
+        collected: List[Dict[str, Any]] = []
+        source = ACL_SOURCE_SHARED_DRIVE
+        page_token: Optional[str] = None
+        while True:
+            params = {
+                'fileId': drive_id,
+                'supportsAllDrives': True,
+                'fields': fields,
+            }
+            if page_token:
+                params['pageToken'] = page_token
+            try:
+                resp = self.service.permissions().list(**params).execute()
+            except HttpError as e:
+                logger.info(f"permissions.list failed for shared drive {drive_id}: {e}")
+                collected = []
+                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
+                break
+            except Exception as e:
+                logger.info(f"Error listing permissions for shared drive {drive_id}: {e}")
+                collected = []
+                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
+                break
+
+            for p in (resp.get('permissions') or []):
+                collected.append(p)
+            page_token = resp.get('nextPageToken')
+            if not page_token:
+                break
+
+        self._drive_perms_cache[drive_id] = (collected, source)
+        return collected, source
+
+    def _resolve_parent_acl(self, file_obj: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
+        """Resolve inherited permissions for a file.
+
+        For Shared Drive files: fetch the drive's member list (cached per
+        worker per drive). For My Drive files with `resolve_inherited=True`:
+        walk ancestor folders and union their ACLs.
+
+        Returns (union of inherited permissions, source discriminator).
+        """
+        drive_id = file_obj.get('driveId')
+        if drive_id:
+            return self._fetch_drive_permissions(drive_id)
 
         if not self._abac_resolve_inherited:
             return [], ACL_SOURCE_MY_DRIVE_DIRECT
@@ -676,7 +809,7 @@ class UserWorker(object):
                         out.append(f"{label_title}={v}")
         return out
 
-    def download_or_export_file(self, file_id: str, mime_type: Optional[str] = None) -> Optional[io.BytesIO]:
+    def download_or_export_file(self, file_id: str, mime_type: Optional[str] = None) -> Tuple[Optional[io.BytesIO], Optional[str]]:
         try:
             if mime_type:
                 request = self.service.files().export_media(fileId=file_id, mimeType=mime_type)
@@ -689,7 +822,7 @@ class UserWorker(object):
             while not done:
                 _, done = downloader.next_chunk()
             byte_stream.seek(0)
-            return byte_stream
+            return byte_stream, None
 
         except HttpError as error:
             if error.resp.status == 403 and \
@@ -707,13 +840,16 @@ class UserWorker(object):
                         pdf_response = requests.get(pdf_link, headers=headers)
                         if pdf_response.status_code == 200:
                             logger.info(f"Downloaded file {file_id} via link (as pdf)")
-                            return io.BytesIO(pdf_response.content)
+                            return io.BytesIO(pdf_response.content), None
                         else:
+                            reason = f"export link returned HTTP {pdf_response.status_code}"
                             logger.error(f"An error occurred loading via link: {pdf_response.status_code}")
-            else:
-                logger.error(f"An error occurred downloading file: {error}")
-
-            return None
+                            return None, reason
+                    return None, "no application/pdf export link available"
+                return None, f"exportLinks lookup returned HTTP {response.status_code}"
+            reason = f"HttpError {error.resp.status}: {error}"
+            logger.error(f"An error occurred downloading file: {error}")
+            return None, reason
 
     def save_local_file(
         self, file_id: str, name: str, mime_type: Optional[str] = None
@@ -725,9 +861,9 @@ class UserWorker(object):
         sanitized_name = f"{slugify(path)}{extension}"
         file_path = os.path.join("/tmp", sanitized_name)
         try:
-            byte_stream = self.download_or_export_file(file_id, mime_type)
+            byte_stream, download_reason = self.download_or_export_file(file_id, mime_type)
             if byte_stream is None:
-                return None, "download_or_export_file returned no bytes"
+                return None, download_reason or "download_or_export_file returned no bytes"
             with open(file_path, 'wb') as f:
                 f.write(byte_stream.read())
             return file_path, None
@@ -748,7 +884,16 @@ class UserWorker(object):
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             local_file_path, download_error = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         else:
-            local_file_path, download_error = self.save_local_file(file_id, name)
+            # Drive often surfaces files without a filename extension (e.g. a PDF
+            # uploaded with just a title). The mime type is authoritative — use it
+            # to synthesize the extension so the downstream filter at line 765 can
+            # route the file.
+            name_for_save = name
+            if mime_type and not os.path.splitext(name)[1]:
+                guessed_ext = mimetypes.guess_extension(mime_type)
+                if guessed_ext:
+                    name_for_save = name + guessed_ext
+            local_file_path, download_error = self.save_local_file(file_id, name_for_save)
 
         if not local_file_path:
             self._record_drop('download_failed', file, download_error or "unknown save_local_file failure")
@@ -762,7 +907,7 @@ class UserWorker(object):
             supported_extensions += ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.svg', '.ico', '.eps']
 
         is_dataframe = supported_by_dataframe_parser(local_file_path)
-        if not is_dataframe and not any(local_file_path.endswith(ext) for ext in supported_extensions):
+        if not is_dataframe and not any(local_file_path.lower().endswith(ext) for ext in supported_extensions):
             self._record_drop(
                 'unsupported_ext_dropped',
                 file,
@@ -821,13 +966,15 @@ class UserWorker(object):
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
-                    self._record_drop('index_error', file, "process_dataframe_file returned False")
+                    reason = self.df_parser.last_error or "process_dataframe_file returned False"
+                    self._record_drop('index_error', file, reason)
             else:
                 ok = self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
-                    self._record_drop('index_error', file, "indexer.index_file returned False")
+                    reason = self.indexer.last_error or "indexer.index_file returned False"
+                    self._record_drop('index_error', file, reason)
         except Exception as e:
             logger.warning(f"Error {e} indexing document for file {name}, file_id {file_id}")
             self._record_drop('index_error', file, f"exception: {e}")
@@ -869,11 +1016,7 @@ class UserWorker(object):
         self.service = build("drive", "v3", credentials=self.creds, cache_discovery=False)
 
         date_threshold_str = self.date_threshold.isoformat() + 'Z'
-        if self._root_folder_id:
-            logger.info(f"Restricting crawl to folder subtree: {self._root_folder_id}")
-            files = self._list_subtree(self.service, self._root_folder_id, date_threshold_str)
-        else:
-            files = self.list_files(self.service, date_threshold=date_threshold_str)
+        files = self._collect_listable_files(date_threshold_str)
 
         # Cache gate: drop files already crawled by another user/worker.
         def _already_seen(file_id: str) -> bool:

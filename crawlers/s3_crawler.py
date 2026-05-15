@@ -91,7 +91,7 @@ class FileCrawlWorker(object):
                     'title': s3_file,
                     'url': url
                 })
-                if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
+                if extension.lower() in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
@@ -150,7 +150,7 @@ class S3Crawler(Crawler):
     """
     def crawl(self) -> None:
         folder = self.cfg.s3_crawler.s3_path
-        extensions = self.cfg.s3_crawler.extensions
+        extensions = [e.lower() if isinstance(e, str) else e for e in self.cfg.s3_crawler.extensions]
         metadata_file = self.cfg.s3_crawler.get("metadata_file", None)
         ray_workers = self.cfg.s3_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         num_per_second = max(self.cfg.s3_crawler.get("num_per_second", 10), 1)
@@ -173,7 +173,7 @@ class S3Crawler(Crawler):
         for s3_file in s3_files:
             if metadata_file and s3_file.endswith(metadata_file):
                 continue
-            file_extension = pathlib.Path(s3_file).suffix
+            file_extension = pathlib.Path(s3_file).suffix.lower()
             if file_extension in extensions or "*" in extensions:
                 files_to_process.append(s3_file)
 

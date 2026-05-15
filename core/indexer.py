@@ -77,6 +77,10 @@ class Indexer:
         self.timeout = cfg.vectara.get("timeout", 90)
         self.detected_language: Optional[str] = None
         self._last_response_status: Optional[int] = None
+        # Diagnostic: most recent failure reason from index_file(). Reset at the
+        # start of every index_file() call. Callers can read this after a False
+        # return to enrich their drop/error records.
+        self.last_error: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.scrape_method = scrape_method  # Store scrape_method for web extractor
         self.whisper_model = None
@@ -981,7 +985,9 @@ class Indexer:
         Returns:
             bool: True if indexing was successful, False otherwise.
         """
+        self.last_error = None
         if not os.path.exists(filename):
+            self.last_error = f"file does not exist: {filename}"
             logger.error(f"File {filename} does not exist")
             return False
 
@@ -1045,11 +1051,13 @@ class Indexer:
                     succeeded = error_count == 0
                 except Exception as e:
                     logger.error(f"Failed to split PDF {filename}: {e}")
+                    self.last_error = f"split PDF failed: {e}"
                     # Fallback: try to index the original file
                     try:
                         succeeded = self._index_file(filename, uri, metadata, id)
                     except Exception as fallback_e:
                         logger.error(f"Fallback indexing also failed for {filename}: {fallback_e}")
+                        self.last_error = f"fallback _index_file failed: {fallback_e}"
                         succeeded = False
             else:
                 # index the file within Vectara (use FILE UPLOAD API)
@@ -1057,6 +1065,7 @@ class Indexer:
                     succeeded = self._index_file(filename, uri, metadata, id)
                 except Exception as e:
                     logger.error(f"Failed to index file {filename} via Vectara API: {e}")
+                    self.last_error = f"_index_file failed: {e}"
                     succeeded = False
 
             # If indicated, summarize images - and upload each image summary as a single doc
@@ -1107,6 +1116,7 @@ class Indexer:
                 pdf_parts = self.file_processor.split_pdf(filename, metadata)
             except Exception as e:
                 logger.error(f"Failed to split PDF {filename}: {e}")
+                self.last_error = f"split PDF failed (local path): {e}"
                 return False
             overall_success = True
             for pdf_path, pdf_metadata, pdf_id in pdf_parts:
@@ -1126,6 +1136,7 @@ class Indexer:
         except Exception as e:
             import traceback
             logger.info(f"Failed to parse {filename} with error {e}, traceback={traceback.format_exc()}")
+            self.last_error = f"local parse failed: {e}"
             return False
 
         # Extract fields from parsed_doc, then release it early
