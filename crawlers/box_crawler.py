@@ -992,10 +992,10 @@ class BoxCrawler(Crawler):
         """
         all_files: Dict[str, Dict[str, Any]] = {}
         file_ext_set = set(str(e).lower() for e in self.file_extensions) if self.file_extensions else set()
-        listing_complete = True
 
-        def _crawl(fid: str, path: str = ""):
-            nonlocal listing_complete
+        def _crawl(fid: str, path: str = "") -> bool:
+            """Return True if this folder and all reachable subfolders listed successfully."""
+            complete = True
             try:
                 folder = self.client.folder(fid).get(fields=["name", "id"])
                 current_path = f"{path}/{folder.name}" if path else folder.name
@@ -1013,13 +1013,17 @@ class BoxCrawler(Crawler):
                             "path": current_path,
                         }
                     elif item.type == "folder" and self.recursive:
-                        _crawl(str(item.id), current_path)
+                        if not _crawl(str(item.id), current_path):
+                            complete = False
             except Exception as e:
-                listing_complete = False
                 logging.error(f"Error crawling folder {fid} for incremental check: {e}")
+                return False
+            return complete
 
+        listing_complete = True
         for folder_id in folder_ids:
-            _crawl(str(folder_id))
+            if not _crawl(str(folder_id)):
+                listing_complete = False
 
         return all_files, listing_complete
 
