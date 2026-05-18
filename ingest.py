@@ -218,6 +218,12 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         if k == 'SAML_PASSWORD':
             update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
             continue
+        if k == 'GOOGLE_CREDENTIALS_FILE':
+            update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
+            continue
+        if k == 'GOOGLE_STORAGE_STATE_FILE':
+            update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
+            continue
         if k.startswith('aws_'):
             update_omega_conf(cfg, reason, f's3_crawler.{k.lower()}', v)
             continue

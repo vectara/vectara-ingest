@@ -12,6 +12,7 @@ from core.utils import (
 from core.indexer import Indexer
 from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
 from crawlers.auth.saml_manager import SAMLAuthManager
+from crawlers.auth.google_manager import GoogleAuthManager
 
 import ray
 
@@ -27,6 +28,7 @@ class PageCrawlWorker(object):
         website_crawler_cfg = self.cfg.get('website_crawler', {})
         self.html_processing = website_crawler_cfg.get('html_processing', {})
         self.saml_config = website_crawler_cfg.get('saml_auth')
+        self.google_config = website_crawler_cfg.get('google_auth')
         self.scrape_method = website_crawler_cfg.get('scrape_method', 'playwright')
 
     def setup(self):
@@ -73,6 +75,32 @@ class PageCrawlWorker(object):
         else:
             logging.info(f"[Worker {os.getpid()}] SAML not configured. Using standard session.")
             # Indexer will use its default session
+
+        # Initialize Google authenticated session if configured (independent of SAML).
+        if self.google_config:
+            worker_pid = os.getpid()
+            logging.info(f"[Worker {worker_pid}] Google authentication is enabled. Initializing GoogleAuthManager.")
+
+            google_secrets = {}
+            website_crawler_cfg = self.cfg.get('website_crawler', {})
+            if 'google_credentials_file' in website_crawler_cfg:
+                google_secrets['credentials_file'] = website_crawler_cfg['google_credentials_file']
+            else:
+                raise ValueError(
+                    "Google authentication requires 'GOOGLE_CREDENTIALS_FILE' in secrets.toml"
+                )
+
+            try:
+                google_manager = GoogleAuthManager(config=self.google_config, secrets=google_secrets)
+                # API-bearer Session (for Drive/Sites API calls); does NOT authenticate sites.google.com pages.
+                google_session = google_manager.get_authenticated_session()
+                # Apply Bearer header to the indexer session so any API-style fetches work.
+                if self.indexer.session is None or self.indexer.session is self.session:
+                    self.indexer.session = google_session
+                logging.info(f"[Worker {worker_pid}] Google authentication successful (Bearer session ready).")
+            except Exception as e:
+                logging.error(f"[Worker {worker_pid}] Fatal Google authentication failure: {e}")
+                raise
     
     def cleanup(self):
         """Cleanup resources when worker is done"""
@@ -106,7 +134,9 @@ class WebsiteCrawler(Crawler):
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
         self.saml_session = None
+        self.google_session = None
         self._setup_saml_auth()
+        self._setup_google_auth()
     
     def _setup_saml_auth(self):
         """Initialize SAML authentication if configured"""
@@ -161,6 +191,51 @@ class WebsiteCrawler(Crawler):
         else:
             raise Exception("SAML authentication requires 'SAML_USERNAME' and 'SAML_PASSWORD' in secrets.toml")
 
+    def _setup_google_auth(self):
+        """Initialize a Bearer-token Session if google_auth is configured.
+
+        Note: this is for API-style calls; sites.google.com PAGE crawling needs
+        browser cookies, obtained separately via `_get_scrapy_google_cookies`.
+        """
+        google_config = self.cfg.website_crawler.get("google_auth")
+        if not google_config:
+            return
+
+        logger.info("Google authentication configured, initializing...")
+        try:
+            secrets_dict = self._get_google_secrets()
+            google_manager = GoogleAuthManager(google_config, secrets_dict)
+            self.google_session = google_manager.get_authenticated_session()
+            logger.info("Google authentication successful (Bearer session ready)")
+        except Exception as e:
+            logger.error(f"Google authentication failed: {e}")
+            raise
+
+    def _get_google_secrets(self):
+        """Extract Google auth secrets stamped onto cfg by ingest.py."""
+        if hasattr(self.cfg.website_crawler, 'google_credentials_file'):
+            return {
+                'credentials_file': self.cfg.website_crawler.google_credentials_file,
+            }
+        raise Exception(
+            "Google authentication requires 'GOOGLE_CREDENTIALS_FILE' in secrets.toml"
+        )
+
+    def _get_scrapy_google_cookies(self):
+        """Capture browser session cookies for sites.google.com via Playwright
+        + persisted storage_state. Returns a {name: value} dict for Scrapy."""
+        google_config = self.cfg.website_crawler.get("google_auth")
+        if not google_config:
+            return None
+
+        try:
+            secrets_dict = self._get_google_secrets()
+            google_manager = GoogleAuthManager(google_config, secrets_dict)
+            return google_manager.get_authenticated_cookies()
+        except Exception as e:
+            logger.error(f"Failed to get Google cookies: {e}")
+            return None
+
     def _get_scrapy_saml_cookies(self):
         """
         Get SAML authentication cookies using SAMLAuthManager's Playwright method.
@@ -197,27 +272,33 @@ class WebsiteCrawler(Crawler):
         self._remove_old_content_if_needed(urls_to_crawl)
 
     def _configure_indexer_session(self):
-        """Configure indexer to use SAML session if available."""
-        # Configure indexer to use SAML session if available
+        """Configure indexer to use SAML and/or Google authenticated sessions."""
+        # Attach SAML session if present.
         if self.saml_session and hasattr(self.indexer, 'session'):
             self.indexer.session = self.saml_session
             logger.info("Configured indexer to use SAML authenticated session")
-        
-        # Override web extractor's context creation to include SAML cookies
-        if self.saml_session:
-            # Initialize web extractor to ensure it exists
+        elif self.google_session and hasattr(self.indexer, 'session'):
+            # Bearer-token Session is useful for Drive/Sites API calls, not for
+            # sites.google.com page content (those need browser cookies — see
+            # `_get_scrapy_google_cookies`). Only attach if SAML did not.
+            self.indexer.session = self.google_session
+            logger.info("Configured indexer to use Google Bearer-token session")
+
+        # Override web extractor's context creation to inject any auth cookies.
+        if self.saml_session or self.google_session:
             self.indexer._init_processors()
-            
+
             if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
                 original_new_context = self.indexer.web_extractor.browser.new_context
-                
+
                 def new_context_with_auth(*args, **kwargs):
                     context = original_new_context(*args, **kwargs)
-                    self._transfer_session_cookies_to_context(context, self.saml_session)
+                    if self.saml_session:
+                        self._transfer_session_cookies_to_context(context, self.saml_session)
                     return context
-                    
+
                 self.indexer.web_extractor.browser.new_context = new_context_with_auth
-                logger.info("Configured web extractor to use SAML authenticated cookies")
+                logger.info("Configured web extractor to use authenticated cookies")
 
     def _discover_urls(self) -> list:
         """
@@ -233,20 +314,41 @@ class WebsiteCrawler(Crawler):
         self.html_processing = self.cfg.website_crawler.get('html_processing', {})
         max_depth = self.cfg.website_crawler.get("max_depth", 3)
 
-        # Determine crawl method and handle SAML compatibility
+        # Determine crawl method and handle SAML / Google auth for Scrapy.
         crawl_method = self.cfg.website_crawler.get("crawl_method", "internal")
-        scrapy_cookies = None
-        
-        # Try SAML authentication for Scrapy if configured
+        scrapy_cookies: dict = {}
+
         if crawl_method == "scrapy" and self.cfg.website_crawler.get("saml_auth"):
             logger.info("SAML detected with Scrapy - attempting Playwright-based SAML authentication")
-            scrapy_cookies = self._get_scrapy_saml_cookies()
-            
-            if scrapy_cookies:
-                logger.info(f"Playwright-based SAML successful! Using Scrapy with {len(scrapy_cookies)} cookies")
+            saml_cookies = self._get_scrapy_saml_cookies()
+            if saml_cookies:
+                scrapy_cookies.update(saml_cookies)
+                logger.info(f"Playwright-based SAML successful! Got {len(saml_cookies)} cookies")
             else:
-                logger.warning("Playwright-based SAML failed. Falling back to internal crawler with requests-based SAML.")
+                logger.warning(
+                    "Playwright-based SAML failed. Falling back to internal crawler with requests-based SAML."
+                )
                 crawl_method = "internal"
+
+        if crawl_method == "scrapy" and self.cfg.website_crawler.get("google_auth"):
+            logger.info("Google auth detected with Scrapy - loading persisted Google session cookies")
+            google_cookies = self._get_scrapy_google_cookies()
+            if google_cookies:
+                scrapy_cookies.update(google_cookies)
+                logger.info(f"Loaded {len(google_cookies)} Google session cookies")
+            else:
+                # Google cookies are required to crawl sites.google.com. Without
+                # them, every Scrapy request 302s into accounts.google.com and we
+                # discover 0 URLs. Surface this loudly rather than silently
+                # producing an empty crawl.
+                raise RuntimeError(
+                    "Google authentication is configured but no session cookies were obtained. "
+                    "Run `python -m crawlers.auth.google_bootstrap --output <path>` to capture a Google session."
+                )
+
+        # Pass None instead of an empty dict so the spider keeps default behavior
+        # for crawls that have no auth configured.
+        scrapy_cookies = scrapy_cookies or None
         
         # Execute crawling based on method
         if crawl_method == "scrapy":

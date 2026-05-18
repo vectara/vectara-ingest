@@ -86,7 +86,7 @@ DISALLOWED_REDIRECT_EXTENSIONS = tuple(
 )
 class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
 
-    def _redirect(self, redirected, request, spider, reason):
+    def _redirect(self, redirected, request, reason):
         redirect_to_url = redirected.url
         should_ignore_this_redirect = False
 
@@ -95,13 +95,12 @@ class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
             path_lower = parsed_redirect_to_url.path.lower()
 
             if path_lower.endswith(DISALLOWED_REDIRECT_EXTENSIONS):
-                spider.logger.info(
+                logger.info(
                     f"REDIRECT_FILTER: Ignoring redirect from '{request.url}' to disallowed file type: '{redirect_to_url}'"
                 )
                 should_ignore_this_redirect = True
         except Exception as e:
-            # This block now only catches truly unexpected errors during your *checking logic* (e.g., urlparse failure)
-            spider.logger.error(
+            logger.error(
                 f"REDIRECT_FILTER: Unexpected error during file type check for redirect from '{request.url}' to '{redirect_to_url}': {e}. "
                 f"Allowing redirect to proceed by default to avoid breaking other functionalities."
             )
@@ -109,7 +108,7 @@ class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
         if should_ignore_this_redirect:
             raise IgnoreRequest(f"Redirect target '{redirect_to_url}' is a disallowed file type; original request '{request.url}' will be ignored.")
         else:
-            return super()._redirect(redirected, request, spider, reason)
+            return super()._redirect(redirected, request, reason)
 
 class LinkSpider(scrapy.Spider):
     name = "link_spider"
