@@ -239,6 +239,28 @@ if [[ "$crawler_type" == "gdrive" ]]; then
   DOCKER_RUN_ARGS+=(-v "$(realpath "$credentials_path"):/home/vectara/env/credentials.json:rw")
 fi
 
+# Mount Google storage_state file for the website crawler's google_auth flow.
+# Mirrors the gdrive credentials.json pattern: user supplies the host path in
+# YAML; we mount it to a fixed in-container path that `GoogleAuthManager`
+# resolves to automatically.
+if [[ "$crawler_type" == "website" ]]; then
+  storage_state_path=$(read_yaml_nested "data.get('website_crawler', {}).get('google_auth', {}).get('storage_state_path', '')")
+
+  if [[ -n "$storage_state_path" ]]; then
+    # Expand tilde to home directory
+    storage_state_path="${storage_state_path/#\~/$HOME}"
+
+    if [[ ! -f "$storage_state_path" ]]; then
+      echo "Error: Google storage_state file not found at '$storage_state_path'" >&2
+      echo "Run \`python -m crawlers.auth.google_bootstrap --output $storage_state_path\` to capture it." >&2
+      exit "$ERR_MISSING_GDRIVE_CREDS"
+    fi
+
+    DOCKER_RUN_ARGS+=(-v "$(realpath "$storage_state_path"):/home/vectara/env/google_storage_state.json:ro")
+    echo "Mounting Google storage_state to: /home/vectara/env/google_storage_state.json"
+  fi
+fi
+
 if [[ "$crawler_type" == "box" ]]; then
   auth_type=$(read_yaml_nested "data.get('box_crawler', {}).get('auth_type', 'jwt')")
 

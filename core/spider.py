@@ -19,6 +19,7 @@ from scrapy.spiders.sitemap import iterloc
 
 
 from core.indexer import Indexer
+from core.indexer_utils import auth_redirect_reason
 from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
@@ -59,6 +60,16 @@ def recursive_crawl(url: str, depth: int,
 
     try:
         res = indexer.fetch_page_contents(url)
+        # If the fetch was bounced to a sign-in / IdP page, drop link extraction:
+        # the page we landed on is the IdP's login form, not real content, and
+        # following its links would pollute the discovery set with sign-in chrome.
+        auth_reason = auth_redirect_reason(url, res.get('url', url))
+        if auth_reason:
+            logger.warning(
+                f"Skipping discovery from {url}: {auth_reason} ({res.get('url')}). "
+                f"Configure website_crawler.google_auth / saml_auth to crawl it."
+            )
+            return visited
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
                     if      u not in visited and u.startswith('http') and 
@@ -180,6 +191,17 @@ class LinkSpider(scrapy.Spider):
         return self.is_valid_by_regex(url)
 
     def parse(self, response):
+        # If Scrapy followed redirects, redirect_urls[0] is the original request
+        # URL; otherwise the request URL itself is the original.
+        original_url = response.meta.get('redirect_urls', [response.url])[0]
+        auth_reason = auth_redirect_reason(original_url, response.url)
+        if auth_reason:
+            logger.warning(
+                f"Skipping discovery from {original_url}: {auth_reason} ({response.url}). "
+                f"Configure website_crawler.google_auth / saml_auth to crawl it."
+            )
+            return
+
         extract_links = True
         parsed_response_url = urlparse(response.url)
         response_path_lower = parsed_response_url.path.lower() # Get lowercase path

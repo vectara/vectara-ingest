@@ -7,7 +7,6 @@ google.oauth2) are mocked so tests are hermetic.
 
 import json
 import sys
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 # Stub heavy native deps that some sibling modules transitively import.
@@ -51,14 +50,31 @@ def test_init_rejects_unknown_mode():
         GoogleAuthManager(config, secrets)
 
 
-def test_init_requires_credentials_file_in_secrets():
+def test_init_does_not_require_credentials_file_when_only_cookies_needed():
+    """Crawls that only consume sites.google.com cookies (via storage_state)
+    must work without ever providing GOOGLE_CREDENTIALS_FILE — that secret
+    only matters for API-style Bearer calls, which a content crawl doesn't
+    make."""
+    from crawlers.auth.google_manager import GoogleAuthManager
+
+    config = {"mode": "oauth_user", "storage_state_path": "/tmp/state.json"}
+    secrets = {}
+
+    mgr = GoogleAuthManager(config, secrets)
+    assert mgr.credentials_file is None
+
+
+def test_get_credentials_raises_when_credentials_file_missing():
+    """The credential check is deferred — but the moment a caller actually
+    asks for API credentials, the manager must complain loudly."""
     from crawlers.auth.google_manager import GoogleAuthManager
 
     config = {"mode": "oauth_user"}
     secrets = {}
 
-    with pytest.raises(ValueError, match="credentials_file"):
-        GoogleAuthManager(config, secrets)
+    mgr = GoogleAuthManager(config, secrets)
+    with pytest.raises(ValueError, match="GOOGLE_CREDENTIALS_FILE"):
+        mgr.get_credentials()
 
 
 def test_init_accepts_optional_storage_state_path():
@@ -72,6 +88,55 @@ def test_init_accepts_optional_storage_state_path():
 
     mgr = GoogleAuthManager(config, secrets)
     assert mgr.storage_state_path == "/tmp/state.json"
+
+
+def test_storage_state_path_uses_docker_mount_when_present(monkeypatch):
+    """Inside Docker, run.sh mounts the host file to a fixed container path.
+    When that fixed path exists, it wins over the YAML-supplied host path —
+    the YAML field is a host path, not a container path."""
+    from crawlers.auth import google_manager
+
+    real_exists = google_manager.os.path.exists
+
+    def fake_exists(p):
+        if p == google_manager.DOCKER_STORAGE_STATE_PATH:
+            return True
+        return real_exists(p)
+
+    monkeypatch.setattr(google_manager.os.path, "exists", fake_exists)
+
+    config = {
+        "mode": "oauth_user",
+        "storage_state_path": "/some/host/path/state.json",
+    }
+    secrets = {"credentials_file": "/tmp/oauth.json"}
+
+    mgr = google_manager.GoogleAuthManager(config, secrets)
+    assert mgr.storage_state_path == google_manager.DOCKER_STORAGE_STATE_PATH
+
+
+def test_storage_state_path_falls_back_to_config_path_when_no_docker_mount(monkeypatch):
+    """Running natively (or in Docker without the auto-mount), the YAML path
+    is used directly."""
+    from crawlers.auth import google_manager
+
+    real_exists = google_manager.os.path.exists
+
+    def fake_exists(p):
+        if p == google_manager.DOCKER_STORAGE_STATE_PATH:
+            return False
+        return real_exists(p)
+
+    monkeypatch.setattr(google_manager.os.path, "exists", fake_exists)
+
+    config = {
+        "mode": "oauth_user",
+        "storage_state_path": "/some/host/path/state.json",
+    }
+    secrets = {"credentials_file": "/tmp/oauth.json"}
+
+    mgr = google_manager.GoogleAuthManager(config, secrets)
+    assert mgr.storage_state_path == "/some/host/path/state.json"
 
 
 # ---------------------------------------------------------------------------

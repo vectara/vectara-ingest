@@ -76,7 +76,7 @@ Even with `service_account`, you still need the one-time `storage_state` capture
 website_crawler:
   urls:
     - "https://sites.google.com/your-domain.com/internal-portal"
-  crawl_method: "scrapy"
+  crawl_method: "scrapy"           # "scrapy" or "internal" — both honor google_auth
 
   google_auth:
     mode: "oauth_user"             # or "service_account"
@@ -85,7 +85,7 @@ website_crawler:
       - "openid"
       - "email"
       - "https://www.googleapis.com/auth/userinfo.profile"
-    storage_state_path: "/home/vectara/env/google_storage_state.json"
+    storage_state_path: "~/.config/vectara/google_storage_state.json"
 ```
 
 Fields:
@@ -95,20 +95,37 @@ Fields:
   impersonates.
 - `scopes` (optional): OAuth scopes. Defaults to
   `["openid", "email", "https://www.googleapis.com/auth/userinfo.profile"]`.
-- `storage_state_path` (required for any `sites.google.com` crawling): path to
-  the JSON file produced by `google_bootstrap.py`. The crawler will refuse to
-  start `sites.google.com` crawls without this file present.
+- `storage_state_path` (required for any `sites.google.com` crawling): **host**
+  path to the JSON file produced by `google_bootstrap.py`. When you launch via
+  `run.sh`, this file is auto-mounted into the container at
+  `/home/vectara/env/google_storage_state.json`; the crawler resolves to the
+  container path automatically. When you run `python ingest.py` directly (no
+  Docker), the file is read from this path on the local filesystem. The crawler
+  will refuse to start `sites.google.com` crawls without this file present.
 
-### 2. Secrets
+`crawl_method` choice: both `scrapy` and `internal` honor `google_auth`. The
+captured session cookies are injected into the indexer's HTTP session and into
+the Playwright `web_extractor` regardless of discovery method. Pick `scrapy`
+for faster discovery on large sites; pick `internal` (the default) when you
+want full Playwright-rendered fidelity end-to-end.
 
-In `secrets.toml`:
+### 2. Secrets (optional)
+
+`GOOGLE_CREDENTIALS_FILE` is only consumed when the crawler calls
+`GoogleAuthManager.get_authenticated_session()` for Google API access (Drive,
+Sites APIs). Plain `sites.google.com` page crawling does not call any Google
+API and does not need this secret — `storage_state_path` is enough.
+
+If you do want API access, add it to `secrets.toml`:
 
 ```toml
 [default]
 GOOGLE_CREDENTIALS_FILE = "/home/vectara/env/google_credentials.json"
-# Optional — sets google_auth.storage_state_path if not provided in YAML:
-GOOGLE_STORAGE_STATE_FILE = "/home/vectara/env/google_storage_state.json"
 ```
+
+`ingest.py` reads this value and stamps it onto `cfg.website_crawler.google_credentials_file`
+at runtime — that is why the field is **not** placed inside the `google_auth:`
+block in YAML.
 
 `GOOGLE_CREDENTIALS_FILE` is:
 - For `oauth_user`: the OAuth token JSON (with `token`, `refresh_token`, `token_uri`,
@@ -181,10 +198,10 @@ python ingest.py config/google-site-example.yaml default
 Expected log lines:
 
 ```
-Google authentication configured, initializing...
-Google authentication successful (Bearer session ready)
-Google auth detected with Scrapy - loading persisted Google session cookies
-Loaded N Google session cookies
+Google authentication configured, capturing storage_state cookies...
+Captured N Google session cookies.
+Merged N Google session cookies into indexer session
+Configured web extractor to inject authenticated cookies
 ```
 
 If you instead see:
@@ -210,9 +227,11 @@ merges them before passing to Scrapy.
   exists and is mounted into the container.
 - **`Stored Google session has expired ...`** — re-run `google_bootstrap.py`.
   Workspace SSO typically forces re-auth every 2–4 weeks.
-- **`google_auth requires 'credentials_file' in secrets`** — `GOOGLE_CREDENTIALS_FILE`
-  is missing from `secrets.toml` (or under the wrong profile). It is read in
-  `ingest.py` and stamped onto `cfg.website_crawler.google_credentials_file`.
+- **`google_auth requires 'credentials_file' in secrets ...`** — fires only
+  when something asks for Google API credentials (e.g. a custom call to
+  `GoogleAuthManager.get_authenticated_session()`). For plain `sites.google.com`
+  crawling this error should never fire; if it does, you have third-party code
+  calling the API path — set `GOOGLE_CREDENTIALS_FILE` in `secrets.toml`.
 - **`google_auth mode 'service_account' requires 'delegated_user'`** — set the
   email of the Workspace user the SA should impersonate in YAML.
 - **`Playwright is not available`** — install Playwright and download Chromium:

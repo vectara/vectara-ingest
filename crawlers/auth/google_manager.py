@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/userinfo.profile"]
 VALID_MODES = ("service_account", "oauth_user")
 
+# Fixed in-container path where `run.sh` mounts the host's storage_state JSON.
+# Matches the gdrive `credentials.json` pattern. When this path exists at init
+# time, it wins over any `storage_state_path` set in YAML — the YAML field is
+# treated as a host path (for `run.sh` to mount), not a container path.
+DOCKER_STORAGE_STATE_PATH = "/home/vectara/env/google_storage_state.json"
+
 
 def get_credentials(
     delegated_user: str,
@@ -117,15 +123,23 @@ class GoogleAuthManager:
                 "google_auth mode 'service_account' requires 'delegated_user' in config"
             )
 
+        # `credentials_file` is only needed for Bearer-token API calls
+        # (Drive / Sites APIs). The common case — crawling sites.google.com
+        # via persisted storage_state cookies — does not call any Google API,
+        # so we defer the check until something actually asks for credentials.
         self.credentials_file = self.secrets.get("credentials_file")
-        if not self.credentials_file:
-            raise ValueError(
-                "google_auth requires 'credentials_file' in secrets "
-                "(set GOOGLE_CREDENTIALS_FILE in secrets.toml)"
-            )
 
         self.scopes = list(self.config.get("scopes") or DEFAULT_SCOPES)
-        self.storage_state_path = self.config.get("storage_state_path")
+
+        # In Docker, `run.sh` mounts the host file to DOCKER_STORAGE_STATE_PATH.
+        # When that mount is present, prefer it over the YAML value (which is the
+        # host-side path, not the container path). Falls back to the YAML value
+        # for native runs and back-compat with explicit container paths.
+        config_storage_state_path = self.config.get("storage_state_path")
+        if config_storage_state_path and os.path.exists(DOCKER_STORAGE_STATE_PATH):
+            self.storage_state_path = DOCKER_STORAGE_STATE_PATH
+        else:
+            self.storage_state_path = config_storage_state_path
 
         self._credentials: Optional[object] = None
 
@@ -134,6 +148,14 @@ class GoogleAuthManager:
     def get_credentials(self):
         if self._credentials is not None:
             return self._credentials
+
+        if not self.credentials_file:
+            raise ValueError(
+                "google_auth requires 'credentials_file' in secrets to mint API "
+                "credentials (set GOOGLE_CREDENTIALS_FILE in secrets.toml). "
+                "Cookie-only crawls of sites.google.com do not need this — "
+                "only callers of get_credentials()/get_authenticated_session() do."
+            )
 
         if self.mode == "service_account":
             self._credentials = get_credentials(
