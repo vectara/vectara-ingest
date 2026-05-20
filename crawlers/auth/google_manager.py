@@ -189,9 +189,16 @@ class GoogleAuthManager:
 
     # --- browser cookies -----------------------------------------------------------
 
-    def get_authenticated_cookies(self) -> dict:
+    def get_authenticated_cookies(self) -> List[dict]:
         """Open Playwright with the persisted `storage_state`, navigate to
-        `sites.google.com`, and capture `.google.com` cookies for Scrapy.
+        `sites.google.com`, and capture Google-family cookies for Scrapy.
+
+        Returns a list of `{name, value, domain, path, secure}` dicts. The
+        full attribute set is required because Scrapy's CookieMiddleware
+        needs `domain` to scope `__Host-*` / `__Secure-*` cookies to their
+        original host — flattening to `{name: value}` causes
+        `accounts.google.com` cookies to leak to `sites.google.com` on
+        redirects, which Google rejects with `CookieMismatch`.
 
         Raises RuntimeError with a clear pointer to `google_bootstrap` if the
         storage state is missing, never captured, or has expired.
@@ -239,14 +246,25 @@ class GoogleAuthManager:
 
             raw_cookies = context.cookies()
 
-        cookie_dict = {}
+        cookies: List[dict] = []
         for c in raw_cookies:
             domain = (c.get("domain") or "").lower()
+            # Match `.google.com` (covers `accounts.google.com`,
+            # `sites.google.com`, etc.) and the bare `google.com` host. Drop
+            # everything else so unrelated cookies from the storage_state
+            # (Rippling, YouTube subdomains, etc.) can't leak to Google on
+            # cross-domain redirects.
             if domain.endswith(".google.com") or domain == "google.com":
-                cookie_dict[c["name"]] = c["value"]
+                cookies.append({
+                    "name": c["name"],
+                    "value": c["value"],
+                    "domain": c["domain"],
+                    "path": c.get("path", "/"),
+                    "secure": bool(c.get("secure", False)),
+                })
 
-        logger.info(f"Captured {len(cookie_dict)} Google session cookies for crawler use")
-        return cookie_dict
+        logger.info(f"Captured {len(cookies)} Google session cookies for crawler use")
+        return cookies
 
     @contextmanager
     def _playwright_browser(self):

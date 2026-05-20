@@ -19,7 +19,7 @@ from scrapy.spiders.sitemap import iterloc
 
 
 from core.indexer import Indexer
-from core.indexer_utils import auth_redirect_reason
+from core.indexer_utils import auth_redirect_reason, is_auth_host
 from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
@@ -130,7 +130,7 @@ class LinkSpider(scrapy.Spider):
         positive_regexes: list[str],
         negative_regexes: list[str],
         max_depth: int = 1,
-        cookies: dict = None,
+        cookies: list = None,
         *args, **kwargs
     ):
         """
@@ -138,11 +138,15 @@ class LinkSpider(scrapy.Spider):
         positive_regexes: list of strings, e.g. '["^https?://.*foo","bar$"]'
         negative_regexes: list of strings, e.g. '["/logout","/private"]'
         max_depth: integer, how many hops from any start_url
+        cookies: list of {name, value, domain?, path?, secure?} dicts; passed
+            to each Scrapy Request so CookieMiddleware can scope host-bound
+            cookies (`__Host-*`, `__Secure-*`) correctly on cross-domain
+            redirects.
         """
         super().__init__(*args, **kwargs)
         self.start_urls = start_urls
         self.max_depth = int(max_depth)
-        self.cookies = cookies or {}
+        self.cookies = cookies or []
         try:
             self.positive_patterns = [re.compile(r) for r in positive_regexes]
             self.negative_patterns = [re.compile(r) for r in negative_regexes]
@@ -188,6 +192,14 @@ class LinkSpider(scrapy.Spider):
 
         if not parsed_url.scheme.lower() in ['http', 'https']:
             return False
+
+        # Never follow links into identity-provider hosts (e.g. account
+        # chooser, sign-out option pages). These leak in via authenticated
+        # response bodies and pollute the discovered URL list without ever
+        # producing real content.
+        if is_auth_host(url):
+            return False
+
         return self.is_valid_by_regex(url)
 
     def parse(self, response):
@@ -195,6 +207,11 @@ class LinkSpider(scrapy.Spider):
         # URL; otherwise the request URL itself is the original.
         original_url = response.meta.get('redirect_urls', [response.url])[0]
         auth_reason = auth_redirect_reason(original_url, response.url)
+        # Also catch the case where the response URL is itself on an IDP host
+        # without a netloc change (e.g. a direct link to accounts.google.com/
+        # SignOutOptions found in an authenticated page body).
+        if not auth_reason and is_auth_host(response.url):
+            auth_reason = f"response URL is identity-provider host {urlparse(response.url).netloc}"
         if auth_reason:
             logger.warning(
                 f"Skipping discovery from {original_url}: {auth_reason} ({response.url}). "
@@ -244,7 +261,7 @@ def run_link_spider(
     negative_regexes: List[str],
     max_depth:        int = 1,
     extra_settings:   dict | None = None,
-    cookies:          dict | None = None,
+    cookies:          list | None = None,
 ) -> List[str]:
     """
     Blocking, in-process runner that:
@@ -323,7 +340,7 @@ def run_link_spider_isolated(
     negative_regexes: List[str],
     max_depth: int = 1,
     extra_settings: dict | None = None,
-    cookies: dict | None = None,
+    cookies: list | None = None,
 ) -> list[str]:
     """
     Launches run_link_spider(...) in a fresh Python process so that

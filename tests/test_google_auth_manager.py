@@ -270,9 +270,17 @@ def test_get_authenticated_cookies_uses_storage_state_when_present(tmp_path):
     secrets = {"credentials_file": "/tmp/oauth.json"}
 
     cookies = [
-        {"name": "SID", "value": "sid-val", "domain": ".google.com"},
-        {"name": "SSID", "value": "ssid-val", "domain": ".google.com"},
-        {"name": "unrelated", "value": "x", "domain": "example.com"},
+        {"name": "SID", "value": "sid-val", "domain": ".google.com",
+         "path": "/", "secure": True, "httpOnly": True, "sameSite": "Lax"},
+        {"name": "__Host-1PLSID", "value": "psid-val",
+         "domain": "accounts.google.com", "path": "/", "secure": True,
+         "httpOnly": True, "sameSite": "Lax"},
+        {"name": "OSID", "value": "osid-val",
+         "domain": "sites.google.com", "path": "/", "secure": True},
+        {"name": "unrelated", "value": "x", "domain": "example.com",
+         "path": "/", "secure": False},
+        {"name": "rip", "value": "y", "domain": ".rippling.com",
+         "path": "/", "secure": True},
     ]
     pw_factory, context, page = _build_playwright_chain(cookies)
 
@@ -280,16 +288,31 @@ def test_get_authenticated_cookies_uses_storage_state_when_present(tmp_path):
         mgr = google_manager.GoogleAuthManager(config, secrets)
         result = mgr.get_authenticated_cookies()
 
-    # Playwright was asked to load the existing storage state
-    new_context_kwargs = context.new_context.call_args if hasattr(context, "call_args") else None
-    # The browser.new_context call (not context.new_context) should have received storage_state
+    # The browser.new_context call should have received storage_state
     chromium = pw_factory.start.return_value.chromium
     browser = chromium.launch.return_value
     _, kwargs = browser.new_context.call_args
     assert kwargs.get("storage_state") == str(storage_file)
 
-    # Only *.google.com cookies are returned, as a {name: value} dict
-    assert result == {"SID": "sid-val", "SSID": "ssid-val"}
+    # New contract: list of dicts with attributes preserved. Only Google-family
+    # cookies (.google.com, accounts.google.com, sites.google.com) survive —
+    # the example.com and .rippling.com entries are filtered out so they
+    # don't leak cross-domain when Scrapy follows redirects.
+    assert isinstance(result, list)
+    names = {c["name"]: c for c in result}
+    assert set(names) == {"SID", "__Host-1PLSID", "OSID"}
+
+    sid = names["SID"]
+    assert sid["value"] == "sid-val"
+    assert sid["domain"] == ".google.com"
+    assert sid["path"] == "/"
+    assert sid["secure"] is True
+
+    host_cookie = names["__Host-1PLSID"]
+    # __Host-* cookies must keep their host-scoped domain so Scrapy doesn't
+    # leak them to sites.google.com on a redirect.
+    assert host_cookie["domain"] == "accounts.google.com"
+    assert host_cookie["secure"] is True
 
 
 def test_get_authenticated_cookies_raises_when_landing_on_login_page(tmp_path):

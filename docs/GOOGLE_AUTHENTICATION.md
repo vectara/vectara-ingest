@@ -142,15 +142,21 @@ Run on a machine with a display (NOT in the Docker container):
 
 ```bash
 pip install playwright
-playwright install chromium
+playwright install chrome
 
 python -m crawlers.auth.google_bootstrap \
   --output ./google_storage_state.json
 ```
 
+We launch installed Google Chrome (not Playwright's bundled Chromium) because
+Chromium is reliably flagged by Cloudflare and Google bot detection — the
+sign-in flow ends up stuck on an unsolvable CAPTCHA. A persistent Chrome
+profile is also kept across runs (default `~/.cache/vectara-ingest/google_bootstrap_profile`)
+so subsequent runs look like a returning user.
+
 What you'll see:
 
-1. A Chromium window opens to `https://sites.google.com`.
+1. A Chrome window opens to `https://sites.google.com`.
 2. Sign in. Complete 2FA / SSO / account chooser as needed.
 3. When the URL stabilizes on `sites.google.com` (and is no longer on
    `accounts.google.com`), the script writes `google_storage_state.json` and exits.
@@ -164,6 +170,10 @@ Options:
 - `--success-url-contains <substring>`: customise the success-detection check
   (default `sites.google.com`).
 - `--timeout-seconds <n>`: how long to wait for sign-in (default 300).
+- `--profile-dir <path>`: persistent Chrome profile directory. Delete it to
+  start from a clean slate.
+- `--channel <name>`: Playwright browser channel (default `chrome`). Pass an
+  empty string to fall back to bundled Chromium.
 
 ## Setting up `oauth_user` credentials
 

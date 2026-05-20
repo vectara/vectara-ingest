@@ -119,18 +119,20 @@ class TestSetupGoogleAuth(unittest.TestCase):
         fake_self = SimpleNamespace(
             cfg=_google_auth_cfg(credentials_file="/tmp/creds.json"),
             google_cookies=None,
+            google_storage_state_path=None,
         )
+        captured = [
+            {"name": "SID", "value": "sid-val", "domain": ".google.com",
+             "path": "/", "secure": True},
+            {"name": "__Secure-1PSID", "value": "psid-val",
+             "domain": ".google.com", "path": "/", "secure": True},
+        ]
         with patch("crawlers.website_crawler.GoogleAuthManager") as MockGAM:
-            MockGAM.return_value.get_authenticated_cookies.return_value = {
-                "SID": "sid-val",
-                "__Secure-1PSID": "psid-val",
-            }
+            MockGAM.return_value.get_authenticated_cookies.return_value = captured
+            MockGAM.return_value.storage_state_path = "/tmp/s.json"
             WebsiteCrawler._setup_google_auth(fake_self)
 
-        self.assertEqual(
-            fake_self.google_cookies,
-            {"SID": "sid-val", "__Secure-1PSID": "psid-val"},
-        )
+        self.assertEqual(fake_self.google_cookies, captured)
         # No Bearer session is constructed any more.
         MockGAM.return_value.get_authenticated_session.assert_not_called()
 
@@ -139,12 +141,16 @@ class TestSetupGoogleAuth(unittest.TestCase):
         fake_self = SimpleNamespace(
             cfg=_google_auth_cfg(credentials_file=None),
             google_cookies=None,
+            google_storage_state_path=None,
         )
+        cookies = [{"name": "SID", "value": "x", "domain": ".google.com",
+                    "path": "/", "secure": True}]
         with patch("crawlers.website_crawler.GoogleAuthManager") as MockGAM:
-            MockGAM.return_value.get_authenticated_cookies.return_value = {"SID": "x"}
+            MockGAM.return_value.get_authenticated_cookies.return_value = cookies
+            MockGAM.return_value.storage_state_path = "/tmp/s.json"
             WebsiteCrawler._setup_google_auth(fake_self)
 
-        self.assertEqual(fake_self.google_cookies, {"SID": "x"})
+        self.assertEqual(fake_self.google_cookies, cookies)
         # Manager was constructed with an empty secrets dict.
         _, kwargs = MockGAM.call_args
         secrets = kwargs.get("secrets") if "secrets" in kwargs else MockGAM.call_args.args[1]
@@ -154,7 +160,9 @@ class TestSetupGoogleAuth(unittest.TestCase):
         fake_cfg = SimpleNamespace(
             website_crawler=SimpleNamespace(get=lambda key, default=None: default),
         )
-        fake_self = SimpleNamespace(cfg=fake_cfg, google_cookies=None)
+        fake_self = SimpleNamespace(
+            cfg=fake_cfg, google_cookies=None, google_storage_state_path=None,
+        )
         with patch("crawlers.website_crawler.GoogleAuthManager") as MockGAM:
             WebsiteCrawler._setup_google_auth(fake_self)
 
@@ -170,10 +178,12 @@ class TestConfigureIndexerSession(unittest.TestCase):
     Scrapy discovery succeeded.
     """
 
-    def _build_fake_self(self, *, google_cookies=None, saml_session=None):
+    def _build_fake_self(self, *, google_cookies=None, saml_session=None,
+                          google_storage_state_path=None):
         fake_indexer = MagicMock()
         fake_indexer.session = requests.Session()
         fake_indexer.web_extractor = MagicMock()
+        fake_indexer.web_extractor.skip_static_prefetch = False
         fake_indexer.web_extractor.browser = MagicMock()
         # original new_context returns a context whose add_cookies we can spy on
         original_context = MagicMock(name="context")
@@ -182,35 +192,53 @@ class TestConfigureIndexerSession(unittest.TestCase):
             indexer=fake_indexer,
             saml_session=saml_session,
             google_cookies=google_cookies,
+            google_storage_state_path=google_storage_state_path,
         ), original_context
 
     def test_merges_google_cookies_into_indexer_session(self):
-        fake_self, _ctx = self._build_fake_self(
-            google_cookies={"SID": "sid-val", "__Secure-1PSID": "psid-val"},
-        )
+        cookies = [
+            {"name": "SID", "value": "sid-val", "domain": ".google.com",
+             "path": "/", "secure": True},
+            {"name": "__Secure-1PSID", "value": "psid-val",
+             "domain": ".google.com", "path": "/", "secure": True},
+        ]
+        fake_self, _ctx = self._build_fake_self(google_cookies=cookies)
         WebsiteCrawler._configure_indexer_session(fake_self)
 
-        self.assertEqual(fake_self.indexer.session.cookies.get("SID"), "sid-val")
+        # Cookies are scoped to their actual domain in the requests jar, not
+        # smeared across every host like .update({name: value}) would do.
         self.assertEqual(
-            fake_self.indexer.session.cookies.get("__Secure-1PSID"), "psid-val"
+            fake_self.indexer.session.cookies.get("SID", domain=".google.com"),
+            "sid-val",
+        )
+        self.assertEqual(
+            fake_self.indexer.session.cookies.get("__Secure-1PSID", domain=".google.com"),
+            "psid-val",
         )
 
-    def test_injects_google_cookies_into_playwright_context(self):
+    def test_google_storage_state_wires_into_playwright_new_context(self):
+        # Google's authenticated Playwright context comes from `storage_state`
+        # — re-injecting individual cookies via `add_cookies` fails on
+        # __Host-/__Secure- cookies because Chromium rejects the batch.
         fake_self, original_context = self._build_fake_self(
-            google_cookies={"SID": "sid-val"},
+            google_storage_state_path="/tmp/state.json",
         )
+        # Capture the original (pre-wrap) new_context MagicMock so we can
+        # inspect its kwargs after the wrapper invokes it.
+        original_new_context = fake_self.indexer.web_extractor.browser.new_context
+
         WebsiteCrawler._configure_indexer_session(fake_self)
 
-        # The override should have replaced new_context. Call it and confirm
-        # Google cookies were forwarded to the context via add_cookies.
-        new_ctx = fake_self.indexer.web_extractor.browser.new_context()
-        self.assertIs(new_ctx, original_context)
-        original_context.add_cookies.assert_called()
-        forwarded = []
-        for call in original_context.add_cookies.call_args_list:
-            forwarded.extend(call.args[0])
-        names = {c["name"]: c["value"] for c in forwarded}
-        self.assertEqual(names.get("SID"), "sid-val")
+        # Calling the wrapped new_context must forward `storage_state` into
+        # the original Playwright `new_context` call.
+        fake_self.indexer.web_extractor.browser.new_context()
+        _, kwargs = original_new_context.call_args
+        self.assertEqual(kwargs.get("storage_state"), "/tmp/state.json")
+        # No add_cookies path — storage_state carries cookies into Chromium.
+        original_context.add_cookies.assert_not_called()
+        # And the static-prefetch flag is flipped so per-page fetches go
+        # through the authenticated Playwright context.
+        self.assertTrue(fake_self.indexer.web_extractor.skip_static_prefetch)
 
     def test_no_auth_configured_leaves_session_alone(self):
         fake_self, _ctx = self._build_fake_self()
@@ -220,6 +248,8 @@ class TestConfigureIndexerSession(unittest.TestCase):
         self.assertEqual(len(fake_self.indexer.session.cookies), 0)
         # new_context override is also not installed when nothing is configured.
         fake_self.indexer._init_processors.assert_not_called()
+        # And the static-prefetch flag should remain at default (False).
+        self.assertFalse(fake_self.indexer.web_extractor.skip_static_prefetch)
 
 
 class TestInternalCrawlerDiscovery(unittest.TestCase):

@@ -41,43 +41,50 @@ def _transfer_session_to_context(context, session):
             logger.warning(f"Failed to add cookie {cookie.name} to Playwright context: {e}")
 
 
-def _transfer_cookie_dict_to_context(context, cookies, domain='.google.com'):
-    """Forward a `{name: value}` cookie dict to a Playwright context.
-
-    Used for Google session cookies captured via `storage_state` — those are
-    pre-filtered to `.google.com` by `GoogleAuthManager.get_authenticated_cookies`.
-    """
-    if not cookies:
-        return
-    items = [
-        {'name': name, 'value': value, 'domain': domain, 'path': '/'}
-        for name, value in cookies.items()
-    ]
-    try:
-        context.add_cookies(items)
-    except Exception as e:
-        logger.warning(f"Failed to inject session cookies into Playwright context: {e}")
-
-
-def _apply_auth_to_indexer(indexer, saml_session=None, google_cookies=None):
+def _apply_auth_to_indexer(
+    indexer,
+    saml_session=None,
+    google_cookies=None,
+    google_storage_state_path=None,
+):
     """Propagate auth to an Indexer so both `session` (requests) and
     `web_extractor` (Playwright) issue authenticated fetches.
 
     Used by `WebsiteCrawler._configure_indexer_session` (parent process,
     discovery-side indexer) and by `PageCrawlWorker.setup` (per-worker
     indexer in Ray actor or single-process mode).
+
+    For Google auth, the Playwright context is loaded from the captured
+    `storage_state` JSON. Re-injecting individual cookies via `add_cookies`
+    fails for Google's `__Host-*` / `__Secure-*` cookies (CDP rejects the
+    batch because `__Host-` cookies must be sent without a Domain attribute
+    and `__Secure-` cookies require `Secure=true`). Playwright's
+    `storage_state` path preserves the original cookie attributes verbatim.
     """
     if saml_session and hasattr(indexer, 'session'):
         indexer.session = saml_session
         logger.info("Configured indexer to use SAML authenticated session")
 
     if google_cookies and hasattr(indexer, 'session') and indexer.session is not None:
-        indexer.session.cookies.update(google_cookies)
+        # Use create_cookie + set_cookie so each cookie retains its
+        # domain/path/secure scoping in the requests cookie jar. A flat
+        # `cookies.update({name: value})` would attach every Google cookie
+        # to every host the session talks to, leaking host-bound cookies
+        # (`__Host-*`) to wrong domains on redirects.
+        for c in google_cookies:
+            cookie = requests.cookies.create_cookie(
+                name=c["name"],
+                value=c["value"],
+                domain=c.get("domain", ""),
+                path=c.get("path", "/"),
+                secure=bool(c.get("secure", False)),
+            )
+            indexer.session.cookies.set_cookie(cookie)
         logger.info(
             f"Merged {len(google_cookies)} Google session cookies into indexer session"
         )
 
-    if not (saml_session or google_cookies):
+    if not (saml_session or google_storage_state_path):
         return
 
     indexer._init_processors()
@@ -85,14 +92,20 @@ def _apply_auth_to_indexer(indexer, saml_session=None, google_cookies=None):
         original_new_context = indexer.web_extractor.browser.new_context
 
         def new_context_with_auth(*args, **kwargs):
+            if google_storage_state_path:
+                kwargs.setdefault('storage_state', google_storage_state_path)
             context = original_new_context(*args, **kwargs)
             if saml_session:
                 _transfer_session_to_context(context, saml_session)
-            if google_cookies:
-                _transfer_cookie_dict_to_context(context, google_cookies)
             return context
 
         indexer.web_extractor.browser.new_context = new_context_with_auth
+        # Auth is wired in via Playwright `storage_state` / per-context cookie
+        # transfer. Tell the extractor to skip the unauthenticated `requests.get`
+        # prefetch in `fetch_page_contents` — without this, the prefetch follows
+        # redirects to the IdP sign-in page (~1KB of HTML, >500 chars) and
+        # short-circuits the authenticated browser path entirely.
+        indexer.web_extractor.skip_static_prefetch = True
         logger.info("Configured web extractor to inject authenticated cookies")
 
 
@@ -170,7 +183,11 @@ class PageCrawlWorker(object):
             try:
                 google_manager = GoogleAuthManager(config=self.google_config, secrets=google_secrets)
                 google_cookies = google_manager.get_authenticated_cookies()
-                _apply_auth_to_indexer(self.indexer, google_cookies=google_cookies)
+                _apply_auth_to_indexer(
+                    self.indexer,
+                    google_cookies=google_cookies,
+                    google_storage_state_path=google_manager.storage_state_path,
+                )
                 logging.info(
                     f"[Worker {worker_pid}] Captured {len(google_cookies)} Google session cookies."
                 )
@@ -222,6 +239,7 @@ class WebsiteCrawler(Crawler):
         super().__init__(cfg, *args, **kwargs)
         self.saml_session = None
         self.google_cookies = None
+        self.google_storage_state_path = None
         self._setup_saml_auth()
         self._setup_google_auth()
 
@@ -277,6 +295,7 @@ class WebsiteCrawler(Crawler):
         try:
             google_manager = GoogleAuthManager(google_config, secrets_dict)
             self.google_cookies = google_manager.get_authenticated_cookies()
+            self.google_storage_state_path = google_manager.storage_state_path
             logger.info(
                 f"Captured {len(self.google_cookies)} Google session cookies."
             )
@@ -287,17 +306,23 @@ class WebsiteCrawler(Crawler):
     def _get_scrapy_saml_cookies(self):
         """
         Get SAML authentication cookies using SAMLAuthManager's Playwright method.
-        Returns cookies that can be used with Scrapy for fast crawling.
+        Returns a list of `{name, value}` dicts in the shape Scrapy expects.
+        Domain/secure attributes are absent because SAMLAuthManager flattens
+        cookies at capture time — Scrapy will treat them as host-bound to
+        each request URL, which is correct for single-IdP SAML flows.
         """
         saml_config = self.cfg.website_crawler.get("saml_auth")
         if not saml_config:
             return None
-            
+
         try:
             secrets_dict = self._get_saml_secrets()
             saml_manager = SAMLAuthManager(saml_config, secrets_dict)
-            return saml_manager.get_authenticated_cookies()
-            
+            flat = saml_manager.get_authenticated_cookies()
+            if not flat:
+                return None
+            return [{"name": k, "value": v} for k, v in flat.items()]
+
         except Exception as e:
             logger.error(f"Failed to get SAML cookies: {e}")
             return None
@@ -326,6 +351,7 @@ class WebsiteCrawler(Crawler):
             self.indexer,
             saml_session=self.saml_session,
             google_cookies=self.google_cookies,
+            google_storage_state_path=self.google_storage_state_path,
         )
 
     def _discover_urls(self) -> list:
@@ -343,14 +369,18 @@ class WebsiteCrawler(Crawler):
         max_depth = self.cfg.website_crawler.get("max_depth", 3)
 
         # Determine crawl method and handle SAML / Google auth for Scrapy.
+        # Cookies are passed as a list of dicts (`{name, value, domain, path,
+        # secure}`) so Scrapy's CookieMiddleware can enforce per-cookie
+        # scoping on redirects — `__Host-*` and other host-bound Google
+        # cookies must not leak to `sites.google.com` from `accounts.google.com`.
         crawl_method = self.cfg.website_crawler.get("crawl_method", "internal")
-        scrapy_cookies: dict = {}
+        scrapy_cookies: list = []
 
         if crawl_method == "scrapy" and self.cfg.website_crawler.get("saml_auth"):
             logger.info("SAML detected with Scrapy - attempting Playwright-based SAML authentication")
             saml_cookies = self._get_scrapy_saml_cookies()
             if saml_cookies:
-                scrapy_cookies.update(saml_cookies)
+                scrapy_cookies.extend(saml_cookies)
                 logger.info(f"Playwright-based SAML successful! Got {len(saml_cookies)} cookies")
             else:
                 logger.warning(
@@ -361,7 +391,7 @@ class WebsiteCrawler(Crawler):
         if crawl_method == "scrapy" and self.cfg.website_crawler.get("google_auth"):
             logger.info("Google auth detected with Scrapy - forwarding captured session cookies")
             if self.google_cookies:
-                scrapy_cookies.update(self.google_cookies)
+                scrapy_cookies.extend(self.google_cookies)
                 logger.info(f"Loaded {len(self.google_cookies)} Google session cookies")
             else:
                 # Google cookies are required to crawl sites.google.com. Without
@@ -373,8 +403,8 @@ class WebsiteCrawler(Crawler):
                     "Run `python -m crawlers.auth.google_bootstrap --output <path>` to capture a Google session."
                 )
 
-        # Pass None instead of an empty dict so the spider keeps default behavior
-        # for crawls that have no auth configured.
+        # Pass None instead of an empty list so the spider keeps default
+        # behavior for crawls that have no auth configured.
         scrapy_cookies = scrapy_cookies or None
         
         # Execute crawling based on method
@@ -383,7 +413,7 @@ class WebsiteCrawler(Crawler):
         else:
             return self._discover_urls_with_internal_crawler(base_urls, max_depth, keep_query_params)
 
-    def _discover_urls_with_scrapy(self, base_urls: list, max_depth: int, scrapy_cookies: dict) -> list:
+    def _discover_urls_with_scrapy(self, base_urls: list, max_depth: int, scrapy_cookies: list) -> list:
         """Discover URLs using Scrapy crawler."""
         logger.info("Using Scrapy to crawl the website")
         

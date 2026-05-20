@@ -24,7 +24,14 @@ class WebContentExtractor(WebExtractorBase):
         # Track consecutive failures for adaptive reset
         self.consecutive_failures = 0
         self.max_consecutive_failures = 3
-        
+        # When True, skip the unauthenticated `requests.get` prefetch and go
+        # straight to the Playwright path. Flipped on by
+        # `crawlers.website_crawler._apply_auth_to_indexer` when SAML or
+        # google_auth is wired in — otherwise the static prefetch follows
+        # redirects to the IdP sign-in page, returns >500 chars, and
+        # short-circuits the authenticated browser path.
+        self.skip_static_prefetch = False
+
         if browser is None:
             self._setup_browser()
     
@@ -391,43 +398,48 @@ class WebContentExtractor(WebExtractorBase):
         # JS-evaluating document.innerText gives rich text but page.content() gives
         # framework tags, not real HTML. We fall through to the browser only if static
         # content is sparse (<500 chars), indicating a true SPA needing JS rendering.
-        try:
-            from bs4 import BeautifulSoup
-            static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
-            static_resp.raise_for_status()
-            if 'text/html' in static_resp.headers.get('content-type', '').lower():
-                soup = BeautifulSoup(static_resp.text, 'html.parser')
-                static_text = soup.get_text(separator=' ', strip=True)
-                if len(static_text.strip()) > 500:
-                    result['html'] = static_resp.text
-                    result['url'] = static_resp.url
-                    result['title'] = soup.title.string if soup.title else ''
-                    result['text'] = static_text
-                    result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
-                    # Extract images with same filtering as the browser path
-                    from urllib.parse import urljoin
-                    for img_tag in soup.find_all('img'):
-                        src = img_tag.get('src', '')
-                        if not src or src.startswith('data:') or src.startswith('blob:'):
-                            continue
-                        try:
-                            w = int(img_tag.get('width', '0') or '0')
-                        except (ValueError, TypeError):
-                            w = 0
-                        try:
-                            h = int(img_tag.get('height', '0') or '0')
-                        except (ValueError, TypeError):
-                            h = 0
-                        if (w > 0 and w < 10) or (h > 0 and h < 10):
-                            continue
-                        result['images'].append({'src': urljoin(url, src), 'alt': img_tag.get('alt', '')})
-                    logger.info(f"Static fetch used for {url}: {len(static_text)} chars")
-                    logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
-                                f"tables = {len(result['tables'])}, links = {len(result['links'])}")
-                    return result
-                logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
-        except Exception as e:
-            logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
+        # When `skip_static_prefetch` is set (auth configured), bypass this path
+        # entirely — unauthenticated requests.get follows redirects to the IdP
+        # sign-in page, which passes the 500-char threshold and would otherwise
+        # prevent the authenticated Playwright context from ever running.
+        if not self.skip_static_prefetch:
+            try:
+                from bs4 import BeautifulSoup
+                static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
+                static_resp.raise_for_status()
+                if 'text/html' in static_resp.headers.get('content-type', '').lower():
+                    soup = BeautifulSoup(static_resp.text, 'html.parser')
+                    static_text = soup.get_text(separator=' ', strip=True)
+                    if len(static_text.strip()) > 500:
+                        result['html'] = static_resp.text
+                        result['url'] = static_resp.url
+                        result['title'] = soup.title.string if soup.title else ''
+                        result['text'] = static_text
+                        result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                        # Extract images with same filtering as the browser path
+                        from urllib.parse import urljoin
+                        for img_tag in soup.find_all('img'):
+                            src = img_tag.get('src', '')
+                            if not src or src.startswith('data:') or src.startswith('blob:'):
+                                continue
+                            try:
+                                w = int(img_tag.get('width', '0') or '0')
+                            except (ValueError, TypeError):
+                                w = 0
+                            try:
+                                h = int(img_tag.get('height', '0') or '0')
+                            except (ValueError, TypeError):
+                                h = 0
+                            if (w > 0 and w < 10) or (h > 0 and h < 10):
+                                continue
+                            result['images'].append({'src': urljoin(url, src), 'alt': img_tag.get('alt', '')})
+                        logger.info(f"Static fetch used for {url}: {len(static_text)} chars")
+                        logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
+                                    f"tables = {len(result['tables'])}, links = {len(result['links'])}")
+                        return result
+                    logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
+            except Exception as e:
+                logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
 
         page = context = None
         # Cap at 90s: OS-level Chromium crash (SIGKILL) leaves websocket open, causing

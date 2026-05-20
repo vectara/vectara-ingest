@@ -1,6 +1,6 @@
 import unittest
 
-from core.indexer_utils import auth_redirect_reason, normalize_url_for_metadata
+from core.indexer_utils import auth_redirect_reason, is_auth_host, normalize_url_for_metadata
 
 
 class TestAuthRedirectReason(unittest.TestCase):
@@ -69,6 +69,33 @@ class TestAuthRedirectReason(unittest.TestCase):
         self.assertIsNone(auth_redirect_reason(None, "https://accounts.google.com/x"))
         self.assertIsNone(auth_redirect_reason("https://example.com", None))
         self.assertIsNone(auth_redirect_reason("", ""))
+
+
+class TestIsAuthHost(unittest.TestCase):
+    """`is_auth_host` flags URLs whose host is itself a sign-in / IdP host,
+    independent of any prior redirect. Used to drop links like
+    `accounts.google.com/SignOutOptions` that are embedded as direct links
+    in partially-authenticated pages."""
+
+    def test_flags_accounts_google(self):
+        self.assertTrue(is_auth_host(
+            "https://accounts.google.com/SignOutOptions?continue=https://sites.google.com/..."
+        ))
+
+    def test_flags_okta_subdomain(self):
+        self.assertTrue(is_auth_host("https://acme.okta.com/login/sso"))
+
+    def test_does_not_flag_content_host(self):
+        self.assertFalse(is_auth_host("https://sites.google.com/d/abc/preview"))
+
+    def test_does_not_flag_lookalike(self):
+        # Same suffix-precision guard as auth_redirect_reason.
+        self.assertFalse(is_auth_host("https://fakeokta.com/login"))
+
+    def test_handles_missing_or_relative(self):
+        self.assertFalse(is_auth_host(None))
+        self.assertFalse(is_auth_host(""))
+        self.assertFalse(is_auth_host("/relative/path"))
 
 
 class TestNormalizeUrlForMetadata(unittest.TestCase):

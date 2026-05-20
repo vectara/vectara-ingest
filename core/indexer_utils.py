@@ -263,6 +263,28 @@ def auth_redirect_reason(original_url: str, final_url: str) -> Optional[str]:
     return None
 
 
+def is_auth_host(url: str) -> bool:
+    """True if `url`'s host matches a known identity-provider netloc.
+
+    Use this to skip URLs that are sign-in / account-chooser pages reached
+    by a direct link (e.g. an `accounts.google.com/SignOutOptions` link
+    embedded in a partially-authenticated page), where `auth_redirect_reason`
+    does not fire because no netloc change occurred during the fetch.
+    """
+    if not url:
+        return False
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    for netloc in _AUTH_NETLOCS:
+        if host == netloc or host.endswith("." + netloc):
+            return True
+    return False
+
+
 def prepare_file_metadata(metadata: Dict[str, Any], filename: str, static_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Prepare file metadata by adding filename and static metadata"""
     if static_metadata:

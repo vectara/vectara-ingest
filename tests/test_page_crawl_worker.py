@@ -62,19 +62,28 @@ class TestPageCrawlWorkerGoogleAuth(unittest.TestCase):
             credentials_file="/tmp/creds.json",
         )
         fake = _fake_indexer()
+        fake.web_extractor.skip_static_prefetch = False
 
         with patch("crawlers.website_crawler.Indexer", return_value=fake), \
              patch("crawlers.website_crawler.normalize_vectara_endpoint", return_value="https://api.vectara.io"), \
              patch("crawlers.website_crawler.setup_logging"), \
              patch("crawlers.website_crawler.GoogleAuthManager") as MockGAM:
-            MockGAM.return_value.get_authenticated_cookies.return_value = {
-                "SID": "sid-val",
-                "__Secure-1PSID": "psid-val",
-            }
+            MockGAM.return_value.get_authenticated_cookies.return_value = [
+                {"name": "SID", "value": "sid-val", "domain": ".google.com",
+                 "path": "/", "secure": True},
+                {"name": "__Secure-1PSID", "value": "psid-val",
+                 "domain": ".google.com", "path": "/", "secure": True},
+            ]
+            MockGAM.return_value.storage_state_path = "/tmp/s.json"
             worker.setup()
 
-        self.assertEqual(fake.session.cookies.get("SID"), "sid-val")
-        self.assertEqual(fake.session.cookies.get("__Secure-1PSID"), "psid-val")
+        self.assertEqual(
+            fake.session.cookies.get("SID", domain=".google.com"), "sid-val",
+        )
+        self.assertEqual(
+            fake.session.cookies.get("__Secure-1PSID", domain=".google.com"),
+            "psid-val",
+        )
 
     def test_setup_does_not_build_useless_bearer_session(self):
         # Pre-fix behavior: worker called get_authenticated_session() and
@@ -91,7 +100,11 @@ class TestPageCrawlWorkerGoogleAuth(unittest.TestCase):
              patch("crawlers.website_crawler.normalize_vectara_endpoint", return_value="https://api.vectara.io"), \
              patch("crawlers.website_crawler.setup_logging"), \
              patch("crawlers.website_crawler.GoogleAuthManager") as MockGAM:
-            MockGAM.return_value.get_authenticated_cookies.return_value = {"SID": "x"}
+            MockGAM.return_value.get_authenticated_cookies.return_value = [
+                {"name": "SID", "value": "x", "domain": ".google.com",
+                 "path": "/", "secure": True},
+            ]
+            MockGAM.return_value.storage_state_path = "/tmp/s.json"
             worker.setup()
 
             MockGAM.return_value.get_authenticated_session.assert_not_called()

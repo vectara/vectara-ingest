@@ -4,10 +4,21 @@ Run OUTSIDE the Docker container (Playwright needs a display for headed mode):
 
     python -m crawlers.auth.google_bootstrap --output /path/to/google_storage_state.json
 
-The script opens a real Chromium window, waits for you to sign in to Google
-(including 2FA / SSO / account-chooser steps), then writes the resulting cookies
-and localStorage to `--output` as a JSON file. Mount that file into the
-container at the path you set in `website_crawler.google_auth.storage_state_path`.
+The script opens a real Google Chrome window (installed Chrome, not Playwright's
+bundled Chromium — Chromium is reliably flagged by Cloudflare / Google bot
+detection), waits for you to sign in to Google (including 2FA / SSO /
+account-chooser steps), then writes the resulting cookies and localStorage to
+`--output` as a JSON file. Mount that file into the container at the path you
+set in `website_crawler.google_auth.storage_state_path`.
+
+A persistent Chrome profile is kept under `--profile-dir` so subsequent runs
+look like a returning user and usually skip CAPTCHAs / Cloudflare challenges
+entirely.
+
+Prerequisites (one-time):
+
+    pip install playwright
+    playwright install chrome
 
 Re-run whenever the stored session expires (typical for Workspace SSO: a few
 weeks). The crawler surfaces a clear error message when this happens.
@@ -51,6 +62,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=300,
         help="Max seconds to wait for sign-in to complete (default: %(default)s).",
     )
+    p.add_argument(
+        "--profile-dir",
+        default=os.path.expanduser("~/.cache/vectara-ingest/google_bootstrap_profile"),
+        help=(
+            "Persistent Chrome profile directory. Reusing the same directory "
+            "across runs avoids repeated CAPTCHAs / Cloudflare challenges "
+            "(default: %(default)s)."
+        ),
+    )
+    p.add_argument(
+        "--channel",
+        default="chrome",
+        help=(
+            "Playwright browser channel to launch. Defaults to installed "
+            "Google Chrome ('chrome'), which is far less likely to be flagged "
+            "as a bot than bundled Chromium. Pass an empty string to use "
+            "Playwright's bundled Chromium instead."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -63,7 +93,7 @@ def run(argv: list[str] | None = None) -> int:
     except ImportError:
         logging.error(
             "Playwright is not installed. Install it locally with "
-            "`pip install playwright && playwright install chromium`."
+            "`pip install playwright && playwright install chrome`."
         )
         return 2
 
@@ -72,13 +102,27 @@ def run(argv: list[str] | None = None) -> int:
     if output_dir and not os.path.isdir(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
-    logging.info("Opening Chromium for Google sign-in. Complete the login flow in the browser window.")
+    profile_dir = os.path.abspath(args.profile_dir)
+    os.makedirs(profile_dir, exist_ok=True)
+
+    channel = args.channel or None
+    logging.info(
+        f"Opening {channel or 'bundled Chromium'} for Google sign-in. "
+        f"Complete the login flow in the browser window."
+    )
     logging.info(f"Target start URL: {args.start_url}")
+    logging.info(f"Using persistent profile: {profile_dir}")
     logging.info(f"Will save storage state to: {output_path}")
 
+    launch_args = ["--disable-blink-features=AutomationControlled"]
+
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False)
-        context = browser.new_context()
+        context = pw.chromium.launch_persistent_context(
+            user_data_dir=profile_dir,
+            channel=channel,
+            headless=False,
+            args=launch_args,
+        )
         page = context.new_page()
         page.goto(args.start_url, wait_until="domcontentloaded")
 
@@ -91,12 +135,12 @@ def run(argv: list[str] | None = None) -> int:
             )
         except Exception as e:
             logging.error(f"Sign-in did not complete within {args.timeout_seconds}s: {e}")
-            browser.close()
+            context.close()
             return 1
 
         context.storage_state(path=output_path)
         logging.info(f"Saved Google session to {output_path}")
-        browser.close()
+        context.close()
 
     return 0
 
