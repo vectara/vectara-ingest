@@ -29,7 +29,8 @@ sys.modules.setdefault("playwright.sync_api", MagicMock())
 from crawlers.website_crawler import PageCrawlWorker
 
 
-def _build_worker(google_auth_cfg=None, credentials_file=None):
+def _build_worker(google_auth_cfg=None, credentials_file=None, saml_auth_cfg=None,
+                  saml_username=None, saml_password=None):
     cfg = {
         "vectara": {
             "endpoint": "https://api.vectara.io",
@@ -42,6 +43,12 @@ def _build_worker(google_auth_cfg=None, credentials_file=None):
         cfg["website_crawler"]["google_auth"] = google_auth_cfg
         if credentials_file is not None:
             cfg["website_crawler"]["google_credentials_file"] = credentials_file
+    if saml_auth_cfg:
+        cfg["website_crawler"]["saml_auth"] = saml_auth_cfg
+        if saml_username is not None:
+            cfg["website_crawler"]["saml_username"] = saml_username
+        if saml_password is not None:
+            cfg["website_crawler"]["saml_password"] = saml_password
     return PageCrawlWorker(cfg, num_per_second=5)
 
 
@@ -109,6 +116,53 @@ class TestPageCrawlWorkerGoogleAuth(unittest.TestCase):
 
             MockGAM.return_value.get_authenticated_session.assert_not_called()
             MockGAM.return_value.get_authenticated_cookies.assert_called_once()
+
+
+class TestPageCrawlWorkerSamlAuth(unittest.TestCase):
+    """The SAML worker branch must wire auth into both `indexer.session` and
+    `indexer.web_extractor` via `_apply_auth_to_indexer`. A bare session
+    assignment would leave `skip_static_prefetch` off, so the unauthenticated
+    static prefetch in `WebContentExtractor.fetch_page_contents` follows
+    redirects to the IdP login page and short-circuits the Playwright path —
+    SAML-only crawls would never see authenticated content."""
+
+    def test_setup_routes_saml_through_apply_auth_to_indexer(self):
+        worker = _build_worker(
+            saml_auth_cfg={"idp_url": "https://idp.example.com"},
+            saml_username="user",
+            saml_password="pw",
+        )
+        fake = _fake_indexer()
+        fake.web_extractor.skip_static_prefetch = False
+        original_new_context = fake.web_extractor.browser.new_context
+
+        saml_session_sentinel = requests.Session()
+
+        with patch("crawlers.website_crawler.Indexer", return_value=fake), \
+             patch("crawlers.website_crawler.normalize_vectara_endpoint", return_value="https://api.vectara.io"), \
+             patch("crawlers.website_crawler.setup_logging"), \
+             patch("crawlers.website_crawler.SAMLAuthManager") as MockSAM:
+            MockSAM.return_value.get_authenticated_session.return_value = saml_session_sentinel
+            worker.setup()
+
+        # requests session wired
+        self.assertIs(fake.session, saml_session_sentinel)
+        # static prefetch bypassed so IdP HTML can't poison the result
+        self.assertTrue(fake.web_extractor.skip_static_prefetch)
+        # new_context replaced with the cookie-transferring wrapper
+        self.assertIsNot(fake.web_extractor.browser.new_context, original_new_context)
+
+    def test_setup_raises_when_saml_secrets_missing(self):
+        # Guards against a regression where the secrets check is bypassed
+        # before the auth wiring is attempted.
+        worker = _build_worker(saml_auth_cfg={"idp_url": "https://idp.example.com"})
+        fake = _fake_indexer()
+
+        with patch("crawlers.website_crawler.Indexer", return_value=fake), \
+             patch("crawlers.website_crawler.normalize_vectara_endpoint", return_value="https://api.vectara.io"), \
+             patch("crawlers.website_crawler.setup_logging"):
+            with self.assertRaises(ValueError):
+                worker.setup()
 
 
 if __name__ == "__main__":

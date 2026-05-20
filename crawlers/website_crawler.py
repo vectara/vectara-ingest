@@ -154,11 +154,18 @@ class PageCrawlWorker(object):
                 auth_manager = SAMLAuthManager(config=self.saml_config, secrets=saml_secrets)
                 self.session = auth_manager.get_authenticated_session()
                 logging.info(f"[Worker {worker_pid}] SAML authentication successful.")
-                
-                # Assign the authenticated session to the indexer
-                self.indexer.session = self.session
-                logging.info(f"[Worker {worker_pid}] Authenticated session assigned to indexer.")
-                
+
+                # Wire SAML into both requests.Session and Playwright web_extractor
+                # via the shared helper. A bare `indexer.session = self.session`
+                # would leave `skip_static_prefetch` off, so the unauthenticated
+                # static prefetch in `WebContentExtractor.fetch_page_contents`
+                # would follow redirects to the IdP and short-circuit the
+                # authenticated browser path before it ran.
+                _apply_auth_to_indexer(self.indexer, saml_session=self.session)
+                logging.info(
+                    f"[Worker {worker_pid}] SAML session wired into indexer (requests + Playwright)."
+                )
+
             except Exception as e:
                 logging.error(f"[Worker {worker_pid}] Fatal SAML authentication failure: {e}")
                 raise

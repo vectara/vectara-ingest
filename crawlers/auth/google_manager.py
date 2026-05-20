@@ -48,7 +48,7 @@ VALID_MODES = ("service_account", "oauth_user")
 DOCKER_STORAGE_STATE_PATH = "/home/vectara/env/google_storage_state.json"
 
 
-def get_credentials(
+def get_service_account_credentials(
     delegated_user: str,
     credentials_file: str,
     scopes: Optional[List[str]] = None,
@@ -153,12 +153,13 @@ class GoogleAuthManager:
             raise ValueError(
                 "google_auth requires 'credentials_file' in secrets to mint API "
                 "credentials (set GOOGLE_CREDENTIALS_FILE in secrets.toml). "
-                "Cookie-only crawls of sites.google.com do not need this — "
-                "only callers of get_credentials()/get_authenticated_session() do."
+                "Cookie-only crawls of sites.google.com do not need this — only "
+                "callers of GoogleAuthManager.get_credentials() / "
+                "GoogleAuthManager.get_authenticated_session() do."
             )
 
         if self.mode == "service_account":
-            self._credentials = get_credentials(
+            self._credentials = get_service_account_credentials(
                 self.delegated_user,
                 self.credentials_file,
                 scopes=self.scopes,

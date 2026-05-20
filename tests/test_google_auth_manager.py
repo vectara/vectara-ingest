@@ -154,7 +154,9 @@ def test_get_credentials_service_account_delegates_to_gdrive_helper():
     secrets = {"credentials_file": "/tmp/sa.json"}
 
     fake_creds = MagicMock(name="fake_sa_creds")
-    with patch.object(google_manager, "get_credentials", return_value=fake_creds) as helper:
+    with patch.object(
+        google_manager, "get_service_account_credentials", return_value=fake_creds
+    ) as helper:
         mgr = google_manager.GoogleAuthManager(config, secrets)
         result = mgr.get_credentials()
 
