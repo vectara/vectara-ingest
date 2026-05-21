@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any, Optional
 from email.utils import parsedate_to_datetime
 from datetime import datetime
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 from bs4 import BeautifulSoup
 from omegaconf import OmegaConf
 
@@ -215,11 +215,24 @@ def validate_text_content(text: str, min_length: int = 3) -> bool:
     return text is not None and len(text) >= min_length
 
 
+# Google adds /u/<digits>/ right after the host to indicate the active account
+# context when you're signed into multiple Google accounts. The same document
+# is served either way, so the segment is identity-irrelevant — strip it so
+# /u/0/d/X and /d/X don't churn through the corpus as separate docs.
+_GOOGLE_USER_PREFIX_RE = re.compile(r"^/u/\d+/")
+
+
 def normalize_url_for_metadata(url: str) -> str:
-    """Return URL-decoded version of URL for metadata storage"""
-    if url and isinstance(url, str):
-        return unquote(url)
-    return url
+    """URL-decode and strip Google's /u/N/ account-context segment."""
+    if not (url and isinstance(url, str)):
+        return url
+    decoded = unquote(url)
+    parsed = urlparse(decoded)
+    host = parsed.netloc.lower()
+    if (host == "google.com" or host.endswith(".google.com")) and _GOOGLE_USER_PREFIX_RE.match(parsed.path):
+        new_path = _GOOGLE_USER_PREFIX_RE.sub("/", parsed.path)
+        decoded = urlunparse(parsed._replace(path=new_path))
+    return decoded
 
 
 # Known identity-provider netlocs. Matched by equality OR as a suffix

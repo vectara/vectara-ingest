@@ -20,6 +20,23 @@ import ray
 logger = logging.getLogger(__name__)
 
 
+def _pick_google_target_url(cfg) -> str | None:
+    """Pick the URL the Google auth manager should navigate to for establishing
+    the session. Returns the first configured crawl URL when available so the
+    auth-establishing navigation lands on a Workspace-scoped path (which routes
+    to the correct Google account); otherwise returns None and the manager
+    falls back to bare sites.google.com.
+    """
+    try:
+        urls = cfg.website_crawler.urls
+    except AttributeError:
+        return None
+    if not urls:
+        return None
+    first = urls[0]
+    return first if isinstance(first, str) and first else None
+
+
 def _transfer_session_to_context(context, session):
     """Forward cookies from a `requests.Session` to a Playwright context."""
     if not session or not hasattr(session, 'cookies'):
@@ -189,7 +206,12 @@ class PageCrawlWorker(object):
 
             try:
                 google_manager = GoogleAuthManager(config=self.google_config, secrets=google_secrets)
-                google_cookies = google_manager.get_authenticated_cookies()
+                # Use the actual configured crawl URL to establish session cookies.
+                # Workspace-scoped paths (sites.google.com/<domain>/<site>) route
+                # directly to the right Google account; bare sites.google.com can
+                # bounce to the multi-account chooser on Firefox-imported sessions.
+                google_target = _pick_google_target_url(self.cfg)
+                google_cookies = google_manager.get_authenticated_cookies(target_url=google_target)
                 _apply_auth_to_indexer(
                     self.indexer,
                     google_cookies=google_cookies,
@@ -301,7 +323,8 @@ class WebsiteCrawler(Crawler):
 
         try:
             google_manager = GoogleAuthManager(google_config, secrets_dict)
-            self.google_cookies = google_manager.get_authenticated_cookies()
+            target = _pick_google_target_url(self.cfg)
+            self.google_cookies = google_manager.get_authenticated_cookies(target_url=target)
             self.google_storage_state_path = google_manager.storage_state_path
             logger.info(
                 f"Captured {len(self.google_cookies)} Google session cookies."
