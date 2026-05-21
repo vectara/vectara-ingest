@@ -84,17 +84,19 @@ def canonical_save_name(name: str, mime_type: Optional[str]) -> str:
     If ``mime_type`` is in ``_MIME_TO_EXT``, append the canonical extension
     (unless the name already ends with it, case-insensitive). For unknown mime
     types, fall back to ``mimetypes.guess_extension``; if that also fails, the
-    name is returned unchanged.
+    name is returned with any trailing dots stripped so ``os.path.splitext``
+    downstream doesn't swallow the real extension (``"file.bin."`` →
+    ``("file.bin", ".")``).
     """
-    if not mime_type:
-        return name
     base = name.rstrip('.')
+    if not mime_type:
+        return base
     canonical = _MIME_TO_EXT.get(mime_type)
     if canonical is None:
         guessed = mimetypes.guess_extension(mime_type)
         if guessed and not base.lower().endswith(guessed.lower()):
             return base + guessed
-        return name
+        return base
     if base.lower().endswith(canonical.lower()):
         return base
     return base + canonical

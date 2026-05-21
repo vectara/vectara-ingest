@@ -99,14 +99,28 @@ class TestCanonicalSaveName(unittest.TestCase):
 
     def test_unknown_mime_leaves_name_untouched(self):
         # If we don't recognise the mime type and stdlib can't guess one, the
-        # original name is returned verbatim so save_local_file can still try.
+        # name is returned (sans trailing dots) so save_local_file can still try.
         self.assertEqual(
             canonical_save_name("thing.foo", "application/x-unknown-blob"),
             "thing.foo",
         )
 
+    def test_unknown_mime_strips_trailing_dot(self):
+        # Trailing dots must always be normalized, even when we can't pick a
+        # canonical extension. Otherwise os.path.splitext("file.bin.") yields
+        # ("file.bin", ".") and save_local_file drops the real ".bin" extension,
+        # causing the downstream whitelist to drop a file we could have routed.
+        self.assertEqual(
+            canonical_save_name("file.bin.", "application/x-unknown-blob"),
+            "file.bin",
+        )
+
     def test_none_mime_returns_name_unchanged(self):
         self.assertEqual(canonical_save_name("plain", None), "plain")
+
+    def test_none_mime_strips_trailing_dot(self):
+        # Same trailing-dot hazard when the file arrives with no mime at all.
+        self.assertEqual(canonical_save_name("file.bin.", None), "file.bin")
 
 
 class TestExtractAclMetadata(unittest.TestCase):
