@@ -16,6 +16,10 @@ readonly ERR_CRAWLER_COPY_FAILED=8
 readonly ERR_CUSTOM_CRAWLER_NOT_FOUND=9
 readonly ERR_CRAWLER_FILENAME_MISMATCH=10
 readonly ERR_CRAWLER_NOT_FOUND=11
+# Generic "auth/credentials file referenced by config does not exist" for
+# crawlers other than gdrive. Keeping ERR_MISSING_GDRIVE_CREDS=7 with its
+# original meaning preserves any existing CI/orchestration that keys on 7.
+readonly ERR_MISSING_AUTH_FILE=12
 
 if [[ $# -lt 2 ]]; then
   echo "Missing arguments." >&2
@@ -239,6 +243,28 @@ if [[ "$crawler_type" == "gdrive" ]]; then
   DOCKER_RUN_ARGS+=(-v "$(realpath "$credentials_path"):/home/vectara/env/credentials.json:rw")
 fi
 
+# Mount Google storage_state file for the website crawler's google_auth flow.
+# Mirrors the gdrive credentials.json pattern: user supplies the host path in
+# YAML; we mount it to a fixed in-container path that `GoogleAuthManager`
+# resolves to automatically.
+if [[ "$crawler_type" == "website" ]]; then
+  storage_state_path=$(read_yaml_nested "data.get('website_crawler', {}).get('google_auth', {}).get('storage_state_path', '')")
+
+  if [[ -n "$storage_state_path" ]]; then
+    # Expand tilde to home directory
+    storage_state_path="${storage_state_path/#\~/$HOME}"
+
+    if [[ ! -f "$storage_state_path" ]]; then
+      echo "Error: Google storage_state file not found at '$storage_state_path'" >&2
+      echo "Run \`python -m crawlers.auth.google_bootstrap --output $storage_state_path\` to capture it." >&2
+      exit "$ERR_MISSING_AUTH_FILE"
+    fi
+
+    DOCKER_RUN_ARGS+=(-v "$(realpath "$storage_state_path"):/home/vectara/env/google_storage_state.json:ro")
+    echo "Mounting Google storage_state to: /home/vectara/env/google_storage_state.json"
+  fi
+fi
+
 if [[ "$crawler_type" == "box" ]]; then
   auth_type=$(read_yaml_nested "data.get('box_crawler', {}).get('auth_type', 'jwt')")
 
@@ -253,7 +279,7 @@ if [[ "$crawler_type" == "box" ]]; then
       if [[ ! -f "$jwt_config_path" ]]; then
         echo "Error: Box JWT config file not found at '$jwt_config_path'" >&2
         echo "Please ensure the jwt_config_file path in your config is correct" >&2
-        exit "$ERR_MISSING_GDRIVE_CREDS"
+        exit "$ERR_MISSING_AUTH_FILE"
       fi
 
       DOCKER_RUN_ARGS+=(-v "$(realpath "$jwt_config_path"):/home/vectara/env/box_config.json:ro")
@@ -270,7 +296,7 @@ if [[ "$crawler_type" == "box" ]]; then
       if [[ ! -f "$oauth_creds_path" ]]; then
         echo "Error: Box OAuth credentials file not found at '$oauth_creds_path'" >&2
         echo "Please ensure the oauth_credentials_file path in your config is correct" >&2
-        exit "$ERR_MISSING_GDRIVE_CREDS"
+        exit "$ERR_MISSING_AUTH_FILE"
       fi
 
       DOCKER_RUN_ARGS+=(-v "$(realpath "$oauth_creds_path"):/home/vectara/env/box_oauth_credentials.json:ro")

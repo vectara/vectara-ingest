@@ -128,6 +128,35 @@ class TestCrawlTrackerTracking(unittest.TestCase):
         self.assertEqual(stats["skipped_docs"], 1)
         self.assertEqual(stats["total_docs"], 4)
 
+    def test_track_auth_required_is_distinct_from_failed(self):
+        # Auth-required URLs are a separate outcome from generic failures:
+        # the page wasn't broken, we just don't have access. The user needs
+        # this counted separately so they can decide whether to add auth.
+        self.tracker.track_auth_required(
+            "d1", url="https://sites.google.com/d/x/p/y/edit",
+            reason="redirected to identity-provider accounts.google.com",
+        )
+        self.tracker.track_failed("d2", error="500 internal server error")
+
+        stats = self.tracker.get_stats()
+        self.assertEqual(stats["auth_required_docs"], 1)
+        self.assertEqual(stats["failed_docs"], 1)
+        self.assertEqual(stats["total_docs"], 2)
+        # An auth_required doc must not also be counted as failed/indexed.
+        self.assertNotIn("d1", self.tracker.get_failed_ids())
+        self.assertNotIn("d1", self.tracker.get_indexed_ids())
+
+    def test_auth_required_retry_succeeds_decrements_counter(self):
+        # If the user later configures auth and the URL is re-crawled
+        # successfully, the auth_required counter must drop and indexed
+        # must rise — same per-status decrement logic as failed→indexed.
+        self.tracker.track_auth_required("d1", url="https://x.example/private")
+        self.assertEqual(self.tracker.get_stats()["auth_required_docs"], 1)
+        self.tracker.track_indexed("d1", url="https://x.example/private")
+        stats = self.tracker.get_stats()
+        self.assertEqual(stats["auth_required_docs"], 0)
+        self.assertEqual(stats["indexed_docs"], 1)
+
 
 class TestCrawlTrackerShutdown(unittest.TestCase):
     """Test graceful shutdown mechanics."""
@@ -345,6 +374,57 @@ class TestCrawlerShutdownWithoutTracker(unittest.TestCase):
                 crawler.check_shutdown()
 
             tracker.close()
+
+
+class TestCrawlTrackerMigration(unittest.TestCase):
+    """Existing pre-auth_required DBs must upgrade in place on open."""
+
+    def test_old_schema_is_migrated(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "crawl_tracking.db")
+            # Hand-create the *pre-migration* schema and seed a few rows,
+            # mirroring what older versions of vectara-ingest left on disk.
+            conn = sqlite3.connect(db_path)
+            conn.executescript("""
+                CREATE TABLE documents (
+                    doc_id TEXT NOT NULL,
+                    crawler_type TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('indexed', 'failed', 'skipped')),
+                    url TEXT, title TEXT, error TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (doc_id, crawler_type)
+                );
+                CREATE TABLE crawl_state (
+                    crawler_type TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    started_at TEXT,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    total_docs INTEGER DEFAULT 0,
+                    indexed_docs INTEGER DEFAULT 0,
+                    failed_docs INTEGER DEFAULT 0,
+                    skipped_docs INTEGER DEFAULT 0
+                );
+                INSERT INTO crawl_state(crawler_type, status, total_docs, indexed_docs)
+                    VALUES ('website', 'running', 1, 1);
+                INSERT INTO documents(doc_id, crawler_type, status, url, title)
+                    VALUES ('legacy', 'website', 'indexed', 'http://x', 't');
+            """)
+            conn.commit()
+            conn.close()
+
+            # Opening the tracker should migrate without raising.
+            tracker = CrawlTracker(db_path, "website")
+            try:
+                # The legacy row survived migration.
+                self.assertTrue(tracker.is_indexed("legacy"))
+                # New status now works on the migrated CHECK constraint.
+                tracker.track_auth_required("auth1", url="http://private")
+                stats = tracker.get_stats()
+                self.assertEqual(stats["auth_required_docs"], 1)
+                self.assertEqual(stats["indexed_docs"], 1)
+            finally:
+                tracker.close()
 
 
 if __name__ == "__main__":

@@ -218,6 +218,9 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
         if k == 'SAML_PASSWORD':
             update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
             continue
+        if k == 'GOOGLE_CREDENTIALS_FILE':
+            update_omega_conf(cfg, reason, f'website_crawler.{k.lower()}', v)
+            continue
         if k.startswith('aws_'):
             update_omega_conf(cfg, reason, f's3_crawler.{k.lower()}', v)
             continue
@@ -400,9 +403,10 @@ def run_ingest(config_file: str, profile: str, secrets_path: Optional[str] = Non
             stats = tracker.get_stats()
             if stats:
                 logger.info(
-                    "Crawl stats: total=%s indexed=%s failed=%s skipped=%s",
+                    "Crawl stats: total=%s indexed=%s failed=%s skipped=%s auth_required=%s",
                     stats["total_docs"], stats["indexed_docs"],
                     stats["failed_docs"], stats["skipped_docs"],
+                    stats.get("auth_required_docs", 0),
                 )
             tracker.close()
         crawler.tracker = None

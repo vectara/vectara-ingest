@@ -165,3 +165,4 @@ vectara_ingest_output/data-private
 .run-env
 
 gcp_service_account.json
+google_storage_state.json

@@ -19,6 +19,7 @@ from scrapy.spiders.sitemap import iterloc
 
 
 from core.indexer import Indexer
+from core.indexer_utils import auth_redirect_reason, is_auth_host
 from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
@@ -59,6 +60,16 @@ def recursive_crawl(url: str, depth: int,
 
     try:
         res = indexer.fetch_page_contents(url)
+        # If the fetch was bounced to a sign-in / IdP page, drop link extraction:
+        # the page we landed on is the IdP's login form, not real content, and
+        # following its links would pollute the discovery set with sign-in chrome.
+        auth_reason = auth_redirect_reason(url, res.get('url', url))
+        if auth_reason:
+            logger.warning(
+                f"Skipping discovery from {url}: {auth_reason} ({res.get('url')}). "
+                f"Configure website_crawler.google_auth / saml_auth to crawl it."
+            )
+            return visited
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
                     if      u not in visited and u.startswith('http') and 
@@ -86,7 +97,7 @@ DISALLOWED_REDIRECT_EXTENSIONS = tuple(
 )
 class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
 
-    def _redirect(self, redirected, request, spider, reason):
+    def _redirect(self, redirected, request, reason):
         redirect_to_url = redirected.url
         should_ignore_this_redirect = False
 
@@ -95,13 +106,12 @@ class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
             path_lower = parsed_redirect_to_url.path.lower()
 
             if path_lower.endswith(DISALLOWED_REDIRECT_EXTENSIONS):
-                spider.logger.info(
+                logger.info(
                     f"REDIRECT_FILTER: Ignoring redirect from '{request.url}' to disallowed file type: '{redirect_to_url}'"
                 )
                 should_ignore_this_redirect = True
         except Exception as e:
-            # This block now only catches truly unexpected errors during your *checking logic* (e.g., urlparse failure)
-            spider.logger.error(
+            logger.error(
                 f"REDIRECT_FILTER: Unexpected error during file type check for redirect from '{request.url}' to '{redirect_to_url}': {e}. "
                 f"Allowing redirect to proceed by default to avoid breaking other functionalities."
             )
@@ -109,7 +119,7 @@ class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
         if should_ignore_this_redirect:
             raise IgnoreRequest(f"Redirect target '{redirect_to_url}' is a disallowed file type; original request '{request.url}' will be ignored.")
         else:
-            return super()._redirect(redirected, request, spider, reason)
+            return super()._redirect(redirected, request, reason)
 
 class LinkSpider(scrapy.Spider):
     name = "link_spider"
@@ -120,7 +130,7 @@ class LinkSpider(scrapy.Spider):
         positive_regexes: list[str],
         negative_regexes: list[str],
         max_depth: int = 1,
-        cookies: dict = None,
+        cookies: list = None,
         *args, **kwargs
     ):
         """
@@ -128,11 +138,15 @@ class LinkSpider(scrapy.Spider):
         positive_regexes: list of strings, e.g. '["^https?://.*foo","bar$"]'
         negative_regexes: list of strings, e.g. '["/logout","/private"]'
         max_depth: integer, how many hops from any start_url
+        cookies: list of {name, value, domain?, path?, secure?} dicts; passed
+            to each Scrapy Request so CookieMiddleware can scope host-bound
+            cookies (`__Host-*`, `__Secure-*`) correctly on cross-domain
+            redirects.
         """
         super().__init__(*args, **kwargs)
         self.start_urls = start_urls
         self.max_depth = int(max_depth)
-        self.cookies = cookies or {}
+        self.cookies = cookies or []
         try:
             self.positive_patterns = [re.compile(r) for r in positive_regexes]
             self.negative_patterns = [re.compile(r) for r in negative_regexes]
@@ -178,9 +192,33 @@ class LinkSpider(scrapy.Spider):
 
         if not parsed_url.scheme.lower() in ['http', 'https']:
             return False
+
+        # Never follow links into identity-provider hosts (e.g. account
+        # chooser, sign-out option pages). These leak in via authenticated
+        # response bodies and pollute the discovered URL list without ever
+        # producing real content.
+        if is_auth_host(url):
+            return False
+
         return self.is_valid_by_regex(url)
 
     def parse(self, response):
+        # If Scrapy followed redirects, redirect_urls[0] is the original request
+        # URL; otherwise the request URL itself is the original.
+        original_url = response.meta.get('redirect_urls', [response.url])[0]
+        auth_reason = auth_redirect_reason(original_url, response.url)
+        # Also catch the case where the response URL is itself on an IDP host
+        # without a netloc change (e.g. a direct link to accounts.google.com/
+        # SignOutOptions found in an authenticated page body).
+        if not auth_reason and is_auth_host(response.url):
+            auth_reason = f"response URL is identity-provider host {urlparse(response.url).netloc}"
+        if auth_reason:
+            logger.warning(
+                f"Skipping discovery from {original_url}: {auth_reason} ({response.url}). "
+                f"Configure website_crawler.google_auth / saml_auth to crawl it."
+            )
+            return
+
         extract_links = True
         parsed_response_url = urlparse(response.url)
         response_path_lower = parsed_response_url.path.lower() # Get lowercase path
@@ -223,7 +261,7 @@ def run_link_spider(
     negative_regexes: List[str],
     max_depth:        int = 1,
     extra_settings:   dict | None = None,
-    cookies:          dict | None = None,
+    cookies:          list | None = None,
 ) -> List[str]:
     """
     Blocking, in-process runner that:
@@ -302,7 +340,7 @@ def run_link_spider_isolated(
     negative_regexes: List[str],
     max_depth: int = 1,
     extra_settings: dict | None = None,
-    cookies: dict | None = None,
+    cookies: list | None = None,
 ) -> list[str]:
     """
     Launches run_link_spider(...) in a fresh Python process so that
