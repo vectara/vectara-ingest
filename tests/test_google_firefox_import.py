@@ -797,9 +797,9 @@ def test_profile_name_resolves_via_profile_groups_db_user_facing_name(
     SQLite at Profile Groups/<StoreID>.sqlite, NOT in profiles.ini (where
     Name= is the legacy internal label like 'default-release').
 
-    Regression coverage for Mr. Ofer's real-world case: he named the profile
-    'vectara' in Firefox's Profile Manager UI, but --profile-name vectara
-    was failing because the importer only knew about profiles.ini.
+    Regression coverage: when a profile is named in Firefox's Profile
+    Manager UI (e.g. 'vectara'), --profile-name was failing because the
+    importer only knew about profiles.ini.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(sys, "platform", "darwin")

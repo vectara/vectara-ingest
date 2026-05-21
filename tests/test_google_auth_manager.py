@@ -326,7 +326,7 @@ def test_account_chooser_is_not_treated_as_expired_session(tmp_path):
     The session is fine — Google just wants the user to pick which account.
     The previous check `'accounts.google.com' in current_url` flagged this
     as 'session expired', breaking customers who imported cookies from a
-    multi-account Firefox profile (Mr. Ofer's broadcom-google-site case).
+    multi-account Firefox profile.
 
     Fix: only ServiceLogin (true sign-in page) means expired. accountchooser
     means signed in. Capture cookies and continue."""
