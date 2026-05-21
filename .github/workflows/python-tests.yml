@@ -26,8 +26,7 @@ jobs:
         run: |
           uv pip install --system -r requirements.txt
           uv pip install --system -r requirements-extra.txt
-          # If you have test-specific dependencies, you might have a requirements-test.txt
-          # pip install -r requirements-test.txt
+          uv pip install --system -r requirements-test.txt
 
       - name: Run unit tests
         run: |
