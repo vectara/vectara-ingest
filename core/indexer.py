@@ -401,6 +401,7 @@ class Indexer:
                 response = self.session.request("POST", url, headers=post_headers, files=files)
         except Exception as e:
             logger.error(f"Exception {e} while uploading file {filename}")
+            self.last_error = f"upload exception: {e}"
             return False
 
         # Handle the response
@@ -434,8 +435,12 @@ class Indexer:
                             if self.store_docs:
                                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
                             return True
+                        # Re-upload returned a non-201 — fall through to the
+                        # generic error path below so the status code lands in
+                        # last_error.
                     except Exception as e:
                         logger.error(f"Failed to re-index file {uri}: {e}")
+                        self.last_error = f"re-upload exception: {e}"
                         return False
             else:
                 # File already exists but reindex is disabled - treat as success
@@ -445,6 +450,7 @@ class Indexer:
 
         # Log error for any other status code
         logger.error(f"Failed to upload file {uri}. Status code: {response.status_code}, Message: {response.text}")
+        self.last_error = f"upload returned HTTP {response.status_code}: {response.text[:200]}"
         return False
 
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:

@@ -5,7 +5,6 @@ import mimetypes
 import os
 import re
 import warnings
-import requests
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -45,6 +44,62 @@ READ_ROLES = frozenset({'reader', 'commenter', 'writer', 'fileOrganizer', 'organ
 _PERM_FIELDS = (
     'permissions(id,type,role,emailAddress,domain,deleted,displayName,permissionDetails)'
 )
+
+# Mime -> canonical extension for every type the indexer (or its dataframe /
+# image side-routes) can parse. Drive filenames are user-controlled — trailing
+# dots, made-up extensions, and unrelated suffixes like ``.bak`` are common —
+# so when Drive reports a mime we recognise, we trust it over the filename.
+_MIME_TO_EXT: Dict[str, str] = {
+    'application/pdf': '.pdf',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.ms-powerpoint': '.ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    'application/vnd.oasis.opendocument.text': '.odt',
+    'application/rtf': '.rtf',
+    'text/rtf': '.rtf',
+    'text/plain': '.txt',
+    'text/html': '.html',
+    'text/markdown': '.md',
+    'application/epub+zip': '.epub',
+    # dataframes
+    'text/csv': '.csv',
+    'application/vnd.ms-excel': '.xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    # images (only used when summarize_images is on; harmless otherwise)
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'image/tiff': '.tiff',
+    'image/svg+xml': '.svg',
+}
+
+
+def canonical_save_name(name: str, mime_type: Optional[str]) -> str:
+    """Return the filename to use on disk so the downstream extension whitelist
+    can route the file.
+
+    If ``mime_type`` is in ``_MIME_TO_EXT``, append the canonical extension
+    (unless the name already ends with it, case-insensitive). For unknown mime
+    types, fall back to ``mimetypes.guess_extension``; if that also fails, the
+    name is returned with any trailing dots stripped so ``os.path.splitext``
+    downstream doesn't swallow the real extension (``"file.bin."`` →
+    ``("file.bin", ".")``).
+    """
+    base = name.rstrip('.')
+    if not mime_type:
+        return base
+    canonical = _MIME_TO_EXT.get(mime_type)
+    if canonical is None:
+        guessed = mimetypes.guess_extension(mime_type)
+        if guessed and not base.lower().endswith(guessed.lower()):
+            return base + guessed
+        return base
+    if base.lower().endswith(canonical.lower()):
+        return base
+    return base + canonical
 
 # Legacy crawl-time displayName gate, opt-in. When configured, files are
 # indexed only if one of their permissions has a matching displayName. The
@@ -324,7 +379,6 @@ class UserWorker(object):
         self.indexer = indexer
         self.creds = None
         self.service = None
-        self.access_token = None
         self.shared_cache = shared_cache
         self.date_threshold = date_threshold
         self.permission_display_filter = permission_display_filter
@@ -384,6 +438,17 @@ class UserWorker(object):
     def setup(self):
         self.indexer.setup(use_playwright=False)
         setup_logging()
+        # Make ABAC config state visible up-front. When operators see empty
+        # acl_groups / acl_domains / acl_labels in production, this line tells
+        # them whether the feature is gated off, the Labels scope wasn't
+        # requested, or the data just isn't there to begin with.
+        logger.info(
+            "gdrive ABAC config: "
+            f"enabled={self._abac_enabled} "
+            f"resolve_inherited={self._abac_resolve_inherited} "
+            f"include_anyone={self._abac_include_anyone} "
+            f"fetch_labels={self._abac_fetch_labels}"
+        )
 
     def _passes_display_filter(self, permissions: List[Dict[str, Any]]) -> bool:
         """Legacy crawl-time gate: only index files whose permission displayName matches the filter."""
@@ -391,6 +456,60 @@ class UserWorker(object):
             return True
         allow = set(self.permission_display_filter)
         return any(p.get('displayName') in allow for p in permissions)
+
+    def _apply_mime_gate(self, files: List[dict]) -> List[dict]:
+        """Drop file types the indexer can't parse, or that Drive itself
+        refuses to return content for. Survivors are returned; drops are
+        recorded against the `mime_dropped` counter with a human-readable
+        reason so the per-user summary stays interpretable.
+
+        Two classes of block:
+          * **prefix block** — broad categories the parsers don't handle
+            (audio/video/archives/code) plus the few specific types that
+            historically caused trouble.
+          * **Google Workspace types without a downloadable form** — Forms,
+            Sites, My Maps, Jamboard, Fusion Tables. The Drive API returns
+            404/403 on get_media for these; they were previously surfacing as
+            `download_failed`, which misled operators into expecting a retry.
+            Drawings are intentionally *not* in this list because they
+            *do* export to PNG/PDF.
+        """
+        mime_prefix_to_remove = [
+            'audio', 'video',
+            'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
+            'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
+            'application/x-executable',
+            'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script',
+        ]
+        if not self._summarize_images:
+            mime_prefix_to_remove.append('image')
+
+        unexportable_google_types = {
+            'application/vnd.google-apps.form',
+            'application/vnd.google-apps.site',
+            'application/vnd.google-apps.map',
+            'application/vnd.google-apps.jam',
+            'application/vnd.google-apps.fusiontable',
+        }
+
+        kept: List[dict] = []
+        for f in files:
+            mime = f.get('mimeType', '')
+            if mime in unexportable_google_types:
+                self._record_drop(
+                    'mime_dropped', f,
+                    f"Google Workspace type '{mime}' is not exportable via Drive API",
+                )
+                continue
+            matched = next((p for p in mime_prefix_to_remove if mime.startswith(p)), None)
+            if matched is not None:
+                self._record_drop(
+                    'mime_dropped', f,
+                    f"mimeType starts with blocked prefix '{matched}'",
+                )
+                continue
+            kept.append(f)
+        return kept
 
     def _record_drop(self, bucket: str, file_obj: Dict[str, Any], reason: str) -> None:
         """Increment a drop counter and emit an INFO line so the operator can
@@ -809,13 +928,18 @@ class UserWorker(object):
                         out.append(f"{label_title}={v}")
         return out
 
-    def download_or_export_file(self, file_id: str, mime_type: Optional[str] = None) -> Tuple[Optional[io.BytesIO], Optional[str]]:
+    def _download_via_drive(
+        self, file_id: str, mime_type: Optional[str]
+    ) -> Tuple[Optional[io.BytesIO], Optional[HttpError]]:
+        """One download attempt. Returns (BytesIO, None) on success, or
+        (None, HttpError) on failure so the caller can decide whether to
+        retry. Routes through export_media when a mime is given (the
+        supported way to convert Workspace docs) and get_media otherwise."""
         try:
             if mime_type:
                 request = self.service.files().export_media(fileId=file_id, mimeType=mime_type)
             else:
                 request = self.service.files().get_media(fileId=file_id)
-
             byte_stream = io.BytesIO()
             downloader = MediaIoBaseDownload(byte_stream, request)
             done = False
@@ -823,33 +947,43 @@ class UserWorker(object):
                 _, done = downloader.next_chunk()
             byte_stream.seek(0)
             return byte_stream, None
-
         except HttpError as error:
-            if error.resp.status == 403 and \
-               any(e.get('reason') == 'exportSizeLimitExceeded' or e.get('reason') == 'fileNotDownloadable' for e in error.error_details):
-                get_url = f'https://www.googleapis.com/drive/v3/files/{file_id}?fields=exportLinks'
-                headers = {
-                    'Authorization': f'Bearer {self.access_token}',
-                    'Accept': 'application/json',
-                }
-                response = requests.get(get_url, headers=headers)
-                if response.status_code == 200:
-                    export_links = response.json().get('exportLinks', {})
-                    pdf_link = export_links.get('application/pdf')
-                    if pdf_link:
-                        pdf_response = requests.get(pdf_link, headers=headers)
-                        if pdf_response.status_code == 200:
-                            logger.info(f"Downloaded file {file_id} via link (as pdf)")
-                            return io.BytesIO(pdf_response.content), None
-                        else:
-                            reason = f"export link returned HTTP {pdf_response.status_code}"
-                            logger.error(f"An error occurred loading via link: {pdf_response.status_code}")
-                            return None, reason
-                    return None, "no application/pdf export link available"
-                return None, f"exportLinks lookup returned HTTP {response.status_code}"
-            reason = f"HttpError {error.resp.status}: {error}"
-            logger.error(f"An error occurred downloading file: {error}")
-            return None, reason
+            return None, error
+
+    def download_or_export_file(
+        self, file_id: str, mime_type: Optional[str] = None
+    ) -> Tuple[Optional[io.BytesIO], Optional[str]]:
+        """Download a Drive file's bytes. For Google Workspace exports that
+        Drive refuses in the requested mime (oversized .pptx export, etc.),
+        falls back to a PDF export via the same export_media path — the
+        supported method, which uses the auto-refreshing service credential.
+        We deliberately do not fall back to raw requests.get against
+        exportLinks: that path used a cached access_token which goes stale
+        on long crawls and produced 401s.
+        """
+        stream, error = self._download_via_drive(file_id, mime_type)
+        if stream is not None:
+            return stream, None
+
+        retryable_reasons = {'exportSizeLimitExceeded', 'fileNotDownloadable'}
+        should_retry_as_pdf = (
+            mime_type is not None
+            and mime_type != 'application/pdf'
+            and error.resp.status == 403
+            and any((e.get('reason') in retryable_reasons) for e in error.error_details)
+        )
+        if not should_retry_as_pdf:
+            logger.error(f"An error occurred downloading file {file_id}: {error}")
+            return None, f"HttpError {error.resp.status}: {error}"
+
+        logger.info(
+            f"Primary export of {file_id} refused ({error.resp.status}); retrying as PDF via export_media"
+        )
+        pdf_stream, pdf_error = self._download_via_drive(file_id, 'application/pdf')
+        if pdf_stream is not None:
+            return pdf_stream, None
+        logger.error(f"PDF fallback export also failed for {file_id}: {pdf_error}")
+        return None, f"HttpError {pdf_error.resp.status}: {pdf_error}"
 
     def save_local_file(
         self, file_id: str, name: str, mime_type: Optional[str] = None
@@ -858,6 +992,11 @@ class UserWorker(object):
         on success error_reason is None, on failure local_path is None and
         error_reason names the failing stage so callers can surface it."""
         path, extension = os.path.splitext(name)
+        # Treat a bare trailing dot (e.g. "Policy.") as "no extension" so the
+        # saved file doesn't end in '.' — a downstream extension whitelist
+        # check would then fail even when the mime type is supported.
+        if extension == '.':
+            extension = ''
         sanitized_name = f"{slugify(path)}{extension}"
         file_path = os.path.join("/tmp", sanitized_name)
         try:
@@ -884,16 +1023,14 @@ class UserWorker(object):
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             local_file_path, download_error = self.save_local_file(file_id, name + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         else:
-            # Drive often surfaces files without a filename extension (e.g. a PDF
-            # uploaded with just a title). The mime type is authoritative — use it
-            # to synthesize the extension so the downstream filter at line 765 can
-            # route the file.
-            name_for_save = name
-            if mime_type and not os.path.splitext(name)[1]:
-                guessed_ext = mimetypes.guess_extension(mime_type)
-                if guessed_ext:
-                    name_for_save = name + guessed_ext
-            local_file_path, download_error = self.save_local_file(file_id, name_for_save)
+            # Drive filenames are user-controlled: trailing dots, made-up
+            # extensions ("report.xyz"), and unrelated suffixes (".bak") are all
+            # common. When we recognise the mime, ensure the saved filename ends
+            # with the canonical extension so the downstream whitelist routes
+            # the file to the right parser.
+            local_file_path, download_error = self.save_local_file(
+                file_id, canonical_save_name(name, mime_type)
+            )
 
         if not local_file_path:
             self._record_drop('download_failed', file, download_error or "unknown save_local_file failure")
@@ -1030,32 +1167,15 @@ class UserWorker(object):
                 kept.append(f)
         files = kept
 
-        # MIME prefix gate: drop file types the parsers won't handle.
-        mime_prefix_to_remove = [
-            'audio', 'video',
-            'application/vnd.google-apps.folder', 'application/x-adobe-indesign',
-            'application/x-rar-compressed', 'application/zip', 'application/x-7z-compressed',
-            'application/x-executable',
-            'text/php', 'text/javascript', 'text/css', 'text/xml', 'text/x-sql', 'text/x-python-script',
-        ]
-        if not self._summarize_images:
-            mime_prefix_to_remove.append('image')
-        kept = []
-        for f in files:
-            matched = next((p for p in mime_prefix_to_remove if f['mimeType'].startswith(p)), None)
-            if matched is not None:
-                self._record_drop('mime_dropped', f, f"mimeType starts with blocked prefix '{matched}'")
-            else:
-                kept.append(f)
-        files = kept
+        files = self._apply_mime_gate(files)
 
         if self.crawler.verbose:
             logger.info(f"identified {len(files)} files for user {user} (post mime/cache gates)")
 
-        # get access token
+        # Refresh credentials so the googleapiclient picks up a fresh token
+        # for subsequent service.* calls.
         try:
             self.creds.refresh(Request())
-            self.access_token = self.creds.token
         except Exception as e:
             logger.warning(f"Error refreshing token: {e} for user {user}")
             self._log_filter_summary(user)
