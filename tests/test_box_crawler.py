@@ -4,6 +4,13 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
+# Box SDK is an optional dependency — skip the whole module cleanly when it
+# isn't installed, rather than failing collection with a ModuleNotFoundError
+# that masks the rest of the suite's results.
+pytest.importorskip("boxsdk")
+
 # Mock only third-party deps that may be missing in the test env. Do NOT inject
 # MagicMocks for modules other tests rely on (slugify, pandas, omegaconf, ...) —
 # that pollutes sys.modules and makes the rest of the suite order-dependent.

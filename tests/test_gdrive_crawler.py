@@ -1,6 +1,7 @@
+import json
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Some transitive imports (core.summary) require cairosvg, which pulls in a
 # native libcairo that isn't present in all dev environments. Stub it out.
@@ -15,6 +16,7 @@ from crawlers.gdrive_crawler import (
     GdriveCrawler,
     UserWorker,
     build_scopes,
+    canonical_save_name,
     extract_acl_metadata,
     extract_folder_id,
     resolve_root_folders,
@@ -52,6 +54,59 @@ class TestBuildScopes(unittest.TestCase):
     def test_enabled_without_fetch_labels_omits_labels_scope(self):
         scopes = build_scopes({"enabled": True})
         self.assertEqual(scopes, [DRIVE_READONLY_SCOPE])
+
+
+class TestCanonicalSaveName(unittest.TestCase):
+    """Mime type is authoritative for routing the file to the right parser:
+    when we recognise the mime, the local save name must end in the canonical
+    extension regardless of whatever the Drive filename does (or doesn't) say.
+    Filenames in Drive are user-controlled — trailing dots, made-up extensions,
+    and unrelated suffixes like ``.bak`` are all common."""
+
+    PDF = "application/pdf"
+    DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    def test_trailing_dot_filename_gets_canonical_extension(self):
+        # "Vulnerability and Patch Management Policy." with PDF mime — the
+        # production case that triggered this whole fix.
+        self.assertTrue(canonical_save_name("Policy.", self.PDF).endswith(".pdf"))
+        self.assertNotIn("..", canonical_save_name("Policy.", self.PDF))
+
+    def test_wrong_extension_gets_canonical_appended(self):
+        # The user-controlled extension is preserved (good for debugging) but
+        # the canonical one is appended so downstream extension whitelists pass.
+        out = canonical_save_name("report.xyz", self.PDF)
+        self.assertTrue(out.endswith(".pdf"))
+
+    def test_missing_extension_gets_canonical_appended(self):
+        self.assertEqual(canonical_save_name("weekly report", self.PDF), "weekly report.pdf")
+
+    def test_double_extension_gets_canonical_appended(self):
+        # ``.bak`` is preserved; downstream sees ``.docx`` and routes correctly.
+        out = canonical_save_name("draft.docx.bak", self.DOCX)
+        self.assertTrue(out.endswith(".docx"))
+
+    def test_correct_extension_unchanged(self):
+        # No double-suffix when the filename already matches.
+        self.assertEqual(canonical_save_name("already.pdf", self.PDF), "already.pdf")
+        self.assertEqual(canonical_save_name("data.xlsx", self.XLSX), "data.xlsx")
+
+    def test_correct_extension_case_insensitive(self):
+        # Drive returns mixed-case extensions ("REPORT.PDF"); canonical match
+        # is case-insensitive so we don't double-suffix.
+        self.assertEqual(canonical_save_name("REPORT.PDF", self.PDF), "REPORT.PDF")
+
+    def test_unknown_mime_leaves_name_untouched(self):
+        # If we don't recognise the mime type and stdlib can't guess one, the
+        # original name is returned verbatim so save_local_file can still try.
+        self.assertEqual(
+            canonical_save_name("thing.foo", "application/x-unknown-blob"),
+            "thing.foo",
+        )
+
+    def test_none_mime_returns_name_unchanged(self):
+        self.assertEqual(canonical_save_name("plain", None), "plain")
 
 
 class TestExtractAclMetadata(unittest.TestCase):
@@ -150,7 +205,6 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_ids=None
     worker.indexer = MagicMock()
     worker.creds = MagicMock()
     worker.service = MagicMock()
-    worker.access_token = None
     worker.shared_cache = MagicMock()
     worker.date_threshold = None
     worker.permission_display_filter = permission_display_filter
@@ -837,7 +891,6 @@ class TestFilterCounters(unittest.TestCase):
         files, and caught exceptions — none of which re-raise. The outer code must
         honor that signal, otherwise the summary line over-reports indexed and
         never increments index_error for dataframe failures."""
-        from unittest.mock import patch
         w = _make_worker()
         w._summarize_images = False
         w.df_parser = MagicMock()
@@ -858,8 +911,6 @@ class TestFilterCounters(unittest.TestCase):
 
 
 # ----- crawl_file routing: images, CSV/XLSX, Google Sheets -----
-
-from unittest.mock import patch
 
 
 def _make_crawl_worker(summarize_images=False):
@@ -1057,6 +1108,260 @@ class TestCrawlFileRouting(unittest.TestCase):
         # File was admitted to indexing (not dropped).
         w.indexer.index_file.assert_called_once()
         pdf_mock.assert_not_called()
+
+
+def _make_export_http_error(status: int, reason: str) -> HttpError:
+    """Build an HttpError whose `error_details` carries a single reason — the
+    shape Drive's export endpoint returns when a file exceeds the size limit
+    or isn't downloadable in the requested mime."""
+    resp = MagicMock()
+    resp.status = status
+    resp.reason = "mocked"
+    content = json.dumps({
+        "error": {
+            "code": status,
+            "message": "mocked",
+            "errors": [{"reason": reason, "message": "mocked"}],
+        }
+    }).encode()
+    return HttpError(resp=resp, content=content)
+
+
+def _wire_download(worker, results):
+    """Install service.files().export_media and .get_media stubs that pop one
+    entry from ``results`` per call. Each entry is either bytes (yielded to
+    the chunked downloader so the function returns a BytesIO) or an HttpError
+    (raised inside the MediaIoBaseDownload loop). Returns the MediaIoBaseDownload
+    patcher plus per-method call-args lists for assertions."""
+    export_calls = []
+    get_calls = []
+    pending = list(results)
+
+    def make_request():
+        return MagicMock(name="request")
+
+    def fake_export_media(fileId, mimeType):
+        export_calls.append({"fileId": fileId, "mimeType": mimeType})
+        return make_request()
+
+    def fake_get_media(fileId):
+        get_calls.append({"fileId": fileId})
+        return make_request()
+
+    worker.service.files = MagicMock()
+    worker.service.files.return_value.export_media = MagicMock(side_effect=fake_export_media)
+    worker.service.files.return_value.get_media = MagicMock(side_effect=fake_get_media)
+
+    def fake_downloader(byte_stream, request):
+        outcome = pending.pop(0)
+        instance = MagicMock()
+        if isinstance(outcome, HttpError):
+            instance.next_chunk.side_effect = outcome
+        else:
+            byte_stream.write(outcome)
+            instance.next_chunk.return_value = (None, True)
+        return instance
+
+    return patch('crawlers.gdrive_crawler.MediaIoBaseDownload', side_effect=fake_downloader), \
+        export_calls, get_calls
+
+
+class TestDownloadOrExportFile(unittest.TestCase):
+    """The PDF fallback for oversized Google Workspace exports must go through
+    files().export_media (which uses the auto-refreshing service credential),
+    not a raw requests.get against the exportLinks URL with a stale Bearer
+    token — the latter was the source of the 401s the user reported."""
+
+    def test_normal_export_returns_bytes(self):
+        w = _make_worker()
+        patcher, export_calls, _ = _wire_download(w, [b"%PDF-1.4 hello"])
+        with patcher:
+            stream, err = w.download_or_export_file(
+                "FID",
+                mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        self.assertIsNone(err)
+        self.assertIsNotNone(stream)
+        self.assertEqual(stream.read(), b"%PDF-1.4 hello")
+        self.assertEqual(len(export_calls), 1)
+
+    def test_oversized_export_retries_as_pdf_via_export_media(self):
+        """Primary export 403s with fileNotDownloadable → retry with
+        mimeType='application/pdf' via export_media (not raw HTTP)."""
+        w = _make_worker()
+        err = _make_export_http_error(403, "fileNotDownloadable")
+        patcher, export_calls, _ = _wire_download(w, [err, b"%PDF retry bytes"])
+        with patcher:
+            stream, ret_err = w.download_or_export_file(
+                "FID",
+                mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        self.assertIsNone(ret_err)
+        self.assertIsNotNone(stream)
+        self.assertEqual(stream.read(), b"%PDF retry bytes")
+        # Two export_media calls: original, then PDF fallback. The
+        # download_or_export_file source has no `import requests`, so any
+        # regression that re-introduced the raw exportLinks fallback would
+        # fail at import time before this test ran.
+        self.assertEqual(len(export_calls), 2)
+        self.assertEqual(export_calls[1]["mimeType"], "application/pdf")
+
+    def test_oversized_export_size_limit_also_retries_as_pdf(self):
+        """The other Drive reason that triggers the fallback."""
+        w = _make_worker()
+        err = _make_export_http_error(403, "exportSizeLimitExceeded")
+        patcher, export_calls, _ = _wire_download(w, [err, b"%PDF"])
+        with patcher:
+            stream, ret_err = w.download_or_export_file("FID", mime_type="application/x-foo")
+        self.assertIsNone(ret_err)
+        self.assertEqual(stream.read(), b"%PDF")
+        self.assertEqual(len(export_calls), 2)
+
+    def test_pdf_fallback_also_failing_surfaces_error(self):
+        """If both export attempts fail, the function returns the second error
+        verbatim so the operator can see the real failure."""
+        w = _make_worker()
+        err1 = _make_export_http_error(403, "fileNotDownloadable")
+        err2 = _make_export_http_error(500, "internalError")
+        patcher, _, _ = _wire_download(w, [err1, err2])
+        with patcher:
+            stream, ret_err = w.download_or_export_file("FID", mime_type="application/x-foo")
+        self.assertIsNone(stream)
+        self.assertIn("500", ret_err or "")
+
+    def test_get_media_path_no_pdf_fallback(self):
+        """No mime → get_media path → unrelated 404 must NOT trigger the PDF
+        fallback (which only makes sense for Workspace export attempts)."""
+        w = _make_worker()
+        err = _make_export_http_error(404, "notFound")
+        patcher, export_calls, get_calls = _wire_download(w, [err])
+        with patcher:
+            stream, ret_err = w.download_or_export_file("FID", mime_type=None)
+        self.assertIsNone(stream)
+        self.assertEqual(len(export_calls), 0)
+        self.assertEqual(len(get_calls), 1)
+        self.assertIn("404", ret_err or "")
+
+    def test_unrelated_403_returns_error_without_pdf_retry(self):
+        """A 403 whose reason isn't size/notDownloadable (e.g. a permission
+        problem) must not loop forever retrying as PDF."""
+        w = _make_worker()
+        err = _make_export_http_error(403, "insufficientPermissions")
+        patcher, export_calls, _ = _wire_download(w, [err])
+        with patcher:
+            stream, _ = w.download_or_export_file("FID", mime_type="application/x-foo")
+        self.assertIsNone(stream)
+        # Only the primary call; no PDF retry.
+        self.assertEqual(len(export_calls), 1)
+
+
+class TestAbacConfigLogging(unittest.TestCase):
+    """When ACL fields look empty in production (no acl_groups / acl_domains /
+    acl_labels), operators currently have no way to tell whether (a) the file
+    genuinely has no group/domain grants, (b) the feature is disabled in
+    config, or (c) the Labels scope wasn't requested. A one-line per-worker
+    summary at setup() makes the config state self-evident in the logs."""
+
+    def test_setup_logs_abac_flags(self):
+        import logging as _logging
+        w = _make_worker(abac={
+            'enabled': True,
+            'resolve_inherited': True,
+            'fetch_labels': False,
+            'include_anyone': True,
+        })
+        w.indexer = MagicMock()
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w.setup()
+        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        self.assertIsNotNone(line, f"expected an ABAC config line, got: {cm.output}")
+        self.assertIn("enabled=True", line)
+        self.assertIn("resolve_inherited=True", line)
+        self.assertIn("fetch_labels=False", line)
+
+    def test_setup_log_present_when_abac_disabled(self):
+        """Even with ABAC off, log the state so operators can confirm 'all
+        acl_* fields empty' is expected, not a missing feature."""
+        import logging as _logging
+        w = _make_worker(abac={'enabled': False})
+        w.indexer = MagicMock()
+        with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
+            w.setup()
+        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        self.assertIsNotNone(line)
+        self.assertIn("enabled=False", line)
+
+
+class TestApplyMimeGate(unittest.TestCase):
+    """Google Workspace types that Drive cannot return content for (Forms,
+    Sites, Maps, Jamboard, Fusion Tables) must be dropped at the mime gate
+    with the `mime_dropped` bucket — not later as `download_failed`, which
+    misleads operators into expecting the file to retry."""
+
+    def test_form_dropped_at_mime_gate_not_download(self):
+        w = _make_worker()
+        w._summarize_images = False
+        file = {
+            "id": "FORM_ID",
+            "name": "Cloud Central Feedback Form",
+            "mimeType": "application/vnd.google-apps.form",
+        }
+        kept = w._apply_mime_gate([file])
+        self.assertEqual(kept, [])
+        self.assertEqual(w._stats['mime_dropped'], 1)
+        self.assertEqual(w._stats['download_failed'], 0)
+
+    def test_site_map_jam_fusiontable_all_dropped(self):
+        w = _make_worker()
+        w._summarize_images = False
+        unexportable = [
+            ("S1", "application/vnd.google-apps.site"),
+            ("M1", "application/vnd.google-apps.map"),
+            ("J1", "application/vnd.google-apps.jam"),
+            ("F1", "application/vnd.google-apps.fusiontable"),
+        ]
+        files = [{"id": fid, "name": fid, "mimeType": mt} for fid, mt in unexportable]
+        kept = w._apply_mime_gate(files)
+        self.assertEqual(kept, [])
+        self.assertEqual(w._stats['mime_dropped'], len(unexportable))
+
+    def test_drawing_passes_mime_gate(self):
+        """Drawings DO export (to PNG/PDF), so they must continue through —
+        not get caught by the unexportable list."""
+        w = _make_worker()
+        w._summarize_images = False
+        file = {
+            "id": "DRAW_ID",
+            "name": "Architecture sketch",
+            "mimeType": "application/vnd.google-apps.drawing",
+        }
+        kept = w._apply_mime_gate([file])
+        self.assertEqual(kept, [file])
+        self.assertEqual(w._stats['mime_dropped'], 0)
+
+    def test_pdf_and_docx_pass_through(self):
+        """Sanity check: normal documents survive the gate."""
+        w = _make_worker()
+        w._summarize_images = False
+        files = [
+            {"id": "P1", "name": "a.pdf", "mimeType": "application/pdf"},
+            {"id": "D1", "name": "Doc", "mimeType": "application/vnd.google-apps.document"},
+        ]
+        kept = w._apply_mime_gate(files)
+        self.assertEqual([f["id"] for f in kept], ["P1", "D1"])
+
+    def test_audio_video_archive_still_dropped(self):
+        """Regression: legacy prefix-based drops must keep working."""
+        w = _make_worker()
+        w._summarize_images = False
+        files = [
+            {"id": "A", "name": "song.mp3", "mimeType": "audio/mpeg"},
+            {"id": "V", "name": "clip.mp4", "mimeType": "video/mp4"},
+            {"id": "Z", "name": "bundle.zip", "mimeType": "application/zip"},
+        ]
+        kept = w._apply_mime_gate(files)
+        self.assertEqual(kept, [])
+        self.assertEqual(w._stats['mime_dropped'], 3)
 
 
 class TestDiagnosticPropagation(unittest.TestCase):
