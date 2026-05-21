@@ -20,6 +20,7 @@ import logging
 import os
 from contextlib import contextmanager
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -251,15 +252,18 @@ class GoogleAuthManager:
 
             current = page.url or ""
             # Distinguish "truly signed out" from "signed in but account
-            # chooser is asking us to pick one".
-            #   - ServiceLogin = cookies expired / never present, must re-bootstrap.
-            #   - accountchooser = session is valid, Google just wants us to
-            #     pick from multiple signed-in accounts. Cookies are fine to
-            #     capture; the actual crawl URLs (which are domain-scoped)
-            #     will route to the right account on their own.
-            on_chooser = "accountchooser" in current.lower()
-            on_signin = "servicelogin" in current.lower()
-            if on_signin and not on_chooser:
+            # chooser is asking us to pick one". Google's signed-out
+            # redirect targets vary (ServiceLogin, /signin/*, /v3/signin/
+            # identifier, /v3/signin/challenge/*), so match by host+path
+            # rather than a single substring — and exempt accountchooser,
+            # which means the session is valid and Google just wants us to
+            # pick from multiple signed-in accounts.
+            parsed = urlparse(current)
+            on_accounts_host = (parsed.hostname or "").lower() == "accounts.google.com"
+            path_lower = (parsed.path or "").lower()
+            on_chooser = on_accounts_host and "accountchooser" in path_lower
+            on_signin = on_accounts_host and not on_chooser
+            if on_signin:
                 raise RuntimeError(
                     f"Stored Google session has expired (landed on {current}). "
                     f"Re-run `python -m crawlers.auth.google_bootstrap "

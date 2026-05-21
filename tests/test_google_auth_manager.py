@@ -422,6 +422,45 @@ def test_get_authenticated_cookies_raises_when_landing_on_login_page(tmp_path):
             mgr.get_authenticated_cookies()
 
 
+@pytest.mark.parametrize(
+    "landing_url",
+    [
+        # Identifier-first sign-in (the URL that already appears in this
+        # repo's redirect tests — what Google actually serves to signed-out
+        # users today).
+        "https://accounts.google.com/v3/signin/identifier?continue=...",
+        # Challenge step (2FA / re-auth prompt) is also a sign-in flow.
+        "https://accounts.google.com/v3/signin/challenge/pwd?continue=...",
+        # Legacy lowercase path — same detection should cover it.
+        "https://accounts.google.com/signin/v2/identifier?continue=...",
+    ],
+)
+def test_get_authenticated_cookies_raises_on_non_servicelogin_signin_pages(
+    tmp_path, landing_url
+):
+    """Detection of an expired session must not be limited to ServiceLogin.
+    Google routes signed-out users to /v3/signin/identifier (and friends);
+    if we only match 'servicelogin', the manager silently returns whatever
+    cookies the signed-out browser had instead of telling the caller to
+    re-bootstrap."""
+    from crawlers.auth import google_manager
+
+    storage_file = tmp_path / "state.json"
+    storage_file.write_text(json.dumps({"cookies": [], "origins": []}))
+
+    config = {"mode": "oauth_user", "storage_state_path": str(storage_file)}
+    secrets = {"credentials_file": "/tmp/oauth.json"}
+
+    pw_factory, _ctx, _page = _build_playwright_chain(
+        cookies=[], final_url=landing_url,
+    )
+
+    with patch.object(google_manager, "sync_playwright", return_value=pw_factory):
+        mgr = google_manager.GoogleAuthManager(config, secrets)
+        with pytest.raises(RuntimeError, match="google_bootstrap"):
+            mgr.get_authenticated_cookies()
+
+
 def test_get_authenticated_cookies_raises_when_no_storage_state_configured():
     from crawlers.auth import google_manager
 
