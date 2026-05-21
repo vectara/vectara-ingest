@@ -317,6 +317,85 @@ def test_get_authenticated_cookies_uses_storage_state_when_present(tmp_path):
     assert host_cookie["secure"] is True
 
 
+def test_account_chooser_is_not_treated_as_expired_session(tmp_path):
+    """When the stored Google session is valid but the user has MULTIPLE
+    Google accounts signed in (very common — personal Gmail + work Workspace),
+    bare https://sites.google.com redirects to the account chooser at
+    https://accounts.google.com/v3/signin/accountchooser?continue=... .
+
+    The session is fine — Google just wants the user to pick which account.
+    The previous check `'accounts.google.com' in current_url` flagged this
+    as 'session expired', breaking customers who imported cookies from a
+    multi-account Firefox profile (Mr. Ofer's broadcom-google-site case).
+
+    Fix: only ServiceLogin (true sign-in page) means expired. accountchooser
+    means signed in. Capture cookies and continue."""
+    from crawlers.auth import google_manager
+
+    storage_file = tmp_path / "state.json"
+    storage_file.write_text(json.dumps({"cookies": [], "origins": []}))
+
+    config = {"mode": "oauth_user", "storage_state_path": str(storage_file)}
+    secrets = {"credentials_file": "/tmp/oauth.json"}
+
+    cookies = [
+        {"name": "SID", "value": "v", "domain": ".google.com",
+         "path": "/", "secure": True, "httpOnly": True, "sameSite": "Lax"},
+    ]
+    pw_factory, _ctx, _page = _build_playwright_chain(
+        cookies=cookies,
+        final_url=(
+            "https://accounts.google.com/v3/signin/accountchooser"
+            "?continue=https%3A%2F%2Fsites.google.com%2F"
+        ),
+    )
+
+    with patch.object(google_manager, "sync_playwright", return_value=pw_factory):
+        mgr = google_manager.GoogleAuthManager(config, secrets)
+        # Must NOT raise — session is valid, just multi-account.
+        result = mgr.get_authenticated_cookies()
+
+    assert len(result) == 1
+    assert result[0]["name"] == "SID"
+
+
+def test_get_authenticated_cookies_uses_target_url_when_provided(tmp_path):
+    """The auth manager should navigate to the caller's actual target URL
+    when one is provided, instead of bare sites.google.com. Workspace-domain
+    URLs (e.g. sites.google.com/vectara.com/help) typically route directly to
+    the correct Google account without triggering the account chooser, so
+    feeding the real target URL into the auth-establishing navigation is the
+    cleanest way to avoid the multi-account ambiguity in the first place.
+    """
+    from crawlers.auth import google_manager
+
+    storage_file = tmp_path / "state.json"
+    storage_file.write_text(json.dumps({"cookies": [], "origins": []}))
+
+    config = {"mode": "oauth_user", "storage_state_path": str(storage_file)}
+    secrets = {"credentials_file": "/tmp/oauth.json"}
+
+    pw_factory, _ctx, page = _build_playwright_chain(
+        cookies=[
+            {"name": "SID", "value": "v", "domain": ".google.com",
+             "path": "/", "secure": True}
+        ],
+        final_url="https://sites.google.com/vectara.com/help/home",
+    )
+
+    target = "https://sites.google.com/vectara.com/help"
+    with patch.object(google_manager, "sync_playwright", return_value=pw_factory):
+        mgr = google_manager.GoogleAuthManager(config, secrets)
+        mgr.get_authenticated_cookies(target_url=target)
+
+    # The manager must navigate to the caller's URL, not to a hardcoded one.
+    page.goto.assert_called()
+    called_url = page.goto.call_args.args[0]
+    assert called_url == target, (
+        f"manager should navigate to caller's target URL; got {called_url!r}"
+    )
+
+
 def test_get_authenticated_cookies_raises_when_landing_on_login_page(tmp_path):
     """If after navigation the browser is sitting on accounts.google.com, the
     stored state has expired and we cannot authenticate silently. The manager

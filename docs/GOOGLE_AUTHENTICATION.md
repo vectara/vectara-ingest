@@ -142,7 +142,9 @@ Run on a machine with a display (NOT in the Docker container):
 
 ```bash
 pip install playwright
-playwright install chrome
+playwright install chrome     # default --browser chromium
+# or, for the Firefox alternative:
+playwright install firefox
 
 python -m crawlers.auth.google_bootstrap \
   --output ./google_storage_state.json
@@ -150,9 +152,22 @@ python -m crawlers.auth.google_bootstrap \
 
 We launch installed Google Chrome (not Playwright's bundled Chromium) because
 Chromium is reliably flagged by Cloudflare and Google bot detection — the
-sign-in flow ends up stuck on an unsolvable CAPTCHA. A persistent Chrome
-profile is also kept across runs (default `~/.cache/vectara-ingest/google_bootstrap_profile`)
-so subsequent runs look like a returning user.
+sign-in flow ends up stuck on an unsolvable CAPTCHA. The bootstrap adds
+`--disable-blink-features=AutomationControlled` so `navigator.webdriver` does
+not give the automation away.
+
+If Chrome isn't installable locally you can pass `--browser firefox`. Note:
+Playwright's Firefox is a patched build — there is no equivalent of using
+your system-installed stock Firefox — so it is **more bot-detectable than
+installed Chrome**. The bootstrap sets `dom.webdriver.enabled = false` (the
+Firefox analogue of the Chromium flag above) to hide the most obvious signal,
+but Cloudflare/Google still occasionally challenge Playwright Firefox.
+**Prefer Chrome unless you have a reason not to.**
+
+A persistent browser profile is kept across runs (default
+`~/.cache/vectara-ingest/google_bootstrap_profile`, suffixed with `_firefox`
+for the Firefox case since the two profile formats are incompatible) so
+subsequent runs look like a returning user.
 
 What you'll see:
 
@@ -170,10 +185,106 @@ Options:
 - `--success-url-contains <substring>`: customise the success-detection check
   (default `sites.google.com`).
 - `--timeout-seconds <n>`: how long to wait for sign-in (default 300).
-- `--profile-dir <path>`: persistent Chrome profile directory. Delete it to
-  start from a clean slate.
-- `--channel <name>`: Playwright browser channel (default `chrome`). Pass an
-  empty string to fall back to bundled Chromium.
+- `--profile-dir <path>`: persistent browser profile directory. Delete it to
+  start from a clean slate. Default is
+  `~/.cache/vectara-ingest/google_bootstrap_profile`, suffixed with the
+  browser name for non-chromium browsers.
+- `--browser <chromium|firefox>`: which Playwright browser engine to launch
+  (default `chromium`). Use `firefox` if Chrome is not installed locally or
+  you prefer Firefox for the interactive sign-in.
+- `--channel <name>`: Playwright browser channel — chromium only (default
+  `chrome`). Pass an empty string to fall back to bundled Chromium. Ignored
+  when `--browser firefox` is set.
+
+## Cookie import from real Firefox (when bot detection blocks Playwright)
+
+Use this path when **both** of the following are true:
+
+- The customer cannot install Chrome (e.g. corporate IT lock-down), AND
+- Cloudflare Turnstile or similar fingerprinting in the SSO chain (Rippling,
+  Okta-with-Turnstile, etc.) blocks `google_bootstrap --browser firefox`.
+
+In that case Playwright's patched Firefox cannot get past the SSO challenge,
+because Turnstile fingerprints canvas / WebGL / audio / TLS in ways that
+single `about:config` prefs do not cover. The workaround is to do the sign-in
+in the customer's normal Firefox (no automation, no Playwright — Cloudflare
+sees a human) and then extract the resulting cookies as a Playwright
+`storage_state.json` that the crawler consumes identically to one produced by
+`google_bootstrap`.
+
+Customer steps:
+
+1. Open `https://sites.google.com` in their normal Firefox and sign in fully
+   (complete any SSO / 2FA / Cloudflare prompts).
+2. Run:
+
+   ```bash
+   python -m crawlers.auth.google_firefox_import \
+     --profile-name "<your Firefox profile name>" \
+     --output ./google_storage_state.json
+   ```
+
+   Pass the profile name shown in Firefox's Profile Manager / `about:profiles`
+   (e.g. `default-release`, `work`, or whatever the customer named theirs).
+   Matching is case-insensitive. If you omit `--profile-name`, the importer
+   tries to auto-detect the default profile via `profiles.ini`.
+
+   Firefox can be left open — the importer copies `cookies.sqlite`,
+   `cookies.sqlite-wal`, and `cookies.sqlite-shm` together into a tempdir
+   before reading, so the live database is never touched **and** uncheckpointed
+   writes (the fresh sign-in cookies you just made) are visible.
+
+3. If you don't know the profile name, run:
+
+   ```bash
+   python -m crawlers.auth.google_firefox_import --list-profiles
+   ```
+
+   This prints every profile across macOS / Linux / Windows (we look in the
+   standard Firefox root for the OS) with its name, default flag, and absolute
+   path. Orphaned profiles (dirs that exist on disk but aren't registered in
+   `profiles.ini` — Firefox sometimes creates these on conflict) are surfaced
+   with an "(orphan, unregistered)" marker so they remain reachable via
+   `--firefox-profile <path>`.
+
+4. Mount the resulting JSON file as `google_auth.storage_state_path` in the
+   container, same as with `google_bootstrap`.
+
+Profile names — Firefox 138+ has two of them:
+
+In Firefox 138 and later, the **user-facing profile name** you see in
+`about:profiles` and the hamburger menu (e.g. `vectara`, complete with the
+avatar icon you chose) is stored in a separate SQLite database at
+`<firefox_root>/Profile Groups/<StoreID>.sqlite`, *not* in `profiles.ini`.
+The legacy `profiles.ini` still has a `Name=` field (e.g. `default-release`)
+that older versions of this importer relied on. Both forms work with
+`--profile-name`; pass whichever you see in your Firefox UI. `--list-profiles`
+displays the user-facing name first, with the legacy form annotated when it
+differs (`vectara (legacy: default-release)`).
+
+On older Firefox (no `StoreID`), only the legacy `Name=` exists, and the
+importer falls back to it transparently.
+
+Flag summary:
+
+- `--profile-name <name>` (recommended): case-insensitive lookup against both
+  the user-facing name (Firefox 138+ Profile Groups DB) and the legacy
+  `Name=` in `profiles.ini`.
+- `--firefox-profile <path>`: explicit profile directory path. Use this for
+  orphaned profiles or non-standard installs.
+- `--list-profiles`: print everything available, then exit.
+- `--output <path>`: where to write the Playwright `storage_state.json`.
+  Required unless `--list-profiles` is set.
+
+Limitations:
+
+- Only cookies are imported — `localStorage` is not extracted. The
+  `sites.google.com` crawl path only consumes cookies, so this is fine in
+  practice.
+- Session expiry is unchanged: when Firefox's cookies expire (Workspace SSO
+  typically every 2–4 weeks), the crawler surfaces the same
+  "session expired" error and the customer re-signs in their Firefox and
+  re-runs the importer.
 
 ## Setting up `oauth_user` credentials
 

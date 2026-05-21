@@ -190,9 +190,19 @@ class GoogleAuthManager:
 
     # --- browser cookies -----------------------------------------------------------
 
-    def get_authenticated_cookies(self) -> List[dict]:
-        """Open Playwright with the persisted `storage_state`, navigate to
-        `sites.google.com`, and capture Google-family cookies for Scrapy.
+    def get_authenticated_cookies(self, target_url: Optional[str] = None) -> List[dict]:
+        """Open Playwright with the persisted `storage_state`, navigate to a
+        Google URL, and capture Google-family cookies for Scrapy.
+
+        Args:
+            target_url: URL to navigate to for session establishment. Defaults
+                to bare `https://sites.google.com`, but callers that know
+                their actual target (e.g. a Workspace-scoped Site like
+                `https://sites.google.com/<domain>/<site>`) should pass it —
+                a domain-scoped path typically routes directly to the correct
+                Google account, bypassing the multi-account chooser that bare
+                `sites.google.com` triggers when the captured `storage_state`
+                has multiple signed-in identities.
 
         Returns a list of `{name, value, domain, path, secure}` dicts. The
         full attribute set is required because Scrapy's CookieMiddleware
@@ -224,10 +234,12 @@ class GoogleAuthManager:
                 "Playwright is not available — install playwright to use google_auth."
             )
 
+        navigation_url = target_url or "https://sites.google.com"
+
         with self._playwright_browser() as (_browser, context, page):
             try:
                 page.goto(
-                    "https://sites.google.com",
+                    navigation_url,
                     wait_until="domcontentloaded",
                     timeout=30000,
                 )
@@ -238,11 +250,30 @@ class GoogleAuthManager:
                 )
 
             current = page.url or ""
-            if "accounts.google.com" in current or "ServiceLogin" in current:
+            # Distinguish "truly signed out" from "signed in but account
+            # chooser is asking us to pick one".
+            #   - ServiceLogin = cookies expired / never present, must re-bootstrap.
+            #   - accountchooser = session is valid, Google just wants us to
+            #     pick from multiple signed-in accounts. Cookies are fine to
+            #     capture; the actual crawl URLs (which are domain-scoped)
+            #     will route to the right account on their own.
+            on_chooser = "accountchooser" in current.lower()
+            on_signin = "servicelogin" in current.lower()
+            if on_signin and not on_chooser:
                 raise RuntimeError(
                     f"Stored Google session has expired (landed on {current}). "
                     f"Re-run `python -m crawlers.auth.google_bootstrap "
-                    f"--output {self.storage_state_path}`."
+                    f"--output {self.storage_state_path}` "
+                    f"(or `python -m crawlers.auth.google_firefox_import "
+                    f"--output {self.storage_state_path}` if you used the "
+                    f"Firefox cookie-import path)."
+                )
+            if on_chooser:
+                logger.info(
+                    f"Landed on Google account chooser ({current}). Session "
+                    f"is valid — multiple Google accounts are signed in. "
+                    f"Capturing cookies anyway; the crawler's domain-scoped "
+                    f"target URLs should route to the right account."
                 )
 
             raw_cookies = context.cookies()

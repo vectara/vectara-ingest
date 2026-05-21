@@ -113,6 +113,38 @@ class TestNormalizeUrlForMetadata(unittest.TestCase):
             normalize_url_for_metadata(url),
         )
 
+    def test_strips_google_account_context_segment(self):
+        # /u/<N>/ is the active-Google-account context segment that gets added
+        # to internal links once the crawler is signed in. Same document, so
+        # the canonical form drops it.
+        self.assertEqual(
+            normalize_url_for_metadata(
+                "https://sites.google.com/u/0/d/abc/p/xyz/edit"
+            ),
+            "https://sites.google.com/d/abc/p/xyz/edit",
+        )
+        self.assertEqual(
+            normalize_url_for_metadata(
+                "https://drive.google.com/u/1/file/d/xyz/view"
+            ),
+            "https://drive.google.com/file/d/xyz/view",
+        )
+
+    def test_leaves_non_google_url_with_similar_path_alone(self):
+        # Only Google hosts get the /u/N/ strip — same path shape elsewhere
+        # is just an ordinary path segment.
+        url = "https://example.com/u/0/profile"
+        self.assertEqual(normalize_url_for_metadata(url), url)
+
+    def test_leaves_google_url_without_user_prefix_alone(self):
+        url = "https://sites.google.com/d/abc/p/xyz/edit"
+        self.assertEqual(normalize_url_for_metadata(url), url)
+
+    def test_google_user_prefix_strip_is_idempotent(self):
+        url = "https://sites.google.com/u/0/d/abc/p/xyz/edit"
+        once = normalize_url_for_metadata(url)
+        self.assertEqual(normalize_url_for_metadata(once), once)
+
 
 if __name__ == "__main__":
     unittest.main()

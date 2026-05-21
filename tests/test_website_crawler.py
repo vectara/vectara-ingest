@@ -80,6 +80,19 @@ class TestRemoveOldContentEncoding(unittest.TestCase):
         deleted = self._run(["https://example.com/a"], [{"id": "no-url", "url": None}])
         self.assertEqual(deleted, [])
 
+    def test_google_user_prefix_does_not_cause_false_deletion(self):
+        # When the crawler authenticates to Google, internal links pick up the
+        # /u/0/ active-account segment. A doc previously indexed without it
+        # must NOT be flagged for deletion just because the new crawl URL
+        # carries the segment — both forms point at the same document.
+        crawled = ["https://sites.google.com/u/0/d/abc/p/xyz/edit"]
+        existing = [{
+            "id": "doc1",
+            "url": "https://sites.google.com/d/abc/p/xyz/edit",
+        }]
+        deleted = self._run(crawled, existing)
+        self.assertEqual(deleted, [])
+
     def test_disabled_when_remove_old_content_false(self):
         fake_indexer = MagicMock()
         fake_self = SimpleNamespace(

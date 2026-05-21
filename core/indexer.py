@@ -799,7 +799,7 @@ class Indexer:
                             all_metadatas.append(image_metadata)
                     
                     # Index unified content in single document
-                    doc_id = slugify(url)
+                    doc_id = slugify(normalize_url_for_metadata(url))
                     succeeded = self.index_segments(
                         doc_id=doc_id, 
                         texts=all_texts, 
@@ -812,7 +812,7 @@ class Indexer:
                 else:
                     # Legacy mode: Index text and images separately
                     # Index text and tables first
-                    doc_id = slugify(url)
+                    doc_id = slugify(normalize_url_for_metadata(url))
                     succeeded = self.index_segments(
                         doc_id=doc_id, 
                         texts=parts, 
