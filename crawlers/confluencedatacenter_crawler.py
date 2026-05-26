@@ -52,8 +52,8 @@ class ConfluencedatacenterCrawler(Crawler):
         if pat:
             if username or password:
                 logger.info(
-                    "Both a PAT and username/password are configured; using PAT "
-                    "(Bearer) auth and ignoring username/password."
+                    "A PAT and basic-auth credentials are both configured; using "
+                    "PAT (Bearer) auth and ignoring username/password."
                 )
             # Never log the token value itself.
             self.confluence_headers["Authorization"] = f"Bearer {pat}"
