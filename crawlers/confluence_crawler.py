@@ -3,6 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 import os.path
 import tempfile
+from typing import Any
 
 import requests
 from furl import furl
@@ -27,12 +28,12 @@ def raise_for_status(response: requests.Response):
     response.raise_for_status()
 
 
-def get_content(page_data: dict[str, any]) -> str:
+def get_content(page_data: dict[str, Any]) -> str:
     """
     Extract the HTML content from the Confluence page data if available.
 
     Args:
-        page_data (dict[str, any]): A dictionary containing Confluence page details.
+        page_data (dict[str, Any]): A dictionary containing Confluence page details.
 
     Returns:
         str: The HTML content if found; otherwise, None.
@@ -44,7 +45,7 @@ def get_content(page_data: dict[str, any]) -> str:
     return result
 
 
-def append_links(metadata: dict[str, any], page_data: dict[str, any]):
+def append_links(metadata: dict[str, Any], page_data: dict[str, Any]):
     """
     Append relevant links to the metadata dictionary.
 
@@ -52,8 +53,8 @@ def append_links(metadata: dict[str, any], page_data: dict[str, any]):
     like 'editui', 'webui', 'edituiv2', and 'tinyui'.
 
     Args:
-        metadata (dict[str, any]): A dictionary to augment with link info.
-        page_data (dict[str, any]): Confluence page data, expected to contain '_links'.
+        metadata (dict[str, Any]): A dictionary to augment with link info.
+        page_data (dict[str, Any]): Confluence page data, expected to contain '_links'.
     """
     if page_data['_links']:
         links = {}
@@ -65,7 +66,7 @@ def append_links(metadata: dict[str, any], page_data: dict[str, any]):
         metadata['links'] = links
 
 
-def append_labels(metadata: dict[str, any], page_data: dict[str, any]):
+def append_labels(metadata: dict[str, Any], page_data: dict[str, Any]):
     """
     Append label-related information to the metadata dictionary.
 
@@ -73,8 +74,8 @@ def append_labels(metadata: dict[str, any], page_data: dict[str, any]):
     'label_names', and 'label_ids'.
 
     Args:
-        metadata (dict[str, any]): A dictionary to augment with label info.
-        page_data (dict[str, any]): Confluence page data, expected to include 'metadata' with 'labels'.
+        metadata (dict[str, Any]): A dictionary to augment with label info.
+        page_data (dict[str, Any]): Confluence page data, expected to include 'metadata' with 'labels'.
     """
     if 'metadata' in page_data:
         if 'labels' in page_data['metadata']:
@@ -95,7 +96,7 @@ class ConfluenceCrawler(Crawler):
     A crawler to retrieve and index pages, blogposts, and attachments from Confluence.
     """
 
-    def append_users(self, metadata: dict[str, any], page_data: dict[str, any])->None:
+    def append_users(self, metadata: dict[str, Any], page_data: dict[str, Any])->None:
         """
         Add user information (author, last owner, owner) to the metadata.
 
@@ -103,8 +104,8 @@ class ConfluenceCrawler(Crawler):
         with the corresponding user details from Confluence.
 
         Args:
-            metadata (dict[str, any]): A dictionary to update with user info.
-            page_data (dict[str, any]): Confluence page data that may contain user IDs.
+            metadata (dict[str, Any]): A dictionary to update with user info.
+            page_data (dict[str, Any]): Confluence page data that may contain user IDs.
         """
         user_ids = set()
 
@@ -187,7 +188,7 @@ class ConfluenceCrawler(Crawler):
             result.path = os.path.join(str(result.path), str(p))
         return result
 
-    def process_page(self, page_id: str, metadata: dict[str, any])-> str:
+    def process_page(self, page_id: str, metadata: dict[str, Any])-> str:
         """
         Retrieve a Confluence page by ID and update metadata.
 
@@ -195,7 +196,7 @@ class ConfluenceCrawler(Crawler):
 
         Args:
             page_id (str): The ID of the Confluence page.
-            metadata (dict[str, any]): Dictionary to store page metadata.
+            metadata (dict[str, Any]): Dictionary to store page metadata.
 
         Returns:
             str: The page's HTML content, or None if it could not be found.
@@ -220,7 +221,7 @@ class ConfluenceCrawler(Crawler):
              if k in confluence_page_data})
         return get_content(confluence_page_data)
 
-    def process_blogpost(self, blogpost_id: str, metadata: dict[str, any])-> str:
+    def process_blogpost(self, blogpost_id: str, metadata: dict[str, Any])-> str:
         """
         Retrieve a Confluence blogpost by ID and update metadata.
 
@@ -228,7 +229,7 @@ class ConfluenceCrawler(Crawler):
 
         Args:
             blogpost_id (str): The ID of the Confluence blogpost.
-            metadata (dict[str, any]): Dictionary to store blogpost metadata.
+            metadata (dict[str, Any]): Dictionary to store blogpost metadata.
 
         Returns:
             str: The blogpost's HTML content, or None if it could not be found.
@@ -253,7 +254,7 @@ class ConfluenceCrawler(Crawler):
              if k in confluence_page_data})
         return get_content(confluence_page_data)
 
-    def process_attachments(self, confluence_id:str, metadata: dict[str, any])-> None:
+    def process_attachments(self, confluence_id:str, metadata: dict[str, Any])-> None:
         """
         Retrieve and index attachments for a Confluence page or blogpost.
 
@@ -262,7 +263,7 @@ class ConfluenceCrawler(Crawler):
 
         Args:
             confluence_id (str): ID in confluence
-            metadata (dict[str, any]): Metadata containing 'type' and 'id'
+            metadata (dict[str, Any]): Metadata containing 'type' and 'id'
                 that identifies the page or blogpost.
         """
         attachment_url = self.new_url('api/v2', f"{metadata['type']}s", confluence_id, 'attachments')
@@ -315,7 +316,7 @@ class ConfluenceCrawler(Crawler):
                 if not succeeded:
                     logger.error(f"Error indexing {result['id']} - {download_url.url}")
 
-    def lookup_space(self, space_id:str)->dict[str,any]:
+    def lookup_space(self, space_id:str)->dict[str, Any]:
         """
         Retrieve and cache Confluence space information by ID.
 
@@ -327,7 +328,7 @@ class ConfluenceCrawler(Crawler):
             space_id (str): The ID of the Confluence space to retrieve.
 
         Returns:
-            dict[str, any]: A dictionary containing the space's information as returned by the Confluence API.
+            dict[str, Any]: A dictionary containing the space's information as returned by the Confluence API.
         """
         if space_id in self.space_cache:
             return self.space_cache[space_id]

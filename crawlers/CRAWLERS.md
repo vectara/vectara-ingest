@@ -448,8 +448,12 @@ crawling:
 
 confluencedatacenter:
   base_url: "http://confluence.internal:8090"
+  # Auth — use ONE of:
+  #  (a) basic auth:
   confluence_datacenter_username: "<username>"
   confluence_datacenter_password: "<password>"
+  #  (b) Personal Access Token (takes precedence if set):
+  # confluence_datacenter_pat: "<token>"
   confluence_cql: 'space = "TEST" and type IN (page, blogpost)'
 
   confluence_include_attachments: true
@@ -463,10 +467,13 @@ confluencedatacenter:
     mode: "element"
 ```
 
-This crawler is the on-prem / self-hosted counterpart of the Confluence (Cloud) crawler. It targets a Confluence Data Center instance via its REST API and HTTP Basic Auth. Note: the YAML key is `confluencedatacenter` (not `confluencedatacenter_crawler`), and `crawling.crawler_type: confluencedatacenter`.
+This crawler is the on-prem / self-hosted counterpart of the Confluence (Cloud) crawler. It targets a Confluence Data Center instance via its REST API, using either HTTP Basic Auth or a Personal Access Token (PAT). Note: the YAML key is `confluencedatacenter` (not `confluencedatacenter_crawler`), and `crawling.crawler_type: confluencedatacenter`.
 
 - `base_url`: base URL of your Confluence Data Center instance (e.g., `http://confluence.internal:8090`).
-- `confluence_datacenter_username` / `confluence_datacenter_password`: HTTP Basic Auth credentials. Place in `secrets.toml` (`CONFLUENCEDATACENTER_USERNAME`, `CONFLUENCEDATACENTER_PASSWORD`) so they are not committed.
+- Authentication — provide **one** of the following:
+  - `confluence_datacenter_username` / `confluence_datacenter_password`: HTTP Basic Auth credentials.
+  - `confluence_datacenter_pat`: a [Personal Access Token](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html), sent as `Authorization: Bearer <token>`. Use this for SSO/SAML-enforced instances where basic auth is disabled. If both a PAT and basic-auth credentials are set, the PAT takes precedence.
+  - Place credentials in `secrets.toml` so they are not committed. The keys must be `CONFLUENCE_DATACENTER_USERNAME`, `CONFLUENCE_DATACENTER_PASSWORD`, and/or `CONFLUENCE_DATACENTER_PAT` (note the underscore between `CONFLUENCE` and `DATACENTER` — without it the value is not mapped to this crawler).
 - `confluence_cql`: a [CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/) query selecting the content to crawl.
 - `confluence_include_attachments`: when `true`, also indexes attachments. Default: `false`.
 - `include_image_attachments`: process image attachments (PNG/JPG/etc.). Default: `false`. Image-to-text descriptions require `doc_processing.summarize_images` at the top level.
@@ -476,7 +483,7 @@ This crawler is the on-prem / self-hosted counterpart of the Confluence (Cloud) 
 - `dataframe_processing`: optional dataframe-parser config applied to CSV/XLSX attachments. Same shape as in the SharePoint and CSV crawlers (`mode`, `doc_id_columns`, `text_columns`, `metadata_columns`, etc.).
 - `ssl_verify`: see standard SSL handling.
 
-Each indexed document gets metadata for `type` (page/blogpost/attachment), `id`, `last_updates`, `version`, `updated_by`, `space` (id/key/name), `url`, plus `filename` and `attachment_type` for attachments.
+Each indexed document gets metadata for `type` (page/blogpost/attachment), `id`, `title`, `source` (`"Confluence"` by default, overridable via the `source` config key), `last_updated`, `version`, `updated_by` (whichever of `username`/`userKey`/`displayName`/`accountId` the instance returns), `space` (id/key/name), and `url`. Attachments additionally get `filename` and `attachment_type`, and their `source` is set to `"confluence_attachment"`.
 
 ### Twitter crawler
 

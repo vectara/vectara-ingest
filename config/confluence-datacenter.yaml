@@ -31,6 +31,12 @@ confluencedatacenter:
   # Local Confluence Data Center base URL
   base_url: "http://host.docker.internal:8090"
 
+  # Authentication (set the actual credentials in secrets.toml, not here):
+  #   - Basic auth: confluence_datacenter_username + confluence_datacenter_password
+  #   - Personal Access Token (PAT): confluence_datacenter_pat
+  # If a PAT is set it takes precedence and is sent as "Authorization: Bearer <pat>".
+  # Use a PAT for SSO/SAML-enforced instances where basic auth is disabled.
+
   # CQL query to fetch content from TEST space
   # This will get all pages and blog posts from the TEST space
   confluence_cql: 'space = "TEST" and type IN (page, blogpost)'

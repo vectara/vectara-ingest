@@ -2,8 +2,8 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
-import pandas as pd
 from pathlib import Path
+from typing import Any
 from furl import furl
 
 from core.crawler import Crawler
@@ -33,7 +33,41 @@ class ConfluencedatacenterCrawler(Crawler):
             result.path = os.path.join(str(result.path), str(p))
         return result
 
-    def process_content(self, content: dict[str, any]) -> None:
+    def _setup_auth(self) -> None:
+        """
+        Selects the Confluence auth mode from config and sets
+        ``self.confluence_headers`` and ``self.confluence_auth`` accordingly.
+
+        A Personal Access Token (``confluence_datacenter_pat``) takes precedence
+        over basic auth: PAT-only environments (e.g. SSO-enforced Data Center
+        instances where basic auth is disabled) authenticate via a Bearer header.
+        Falls back to username/password basic auth when no PAT is set.
+        """
+        cfg = self.cfg.confluencedatacenter
+        pat = cfg.get("confluence_datacenter_pat", None)
+        username = cfg.get("confluence_datacenter_username", None)
+        password = cfg.get("confluence_datacenter_password", None)
+
+        self.confluence_headers = {"Accept": "application/json"}
+        if pat:
+            if username or password:
+                logger.info(
+                    "A PAT and basic-auth credentials are both configured; using "
+                    "PAT (Bearer) auth and ignoring username/password."
+                )
+            # Never log the token value itself.
+            self.confluence_headers["Authorization"] = f"Bearer {pat}"
+            self.confluence_auth = None
+        elif username and password:
+            self.confluence_auth = (username, password)
+        else:
+            raise ValueError(
+                "Confluence Data Center auth not configured: set either "
+                "confluence_datacenter_pat (PAT) or both "
+                "confluence_datacenter_username and confluence_datacenter_password."
+            )
+
+    def process_content(self, content: dict[str, Any]) -> None:
         """
         Processes Confluence content and indexes it if applicable.
 
@@ -43,18 +77,27 @@ class ConfluencedatacenterCrawler(Crawler):
         id = content["id"]
         type = content["type"]
         doc_id = f"{type}-{id}"
-        metadata = {"type": type, "id": id}
+        metadata = {"type": type, "id": id, "source": self.source}
+        if "title" in content:
+            metadata["title"] = content["title"]
 
         if "version" in content:
             if "when" in content["version"]:
-                metadata["last_updates"] = content["version"]["when"]
+                metadata["last_updated"] = content["version"]["when"]
             if "number" in content["version"]:
                 metadata["version"] = content["version"]["number"]
             if "by" in content["version"]:
-                metadata["updated_by"] = {
-                    "username": content["version"]["by"]["username"],
-                    "userKey": content["version"]["by"]["userKey"],
+                # Field shape varies by instance: classic Data Center returns
+                # username/userKey, while SSO/PAT instances may only return
+                # displayName/accountId. Keep whatever identifying fields exist.
+                by = content["version"]["by"]
+                updated_by = {
+                    k: by[k]
+                    for k in ("username", "userKey", "displayName", "accountId")
+                    if k in by
                 }
+                if updated_by:
+                    metadata["updated_by"] = updated_by
 
         if "space" in content:
             metadata["space"] = {
@@ -278,11 +321,8 @@ class ConfluencedatacenterCrawler(Crawler):
         self.base_url = furl(self.cfg.confluencedatacenter.base_url)
         logger.info(f"Starting base_url = '{self.base_url}'")
 
-        self.confluence_headers = {"Accept": "application/json"}
-        self.confluence_auth = (
-            self.cfg.confluencedatacenter.confluence_datacenter_username,
-            self.cfg.confluencedatacenter.confluence_datacenter_password,
-        )
+        self._setup_auth()
+        self.source = self.cfg.confluencedatacenter.get("source", "Confluence")
         self.body_view = self.cfg.confluencedatacenter.get("body_view", "export_view")
         self.session = create_session_with_retries()
         limit = int(self.cfg.confluencedatacenter.get("limit", "25"))
@@ -324,6 +364,13 @@ class ConfluencedatacenterCrawler(Crawler):
                 search_url.url, headers=self.confluence_headers, auth=self.confluence_auth
             )
 
+            if search_url_response.status_code == 401:
+                raise RuntimeError(
+                    "Confluence returned 401 Unauthorized. Check that "
+                    "confluence_datacenter_pat (PAT), or "
+                    "confluence_datacenter_username and "
+                    "confluence_datacenter_password, are valid."
+                )
             if search_url_response.status_code == 500:
                 logger.warning(
                     "500 returned by REST API. This could be due to a mismatch with the space name in your query."
