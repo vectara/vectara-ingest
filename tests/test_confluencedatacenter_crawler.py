@@ -145,6 +145,25 @@ class TestCrawlWiresAuthIntoRequests(unittest.TestCase):
         self.assertNotIn("Authorization", call.kwargs["headers"])
         self.assertEqual(call.kwargs["auth"], ("alice", "pw"))
 
+    def test_401_response_raises_runtime_error(self):
+        """A 401 on the search request must fail loudly, not silently return."""
+        crawler = _make_crawler({
+            "base_url": "https://conf.example.com",
+            "confluence_cql": 'space = "TEST"',
+            "confluence_datacenter_pat": "bad-pat",
+        })
+        mock_session = MagicMock()
+        resp = MagicMock()
+        resp.status_code = 401
+        mock_session.get.return_value = resp
+        with patch(
+            "crawlers.confluencedatacenter_crawler.create_session_with_retries",
+            return_value=mock_session,
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                crawler.crawl()
+        self.assertIn("401", str(ctx.exception))
+
 
 class TestPageMetadata(unittest.TestCase):
     """Pins the metadata improvements adopted from the rewrite."""
@@ -200,6 +219,42 @@ class TestPageMetadata(unittest.TestCase):
         content["version"]["by"] = {"type": "anonymous"}
         md = self._process(content)
         self.assertNotIn("updated_by", md)
+
+
+class TestAttachmentMetadata(unittest.TestCase):
+    """Attachments get their own source and attachment-type metadata."""
+
+    def _attachment_content(self):
+        return {
+            "id": "999",
+            "type": "attachment",
+            "title": "report.pdf",
+            "version": {"when": "2026-01-02T03:04:05Z", "number": 1},
+            "_links": {"download": "/download/attachments/123/report.pdf"},
+        }
+
+    def test_attachment_source_and_type_are_set(self):
+        crawler = _make_crawler({
+            "base_url": "https://conf.example.com",
+            "confluence_datacenter_pat": "pat",
+            "confluence_include_attachments": True,
+            "include_document_attachments": True,
+        })
+        crawler._setup_auth()  # the download path uses confluence_headers/auth
+        download = MagicMock()
+        download.ok = True
+        download.iter_content.return_value = [b"%PDF-1.4 fake"]
+        crawler.session.get.return_value = download
+        crawler.indexer.index_file.return_value = True
+
+        crawler.process_content(self._attachment_content())
+
+        self.assertTrue(crawler.indexer.index_file.called)
+        # index_file(temp_path, url, metadata, doc_id) -> metadata is args[2]
+        md = crawler.indexer.index_file.call_args.args[2]
+        self.assertEqual(md.get("source"), "confluence_attachment")
+        self.assertEqual(md.get("filename"), "report.pdf")
+        self.assertEqual(md.get("attachment_type"), "document")
 
 
 if __name__ == "__main__":
