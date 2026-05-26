@@ -367,8 +367,9 @@ class ConfluencedatacenterCrawler(Crawler):
             if search_url_response.status_code == 401:
                 raise RuntimeError(
                     "Confluence returned 401 Unauthorized. Check that "
-                    "confluence_datacenter_pat (PAT) or the "
-                    "confluence_datacenter_username/password credentials are valid."
+                    "confluence_datacenter_pat (PAT), or "
+                    "confluence_datacenter_username and "
+                    "confluence_datacenter_password, are valid."
                 )
             if search_url_response.status_code == 500:
                 logger.warning(
