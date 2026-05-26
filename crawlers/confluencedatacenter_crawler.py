@@ -2,8 +2,8 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import tempfile
-import pandas as pd
 from pathlib import Path
+from typing import Any
 from furl import furl
 
 from core.crawler import Crawler
@@ -67,7 +67,7 @@ class ConfluencedatacenterCrawler(Crawler):
                 "confluence_datacenter_username and confluence_datacenter_password."
             )
 
-    def process_content(self, content: dict[str, any]) -> None:
+    def process_content(self, content: dict[str, Any]) -> None:
         """
         Processes Confluence content and indexes it if applicable.
 
