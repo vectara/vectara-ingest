@@ -1376,7 +1376,7 @@ wrapt==1.17.2
     #   opentelemetry-instrumentation-httpx
     #   opentelemetry-instrumentation-threading
     #   unstructured
-xlsxwriter==3.2.3
+xlsxwriter==3.2.9
     # via python-pptx
 xmltodict==0.13.0
     # via -r requirements.in
