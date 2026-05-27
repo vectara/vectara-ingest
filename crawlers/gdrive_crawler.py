@@ -391,6 +391,11 @@ class UserWorker(object):
         self._abac_resolve_inherited = self.abac.get('resolve_inherited', False)
         self._abac_include_anyone = self.abac.get('include_anyone', True)
         self._abac_fetch_labels = self.abac.get('fetch_labels', False)
+        # Issue the Shared Drive membership listing as a domain admin. Lets a
+        # domain-admin delegated user read drive members without holding a
+        # per-drive fileOrganizer/organizer role (the usual cause of the 403
+        # that downgrades files to acl_source=shared_drive_partial).
+        self._abac_shared_drive_admin_access = self.abac.get('shared_drive_admin_access', False)
 
         # Optional: restrict the crawl to one or more subtrees. Accepts either
         # a single Drive folder URL/id (legacy form) or a list of them, so a
@@ -746,12 +751,19 @@ class UserWorker(object):
                 'supportsAllDrives': True,
                 'fields': fields,
             }
+            if self._abac_shared_drive_admin_access:
+                params['useDomainAdminAccess'] = True
             if page_token:
                 params['pageToken'] = page_token
             try:
                 resp = self.service.permissions().list(**params).execute()
             except HttpError as e:
-                logger.info(f"permissions.list failed for shared drive {drive_id}: {e}")
+                logger.warning(
+                    f"permissions.list failed for shared drive {drive_id}: {e}; "
+                    "delegated user likely lacks fileOrganizer/organizer on the drive — "
+                    "grant a manager role or set abac.shared_drive_admin_access "
+                    "(requires a domain-admin delegated user)."
+                )
                 collected = []
                 source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
                 break
@@ -909,15 +921,21 @@ class UserWorker(object):
                 fdef = (ldef.get('fields') or {}).get(fid, {})
                 choices = fdef.get('choices') or {}
                 values: List[str] = []
+                # text/integer/dateString are arrays in the Drive API (like
+                # selection/user), not scalars — iterate so a value renders
+                # `Title=value`, not `Title=['value']`.
                 if 'selection' in fdata:
                     for cid in fdata.get('selection') or []:
                         values.append(choices.get(cid, cid))
                 elif 'text' in fdata:
-                    values.append(str(fdata.get('text', '')))
+                    for t in fdata.get('text') or []:
+                        values.append(str(t))
                 elif 'integer' in fdata:
-                    values.append(str(fdata.get('integer', '')))
+                    for n in fdata.get('integer') or []:
+                        values.append(str(n))
                 elif 'dateString' in fdata:
-                    values.append(str(fdata.get('dateString', '')))
+                    for d in fdata.get('dateString') or []:
+                        values.append(str(d))
                 elif 'user' in fdata:
                     for u in fdata.get('user') or []:
                         ue = u.get('emailAddress') if isinstance(u, dict) else u

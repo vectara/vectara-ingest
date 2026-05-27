@@ -228,6 +228,7 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_ids=None
     worker._abac_resolve_inherited = worker.abac.get('resolve_inherited', False)
     worker._abac_include_anyone = worker.abac.get('include_anyone', True)
     worker._abac_fetch_labels = worker.abac.get('fetch_labels', False)
+    worker._abac_shared_drive_admin_access = worker.abac.get('shared_drive_admin_access', False)
     worker._root_folder_ids = list(root_folder_ids or [])
     worker._folder_acl_cache = {}
     worker._drive_perms_cache = {}
@@ -386,6 +387,26 @@ class TestResolveParentAcl(unittest.TestCase):
         self.assertEqual(source, "shared_drive")
         self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "dp2"])
 
+    def test_shared_drive_admin_access_passed_when_enabled(self):
+        """With shared_drive_admin_access on, permissions.list is issued with
+        useDomainAdminAccess=True so a domain-admin delegated user can read the
+        drive's members without a per-drive fileOrganizer role."""
+        w = _make_worker(abac={"enabled": True, "shared_drive_admin_access": True})
+        list_mock = _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="group", role="writer", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1"})
+        self.assertTrue(list_mock.call_args.kwargs.get("useDomainAdminAccess"))
+
+    def test_shared_drive_admin_access_omitted_by_default(self):
+        """Default off: the param must not be sent, preserving prior behavior."""
+        w = _make_worker(abac={"enabled": True})
+        list_mock = _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="group", role="writer", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1"})
+        self.assertNotIn("useDomainAdminAccess", list_mock.call_args.kwargs)
+
     def test_my_drive_direct_when_resolve_disabled(self):
         w = _make_worker(abac={"resolve_inherited": False})
         perms, source = w._resolve_parent_acl({"parents": ["F1"]})
@@ -464,6 +485,19 @@ class TestFetchLabels(unittest.TestCase):
 
         out = w._fetch_labels("file1")
         self.assertEqual(out, ["Sensitivity=Confidential"])
+
+    def test_text_label_renders_value_not_list(self):
+        """Drive returns text/integer/dateString field values as arrays. They
+        must render as `Title=value`, not `Title=['value']`."""
+        w = _make_worker(abac={"fetch_labels": True})
+        w._label_defs = {
+            "L1": {"title": "Notes", "fields": {"F1": {"title": "Comment", "choices": {}}}}
+        }
+        resp = {"labels": [{"id": "L1", "fields": {"F1": {"text": ["hello"]}}}]}
+        exec_mock = MagicMock()
+        exec_mock.execute.return_value = resp
+        w.service.files.return_value.listLabels = MagicMock(return_value=exec_mock)
+        self.assertEqual(w._fetch_labels("file1"), ["Notes=hello"])
 
     def test_listlabels_error_returns_empty(self):
         w = _make_worker(abac={"fetch_labels": True})
@@ -821,7 +855,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertIn("file='y'", line)
         self.assertIn("id=x", line)
         self.assertIn("acl_source='shared_drive'", line)
@@ -852,7 +886,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y', 'permissions': perms})
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertIn("permissions=", line)
         self.assertIn("'a@x.com'", line)
         self.assertIn("'domain'", line)
@@ -865,7 +899,7 @@ class TestFilterCounters(unittest.TestCase):
                 {'id': 'x', 'name': 'y', 'permissions': perms},
                 parent_permissions=parent,
             )
-        line2 = next(l for l in cm2.output if 'gdrive indexed' in l)
+        line2 = next(ln for ln in cm2.output if 'gdrive indexed' in ln)
         self.assertIn("parent_permissions=", line2)
         self.assertIn("'eng@x.com'", line2)
 
@@ -882,7 +916,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertNotIn('acl_', line)
 
     def test_record_indexed_not_verbose_emits_no_line(self):
@@ -898,7 +932,7 @@ class TestFilterCounters(unittest.TestCase):
             _logging.getLogger('crawlers.gdrive_crawler').info('sentinel')
             w._record_indexed({'id': 'x', 'name': 'y'}, {'acl_source': 'shared_drive'})
 
-        self.assertFalse(any('gdrive indexed' in l for l in cm.output))
+        self.assertFalse(any('gdrive indexed' in ln for ln in cm.output))
 
     def test_dataframe_failure_records_index_error_not_indexed(self):
         """process_dataframe_file returns False on parser-init failure, unsupported
@@ -1287,7 +1321,7 @@ class TestAbacConfigLogging(unittest.TestCase):
         w.indexer = MagicMock()
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w.setup()
-        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        line = next((ln for ln in cm.output if 'abac' in ln.lower()), None)
         self.assertIsNotNone(line, f"expected an ABAC config line, got: {cm.output}")
         self.assertIn("enabled=True", line)
         self.assertIn("resolve_inherited=True", line)
@@ -1301,7 +1335,7 @@ class TestAbacConfigLogging(unittest.TestCase):
         w.indexer = MagicMock()
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w.setup()
-        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        line = next((ln for ln in cm.output if 'abac' in ln.lower()), None)
         self.assertIsNotNone(line)
         self.assertIn("enabled=False", line)
 
