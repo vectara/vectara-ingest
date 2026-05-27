@@ -16,12 +16,18 @@ requirements-all: requirements requirements-extra
 test:
 	python -m pytest tests/
 
+# Ruff version, kept in sync with .github/workflows/python-lint-check.yml so
+# local `make lint` and the CI lint job report identical findings.
+RUFF_VERSION := 0.15.14
+
 # Lint gate: Ruff with the repo's ruff.toml (E402 ignored). Black is not run —
 # the tree isn't black-formatted and CI treats black as informational only.
+# Ruff isn't a project dependency; run it through `uvx` (uv is already required
+# for the requirements targets above) so this works in a fresh environment.
 lint:
-	ruff check .
+	uvx ruff@$(RUFF_VERSION) check .
 
 # Apply Ruff's safe autofixes. (Deliberately no `black .`: it would reformat
 # nearly the whole tree, which isn't the project's convention.)
 format:
-	ruff check --fix .
+	uvx ruff@$(RUFF_VERSION) check --fix .
