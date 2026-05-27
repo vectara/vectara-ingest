@@ -1,0 +1,9 @@
+# Ruff configuration. Defaults are kept (pyflakes `F` + pycodestyle `E4`/`E7`/`E9`;
+# note `E501` line-length is not in Ruff's default select).
+#
+# E402 (module-import-not-at-top) is ignored project-wide: several modules
+# intentionally run code before importing — logging setup, `sys.path` tweaks,
+# guarded optional imports — and tests stub modules (e.g. cairosvg) before
+# importing the code under test.
+[lint]
+ignore = ["E402"]
