@@ -731,9 +731,9 @@ class UserWorker(object):
         delegated user to have at least the `fileOrganizer` role on that
         drive. Lower roles get a 403; we mark the source as
         `shared_drive_partial` and cache that outcome so we don't hammer
-        Drive once per file. Sub-folder-level overrides within the drive
-        are out of scope here — they would need an ancestor walk like the
-        My Drive path, which is the existing `_folder_acl_cache` flow.
+        Drive once per file. This returns only the drive-root membership;
+        grants made on intermediate folders are layered on by the caller
+        (`_resolve_parent_acl` via `_walk_ancestor_acls`).
         """
         cached = self._drive_perms_cache.get(drive_id)
         if cached is not None:
@@ -786,14 +786,27 @@ class UserWorker(object):
         """Resolve inherited permissions for a file.
 
         For Shared Drive files: fetch the drive's member list (cached per
-        worker per drive). For My Drive files with `resolve_inherited=True`:
+        worker per drive) and union any grants made on the folders between the
+        file and the drive root. For My Drive files with `resolve_inherited=True`:
         walk ancestor folders and union their ACLs.
 
         Returns (union of inherited permissions, source discriminator).
         """
         drive_id = file_obj.get('driveId')
         if drive_id:
-            return self._fetch_drive_permissions(drive_id)
+            members, source = self._fetch_drive_permissions(drive_id)
+            # Drive-root membership doesn't cover grants made on intermediate
+            # folders inside the drive (e.g. a group shared onto a sub-folder),
+            # which descendant files inherit but Drive never inlines into their
+            # `permissions`. Walk those folders too; seed the drive root as
+            # already-seen so we don't re-fetch its membership as a folder.
+            folder_perms, partial = self._walk_ancestor_acls(
+                file_obj.get('parents') or [], seed_seen={drive_id}
+            )
+            combined = members + folder_perms
+            if partial and source == ACL_SOURCE_SHARED_DRIVE:
+                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
+            return combined, source
 
         if not self._abac_resolve_inherited:
             return [], ACL_SOURCE_MY_DRIVE_DIRECT
@@ -802,8 +815,23 @@ class UserWorker(object):
         if not parents:
             return [], ACL_SOURCE_MY_DRIVE_RESOLVED
 
+        perms, partial = self._walk_ancestor_acls(parents)
+        source = ACL_SOURCE_MY_DRIVE_PARTIAL if partial else ACL_SOURCE_MY_DRIVE_RESOLVED
+        return perms, source
+
+    def _walk_ancestor_acls(
+        self, parents: List[str], seed_seen: Optional[Set[str]] = None
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """BFS up the ancestor-folder chain, unioning each folder's direct ACL.
+
+        `seed_seen` pre-marks folder ids to skip (e.g. a Shared Drive root,
+        whose membership is fetched separately). Folder ACLs are cached per
+        worker in `_folder_acl_cache`, deduped by permission id. Returns
+        (permissions, partial), where `partial` is True if any ancestor folder
+        couldn't be read.
+        """
         collected: Dict[str, Dict[str, Any]] = {}
-        seen: Set[str] = set()
+        seen: Set[str] = set(seed_seen or ())
         partial = False
         frontier = list(parents)
 
@@ -844,8 +872,7 @@ class UserWorker(object):
 
             frontier = next_frontier
 
-        source = ACL_SOURCE_MY_DRIVE_PARTIAL if partial else ACL_SOURCE_MY_DRIVE_RESOLVED
-        return list(collected.values()), source
+        return list(collected.values()), partial
 
     def _load_label_defs(self) -> Dict[str, Dict[str, Any]]:
         """Fetch and cache Drive Labels definitions keyed by labelId."""

@@ -306,6 +306,24 @@ def _wire_drive_permissions(worker, responses_by_drive):
     return worker.service.permissions.return_value.list
 
 
+def _wire_folder_get(worker, folder_responses):
+    """Install a fake service.files().get keyed by fileId for ancestor-folder
+    walks. Each response is either a dict (returned by .execute()) or an
+    HttpError (raised on .execute())."""
+    def fake_get(fileId, fields, supportsAllDrives):
+        outcome = folder_responses[fileId]
+        exec_mock = MagicMock()
+        if isinstance(outcome, HttpError):
+            exec_mock.execute.side_effect = outcome
+        else:
+            exec_mock.execute.return_value = outcome
+        return exec_mock
+
+    worker.service.files = MagicMock()
+    worker.service.files.return_value.get = MagicMock(side_effect=fake_get)
+    return worker.service.files.return_value.get
+
+
 class TestResolveParentAcl(unittest.TestCase):
     def test_shared_drive_fetches_drive_permissions(self):
         """A Shared Drive file with no per-file grants must surface the drive's
@@ -320,6 +338,9 @@ class TestResolveParentAcl(unittest.TestCase):
                 ]
             }
         })
+        # F1 carries no extra grants, so the ancestor walk adds nothing and
+        # only the drive membership surfaces.
+        _wire_folder_get(w, {"F1": {"id": "F1", "parents": ["D1"], "permissions": []}})
         perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
         self.assertEqual(source, "shared_drive")
         self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "dp2"])
@@ -406,6 +427,88 @@ class TestResolveParentAcl(unittest.TestCase):
         })
         w._resolve_parent_acl({"driveId": "D1"})
         self.assertNotIn("useDomainAdminAccess", list_mock.call_args.kwargs)
+
+    def test_shared_drive_walks_intermediate_folder_groups(self):
+        """A group granted on an intermediate folder inside a Shared Drive is
+        inherited by descendant files but is never inlined into their
+        `permissions` nor part of drive-root membership. The ancestor walk must
+        surface it so it lands in acl_groups."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [
+                _perm("dp1", type="user", role="organizer", emailAddress="ofer@x.com"),
+            ]},
+        })
+        _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["D1"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="eng@x.com"),
+            ]},
+        })
+        file_obj = {"driveId": "D1", "parents": ["F1"]}
+        perms, source = w._resolve_parent_acl(file_obj)
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "fg1"])
+        # End-to-end: the folder group must show up in acl_groups.
+        meta = extract_acl_metadata(file_obj, parent_permissions=perms, source=source)
+        self.assertEqual(meta["acl_groups"], ["eng@x.com"])
+        self.assertEqual(meta["acl_readers"], ["ofer@x.com"])
+
+    def test_shared_drive_root_file_skips_walk(self):
+        """A file directly in the drive root (parents == [driveId]) has no
+        intermediate folder to walk; the drive root is seeded as seen, so no
+        files().get is issued."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        get_mock = _wire_folder_get(w, {})
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["D1"]})
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual([p["id"] for p in perms], ["dp1"])
+        get_mock.assert_not_called()
+
+    def test_shared_drive_multi_level_folder_walk(self):
+        """Grants on every folder between the file and the drive root are
+        unioned with drive membership."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="root@x.com")]},
+        })
+        _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["F2"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="team@x.com")]},
+            "F2": {"id": "F2", "parents": ["D1"], "permissions": [
+                _perm("fg2", type="user", role="writer", emailAddress="lead@x.com")]},
+        })
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "fg1", "fg2"])
+
+    def test_shared_drive_folder_read_403_marks_partial(self):
+        """If an ancestor folder can't be read, membership still surfaces but
+        the source downgrades to shared_drive_partial."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        _wire_folder_get(w, {"F1": _make_http_error(403)})
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(source, "shared_drive_partial")
+        self.assertEqual([p["id"] for p in perms], ["dp1"])
+
+    def test_shared_drive_folder_walk_is_cached(self):
+        """Two files under the same folder trigger a single files().get."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        get_mock = _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["D1"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(get_mock.call_count, 1)
 
     def test_my_drive_direct_when_resolve_disabled(self):
         w = _make_worker(abac={"resolve_inherited": False})
