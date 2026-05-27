@@ -5,7 +5,7 @@ More stable for large-scale crawling but doesn't handle JavaScript.
 
 import logging
 import requests
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -25,7 +25,7 @@ class ScrapyContentExtractor(WebExtractorBase):
         # Handle missing vectara config gracefully for testing
         try:
             self.headers = get_headers(cfg)
-        except:
+        except Exception:
             self.headers = {"User-Agent": "Mozilla/5.0 (compatible; ScrapyContentExtractor)"}
 
         # Create session for connection pooling

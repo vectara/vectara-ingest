@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
 from typing import List, Set, Any, Dict
-from urllib.parse import urlparse, urlunparse, ParseResult, urljoin, unquote
+from urllib.parse import urlparse, ParseResult, unquote
 
 # Third-party imports
 import magic

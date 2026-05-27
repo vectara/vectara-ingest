@@ -17,7 +17,6 @@ For detailed setup instructions, see: docs/gdrive-oauth-setup.md
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Any

@@ -93,7 +93,7 @@ class ArxivCrawler(Crawler):
             search = arxiv.Search(
                 query = query,
                 max_results = n_papers,
-                sort_by = arxiv.SortCriterion.submittedDate,
+                sort_by = arxiv.SortCriterion.SubmittedDate,
                 sort_order = arxiv.SortOrder.Descending
             )
 

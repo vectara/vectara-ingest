@@ -1,10 +1,9 @@
-import logging
 import os
 import sys
 import unittest
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, call
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 

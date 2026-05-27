@@ -9,7 +9,6 @@ import logging
 import os
 import sqlite3
 import threading
-import time
 from typing import Set
 
 logger = logging.getLogger(__name__)

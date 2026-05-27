@@ -1625,15 +1625,15 @@ class BoxCrawler(Crawler):
                         failed_count += 1
 
             logging.info("=" * 80)
-            logging.info(f"Ray streaming processing complete:")
+            logging.info("Ray streaming processing complete:")
             logging.info(f"  Successfully indexed: {completed_count}")
             logging.info(f"  Failed to index: {failed_count}")
             logging.info(f"  Total processed: {completed_count + failed_count}")
             logging.info("=" * 80)
             logging.info(f"CSV tracking files saved to: {self.tracking_dir}")
-            logging.info(f"  - indexed.csv: Successfully indexed files")
-            logging.info(f"  - failed.csv: Files that failed indexing")
-            logging.info(f"  - skipped.csv: Files skipped by filters")
+            logging.info("  - indexed.csv: Successfully indexed files")
+            logging.info("  - failed.csv: Files that failed indexing")
+            logging.info("  - skipped.csv: Files skipped by filters")
 
         finally:
             # Shutdown Ray
@@ -1807,7 +1807,7 @@ class BoxCrawler(Crawler):
                         failed_count += 1
 
             logging.info("=" * 80)
-            logging.info(f"Processing complete:")
+            logging.info("Processing complete:")
             logging.info(f"  Successfully indexed: {completed_count}")
             logging.info(f"  Failed to index: {failed_count}")
             logging.info("=" * 80)

@@ -2,7 +2,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from omegaconf import OmegaConf
 
-from core.models import generate, get_api_key
+from core.models import generate
 
 logger = logging.getLogger(__name__)
 

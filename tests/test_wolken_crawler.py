@@ -307,7 +307,7 @@ class TestSecretsMapping(unittest.TestCase):
 
     def test_wolken_prefix_maps_to_crawler_config(self):
         """Verify WOLKEN_ prefixed secrets map to wolken_crawler config."""
-        from omegaconf import OmegaConf, DictConfig
+        from omegaconf import OmegaConf
         from ingest import update_environment
 
         cfg = OmegaConf.create({

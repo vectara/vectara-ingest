@@ -1,7 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
 import json
-import re
 import time
 import warnings
 import base64
@@ -22,7 +21,6 @@ from nbconvert import HTMLExporter  # type: ignore
 import nbformat
 import markdown
 import whisper
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
 from core.summary import get_attributes_from_text
@@ -40,7 +38,7 @@ from core.image_processor import ImageProcessor
 
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
-    handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file,
+    safe_file_cleanup, prepare_file_metadata, store_file,
     normalize_url_for_metadata, auth_redirect_reason
 )
 from core.web_extractor_base import create_web_extractor

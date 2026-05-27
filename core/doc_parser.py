@@ -1,6 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
-from typing import List, Tuple, Iterator, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional
 import time
 import pandas as pd
 import os
@@ -1887,7 +1887,7 @@ class UnstructuredDocumentParser(DocumentParser):
         # For files without metadata title, look for Title elements (except PDF/DOCX/PPTX which skip Title elements)
         if not doc_title and not filename.lower().endswith(('.pdf', '.docx', '.pptx')):
             title_elements = raw_tables_images if is_chunking else elements
-            titles = [str(x) for x in title_elements if type(x) == us.documents.elements.Title and len(str(x).strip()) > 3]
+            titles = [str(x) for x in title_elements if isinstance(x, us.documents.elements.Title) and len(str(x).strip()) > 3]
             if titles:
                 doc_title = titles[0]
                 logger.info(f"Extracted document title from Title element: '{doc_title}' from file {filename}")

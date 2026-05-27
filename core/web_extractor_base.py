@@ -5,7 +5,7 @@ Allows choosing between different extraction backends via configuration.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)

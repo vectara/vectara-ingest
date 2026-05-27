@@ -3,8 +3,7 @@ import tempfile
 import os
 import time
 import threading
-from unittest.mock import Mock, MagicMock, patch, mock_open
-from io import StringIO
+from unittest.mock import Mock, patch, mock_open
 import pandas as pd
 from omegaconf import OmegaConf
 

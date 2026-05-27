@@ -47,7 +47,7 @@ def extract_image_context(
             # Check if it's actually a string representation of the object (not useful text)
             if text and not text.startswith('<') and text != str(type(element)):
                 return text
-        except:
+        except Exception:
             pass
         
         return None

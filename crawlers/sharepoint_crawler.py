@@ -2,8 +2,6 @@ import zipfile
 import logging
 logger = logging.getLogger(__name__)
 import time
-import pandas as pd
-from typing import Optional
 
 from office365.runtime.client_request_exception import ClientRequestException
 from office365.sharepoint.client_context import ClientContext

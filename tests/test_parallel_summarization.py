@@ -11,8 +11,7 @@ The key behavior being tested:
 import unittest
 import sys
 import time
-from unittest.mock import MagicMock, patch, call
-from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock, patch
 
 # Mock cairosvg before it's imported by other modules
 sys.modules['cairosvg'] = MagicMock()

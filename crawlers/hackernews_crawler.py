@@ -1,4 +1,3 @@
-import json
 from omegaconf import OmegaConf
 import logging
 logger = logging.getLogger(__name__)
