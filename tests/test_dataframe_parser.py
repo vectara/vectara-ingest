@@ -3,7 +3,7 @@ import sys
 import unittest
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
@@ -114,6 +114,52 @@ class TestDataFrameParser(unittest.TestCase):
         # last_error must be set (not None) so the failure is diagnosable.
         self.assertFalse(ok)
         self.assertIsNotNone(df_parser.last_error)
+
+    def test_open_excel_uses_default_engine_when_it_succeeds(self):
+        # Happy path: the default pandas engine works, so the calamine fallback
+        # must NOT be invoked (avoid changing behavior for files that already
+        # parse fine).
+        from core import dataframe_parser as dfp
+
+        sentinel = object()
+        calls: list[dict] = []
+
+        def fake_excel_file(path, engine=None):
+            calls.append({"path": path, "engine": engine})
+            return sentinel
+
+        with patch.object(dfp.pd, "ExcelFile", side_effect=fake_excel_file):
+            result = dfp._open_excel_with_fallback("/tmp/healthy.xlsx")
+
+        self.assertIs(result, sentinel)
+        self.assertEqual([{"path": "/tmp/healthy.xlsx", "engine": None}], calls)
+
+    def test_open_excel_falls_back_to_calamine_when_default_engine_raises(self):
+        # When openpyxl raises (e.g. the "expected <class 'openpyxl.styles.fills.Fill'>"
+        # error on workbooks with malformed styles), the helper must retry with
+        # engine='calamine' and return the calamine-opened ExcelFile.
+        from core import dataframe_parser as dfp
+
+        sentinel = object()
+        calls: list[dict] = []
+
+        def fake_excel_file(path, engine=None):
+            calls.append({"path": path, "engine": engine})
+            if engine is None:
+                raise TypeError("expected <class 'openpyxl.styles.fills.Fill'>")
+            return sentinel
+
+        with patch.object(dfp.pd, "ExcelFile", side_effect=fake_excel_file):
+            result = dfp._open_excel_with_fallback("/tmp/broken.xlsx")
+
+        self.assertIs(result, sentinel)
+        self.assertEqual(
+            [
+                {"path": "/tmp/broken.xlsx", "engine": None},
+                {"path": "/tmp/broken.xlsx", "engine": "calamine"},
+            ],
+            calls,
+        )
 
     def run_dataframe_parser_test(self, *test_config_path: str):
         config = _load_config(*test_config_path)

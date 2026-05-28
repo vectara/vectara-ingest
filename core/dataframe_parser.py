@@ -110,6 +110,31 @@ def get_separator_by_file_name(file_name: str) -> str:
         return ","
 
 
+def _open_excel_with_fallback(file_path: str) -> pd.ExcelFile:
+    """Open an Excel file with pandas' default engine, falling back to ``calamine``
+    on failure.
+
+    For ``.xlsx`` the default engine is openpyxl, which parses ``xl/styles.xml``
+    during workbook load. Files written by some non-Excel tools have malformed
+    style elements that openpyxl rejects outright (e.g.
+    ``expected <class 'openpyxl.styles.fills.Fill'>``), making the file
+    unreadable even though its cell values are intact. openpyxl exposes no flag
+    to skip style parsing, so the only dependable rescue is a different reader.
+    ``calamine`` (Rust, via ``python-calamine``) reads values only — no style
+    parsing — and content-sniffs the format, so it succeeds where openpyxl
+    fails and also tolerates mislabeled files. The fallback only triggers when
+    the default engine raises, so currently-working files are unchanged.
+    """
+    try:
+        return pd.ExcelFile(file_path)
+    except Exception as e:
+        logger.warning(
+            f"Default Excel engine failed for {file_path} "
+            f"({type(e).__name__}: {e}); retrying with engine='calamine'"
+        )
+        return pd.ExcelFile(file_path, engine="calamine")
+
+
 def supported_by_dataframe_parser(file_path: str) -> bool:
     """
     Checks if the file extension of the given file path is supported for dataframe parsing.
@@ -391,7 +416,7 @@ def process_dataframe_file(
             )
 
         elif file_type in ['xls', 'xlsx']:
-            xls = pd.ExcelFile(file_path)
+            xls = _open_excel_with_fallback(file_path)
             sheet_names = df_config.get("sheet_names")
 
             # If sheet_names is not specified or is None, process all sheets

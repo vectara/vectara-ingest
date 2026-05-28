@@ -61,6 +61,7 @@ pytube==15.0.0
 youtube-transcript-api==0.6.2
 sec-downloader==0.12.2
 openpyxl==3.1.5
+python-calamine==0.6.2
 tweepy==4.14.0
 matplotlib==3.8.4
 cryptography==46.0.7
@@ -85,7 +86,7 @@ nltk>=3.9.4
 aiohttp>=3.13.3
 pdfminer.six>=20251230
 protobuf>=5.29.6
-urllib3>=2.6.3
+urllib3>=2.7.0
 python-multipart>=0.0.27
 pyasn1>=0.6.3
 pyjwt>=2.12.0

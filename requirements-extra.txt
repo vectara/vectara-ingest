@@ -292,6 +292,7 @@ networkx==3.5
 nltk==3.9.4
     # via
     #   -c requirements.txt
+    #   -r requirements-extra.in
     #   unstructured
 numpy==2.4.4
     # via
@@ -766,7 +767,7 @@ unstructured-pytesseract==0.3.15
     # via
     #   -c requirements.txt
     #   unstructured
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   -c requirements.txt
     #   requests

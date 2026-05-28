@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -235,6 +237,54 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_ids=None
     worker._label_defs = None
     worker._stats = {k: 0 for k in FILTER_STAGES}
     return worker
+
+
+class TestReconcileOAuthScopes(unittest.TestCase):
+    """The repo's token generator grants drive.readonly only, so enabling
+    fetch_labels would otherwise kill every refresh with invalid_scope. The
+    worker must drop the labels scope (and label fetching) when the saved token
+    wasn't granted it, and only then."""
+
+    def _token_file(self, scopes):
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as f:
+            json.dump({"refresh_token": "x", "scopes": scopes}, f)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_drops_labels_scope_when_token_lacks_it(self):
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        path = self._token_file([DRIVE_READONLY_SCOPE])
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        with self.assertLogs("crawlers.gdrive_crawler", level="WARNING") as cm:
+            result = w._reconcile_oauth_scopes(path, requested)
+        self.assertEqual(result, [DRIVE_READONLY_SCOPE])
+        self.assertFalse(w._abac_fetch_labels)
+        self.assertTrue(any("Drive Labels scope" in m for m in cm.output))
+
+    def test_keeps_labels_scope_when_granted(self):
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        path = self._token_file([DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE])
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        result = w._reconcile_oauth_scopes(path, requested)
+        self.assertEqual(result, requested)
+        self.assertTrue(w._abac_fetch_labels)
+
+    def test_passthrough_when_labels_not_requested(self):
+        # No labels in the request: nothing to reconcile, token file untouched.
+        w = _make_worker(abac={"enabled": True})
+        result = w._reconcile_oauth_scopes("/does/not/exist", [DRIVE_READONLY_SCOPE])
+        self.assertEqual(result, [DRIVE_READONLY_SCOPE])
+        self.assertFalse(w._abac_fetch_labels)
+
+    def test_missing_file_passes_scopes_through(self):
+        # Can't read grants: leave scopes as-is so get_oauth_credentials raises
+        # the real FileNotFoundError instead of silently dropping labels.
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        result = w._reconcile_oauth_scopes("/does/not/exist", requested)
+        self.assertEqual(result, requested)
+        self.assertTrue(w._abac_fetch_labels)
 
 
 class TestPermissionDisplayFilter(unittest.TestCase):

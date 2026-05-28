@@ -1163,6 +1163,34 @@ class UserWorker(object):
 
         safe_remove_file(local_file_path)
 
+    def _reconcile_oauth_scopes(self, credentials_file: str, scopes: List[str]) -> List[str]:
+        """Drop the optional Drive Labels scope when the saved OAuth token wasn't
+        granted it, so the token refresh doesn't fail with invalid_scope. A
+        refresh token only carries the scopes consented to when it was minted, and
+        Google rejects a refresh that asks for anything beyond that. Also disables
+        label fetching for this run so we don't trade the crash for a per-file 403.
+        Returns the scopes that are actually safe to request."""
+        if DRIVE_LABELS_SCOPE not in scopes:
+            return scopes
+        try:
+            with open(credentials_file, 'r') as f:
+                granted = json.load(f).get("scopes") or []
+        except (OSError, json.JSONDecodeError):
+            # Couldn't read the grants — leave scopes untouched so
+            # get_oauth_credentials surfaces the real file/JSON error.
+            return scopes
+        if DRIVE_LABELS_SCOPE in granted:
+            return scopes
+        logger.warning(
+            "OAuth token %s was not granted the Drive Labels scope (%s); "
+            "continuing without labels. Re-run "
+            "scripts/gdrive/generate_oauth_token.py --with-labels to enable "
+            "label ingestion.",
+            credentials_file, DRIVE_LABELS_SCOPE,
+        )
+        self._abac_fetch_labels = False
+        return [s for s in scopes if s != DRIVE_LABELS_SCOPE]
+
     def process(self, user: str) -> None:
         logger.info(f"Processing files for user: {user}")
 
@@ -1185,6 +1213,7 @@ class UserWorker(object):
         if auth_type == "oauth":
             # Use OAuth authentication with token from credentials.json
             logger.info("Using OAuth authentication")
+            scopes = self._reconcile_oauth_scopes(credentials_file, scopes)
             self.creds = get_oauth_credentials(credentials_file, scopes=scopes)
         else:
             # Use service account with domain-wide delegation (default)
