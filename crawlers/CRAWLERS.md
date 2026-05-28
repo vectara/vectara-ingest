@@ -760,6 +760,12 @@ Each file passes through several gates between Drive and the indexer. A drop at 
 6. **Download/export** — files whose Drive download or Workspace export fails (e.g. `exportSizeLimitExceeded` with no PDF fallback) are counted as `download_failed`.
 7. **Indexing** — `indexer.index_file` returning `False` or raising is counted as `index_error`; success is counted as `indexed`.
 
+**Document identity (`doc_id`):**
+
+The Vectara `doc_id` for every gdrive-crawled file is the Google Drive `file.id` — the immutable identifier Drive assigns when the file is created. This holds for both the standard indexing path and the dataframe path (CSV/XLSX/Sheets). Renaming, moving, editing, sharing, or producing new revisions all preserve `file.id`, so re-crawls upsert the same Vectara document. A file only gets a new `doc_id` if it is deleted and re-uploaded, or copied via *File → Make a copy* (which Drive itself treats as a new file).
+
+> **Breaking change (upgrading from a release prior to this one):** earlier versions did not pass an explicit `id` for the non-dataframe path, so the indexer fell back to `slugify(uri)` (e.g. `https-drive-google-com-file-d-<id>-view`). After upgrading, those files will be re-indexed under the bare `file.id` and the old slug-keyed documents will remain in the corpus as orphans until they age out via your incremental-crawl deletion logic. If you need to clean them up immediately, list corpus documents whose `metadata.source == 'gdrive'` and whose `doc_id` starts with `https-` and delete them. The dataframe path is unaffected — it has always used `file.id` directly.
+
 
 ### Folder crawler
 

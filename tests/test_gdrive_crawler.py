@@ -1280,6 +1280,31 @@ class TestCrawlFileRouting(unittest.TestCase):
         w.indexer.index_file.assert_called_once()
         pdf_mock.assert_not_called()
 
+    def test_index_file_uses_drive_file_id_as_doc_id(self):
+        # The Drive file.id is immutable, so passing it as the indexer doc_id
+        # guarantees a re-crawl of the same file upserts the same Vectara
+        # document. Without an explicit id the indexer falls back to
+        # slugify(uri), which silently rebinds if the synthetic URL format
+        # ever changes — see get_gdrive_url() and core/indexer.py index_file().
+        w = _make_crawl_worker()
+        save, _ = self._fake_save("/tmp/meeting-notes.docx")
+
+        file = {
+            "id": "STABLE_DRIVE_ID",
+            "name": "Meeting Notes",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        w.indexer.index_file.assert_called_once()
+        self.assertEqual(
+            w.indexer.index_file.call_args.kwargs.get("id"),
+            "STABLE_DRIVE_ID",
+        )
+
     def test_extension_synthesized_from_mime_when_name_lacks_extension(self):
         # Regression: Drive files uploaded without a filename extension were
         # being dropped as `unsupported_ext_dropped` even when the mime type

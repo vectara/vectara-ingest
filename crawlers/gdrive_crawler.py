@@ -1151,7 +1151,12 @@ class UserWorker(object):
                     reason = self.df_parser.last_error or "process_dataframe_file returned False"
                     self._record_drop('index_error', file, reason)
             else:
-                ok = self.indexer.index_file(filename=local_file_path, uri=url, metadata=file_metadata)
+                ok = self.indexer.index_file(
+                    filename=local_file_path,
+                    uri=url,
+                    metadata=file_metadata,
+                    id=file_id,
+                )
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
                 else:
