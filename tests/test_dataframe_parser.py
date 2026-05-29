@@ -129,7 +129,7 @@ class TestDataFrameParser(unittest.TestCase):
             return sentinel
 
         with patch.object(dfp.pd, "ExcelFile", side_effect=fake_excel_file):
-            result = dfp._open_excel_with_fallback("/tmp/healthy.xlsx")
+            result = dfp.open_excel_with_fallback("/tmp/healthy.xlsx")
 
         self.assertIs(result, sentinel)
         self.assertEqual([{"path": "/tmp/healthy.xlsx", "engine": None}], calls)
@@ -150,7 +150,7 @@ class TestDataFrameParser(unittest.TestCase):
             return sentinel
 
         with patch.object(dfp.pd, "ExcelFile", side_effect=fake_excel_file):
-            result = dfp._open_excel_with_fallback("/tmp/broken.xlsx")
+            result = dfp.open_excel_with_fallback("/tmp/broken.xlsx")
 
         self.assertIs(result, sentinel)
         self.assertEqual(
@@ -160,6 +160,24 @@ class TestDataFrameParser(unittest.TestCase):
             ],
             calls,
         )
+
+    def test_open_excel_reraises_os_errors_without_calamine_fallback(self):
+        # File-access failures (missing file, permissions) are not engine
+        # problems — calamine can't help. The helper must re-raise immediately
+        # and NOT attempt a second (misleading) calamine open.
+        from core import dataframe_parser as dfp
+
+        calls: list[dict] = []
+
+        def fake_excel_file(path, engine=None):
+            calls.append({"path": path, "engine": engine})
+            raise FileNotFoundError(path)
+
+        with patch.object(dfp.pd, "ExcelFile", side_effect=fake_excel_file):
+            with self.assertRaises(FileNotFoundError):
+                dfp.open_excel_with_fallback("/tmp/missing.xlsx")
+
+        self.assertEqual([{"path": "/tmp/missing.xlsx", "engine": None}], calls)
 
     def run_dataframe_parser_test(self, *test_config_path: str):
         config = _load_config(*test_config_path)

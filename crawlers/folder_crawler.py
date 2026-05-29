@@ -18,7 +18,7 @@ from core.dataframe_parser import (
     DataframeParser,
     determine_dataframe_type,
     get_separator_by_file_name,
-    _open_excel_with_fallback,
+    open_excel_with_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class FileCrawlWorker(object):
                     self.df_parser.process_dataframe(df, doc_id=file_path, doc_title=doc_title, metadata=metadata)
 
                 elif file_type == 'xls':
-                    xls = _open_excel_with_fallback(file_path)
+                    xls = open_excel_with_fallback(file_path)
                     sheet_names = self.crawler_config.get("sheet_names", xls.sheet_names)
                     for sheet_name in sheet_names:
                         if sheet_name not in xls.sheet_names:
