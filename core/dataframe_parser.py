@@ -110,7 +110,7 @@ def get_separator_by_file_name(file_name: str) -> str:
         return ","
 
 
-def _open_excel_with_fallback(file_path: str) -> pd.ExcelFile:
+def open_excel_with_fallback(file_path: str) -> pd.ExcelFile:
     """Open an Excel file with pandas' default engine, falling back to ``calamine``
     on failure.
 
@@ -127,6 +127,10 @@ def _open_excel_with_fallback(file_path: str) -> pd.ExcelFile:
     """
     try:
         return pd.ExcelFile(file_path)
+    except OSError:
+        # Missing file / permission / not-a-file: not an engine problem,
+        # so calamine cannot help — surface the real error.
+        raise
     except Exception as e:
         logger.warning(
             f"Default Excel engine failed for {file_path} "
@@ -416,7 +420,7 @@ def process_dataframe_file(
             )
 
         elif file_type in ['xls', 'xlsx']:
-            xls = _open_excel_with_fallback(file_path)
+            xls = open_excel_with_fallback(file_path)
             sheet_names = df_config.get("sheet_names")
 
             # If sheet_names is not specified or is None, process all sheets
