@@ -740,6 +740,7 @@ When `abac.enabled: true`, every indexed document is tagged with filterable ACL 
 - `abac.resolve_inherited`: My Drive files don't receive inherited permissions via the API. When `true`, the crawler walks each file's parent folders and unions their ACLs (folder lookups are cached per worker; adds API round-trips). Shared Drive files are handled separately and unconditionally: Drive's `files.list` does **not** propagate Shared Drive member grants onto a file's `permissions` array, so the crawler issues one `permissions.list(fileId=<driveId>)` per drive (cached per worker) and merges those members into each file's ACL. This call requires the delegated user to have at least the `fileOrganizer` role on the drive; otherwise Drive returns 403 and the crawler tags the affected files `acl_source: shared_drive_partial` so operators can spot the gap. Default: `false`.
 - `abac.include_anyone`: treat `type=anyone` grants as public (sets `acl_is_public=true`). Default: `true`.
 - `abac.fetch_labels`: fetch Drive Labels per file and store them in `acl_labels`. Adds one round-trip per file plus one definitions fetch per worker, and requires the `drive.labels.readonly` OAuth scope (added automatically when this flag is on). Default: `false`.
+- `abac.shared_drive_admin_access`: issue the Shared Drive membership listing (`permissions.list` on the `driveId`) with `useDomainAdminAccess=true`. Use this when the delegated user is a Workspace domain admin but does not hold a `fileOrganizer`/organizer role on the shared drives being crawled; without it those listings return 403 and the affected files are tagged `acl_source: shared_drive_partial` with empty `acl_groups`. Default: `false`.
 
 **Important Notes:**
 - OAuth mode only supports a single user account; for multi-user crawling, use `service_account` mode.
@@ -758,6 +759,12 @@ Each file passes through several gates between Drive and the indexer. A drop at 
 5. **Extension allowlist (post-download)** — file is rejected unless it's a dataframe (`.csv`, `.tsv`, `.psv`, `.pipe`, `.xls`, `.xlsx` — see `supported_by_dataframe_parser` in `core/dataframe_parser.py`) or extension is in `{.doc, .docx, .ppt, .pptx, .pdf, .odt, .txt, .html, .md, .rtf, .epub, .lxml}` (plus image extensions when `summarize_images` is on).
 6. **Download/export** — files whose Drive download or Workspace export fails (e.g. `exportSizeLimitExceeded` with no PDF fallback) are counted as `download_failed`.
 7. **Indexing** — `indexer.index_file` returning `False` or raising is counted as `index_error`; success is counted as `indexed`.
+
+**Document identity (`doc_id`):**
+
+The Vectara `doc_id` for every gdrive-crawled file is the Google Drive `file.id` — the immutable identifier Drive assigns when the file is created. This holds for both the standard indexing path and the dataframe path (CSV/XLSX/Sheets). Renaming, moving, editing, sharing, or producing new revisions all preserve `file.id`, so re-crawls upsert the same Vectara document. A file only gets a new `doc_id` if it is deleted and re-uploaded, or copied via *File → Make a copy* (which Drive itself treats as a new file).
+
+> **Breaking change (upgrading from a release prior to this one):** earlier versions did not pass an explicit `id` for the non-dataframe path, so the indexer fell back to `slugify(uri)` (e.g. `https-drive-google-com-file-d-<id>-view`). After upgrading, those files will be re-indexed under the bare `file.id` and the old slug-keyed documents will remain in the corpus as orphans until they age out via your incremental-crawl deletion logic. If you need to clean them up immediately, list corpus documents whose `metadata.source == 'gdrive'` and whose `doc_id` starts with `https-` and delete them. The dataframe path is unaffected — it has always used `file.id` directly.
 
 
 ### Folder crawler

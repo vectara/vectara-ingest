@@ -94,6 +94,13 @@ gdrive_crawler:
     # definitions fetch per worker. Requires the `drive.labels.readonly` scope.
     fetch_labels: false
 
+    # Issue the Shared Drive membership listing (permissions.list on the
+    # driveId) with useDomainAdminAccess=true. Use this when the delegated user
+    # is a Workspace domain admin but is not a fileOrganizer/organizer on the
+    # shared drives being crawled — without it those listings 403 and files are
+    # tagged acl_source: shared_drive_partial (empty acl_groups). Default: false.
+    shared_drive_admin_access: false
+
   # Optional: Ray workers for parallel processing (default: 0)
   # 0 = no parallelization, >0 = number of workers
   ray_workers: 0

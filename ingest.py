@@ -430,7 +430,7 @@ def main(
     The tool automatically detects if it's running in a Docker container and adjusts behavior accordingly.
     """
 
-    logger.info(f"Starting vectara-ingest")
+    logger.info("Starting vectara-ingest")
     run_ingest(config_file, profile, secrets_path, reset_corpus)
 
 if __name__ == '__main__':

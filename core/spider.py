@@ -190,7 +190,7 @@ class LinkSpider(scrapy.Spider):
         if any([path_lower.endswith(ext) for ext in (doc_extensions + archive_extensions + img_extensions + audio_extensions + video_extensions)]):
             return False
 
-        if not parsed_url.scheme.lower() in ['http', 'https']:
+        if parsed_url.scheme.lower() not in ['http', 'https']:
             return False
 
         # Never follow links into identity-provider hosts (e.g. account
@@ -495,6 +495,7 @@ if __name__ == "__main__":
         urls = run_link_spider_isolated(
             start_urls=['https://vectara.com'],
             positive_regexes=['.*vectara.com.*'],
+            negative_regexes=[],
             max_depth=2,
         )
         logger.info(f"Valid URLs: {urls}")

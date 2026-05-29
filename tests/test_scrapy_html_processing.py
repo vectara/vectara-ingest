@@ -11,7 +11,6 @@ class TestScrapyHtmlProcessing(unittest.TestCase):
 
     def _make_extractor(self):
         """Create a ScrapyContentExtractor with a minimal mock config."""
-        cfg = MagicMock()
         with patch.object(ScrapyContentExtractor, '__init__', lambda self, *a, **kw: None):
             ext = ScrapyContentExtractor.__new__(ScrapyContentExtractor)
             ext.timeout = 10

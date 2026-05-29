@@ -207,6 +207,15 @@ class TestImageFileParser(unittest.TestCase):
         self.assertTrue(processor.should_process_locally("test.jpeg", "test.jpeg"))
         self.assertTrue(processor.should_process_locally("test.gif", "test.gif"))
 
+        # Regression: real crawlers (gdrive, box, s3) pass a canonical URI that
+        # often has no file extension (e.g. .../view). Routing must key off the
+        # local filename, not the URI, otherwise standalone images get raw-
+        # uploaded and rejected by the Vectara API with HTTP 415.
+        self.assertTrue(processor.should_process_locally(
+            "/tmp/logo.png", "https://drive.google.com/file/d/abc123/view"))
+        self.assertTrue(processor.should_process_locally(
+            "/tmp/diagram.svg", "https://drive.google.com/file/d/xyz789/view"))
+
         # Test that non-image files don't automatically trigger local processing
         # (unless other conditions are met)
         cfg.doc_processing.summarize_images = False

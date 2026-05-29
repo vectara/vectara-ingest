@@ -47,12 +47,12 @@ class WebContentExtractor(WebExtractorBase):
             if self.browser:
                 try:
                     self.browser.close()
-                except:
+                except Exception:
                     pass
             if self.p:
                 try:
                     self.p.stop()
-                except:
+                except Exception:
                     pass
 
             # Create fresh instances with better configuration
@@ -97,13 +97,13 @@ class WebContentExtractor(WebExtractorBase):
             try:
                 if self.browser:
                     self.browser.close()
-            except:
+            except Exception:
                 pass
             
             try:
                 if self.p:
                     self.p.stop()
-            except:
+            except Exception:
                 pass
             
             # Reinitialize browser
@@ -149,12 +149,12 @@ class WebContentExtractor(WebExtractorBase):
             if page:
                 try:
                     page.close()
-                except:
+                except Exception:
                     pass
             if context:
                 try:
                     context.close()
-                except:
+                except Exception:
                     pass
                     
         return download_triggered
@@ -471,11 +471,11 @@ class WebContentExtractor(WebExtractorBase):
                         route.abort()
                     else:
                         route.continue_()
-                except Exception as e:
+                except Exception:
                     # If routing fails, continue to avoid breaking navigation
                     try:
                         route.continue_()
-                    except:
+                    except Exception:
                         pass
             
             page.route("**/*", route_handler)
@@ -523,12 +523,12 @@ class WebContentExtractor(WebExtractorBase):
             if page:
                 try:
                     page.close()
-                except:
+                except Exception:
                     pass
             if context:
                 try:
                     context.close()
-                except:
+                except Exception:
                     pass
             self._reset_browser_if_needed()
 
@@ -635,12 +635,12 @@ class WebContentExtractor(WebExtractorBase):
                 if page:
                     try:
                         page.close()
-                    except:
+                    except Exception:
                         pass
                 if context:
                     try:
                         context.close()
-                    except:
+                    except Exception:
                         pass
                         
                 if attempt < max_retries - 1:
@@ -658,12 +658,12 @@ class WebContentExtractor(WebExtractorBase):
                 if page:
                     try:
                         page.close()
-                    except:
+                    except Exception:
                         pass
                 if context:
                     try:
                         context.close()
-                    except:
+                    except Exception:
                         pass
                 logger.error(f"Unexpected error navigating to {url}: {e}")
                 raise

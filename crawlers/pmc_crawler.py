@@ -1,7 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
 import os
-import json
 from bs4 import BeautifulSoup
 import xmltodict
 from datetime import datetime, timedelta
@@ -107,7 +106,7 @@ class PmcCrawler(Crawler):
 
                 try:
                     pub_date = f"{year_text}-{month_text}-{day_text}"
-                except Exception as e:
+                except Exception:
                     pub_date = 'unknown'
             else:
                 pub_date = "Publication date not found"
@@ -148,7 +147,7 @@ class PmcCrawler(Crawler):
             all_names = [title.lower()]
             if 'also-called' in ht:
                 synonyms = ht['also-called']
-                if type(synonyms)==list:
+                if isinstance(synonyms, list):
                     all_names += [x.lower() for x in synonyms]
                 else:
                     all_names += [synonyms.lower()]

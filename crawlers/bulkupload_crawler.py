@@ -2,7 +2,6 @@ import logging
 logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import json
-import os
 from core.utils import get_docker_or_local_path
 
 def is_valid(json_object):

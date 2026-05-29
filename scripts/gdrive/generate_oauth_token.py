@@ -11,16 +11,17 @@ Prerequisites:
 
 Usage:
     python scripts/gdrive/generate_oauth_token.py
+    python scripts/gdrive/generate_oauth_token.py --with-labels  # for ABAC labels
 
 For detailed setup instructions, see: docs/gdrive-oauth-setup.md
 """
 
+import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, List, Optional
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -32,7 +33,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Keep these in sync with crawlers/gdrive_crawler.py (DRIVE_READONLY_SCOPE /
+# DRIVE_LABELS_SCOPE). Duplicated here so this setup script stays free of the
+# crawler's heavy imports (ray, omegaconf, the indexer).
+DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+DRIVE_LABELS_SCOPE = "https://www.googleapis.com/auth/drive.labels.readonly"
 SCRIPT_DIR = Path(__file__).resolve().parent
 OAUTH_CLIENT_CREDENTIALS = SCRIPT_DIR / "oauth_client_credentials.json"
 OUTPUT_TOKEN_FILE = SCRIPT_DIR.parent.parent / "credentials.json"
@@ -41,15 +46,18 @@ OUTPUT_TOKEN_FILE = SCRIPT_DIR.parent.parent / "credentials.json"
 class OAuthTokenGenerator:
     """Handles OAuth token generation for Google Drive API."""
 
-    def __init__(self, credentials_path: Path, output_path: Path):
+    def __init__(self, credentials_path: Path, output_path: Path,
+                 scopes: Optional[List[str]] = None):
         """Initialize the token generator.
 
         Args:
             credentials_path: Path to OAuth client credentials file
             output_path: Path where the generated token will be saved
+            scopes: OAuth scopes to request. Defaults to drive.readonly only.
         """
         self.credentials_path = credentials_path
         self.output_path = output_path
+        self.scopes = scopes or [DRIVE_READONLY_SCOPE]
 
     def validate_credentials_file(self) -> None:
         """Validate the OAuth client credentials file.
@@ -106,9 +114,10 @@ class OAuthTokenGenerator:
         logger.info("")
 
         try:
+            logger.info(f"Requesting scopes: {', '.join(self.scopes)}")
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(self.credentials_path),
-                SCOPES
+                self.scopes
             )
             creds = flow.run_local_server(port=0)
 
@@ -188,9 +197,25 @@ class OAuthTokenGenerator:
 
 def main():
     """Main entry point for the script."""
+    parser = argparse.ArgumentParser(
+        description="Generate Google Drive OAuth token for the gdrive crawler."
+    )
+    parser.add_argument(
+        "--with-labels",
+        action="store_true",
+        help="Also request the Drive Labels read scope, needed for ABAC "
+             "fetch_labels. Without it the crawler runs without label metadata.",
+    )
+    args = parser.parse_args()
+
+    scopes = [DRIVE_READONLY_SCOPE]
+    if args.with_labels:
+        scopes.append(DRIVE_LABELS_SCOPE)
+
     generator = OAuthTokenGenerator(
         credentials_path=OAUTH_CLIENT_CREDENTIALS,
-        output_path=OUTPUT_TOKEN_FILE
+        output_path=OUTPUT_TOKEN_FILE,
+        scopes=scopes,
     )
     generator.generate()
 

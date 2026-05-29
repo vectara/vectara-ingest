@@ -3,7 +3,6 @@ import logging
 import requests
 import ray
 import psutil
-import datetime
 from datetime import datetime as dt
 from omegaconf import OmegaConf
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -661,9 +660,6 @@ class HubspotCrawler(Crawler):
         """Crawl and index engagements with optional Ray support."""
         logger.info("Starting to fetch engagements.")
 
-        # HubSpot Engagements API v3 endpoint
-        api_endpoint = "https://api.hubapi.com/crm/v3/objects"
-
         # Define engagement types to crawl based on mode
         if self.mode == 'emails':
             engagement_types = ["emails"]  # Only process emails in email-only mode
@@ -781,7 +777,6 @@ class HubspotCrawler(Crawler):
         # Get associated entities for context
         company_names = []
         contact_names = []
-        deal_names = []
         company_ids = []
         contact_ids = []
         deal_ids = []
@@ -1799,7 +1794,7 @@ class HubspotObjectProcessor:
         if companies_cache_id is not None:
             # Check if it's already a dict (shouldn't happen, but defensive programming)
             if isinstance(companies_cache_id, dict):
-                self.logger.warning(f"companies_cache_id is already a dict, not an ObjectRef!")
+                self.logger.warning("companies_cache_id is already a dict, not an ObjectRef!")
                 self.companies_cache = companies_cache_id
             else:
                 # It should be an ObjectRef
@@ -1814,7 +1809,7 @@ class HubspotObjectProcessor:
 
         if contacts_cache_id is not None:
             if isinstance(contacts_cache_id, dict):
-                self.logger.warning(f"contacts_cache_id is already a dict, not an ObjectRef!")
+                self.logger.warning("contacts_cache_id is already a dict, not an ObjectRef!")
                 self.contacts_cache = contacts_cache_id
             else:
                 try:
@@ -1827,7 +1822,7 @@ class HubspotObjectProcessor:
 
         if date_filters_id is not None:
             if isinstance(date_filters_id, tuple):
-                self.logger.warning(f"date_filters_id is already a tuple, not an ObjectRef!")
+                self.logger.warning("date_filters_id is already a tuple, not an ObjectRef!")
                 self.start_date, self.end_date = date_filters_id
             else:
                 try:
@@ -2131,9 +2126,15 @@ class HubspotObjectProcessor:
 
         # Get associated company
         company_name = None
+        company_names = []
         company_ids = []
         if "companies" in associations and associations["companies"]:
             company_ids = [f"company_{cid}" for cid in associations["companies"]]
+            company_names = [
+                self.companies_cache[cid].get("name", "")
+                for cid in associations["companies"]
+                if cid in self.companies_cache
+            ]
             comp_id = associations["companies"][0]
             if comp_id in self.companies_cache:
                 company_name = self.companies_cache[comp_id].get("name", "")

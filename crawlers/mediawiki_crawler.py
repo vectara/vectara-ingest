@@ -1,10 +1,9 @@
 import logging
 logger = logging.getLogger(__name__)
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import deque
-from urllib.parse import urlparse, unquote, quote
-from mwviews.api import PageviewsClient
+from urllib.parse import urlparse, unquote
 
 from core.crawler import Crawler
 from core.utils import create_session_with_retries, configure_session_for_ssl
@@ -127,9 +126,9 @@ class MediawikiCrawler(Crawler):
 
             pages = link_resp.get('query', {}).get('pages', {})
             page_links = next(iter(pages.values()), {}).get('links', [])
-            for l in page_links:
-                if l.get('ns') == 0:
-                    links.append(l['title'])
+            for link in page_links:
+                if link.get('ns') == 0:
+                    links.append(link['title'])
 
             if 'continue' in link_resp:
                 plcontinue = link_resp['continue'].get('plcontinue')

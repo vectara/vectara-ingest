@@ -196,7 +196,6 @@ class TestSplitTable(unittest.TestCase):
                                  f"Chunk has {len(t['data']['rows'])} rows, {chunk_size} chars")
 
     def test_oversized_row_split(self):
-        import json
         huge_row = [{'text_value': 'A' * 20000}, {'text_value': 'Critical'}]
         result = DocumentBuilder._split_oversized_row(huge_row, 12800)
         self.assertGreater(len(result), 1)

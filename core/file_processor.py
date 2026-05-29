@@ -57,8 +57,12 @@ class FileProcessor:
         """Determine if file should be processed locally"""
         large_file_extensions = ['.pdf', '.html', '.htm', '.pptx', '.docx']
 
-        # Standalone images need local processing for summarization
-        if self.summarize_images and any(uri.lower().endswith(ext) for ext in IMG_EXTENSIONS):
+        # Standalone images need local processing for summarization. Key off
+        # the local filename rather than uri — crawlers like gdrive supply a
+        # canonical uri (`.../view`) with no file extension, so a uri-based
+        # check would silently send images down the raw-upload path and the
+        # Vectara API would reject them with HTTP 415.
+        if self.summarize_images and any(filename.lower().endswith(ext) for ext in IMG_EXTENSIONS):
             return True
 
         return (

@@ -75,7 +75,7 @@ class RssCrawler(Crawler):
         """
         rss_pages = self.cfg.rss_crawler.rss_pages
         source = self.cfg.rss_crawler.source
-        if type(rss_pages) == str:
+        if isinstance(rss_pages, str):
             rss_pages = [rss_pages]
         delay_in_secs = self.cfg.rss_crawler.delay
         ray_workers = self.cfg.rss_crawler.get("ray_workers", 0)

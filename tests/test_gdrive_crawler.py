@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -228,12 +230,61 @@ def _make_worker(abac=None, permission_display_filter=None, root_folder_ids=None
     worker._abac_resolve_inherited = worker.abac.get('resolve_inherited', False)
     worker._abac_include_anyone = worker.abac.get('include_anyone', True)
     worker._abac_fetch_labels = worker.abac.get('fetch_labels', False)
+    worker._abac_shared_drive_admin_access = worker.abac.get('shared_drive_admin_access', False)
     worker._root_folder_ids = list(root_folder_ids or [])
     worker._folder_acl_cache = {}
     worker._drive_perms_cache = {}
     worker._label_defs = None
     worker._stats = {k: 0 for k in FILTER_STAGES}
     return worker
+
+
+class TestReconcileOAuthScopes(unittest.TestCase):
+    """The repo's token generator grants drive.readonly only, so enabling
+    fetch_labels would otherwise kill every refresh with invalid_scope. The
+    worker must drop the labels scope (and label fetching) when the saved token
+    wasn't granted it, and only then."""
+
+    def _token_file(self, scopes):
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as f:
+            json.dump({"refresh_token": "x", "scopes": scopes}, f)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_drops_labels_scope_when_token_lacks_it(self):
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        path = self._token_file([DRIVE_READONLY_SCOPE])
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        with self.assertLogs("crawlers.gdrive_crawler", level="WARNING") as cm:
+            result = w._reconcile_oauth_scopes(path, requested)
+        self.assertEqual(result, [DRIVE_READONLY_SCOPE])
+        self.assertFalse(w._abac_fetch_labels)
+        self.assertTrue(any("Drive Labels scope" in m for m in cm.output))
+
+    def test_keeps_labels_scope_when_granted(self):
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        path = self._token_file([DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE])
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        result = w._reconcile_oauth_scopes(path, requested)
+        self.assertEqual(result, requested)
+        self.assertTrue(w._abac_fetch_labels)
+
+    def test_passthrough_when_labels_not_requested(self):
+        # No labels in the request: nothing to reconcile, token file untouched.
+        w = _make_worker(abac={"enabled": True})
+        result = w._reconcile_oauth_scopes("/does/not/exist", [DRIVE_READONLY_SCOPE])
+        self.assertEqual(result, [DRIVE_READONLY_SCOPE])
+        self.assertFalse(w._abac_fetch_labels)
+
+    def test_missing_file_passes_scopes_through(self):
+        # Can't read grants: leave scopes as-is so get_oauth_credentials raises
+        # the real FileNotFoundError instead of silently dropping labels.
+        w = _make_worker(abac={"enabled": True, "fetch_labels": True})
+        requested = [DRIVE_READONLY_SCOPE, DRIVE_LABELS_SCOPE]
+        result = w._reconcile_oauth_scopes("/does/not/exist", requested)
+        self.assertEqual(result, requested)
+        self.assertTrue(w._abac_fetch_labels)
 
 
 class TestPermissionDisplayFilter(unittest.TestCase):
@@ -305,6 +356,24 @@ def _wire_drive_permissions(worker, responses_by_drive):
     return worker.service.permissions.return_value.list
 
 
+def _wire_folder_get(worker, folder_responses):
+    """Install a fake service.files().get keyed by fileId for ancestor-folder
+    walks. Each response is either a dict (returned by .execute()) or an
+    HttpError (raised on .execute())."""
+    def fake_get(fileId, fields, supportsAllDrives):
+        outcome = folder_responses[fileId]
+        exec_mock = MagicMock()
+        if isinstance(outcome, HttpError):
+            exec_mock.execute.side_effect = outcome
+        else:
+            exec_mock.execute.return_value = outcome
+        return exec_mock
+
+    worker.service.files = MagicMock()
+    worker.service.files.return_value.get = MagicMock(side_effect=fake_get)
+    return worker.service.files.return_value.get
+
+
 class TestResolveParentAcl(unittest.TestCase):
     def test_shared_drive_fetches_drive_permissions(self):
         """A Shared Drive file with no per-file grants must surface the drive's
@@ -319,6 +388,9 @@ class TestResolveParentAcl(unittest.TestCase):
                 ]
             }
         })
+        # F1 carries no extra grants, so the ancestor walk adds nothing and
+        # only the drive membership surfaces.
+        _wire_folder_get(w, {"F1": {"id": "F1", "parents": ["D1"], "permissions": []}})
         perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
         self.assertEqual(source, "shared_drive")
         self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "dp2"])
@@ -385,6 +457,108 @@ class TestResolveParentAcl(unittest.TestCase):
         perms, source = w._resolve_parent_acl({"driveId": "D1"})
         self.assertEqual(source, "shared_drive")
         self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "dp2"])
+
+    def test_shared_drive_admin_access_passed_when_enabled(self):
+        """With shared_drive_admin_access on, permissions.list is issued with
+        useDomainAdminAccess=True so a domain-admin delegated user can read the
+        drive's members without a per-drive fileOrganizer role."""
+        w = _make_worker(abac={"enabled": True, "shared_drive_admin_access": True})
+        list_mock = _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="group", role="writer", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1"})
+        self.assertTrue(list_mock.call_args.kwargs.get("useDomainAdminAccess"))
+
+    def test_shared_drive_admin_access_omitted_by_default(self):
+        """Default off: the param must not be sent, preserving prior behavior."""
+        w = _make_worker(abac={"enabled": True})
+        list_mock = _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="group", role="writer", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1"})
+        self.assertNotIn("useDomainAdminAccess", list_mock.call_args.kwargs)
+
+    def test_shared_drive_walks_intermediate_folder_groups(self):
+        """A group granted on an intermediate folder inside a Shared Drive is
+        inherited by descendant files but is never inlined into their
+        `permissions` nor part of drive-root membership. The ancestor walk must
+        surface it so it lands in acl_groups."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [
+                _perm("dp1", type="user", role="organizer", emailAddress="ofer@x.com"),
+            ]},
+        })
+        _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["D1"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="eng@x.com"),
+            ]},
+        })
+        file_obj = {"driveId": "D1", "parents": ["F1"]}
+        perms, source = w._resolve_parent_acl(file_obj)
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "fg1"])
+        # End-to-end: the folder group must show up in acl_groups.
+        meta = extract_acl_metadata(file_obj, parent_permissions=perms, source=source)
+        self.assertEqual(meta["acl_groups"], ["eng@x.com"])
+        self.assertEqual(meta["acl_readers"], ["ofer@x.com"])
+
+    def test_shared_drive_root_file_skips_walk(self):
+        """A file directly in the drive root (parents == [driveId]) has no
+        intermediate folder to walk; the drive root is seeded as seen, so no
+        files().get is issued."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        get_mock = _wire_folder_get(w, {})
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["D1"]})
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual([p["id"] for p in perms], ["dp1"])
+        get_mock.assert_not_called()
+
+    def test_shared_drive_multi_level_folder_walk(self):
+        """Grants on every folder between the file and the drive root are
+        unioned with drive membership."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="root@x.com")]},
+        })
+        _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["F2"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="team@x.com")]},
+            "F2": {"id": "F2", "parents": ["D1"], "permissions": [
+                _perm("fg2", type="user", role="writer", emailAddress="lead@x.com")]},
+        })
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(source, "shared_drive")
+        self.assertEqual(sorted(p["id"] for p in perms), ["dp1", "fg1", "fg2"])
+
+    def test_shared_drive_folder_read_403_marks_partial(self):
+        """If an ancestor folder can't be read, membership still surfaces but
+        the source downgrades to shared_drive_partial."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        _wire_folder_get(w, {"F1": _make_http_error(403)})
+        perms, source = w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(source, "shared_drive_partial")
+        self.assertEqual([p["id"] for p in perms], ["dp1"])
+
+    def test_shared_drive_folder_walk_is_cached(self):
+        """Two files under the same folder trigger a single files().get."""
+        w = _make_worker(abac={"enabled": True})
+        _wire_drive_permissions(w, {
+            "D1": {"permissions": [_perm("dp1", type="user", role="reader", emailAddress="a@x.com")]},
+        })
+        get_mock = _wire_folder_get(w, {
+            "F1": {"id": "F1", "parents": ["D1"], "permissions": [
+                _perm("fg1", type="group", role="reader", emailAddress="eng@x.com")]},
+        })
+        w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        w._resolve_parent_acl({"driveId": "D1", "parents": ["F1"]})
+        self.assertEqual(get_mock.call_count, 1)
 
     def test_my_drive_direct_when_resolve_disabled(self):
         w = _make_worker(abac={"resolve_inherited": False})
@@ -464,6 +638,19 @@ class TestFetchLabels(unittest.TestCase):
 
         out = w._fetch_labels("file1")
         self.assertEqual(out, ["Sensitivity=Confidential"])
+
+    def test_text_label_renders_value_not_list(self):
+        """Drive returns text/integer/dateString field values as arrays. They
+        must render as `Title=value`, not `Title=['value']`."""
+        w = _make_worker(abac={"fetch_labels": True})
+        w._label_defs = {
+            "L1": {"title": "Notes", "fields": {"F1": {"title": "Comment", "choices": {}}}}
+        }
+        resp = {"labels": [{"id": "L1", "fields": {"F1": {"text": ["hello"]}}}]}
+        exec_mock = MagicMock()
+        exec_mock.execute.return_value = resp
+        w.service.files.return_value.listLabels = MagicMock(return_value=exec_mock)
+        self.assertEqual(w._fetch_labels("file1"), ["Notes=hello"])
 
     def test_listlabels_error_returns_empty(self):
         w = _make_worker(abac={"fetch_labels": True})
@@ -821,7 +1008,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertIn("file='y'", line)
         self.assertIn("id=x", line)
         self.assertIn("acl_source='shared_drive'", line)
@@ -852,7 +1039,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y', 'permissions': perms})
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertIn("permissions=", line)
         self.assertIn("'a@x.com'", line)
         self.assertIn("'domain'", line)
@@ -865,7 +1052,7 @@ class TestFilterCounters(unittest.TestCase):
                 {'id': 'x', 'name': 'y', 'permissions': perms},
                 parent_permissions=parent,
             )
-        line2 = next(l for l in cm2.output if 'gdrive indexed' in l)
+        line2 = next(ln for ln in cm2.output if 'gdrive indexed' in ln)
         self.assertIn("parent_permissions=", line2)
         self.assertIn("'eng@x.com'", line2)
 
@@ -882,7 +1069,7 @@ class TestFilterCounters(unittest.TestCase):
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w._record_indexed({'id': 'x', 'name': 'y'}, file_metadata)
 
-        line = next(l for l in cm.output if 'gdrive indexed' in l)
+        line = next(ln for ln in cm.output if 'gdrive indexed' in ln)
         self.assertNotIn('acl_', line)
 
     def test_record_indexed_not_verbose_emits_no_line(self):
@@ -898,7 +1085,7 @@ class TestFilterCounters(unittest.TestCase):
             _logging.getLogger('crawlers.gdrive_crawler').info('sentinel')
             w._record_indexed({'id': 'x', 'name': 'y'}, {'acl_source': 'shared_drive'})
 
-        self.assertFalse(any('gdrive indexed' in l for l in cm.output))
+        self.assertFalse(any('gdrive indexed' in ln for ln in cm.output))
 
     def test_dataframe_failure_records_index_error_not_indexed(self):
         """process_dataframe_file returns False on parser-init failure, unsupported
@@ -1092,6 +1279,31 @@ class TestCrawlFileRouting(unittest.TestCase):
         )
         w.indexer.index_file.assert_called_once()
         pdf_mock.assert_not_called()
+
+    def test_index_file_uses_drive_file_id_as_doc_id(self):
+        # The Drive file.id is immutable, so passing it as the indexer doc_id
+        # guarantees a re-crawl of the same file upserts the same Vectara
+        # document. Without an explicit id the indexer falls back to
+        # slugify(uri), which silently rebinds if the synthetic URL format
+        # ever changes — see get_gdrive_url() and core/indexer.py index_file().
+        w = _make_crawl_worker()
+        save, _ = self._fake_save("/tmp/meeting-notes.docx")
+
+        file = {
+            "id": "STABLE_DRIVE_ID",
+            "name": "Meeting Notes",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+
+        with patch.object(w, "save_local_file", side_effect=save), \
+             patch("crawlers.gdrive_crawler.safe_remove_file"):
+            w.crawl_file(file)
+
+        w.indexer.index_file.assert_called_once()
+        self.assertEqual(
+            w.indexer.index_file.call_args.kwargs.get("id"),
+            "STABLE_DRIVE_ID",
+        )
 
     def test_extension_synthesized_from_mime_when_name_lacks_extension(self):
         # Regression: Drive files uploaded without a filename extension were
@@ -1287,7 +1499,7 @@ class TestAbacConfigLogging(unittest.TestCase):
         w.indexer = MagicMock()
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w.setup()
-        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        line = next((ln for ln in cm.output if 'abac' in ln.lower()), None)
         self.assertIsNotNone(line, f"expected an ABAC config line, got: {cm.output}")
         self.assertIn("enabled=True", line)
         self.assertIn("resolve_inherited=True", line)
@@ -1301,7 +1513,7 @@ class TestAbacConfigLogging(unittest.TestCase):
         w.indexer = MagicMock()
         with self.assertLogs('crawlers.gdrive_crawler', level=_logging.INFO) as cm:
             w.setup()
-        line = next((l for l in cm.output if 'abac' in l.lower()), None)
+        line = next((ln for ln in cm.output if 'abac' in ln.lower()), None)
         self.assertIsNotNone(line)
         self.assertIn("enabled=False", line)
 

@@ -93,7 +93,7 @@ class ServicenowCrawler(Crawler):
             list_articles_response.raise_for_status()
             list_articles_data = list_articles_response.json()
 
-            if not 'result' in list_articles_data:
+            if 'result' not in list_articles_data:
                 break
             result = list_articles_data['result']
 

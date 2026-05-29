@@ -30,10 +30,6 @@ beautifulsoup4==4.12.3
     #   unstructured
 blis==0.7.11
     # via thinc
-cachetools==5.5.2
-    # via
-    #   -c requirements.txt
-    #   google-auth
 catalogue==2.0.10
     # via
     #   spacy
@@ -45,7 +41,7 @@ certifi==2025.4.26
     #   httpcore
     #   httpx
     #   requests
-cffi==1.17.1 ; platform_python_implementation != 'PyPy'
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
     # via
     #   -c requirements.txt
     #   cryptography
@@ -82,9 +78,10 @@ contourpy==1.3.2
     #   -c requirements.txt
     #   -r requirements-extra.in
     #   matplotlib
-cryptography==44.0.0
+cryptography==46.0.7
     # via
     #   -c requirements.txt
+    #   google-auth
     #   msoffcrypto-tool
     #   pdfminer-six
     #   presidio-anonymizer
@@ -146,7 +143,7 @@ google-api-core==2.25.0
     # via
     #   -c requirements.txt
     #   google-cloud-vision
-google-auth==2.16.1
+google-auth==2.49.0
     # via
     #   -c requirements.txt
     #   google-api-core
@@ -160,12 +157,7 @@ googleapis-common-protos==1.70.0
     #   -c requirements.txt
     #   google-api-core
     #   grpcio-status
-grpcio==1.72.1 ; python_full_version < '3.14'
-    # via
-    #   -c requirements.txt
-    #   google-api-core
-    #   grpcio-status
-grpcio==1.78.0 ; python_full_version >= '3.14'
+grpcio==1.78.0
     # via
     #   -c requirements.txt
     #   google-api-core
@@ -236,7 +228,7 @@ langdetect==1.0.9
     #   unstructured
 language-data==1.3.0
     # via langcodes
-lxml==5.2.1
+lxml==6.1.0
     # via
     #   -c requirements.txt
     #   pikepdf
@@ -269,6 +261,10 @@ mdurl==0.1.2
     # via
     #   -c requirements.txt
     #   markdown-it-py
+ml-dtypes==0.5.4
+    # via
+    #   -c requirements.txt
+    #   onnx
 mpmath==1.3.0
     # via
     #   -c requirements.txt
@@ -293,11 +289,12 @@ networkx==3.5
     #   -c requirements.txt
     #   torch
     #   unstructured
-nltk==3.9.1
+nltk==3.9.4
     # via
     #   -c requirements.txt
+    #   -r requirements-extra.in
     #   unstructured
-numpy==1.26.4
+numpy==2.4.4
     # via
     #   -c requirements.txt
     #   accelerate
@@ -305,6 +302,7 @@ numpy==1.26.4
     #   contourpy
     #   h5py
     #   matplotlib
+    #   ml-dtypes
     #   onnx
     #   onnxruntime
     #   opencv-python
@@ -388,7 +386,7 @@ omegaconf==2.3.0
     # via
     #   -c requirements.txt
     #   effdet
-onnx==1.18.0
+onnx==1.21.0
     # via
     #   -c requirements.txt
     #   unstructured
@@ -429,7 +427,7 @@ pdf2image==1.17.0
     # via
     #   -c requirements.txt
     #   unstructured
-pdfminer-six==20250506
+pdfminer-six==20260107
     # via
     #   -c requirements.txt
     #   unstructured
@@ -445,7 +443,7 @@ pikepdf==9.8.1
     #   -c requirements.txt
     #   -r requirements-extra.in
     #   unstructured
-pillow==10.4.0
+pillow==12.2.0
     # via
     #   -c requirements.txt
     #   matplotlib
@@ -459,16 +457,16 @@ preshed==3.0.10
     # via
     #   spacy
     #   thinc
-presidio-analyzer==2.2.358
+presidio-analyzer==2.2.362
     # via -r requirements-extra.in
-presidio-anonymizer==2.2.358
+presidio-anonymizer==2.2.362
     # via -r requirements-extra.in
 proto-plus==1.26.1
     # via
     #   -c requirements.txt
     #   google-api-core
     #   google-cloud-vision
-protobuf==4.25.8
+protobuf==6.33.5
     # via
     #   -c requirements.txt
     #   google-api-core
@@ -483,7 +481,7 @@ psutil==6.1.0
     #   -c requirements.txt
     #   accelerate
     #   unstructured
-pyasn1==0.6.1
+pyasn1==0.6.3
     # via
     #   -c requirements.txt
     #   pyasn1-modules
@@ -496,7 +494,7 @@ pycocotools==2.0.10
     # via
     #   -c requirements.txt
     #   effdet
-pycparser==2.22 ; platform_python_implementation != 'PyPy'
+pycparser==2.22 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via
     #   -c requirements.txt
     #   cffi
@@ -504,6 +502,7 @@ pydantic==2.11.5
     # via
     #   -c requirements.txt
     #   confection
+    #   presidio-analyzer
     #   spacy
     #   thinc
     #   unstructured-client
@@ -552,7 +551,7 @@ python-magic==0.4.27
     # via
     #   -c requirements.txt
     #   unstructured
-python-multipart==0.0.20
+python-multipart==0.0.27
     # via
     #   -c requirements.txt
     #   unstructured-inference
@@ -641,7 +640,6 @@ shellingham==1.5.4
 six==1.17.0
     # via
     #   -c requirements.txt
-    #   google-auth
     #   html5lib
     #   langdetect
     #   python-dateutil
@@ -674,7 +672,7 @@ sympy==1.14.0
     #   -c requirements.txt
     #   onnxruntime
     #   torch
-thinc==8.2.5
+thinc==8.2.4
     # via spacy
 timm==1.0.15
     # via
@@ -719,7 +717,6 @@ triton==3.3.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
     #   -c requirements.txt
     #   torch
-    # via torch
 typer==0.15.4
     # via
     #   -c requirements.txt
@@ -770,7 +767,7 @@ unstructured-pytesseract==0.3.15
     # via
     #   -c requirements.txt
     #   unstructured
-urllib3==1.26.20
+urllib3==2.7.0
     # via
     #   -c requirements.txt
     #   requests
@@ -793,7 +790,7 @@ wrapt==1.17.2
     #   unstructured
 xlrd==2.0.1
     # via unstructured
-xlsxwriter==3.2.3
+xlsxwriter==3.2.9
     # via
     #   -c requirements.txt
     #   python-pptx

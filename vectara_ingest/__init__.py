@@ -10,3 +10,5 @@ intuitive imports when using vectara-ingest in other applications:
 
 # Import and re-export the run_ingest function
 from ingest import run_ingest
+
+__all__ = ["run_ingest"]

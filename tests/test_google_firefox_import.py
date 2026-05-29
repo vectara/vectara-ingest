@@ -975,7 +975,7 @@ def test_list_profiles_includes_db_only_entries_not_in_profiles_ini(
     assert "Original profile" in out
     # Crucially: 'Original profile' is in the DB, so it must NOT be marked orphan.
     # The previous orphan-only listing was misleading.
-    orig_line = next(l for l in out.splitlines() if "Original profile" in l)
+    orig_line = next(ln for ln in out.splitlines() if "Original profile" in ln)
     assert "orphan" not in orig_line.lower(), \
         f"DB-tracked profile must not be labeled orphan; got: {orig_line!r}"
 

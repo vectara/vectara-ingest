@@ -271,6 +271,11 @@ class ConfluencedatacenterCrawler(Crawler):
                     if os.path.exists(f.name):
                         os.remove(f.name)
 
+                if succeeded:
+                    logger.info(f"Successfully indexed page: {doc_id}")
+                else:
+                    logger.error(f"Failed to index page {doc_id} - {url}")
+
     def _process_content_attachments(self, content_id: str, content_metadata: dict) -> None:
         """
         Retrieve and process attachments for a specific piece of content.

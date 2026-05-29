@@ -105,5 +105,53 @@ class TestIndexFileLastError(unittest.TestCase):
         self.assertTrue(ok)
 
 
+class TestIndexFileRoutingDoesNotLeak(unittest.TestCase):
+    """The per-call routing decision returned by
+    ``FileProcessor.should_process_locally`` must NOT mutate the indexer's
+    instance-level ``process_locally`` attribute. The bug it guards against:
+    a single standalone image (which legitimately needs local processing for
+    summarization) flipped ``self.process_locally`` to True forever, so every
+    subsequent ``.txt`` / ``.md`` / ``.docx`` in the same worker was routed
+    through the local parser and failed with "File format not allowed:
+    <name>" — observed as 87 spurious ``index_error`` drops in a gdrive crawl.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".png")
+        with os.fdopen(fd, 'wb') as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+
+    def tearDown(self):
+        try:
+            os.unlink(self.path)
+        except OSError:
+            pass
+
+    def test_should_process_locally_true_does_not_leak_into_attribute(self):
+        ix = _make_indexer()
+        ix.process_locally = False  # config default — never Case B by default
+        ix._init_processors = MagicMock()
+        ix.file_processor = MagicMock()
+        ix.file_processor.should_process_locally.return_value = True
+        ix.file_processor.needs_pdf_splitting.return_value = False
+        # Make the Case B work blow up immediately so the test exits fast.
+        ix.file_processor.process_file.side_effect = RuntimeError("stub")
+        ix.summarize_images = False
+        ix.extract_metadata = []
+
+        ok = ix.index_file(
+            filename=self.path,
+            uri="https://drive.google.com/file/d/abc/view",
+            metadata={},
+        )
+
+        self.assertFalse(ok)
+        self.assertFalse(
+            ix.process_locally,
+            "index_file leaked a per-call routing decision into the instance "
+            "attribute; the next .txt/.md will be wrongly routed to Case B.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
 import json
-import re
 import time
 import warnings
 import base64
@@ -22,7 +21,6 @@ from nbconvert import HTMLExporter  # type: ignore
 import nbformat
 import markdown
 import whisper
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
 from core.summary import get_attributes_from_text
@@ -40,7 +38,7 @@ from core.image_processor import ImageProcessor
 
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
-    handle_file_upload_response, safe_file_cleanup, prepare_file_metadata, store_file,
+    safe_file_cleanup, prepare_file_metadata, store_file,
     normalize_url_for_metadata, auth_redirect_reason
 )
 from core.web_extractor_base import create_web_extractor
@@ -966,7 +964,7 @@ class Indexer:
                     logger.info(f"Document {doc_id} now includes {len(images_array)} images with binary data")
             
         if self.verbose:
-            logger.info(f"Indexing document {doc_id} with json {str(document)[:500]}...")
+            logger.info(f"Indexing document {doc_id} with json {str(document)[:1000]}...")
 
         result = self.index_document(document, use_core_indexing)
 
@@ -1017,14 +1015,22 @@ class Indexer:
         # Determine processing strategy
         self._init_processors()
         
-        if self.file_processor.should_process_locally(filename, uri):
-            self.process_locally = True
+        # Per-call decision. The instance attribute (set from config) means
+        # "always process locally"; should_process_locally() means "this one
+        # file needs local processing." Must NOT be folded back into
+        # self.process_locally — that would poison every subsequent file
+        # (e.g. one image flips it True, then every later .txt/.md gets
+        # wrongly routed to Case B and fails with "File format not allowed").
+        process_locally = (
+            self.process_locally
+            or self.file_processor.should_process_locally(filename, uri)
+        )
 
         #
         # Case A: using the file-upload API
         # Used when we don't need to process the file locally, and we don't need to parse tables from non-PDF files
         #
-        if not self.process_locally and (
+        if not process_locally and (
                 (self.parse_tables and filename.lower().endswith('.pdf')) or not self.parse_tables):
             logger.info(f"For {uri} - Uploading via Vectara file upload API")
             if len(self.extract_metadata) > 0 or self.summarize_images:

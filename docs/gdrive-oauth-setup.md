@@ -88,6 +88,18 @@ cd /Users/adeel/vectara/vectara-ingest
 python scripts/gdrive/generate_oauth_token.py
 ```
 
+The token is granted `drive.readonly` only. If you use ABAC with `fetch_labels:
+true`, also request the Drive Labels scope so the crawler can read label
+metadata:
+
+```bash
+python scripts/gdrive/generate_oauth_token.py --with-labels
+```
+
+A token minted without `--with-labels` cannot fetch labels: the crawler logs a
+warning and continues without them (it does not crash). The labels scope can't
+be added to an existing token — re-run the generator to re-consent.
+
 ### What happens:
 1. The script checks for `oauth_client_credentials.json` in the `scripts/gdrive` folder
 2. Opens a browser window

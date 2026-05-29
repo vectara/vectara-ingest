@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from omegaconf import OmegaConf
 from core.summary import TableSummarizer
 from core.utils import html_table_to_header_and_rows

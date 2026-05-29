@@ -149,7 +149,7 @@ class SAMLAuthManager:
             
             logging.info("SAML authentication completed successfully")
             
-        except Exception as e:
+        except Exception:
             # If waiting fails, check current URL for success indicators
             current_url = page.url
             logging.info(f"SAML flow completed, current URL: {current_url}")
