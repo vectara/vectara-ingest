@@ -78,12 +78,17 @@ gdrive_crawler:
     # the crawler walks each file's parent folders and unions their ACLs.
     # Adds API round-trips; folder lookups are cached per worker.
     #
-    # Shared Drive files take a separate, unconditional path: `files.list` does
-    # not propagate drive-member grants onto a file's `permissions` array, so
-    # the crawler issues one `permissions.list(fileId=<driveId>)` per drive
-    # (cached per worker) and merges those members in. That call needs the
-    # delegated user to have at least `fileOrganizer` on the drive; on 403 the
-    # file is still indexed but tagged `acl_source: shared_drive_partial`.
+    # Shared Drive files take a separate, unconditional path: Drive's File
+    # resource does not populate `permissions` for shared-drive items, so the
+    # crawler reads each file's ACL with `permissions.list(fileId=<fileId>)` —
+    # one call per shared-drive file, not cached. That returns the complete
+    # effective ACL: direct file grants plus those inherited from parent folders
+    # and drive membership, including group grants. The drive-root membership is
+    # also fetched once per drive (`permissions.list(fileId=<driveId>)`, cached
+    # per worker) and unioned in as a backup. ACL resolution is therefore
+    # O(shared-drive files), not O(drives). These calls need the delegated user
+    # to have at least `fileOrganizer` on the drive; a 403 on either still
+    # indexes the file but tags it `acl_source: shared_drive_partial`.
     resolve_inherited: false
 
     # Treat `type=anyone` grants as public (sets acl_is_public=true).
@@ -94,11 +99,12 @@ gdrive_crawler:
     # definitions fetch per worker. Requires the `drive.labels.readonly` scope.
     fetch_labels: false
 
-    # Issue the Shared Drive membership listing (permissions.list on the
-    # driveId) with useDomainAdminAccess=true. Use this when the delegated user
-    # is a Workspace domain admin but is not a fileOrganizer/organizer on the
-    # shared drives being crawled — without it those listings 403 and files are
-    # tagged acl_source: shared_drive_partial (empty acl_groups). Default: false.
+    # Issue the Shared Drive permissions.list calls (both the per-file listings
+    # and the drive-root membership listing) with useDomainAdminAccess=true. Use
+    # this when the delegated user is a Workspace domain admin but is not a
+    # fileOrganizer/organizer on the shared drives being crawled — without it
+    # those listings 403 and files are tagged acl_source: shared_drive_partial
+    # (empty acl_groups). Default: false.
     shared_drive_admin_access: false
 
   # Optional: Ray workers for parallel processing (default: 0)
