@@ -17,12 +17,34 @@ from crawlers.gdrive_crawler import (
     FILTER_STAGES,
     GdriveCrawler,
     UserWorker,
+    _union_perms_by_id,
     build_scopes,
     canonical_save_name,
     extract_acl_metadata,
     extract_folder_id,
     resolve_root_folders,
 )
+
+
+class TestUnionPermsById(unittest.TestCase):
+    def test_dedupes_by_id_preserving_first_seen_order(self):
+        perms = [_perm("a"), _perm("b"), _perm("a", role="writer")]
+        out = _union_perms_by_id(perms)
+        self.assertEqual([p["id"] for p in out], ["a", "b"])
+        # first-seen wins: the later 'a' (role=writer) is dropped.
+        self.assertNotIn("role", out[0])
+
+    def test_shared_seen_unions_across_streams(self):
+        seen = set()
+        first = _union_perms_by_id([_perm("a"), _perm("b")], seen=seen)
+        second = _union_perms_by_id([_perm("b"), _perm("c")], seen=seen)
+        self.assertEqual([p["id"] for p in first], ["a", "b"])
+        self.assertEqual([p["id"] for p in second], ["c"])
+        self.assertEqual(seen, {"a", "b", "c"})
+
+    def test_keeps_entries_without_id(self):
+        out = _union_perms_by_id([{"type": "anyone"}, {"type": "anyone"}])
+        self.assertEqual(len(out), 2)
 
 
 def _make_http_error(status: int) -> HttpError:

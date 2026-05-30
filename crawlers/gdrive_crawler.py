@@ -6,7 +6,7 @@ import os
 import re
 import warnings
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import ray
 from omegaconf import OmegaConf, ListConfig
@@ -275,6 +275,28 @@ def get_gdrive_url(file_id: str, mime_type: str = '') -> str:
     return url
 
 
+def _union_perms_by_id(
+    perms: Iterable[Dict[str, Any]], seen: Optional[Set[str]] = None
+) -> List[Dict[str, Any]]:
+    """Dedupe a permission stream by permission id, preserving first-seen order.
+
+    Drive permission objects always carry an `id`; any entry missing one is kept
+    as-is (defensive). Pass a shared `seen` set to union across several streams
+    (e.g. drive-root members, then a file's own grants) without re-counting ids
+    already taken from an earlier stream — the set is mutated in place.
+    """
+    seen = seen if seen is not None else set()
+    out: List[Dict[str, Any]] = []
+    for p in perms:
+        pid = p.get('id')
+        if pid and pid in seen:
+            continue
+        if pid:
+            seen.add(pid)
+        out.append(p)
+    return out
+
+
 def extract_acl_metadata(
     file_obj: Dict[str, Any],
     parent_permissions: Optional[List[Dict[str, Any]]] = None,
@@ -301,15 +323,7 @@ def extract_acl_metadata(
     is_public = False
 
     direct = list(file_obj.get('permissions') or [])
-    combined = list(direct)
-    seen_ids: Set[str] = {p['id'] for p in direct if p.get('id')}
-    for p in (parent_permissions or []):
-        pid = p.get('id')
-        if pid and pid in seen_ids:
-            continue
-        if pid:
-            seen_ids.add(pid)
-        combined.append(p)
+    combined = _union_perms_by_id(direct + list(parent_permissions or []))
 
     for p in combined:
         if p.get('deleted'):
@@ -825,14 +839,8 @@ class UserWorker(object):
                 file_perms, file_ok = self._fetch_item_permissions(file_id)
                 if not file_ok and source == ACL_SOURCE_SHARED_DRIVE:
                     source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
-                seen_ids = {p.get('id') for p in combined if p.get('id')}
-                for p in file_perms:
-                    pid = p.get('id')
-                    if pid and pid in seen_ids:
-                        continue
-                    if pid:
-                        seen_ids.add(pid)
-                    combined.append(p)
+                seen_ids = {p.get('id') for p in members if p.get('id')}
+                combined.extend(_union_perms_by_id(file_perms, seen=seen_ids))
             return combined, source
 
         if not self._abac_resolve_inherited:
@@ -858,7 +866,8 @@ class UserWorker(object):
         permission id. Returns (permissions, partial), where `partial` is True
         if any ancestor folder couldn't be read.
         """
-        collected: Dict[str, Dict[str, Any]] = {}
+        collected: List[Dict[str, Any]] = []
+        perm_seen: Set[str] = set()
         seen: Set[str] = set()
         partial = False
         frontier = list(parents)
@@ -891,16 +900,12 @@ class UserWorker(object):
                     fparents = resp.get('parents', []) or []
                     self._folder_acl_cache[folder_id] = (perms, fparents)
 
-                for p in perms:
-                    pid = p.get('id')
-                    if pid and pid not in collected:
-                        collected[pid] = p
-
+                collected.extend(_union_perms_by_id(perms, seen=perm_seen))
                 next_frontier.extend(fparents)
 
             frontier = next_frontier
 
-        return list(collected.values()), partial
+        return collected, partial
 
     def _load_label_defs(self) -> Dict[str, Dict[str, Any]]:
         """Fetch and cache Drive Labels definitions keyed by labelId."""
