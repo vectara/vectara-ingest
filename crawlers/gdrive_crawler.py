@@ -717,37 +717,32 @@ class UserWorker(object):
                     out.append(f)
         return out
 
-    def _fetch_drive_permissions(self, drive_id: str) -> Tuple[List[Dict[str, Any]], str]:
-        """Return (members, source) for a Shared Drive, with per-worker caching.
+    def _fetch_item_permissions(self, item_id: str) -> Tuple[List[Dict[str, Any]], bool]:
+        """Page through `permissions.list` for any Drive item (file/folder/drive).
 
-        Drive's `files.list` does not propagate drive-level member grants onto
-        a file's `permissions` array — so a Shared Drive file whose access is
-        purely inherited from the drive comes back from list() with
-        `permissions=[]`, which downstream renders as an empty acl_*. To
-        recover the true ACL we fetch `permissions.list(fileId=<driveId>)`
-        once per drive and let the caller merge those grants in.
+        Returns `(permissions, ok)`. `ok` is False when the listing failed
+        (e.g. a 403 because the delegated user can't read the item's ACL);
+        callers downgrade their `acl_source` to a `*_partial` variant.
 
-        Caveat: enumerating a Shared Drive's full member list requires the
-        delegated user to have at least the `fileOrganizer` role on that
-        drive. Lower roles get a 403; we mark the source as
-        `shared_drive_partial` and cache that outcome so we don't hammer
-        Drive once per file. This returns only the drive-root membership;
-        grants made on intermediate folders are layered on by the caller
-        (`_resolve_parent_acl` via `_walk_ancestor_acls`).
+        This is the only reliable way to read a Shared Drive item's ACL: the
+        File resource's `permissions` field is documented as "not populated for
+        items in shared drives", so `files.list`/`files.get` return
+        `permissions=[]` there. `permissions.list` on a shared-drive item
+        returns the complete effective ACL — direct grants plus those inherited
+        from parent folders and drive membership (surfaced via
+        `permissionDetails.inheritedFrom`), including `type:'group'` grants.
+
+        Enumerating these grants requires the delegated user to have at least
+        `fileOrganizer` on the drive; lower roles get a 403. Set
+        `abac.shared_drive_admin_access` (domain-admin delegated user) to read
+        via `useDomainAdminAccess`.
         """
-        cached = self._drive_perms_cache.get(drive_id)
-        if cached is not None:
-            return cached
-
-        fields = (
-            'nextPageToken,' + _PERM_FIELDS
-        )
+        fields = 'nextPageToken,' + _PERM_FIELDS
         collected: List[Dict[str, Any]] = []
-        source = ACL_SOURCE_SHARED_DRIVE
         page_token: Optional[str] = None
         while True:
             params = {
-                'fileId': drive_id,
+                'fileId': item_id,
                 'supportsAllDrives': True,
                 'fields': fields,
             }
@@ -759,19 +754,15 @@ class UserWorker(object):
                 resp = self.service.permissions().list(**params).execute()
             except HttpError as e:
                 logger.warning(
-                    f"permissions.list failed for shared drive {drive_id}: {e}; "
-                    "delegated user likely lacks fileOrganizer/organizer on the drive — "
+                    f"permissions.list failed for item {item_id}: {e}; "
+                    "delegated user likely lacks fileOrganizer/organizer access — "
                     "grant a manager role or set abac.shared_drive_admin_access "
                     "(requires a domain-admin delegated user)."
                 )
-                collected = []
-                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
-                break
+                return [], False
             except Exception as e:
-                logger.info(f"Error listing permissions for shared drive {drive_id}: {e}")
-                collected = []
-                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
-                break
+                logger.info(f"Error listing permissions for item {item_id}: {e}")
+                return [], False
 
             for p in (resp.get('permissions') or []):
                 collected.append(p)
@@ -779,8 +770,26 @@ class UserWorker(object):
             if not page_token:
                 break
 
-        self._drive_perms_cache[drive_id] = (collected, source)
-        return collected, source
+        return collected, True
+
+    def _fetch_drive_permissions(self, drive_id: str) -> Tuple[List[Dict[str, Any]], str]:
+        """Return (members, source) for a Shared Drive, with per-worker caching.
+
+        Fetches the drive-root membership via `permissions.list(fileId=<driveId>)`
+        (see `_fetch_item_permissions`). A 403 (delegated user lacks
+        fileOrganizer/organizer on the drive) yields an empty list and the
+        `shared_drive_partial` source; the outcome is cached either way so we
+        don't hammer Drive once per file.
+        """
+        cached = self._drive_perms_cache.get(drive_id)
+        if cached is not None:
+            return cached
+
+        members, ok = self._fetch_item_permissions(drive_id)
+        source = ACL_SOURCE_SHARED_DRIVE if ok else ACL_SOURCE_SHARED_DRIVE_PARTIAL
+        result = (members, source)
+        self._drive_perms_cache[drive_id] = result
+        return result
 
     def _resolve_parent_acl(self, file_obj: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
         """Resolve inherited permissions for a file.
@@ -795,17 +804,35 @@ class UserWorker(object):
         drive_id = file_obj.get('driveId')
         if drive_id:
             members, source = self._fetch_drive_permissions(drive_id)
-            # Drive-root membership doesn't cover grants made on intermediate
-            # folders inside the drive (e.g. a group shared onto a sub-folder),
-            # which descendant files inherit but Drive never inlines into their
-            # `permissions`. Walk those folders too; seed the drive root as
-            # already-seen so we don't re-fetch its membership as a folder.
-            folder_perms, partial = self._walk_ancestor_acls(
-                file_obj.get('parents') or [], seed_seen={drive_id}
-            )
-            combined = members + folder_perms
-            if partial and source == ACL_SOURCE_SHARED_DRIVE:
-                source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
+            # Drive's File resource does not populate `permissions` for items in
+            # shared drives, so grants made directly on the file or inherited
+            # from intermediate folders never appear in files.list output (the
+            # file comes back with permissions=[]). `permissions.list` on the
+            # file recovers the complete effective ACL — direct grants plus
+            # those inherited from parent folders and drive membership,
+            # including group grants. Union it with the drive-root membership
+            # (deduped by permission id) so nothing is double-counted.
+            #
+            # The per-file `permissions.list` normally already includes the
+            # drive-root grants (they show up as inherited entries), so the
+            # drive-root fetch above is usually redundant. We keep it as a
+            # cheap backup/fallback: it is cached one-call-per-drive, and it
+            # guarantees drive membership is captured even if a file's own
+            # listing ever comes back incomplete.
+            combined = list(members)
+            file_id = file_obj.get('id')
+            if file_id:
+                file_perms, file_ok = self._fetch_item_permissions(file_id)
+                if not file_ok and source == ACL_SOURCE_SHARED_DRIVE:
+                    source = ACL_SOURCE_SHARED_DRIVE_PARTIAL
+                seen_ids = {p.get('id') for p in combined if p.get('id')}
+                for p in file_perms:
+                    pid = p.get('id')
+                    if pid and pid in seen_ids:
+                        continue
+                    if pid:
+                        seen_ids.add(pid)
+                    combined.append(p)
             return combined, source
 
         if not self._abac_resolve_inherited:
@@ -820,18 +847,19 @@ class UserWorker(object):
         return perms, source
 
     def _walk_ancestor_acls(
-        self, parents: List[str], seed_seen: Optional[Set[str]] = None
+        self, parents: List[str]
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """BFS up the ancestor-folder chain, unioning each folder's direct ACL.
 
-        `seed_seen` pre-marks folder ids to skip (e.g. a Shared Drive root,
-        whose membership is fetched separately). Folder ACLs are cached per
-        worker in `_folder_acl_cache`, deduped by permission id. Returns
-        (permissions, partial), where `partial` is True if any ancestor folder
-        couldn't be read.
+        Used for My Drive's `resolve_inherited`, where `files.get` does populate
+        a folder's `permissions`. (Shared drives read the full effective ACL
+        straight off the file via `permissions.list`, so they don't walk here.)
+        Folder ACLs are cached per worker in `_folder_acl_cache`, deduped by
+        permission id. Returns (permissions, partial), where `partial` is True
+        if any ancestor folder couldn't be read.
         """
         collected: Dict[str, Dict[str, Any]] = {}
-        seen: Set[str] = set(seed_seen or ())
+        seen: Set[str] = set()
         partial = False
         frontier = list(parents)
 
