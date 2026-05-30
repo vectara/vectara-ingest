@@ -1,0 +1,202 @@
+/* ============================================
+
+   CRAWLERS - BASE
+
+   Common styles, utilities, and patterns shared
+   across all crawler documentation pages
+
+   ============================================ */
+
+
+/* ============================================
+   COMMON GRID LAYOUTS
+   ============================================ */
+
+/* 2-column grid layout for cards */
+.grid-2col {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+/* 3-column grid layout for cards */
+.grid-3col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+/* Responsive breakpoints */
+@media (max-width: 1200px) {
+    .grid-3col {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .grid-2col,
+    .grid-3col {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* ============================================
+   COMMON CARD BASE STYLES
+   ============================================ */
+
+/* Base card structure used by all card types */
+.card-base {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin: 0;
+    transition: var(--transition-smooth);
+    overflow-x: auto;
+}
+
+.card-base:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+}
+
+[data-md-color-scheme="slate"] .card-base {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+
+/* ============================================
+   COMMON CARD HEADING STYLES
+   ============================================ */
+
+/* H3 headings in cards (used by best-practices, troubleshooting) */
+.card-base h3 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--md-default-fg-color);
+}
+
+/* H4 headings in cards (used by examples, CQL) */
+.card-base h4 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--md-default-fg-color);
+}
+
+
+/* ============================================
+   COMMON CARD CONTENT STYLES
+   ============================================ */
+
+/* Paragraph text in cards */
+.card-base p {
+    font-size: 0.7rem;
+    line-height: 1.4;
+    margin: 0.5rem 0;
+    color: var(--vectara-text-muted);
+}
+
+/* First paragraph after heading (description) */
+.card-base > p:first-of-type,
+.card-base h3 + p,
+.card-base h4 + p {
+    margin-top: 0;
+}
+
+/* Lists in cards */
+.card-base ul {
+    margin: 0.25rem 0;
+    padding-left: 0;
+    list-style: disc;
+    font-size: 0.7rem;
+    color: var(--vectara-text-muted);
+}
+
+.card-base li {
+    margin: 0.125rem 0;
+    padding-left: 0.25rem;
+    line-height: 1.4;
+}
+
+
+/* ============================================
+   CODE BLOCKS IN CARDS
+   ============================================ */
+
+/* Code blocks */
+.card-base pre {
+    margin: 0.5rem 0 0 0;
+    background: rgba(63, 81, 181, 0.08);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    font-size: 0.65rem;
+}
+
+[data-md-color-scheme="slate"] .card-base pre {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+/* Inline code */
+.card-base code {
+    font-size: 0.65rem;
+    background: rgba(63, 81, 181, 0.08);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.125rem;
+}
+
+[data-md-color-scheme="slate"] .card-base code {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+
+/* ============================================
+   BADGE STYLES
+   ============================================ */
+
+/* Badge container */
+.crawler-badge-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+/* Count badge */
+.crawler-count-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    background: rgba(63, 81, 181, 0.1);
+    color: var(--vectara-primary);
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+[data-md-color-scheme="slate"] .crawler-count-badge {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+}
+
+
+/* ============================================
+   SECTION SPACING
+   ============================================ */
+
+/* Consistent spacing between sections */
+.crawler-section {
+    margin: 2rem 0;
+}
+
+.crawler-section:first-child {
+    margin-top: 0;
+}
+
+.crawler-section:last-child {
+    margin-bottom: 0;
+}
