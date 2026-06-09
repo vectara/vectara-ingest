@@ -1641,10 +1641,12 @@ class UnstructuredDocumentParser(DocumentParser):
             # hi_res layout pass before chunking. unstructured's chunkers operate on
             # already-partitioned elements, so we reuse raw_elements here instead of
             # partitioning the document a second time (pure efficiency; identical output).
+            # The chunkers iterate raw_elements once and never mutate it, so it stays
+            # intact for the raw table/image extraction below (no defensive copy needed).
             if self.chunking_strategy == "by_title":
-                chunked_elements = chunk_by_title(list(raw_elements), max_characters=self.chunk_size)
+                chunked_elements = chunk_by_title(raw_elements, max_characters=self.chunk_size)
             elif self.chunking_strategy == "basic":
-                chunked_elements = chunk_elements(list(raw_elements), max_characters=self.chunk_size)
+                chunked_elements = chunk_elements(raw_elements, max_characters=self.chunk_size)
             else:
                 # Unknown strategy: fall back to unstructured's built-in chunking pass
                 chunked_elements = self._get_elements(filename, override_chunking=False)
