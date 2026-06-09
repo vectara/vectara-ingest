@@ -122,6 +122,14 @@ spreadsheet_extensions = DATAFRAME_EXTENSIONS  # Deprecated: use DATAFRAME_EXTEN
 # LOGGING UTILITIES
 # =============================================================================
 
+class _PdfColorWarningFilter(logging.Filter):
+    """Drop pdfminer's noisy "Cannot set [non-]stroke color because expected N
+    components but got [...]" warnings. These come from malformed color
+    operators in some PDFs and are irrelevant to text extraction."""
+    def filter(self, record):
+        return "color because expected" not in record.getMessage()
+
+
 def setup_logging(level='INFO'):
     log_level_str = os.getenv("LOGGING_LEVEL", level).upper()
 
@@ -137,6 +145,9 @@ def setup_logging(level='INFO'):
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         root.addHandler(handler)
+
+    # Suppress pdfminer's per-operator color warnings (noisy, harmless for text extraction)
+    logging.getLogger("pdfminer.pdfinterp").addFilter(_PdfColorWarningFilter())
 
     logger.debug("Setting logging levels")
     # Configure specific loggers based on environment variables

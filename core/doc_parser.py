@@ -26,6 +26,8 @@ from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.html import partition_html
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.docx import partition_docx
+from unstructured.chunking.title import chunk_by_title
+from unstructured.chunking.basic import chunk_elements
 
 from omegaconf import OmegaConf
 
@@ -1642,8 +1644,18 @@ class UnstructuredDocumentParser(DocumentParser):
                 position = page_num * 1000 + idx
                 raw_positions[id(element)] = (position, page_num, idx)
             
-            # Pass 2: Get chunked text elements
-            chunked_elements = self._get_elements(filename, override_chunking=False)
+            # Pass 2: Derive chunked text from the raw elements in-process.
+            # partition(..., chunking_strategy=...) would re-run the entire (expensive)
+            # hi_res layout pass before chunking. unstructured's chunkers operate on
+            # already-partitioned elements, so we reuse raw_elements here instead of
+            # partitioning the document a second time (pure efficiency; identical output).
+            if self.chunking_strategy == "by_title":
+                chunked_elements = chunk_by_title(list(raw_elements), max_characters=self.chunk_size)
+            elif self.chunking_strategy == "basic":
+                chunked_elements = chunk_elements(list(raw_elements), max_characters=self.chunk_size)
+            else:
+                # Unknown strategy: fall back to unstructured's built-in chunking pass
+                chunked_elements = self._get_elements(filename, override_chunking=False)
             
             # Log what we found
             chunked_types = {}
