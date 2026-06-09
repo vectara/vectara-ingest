@@ -146,8 +146,11 @@ def setup_logging(level='INFO'):
         handler.setFormatter(formatter)
         root.addHandler(handler)
 
-    # Suppress pdfminer's per-operator color warnings (noisy, harmless for text extraction)
-    logging.getLogger("pdfminer.pdfinterp").addFilter(_PdfColorWarningFilter())
+    # Suppress pdfminer's per-operator color warnings (noisy, harmless for text extraction).
+    # Add the filter only once - setup_logging() can be called repeatedly across workers/tests.
+    pdfminer_logger = logging.getLogger("pdfminer.pdfinterp")
+    if not any(isinstance(f, _PdfColorWarningFilter) for f in pdfminer_logger.filters):
+        pdfminer_logger.addFilter(_PdfColorWarningFilter())
 
     logger.debug("Setting logging levels")
     # Configure specific loggers based on environment variables

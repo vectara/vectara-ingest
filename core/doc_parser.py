@@ -1635,15 +1635,7 @@ class UnstructuredDocumentParser(DocumentParser):
             
             # Pass 1: Get raw elements without chunking to establish positions
             raw_elements = self._get_elements(filename, override_chunking=True)
-            
-            # Create position map for raw elements
-            raw_positions = {}
-            for idx, element in enumerate(raw_elements):
-                page_num = getattr(element.metadata, 'page_number', 1) or 1
-                # Position formula: page_num * 1000 + element_index
-                position = page_num * 1000 + idx
-                raw_positions[id(element)] = (position, page_num, idx)
-            
+
             # Pass 2: Derive chunked text from the raw elements in-process.
             # partition(..., chunking_strategy=...) would re-run the entire (expensive)
             # hi_res layout pass before chunking. unstructured's chunkers operate on
@@ -1676,8 +1668,7 @@ class UnstructuredDocumentParser(DocumentParser):
             # Single pass when not chunking
             elements = self._get_elements(filename)
             raw_tables_images = elements  # Same elements for everything
-            raw_positions = None  # Not needed when not chunking
-            
+
             # Log element types
             element_types = {}
             for e in elements:
