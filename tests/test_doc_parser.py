@@ -294,5 +294,96 @@ class TestIntegratedTitleExtraction(unittest.TestCase):
             self.assertEqual(doc_title, "My Research Paper")
 
 
+class TestChunkingSinglePartition(unittest.TestCase):
+    """When chunking with the common strategies (by_title / basic), parse() must
+    partition the document only once and chunk the raw elements in-process,
+    rather than running a second (expensive) partition pass."""
+
+    def _make_parser(self, strategy):
+        from omegaconf import OmegaConf
+        from core.doc_parser import UnstructuredDocumentParser
+        return UnstructuredDocumentParser(
+            cfg=OmegaConf.create({}),
+            chunking_strategy=strategy,
+            chunk_size=500,
+            parse_tables=False,
+            summarize_images=False,
+        )
+
+    def _fake_raw_elements(self):
+        from unstructured.documents.elements import Text
+        elements = [Text(text=f"Paragraph {i}. " + "lorem ipsum dolor sit amet. " * 4)
+                    for i in range(6)]
+        for e in elements:
+            e.metadata.page_number = 1
+        return elements
+
+    def _override_chunking_values(self, mock_get_elements):
+        """Return the override_chunking arg passed to each _get_elements call."""
+        values = []
+        for call in mock_get_elements.call_args_list:
+            if 'override_chunking' in call.kwargs:
+                values.append(call.kwargs['override_chunking'])
+            elif len(call.args) > 1:
+                values.append(call.args[1])
+            else:
+                values.append(False)  # default
+        return values
+
+    def test_by_title_chunks_in_process_without_second_partition(self):
+        from core.doc_parser import chunk_by_title, chunk_elements
+        raw = self._fake_raw_elements()
+        parser = self._make_parser("by_title")
+
+        with patch.object(parser, '_get_elements', return_value=raw) as mock_ge, \
+             patch('core.doc_parser.chunk_by_title', wraps=chunk_by_title) as spy_title, \
+             patch('core.doc_parser.chunk_elements', wraps=chunk_elements) as spy_basic, \
+             patch('core.doc_parser.extract_document_title', return_value='T'):
+            doc = parser.parse("test.pdf")
+
+        # Only the raw (override_chunking=True) pass runs; no second partition.
+        self.assertEqual(self._override_chunking_values(mock_ge), [True])
+        # by_title chunker invoked once, with the raw list itself (no defensive copy).
+        spy_title.assert_called_once()
+        self.assertIs(spy_title.call_args.args[0], raw)
+        spy_basic.assert_not_called()
+        # Output is stable: the chunked text made it into the content stream.
+        texts = " ".join(str(c) for c, _ in doc.content_stream)
+        self.assertIn("lorem ipsum", texts)
+
+    def test_basic_chunks_in_process_without_second_partition(self):
+        from core.doc_parser import chunk_by_title, chunk_elements
+        raw = self._fake_raw_elements()
+        parser = self._make_parser("basic")
+
+        with patch.object(parser, '_get_elements', return_value=raw) as mock_ge, \
+             patch('core.doc_parser.chunk_by_title', wraps=chunk_by_title) as spy_title, \
+             patch('core.doc_parser.chunk_elements', wraps=chunk_elements) as spy_basic, \
+             patch('core.doc_parser.extract_document_title', return_value='T'):
+            doc = parser.parse("test.pdf")
+
+        self.assertEqual(self._override_chunking_values(mock_ge), [True])
+        spy_basic.assert_called_once()
+        self.assertIs(spy_basic.call_args.args[0], raw)
+        spy_title.assert_not_called()
+        texts = " ".join(str(c) for c, _ in doc.content_stream)
+        self.assertIn("lorem ipsum", texts)
+
+    def test_unknown_strategy_falls_back_to_second_partition(self):
+        raw = self._fake_raw_elements()
+        parser = self._make_parser("some_future_strategy")
+
+        with patch.object(parser, '_get_elements', return_value=raw) as mock_ge, \
+             patch('core.doc_parser.chunk_by_title') as spy_title, \
+             patch('core.doc_parser.chunk_elements') as spy_basic, \
+             patch('core.doc_parser.extract_document_title', return_value='T'):
+            parser.parse("test.pdf")
+
+        # Fallback path: raw pass + a second built-in chunking pass.
+        self.assertEqual(self._override_chunking_values(mock_ge), [True, False])
+        spy_title.assert_not_called()
+        spy_basic.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
