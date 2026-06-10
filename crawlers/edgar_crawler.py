@@ -199,7 +199,6 @@ class EdgarCrawler(Crawler):
                         filings_to_process,
                     )
                 )
-                ray.shutdown()
             else:
                 crawl_worker = EdgarWorker(self.indexer, self)
                 for inx, tup in enumerate(filings_to_process):
@@ -211,3 +210,8 @@ class EdgarCrawler(Crawler):
                     crawl_worker.process(file_path, url, file_metadata)
 
             folder.cleanup()
+
+        # Shut down Ray only after all tickers are processed (shutting down
+        # inside the loop broke multi-ticker runs with ray_workers > 0).
+        if ray_workers > 0:
+            ray.shutdown()
