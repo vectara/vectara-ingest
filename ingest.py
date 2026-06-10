@@ -67,7 +67,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
         'Accept': 'application/json',
         'Authorization': f'Bearer {token}'
     }
-    response = requests.request("POST", url, headers=headers)
+    response = requests.request("POST", url, headers=headers, timeout=60)
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -89,7 +89,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         'Accept': 'application/json',
         'x-api-key': api_key
     }
-    response = requests.request("POST", url, headers=headers)
+    response = requests.request("POST", url, headers=headers, timeout=60)
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -117,7 +117,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
         'key': corpus_key
     }
 
-    response = requests.request("POST", url, headers=headers, json=payload)
+    response = requests.request("POST", url, headers=headers, json=payload, timeout=60)
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -143,7 +143,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         'key': corpus_key
     }
 
-    response = requests.request("POST", url, headers=headers, json=payload)
+    response = requests.request("POST", url, headers=headers, json=payload, timeout=60)
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:

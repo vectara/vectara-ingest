@@ -446,7 +446,7 @@ class DocupandaDocumentParser(DocumentParser):
             "content-type": "application/json",
             "X-API-Key": self._api_key
         }
-        response = requests.post(base_url, json=payload, headers=headers)
+        response = requests.post(base_url, json=payload, headers=headers, timeout=60)
         if response.status_code != 200:
             logger.error(f"Docupanda: failed to post document, response code {response.status_code}, msg={response.json()}")
             return ParsedDocument(title='', content_stream=[], tables=[], image_bytes=[])
@@ -457,7 +457,7 @@ class DocupandaDocumentParser(DocumentParser):
         start_time = time.time()
         completed = False
         while time.time() - start_time < timeout:
-            response = requests.get(f"{base_url}/{document_id}", headers=headers)
+            response = requests.get(f"{base_url}/{document_id}", headers=headers, timeout=60)
             if response.json()['status'] == 'completed':
                 completed = True
                 break

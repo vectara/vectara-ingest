@@ -13,6 +13,10 @@ from core.utils import clean_email_text, mask_pii, setup_logging
 
 logger = logging.getLogger(__name__)
 
+# Timeout (seconds) for all raw HubSpot API requests, so a hung endpoint
+# cannot block the crawl indefinitely.
+REQUEST_TIMEOUT = 60
+
 class HubspotCrawler(Crawler):
     """
     Unified HubSpot crawler for both email-only and full CRM data extraction.
@@ -293,7 +297,7 @@ class HubspotCrawler(Crawler):
                 try:
                     url = f"{self.api_base_url}/companies/{comp_id}"
                     params = {"properties": ",".join(company_properties)}
-                    response = requests.get(url, headers=self.headers, params=params)
+                    response = requests.get(url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
 
                     if response.status_code == 200:
                         company = response.json()
@@ -359,7 +363,7 @@ class HubspotCrawler(Crawler):
                 try:
                     url = f"{self.api_base_url}/contacts/{cont_id}"
                     params = {"properties": ",".join(contact_properties)}
-                    response = requests.get(url, headers=self.headers, params=params)
+                    response = requests.get(url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
 
                     if response.status_code == 200:
                         contact = response.json()
@@ -758,7 +762,7 @@ class HubspotCrawler(Crawler):
         for target_type in ["companies", "contacts", "deals", "tickets"]:
             try:
                 url = f"{self.api_base_url}/{engagement_type}/{engagement_id}/associations/{target_type}"
-                response = requests.get(url, headers=self.headers)
+                response = requests.get(url, headers=self.headers, timeout=REQUEST_TIMEOUT)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -1601,7 +1605,7 @@ class HubspotCrawler(Crawler):
         for comp_id in company_ids:
             try:
                 url = f"{self.api_base_url}/companies/{comp_id}"
-                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)})
+                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)}, timeout=REQUEST_TIMEOUT)
                 if response.status_code == 200:
                     company = response.json()
                     self.companies_cache[comp_id] = company.get("properties", {})
@@ -1617,7 +1621,7 @@ class HubspotCrawler(Crawler):
         for cont_id in contact_ids:
             try:
                 url = f"{self.api_base_url}/contacts/{cont_id}"
-                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)})
+                response = requests.get(url, headers=self.headers, params={"properties": ",".join(properties)}, timeout=REQUEST_TIMEOUT)
                 if response.status_code == 200:
                     contact = response.json()
                     self.contacts_cache[cont_id] = contact.get("properties", {})
@@ -1658,7 +1662,7 @@ class HubspotCrawler(Crawler):
                 query_params["after"] = after_token
 
             try:
-                response = requests.get(api_endpoint, headers=self.headers, params=query_params)
+                response = requests.get(api_endpoint, headers=self.headers, params=query_params, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
 
                 data = response.json()
@@ -1731,7 +1735,7 @@ class HubspotCrawler(Crawler):
         for target_type, type_id in association_mappings[object_type].items():
             try:
                 url = f"{self.api_base_url}/{object_type}s/{object_id}/associations/{target_type}"
-                response = requests.get(url, headers=self.headers)
+                response = requests.get(url, headers=self.headers, timeout=REQUEST_TIMEOUT)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -2024,7 +2028,7 @@ class HubspotObjectProcessor:
         for target_type, type_id in association_mappings[object_type].items():
             try:
                 url = f"{self.api_base_url}/{object_type}s/{object_id}/associations/{target_type}"
-                response = requests.get(url, headers=self.headers)
+                response = requests.get(url, headers=self.headers, timeout=REQUEST_TIMEOUT)
 
                 if response.status_code == 200:
                     data = response.json()
@@ -2048,7 +2052,7 @@ class HubspotObjectProcessor:
         for target_type in ["companies", "contacts", "deals", "tickets"]:
             try:
                 url = f"{self.api_base_url}/{engagement_type}/{engagement_id}/associations/{target_type}"
-                response = requests.get(url, headers=self.headers)
+                response = requests.get(url, headers=self.headers, timeout=REQUEST_TIMEOUT)
 
                 if response.status_code == 200:
                     data = response.json()
