@@ -88,7 +88,7 @@ class MediawikiCrawler(Crawler):
             return None
 
         page_url = page.get('fullurl')
-        if 'revisions' not in page or not page['revisions']:  
+        if 'revisions' in page and page['revisions']:
             revision = page['revisions'][0]
             last_editor = revision.get('user', 'unknown')
             last_edited_at = revision['timestamp']
