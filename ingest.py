@@ -158,6 +158,14 @@ def is_valid_url(url: str) -> bool:
 
 
 
+_SENSITIVE_KEY_PATTERN = re.compile(r'key|token|secret|password|pwd|auth', re.IGNORECASE)
+
+def _mask_sensitive(key: str, value: Any) -> Any:
+    """Mask values of credential-like config keys so they never reach the logs."""
+    if value is not None and _SENSITIVE_KEY_PATTERN.search(key):
+        return '***'
+    return value
+
 def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     """
     Method is used for troubleshooting. When config settings are change, they are logging with the source of the change.
@@ -168,7 +176,8 @@ def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     :return:
     """
     old_value = cfg.get(key, None)
-    logger.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
+    logger.debug(f"Updating Config: source='{source}' key='{key}' "
+                 f"old_value='{_mask_sensitive(key, old_value)}' new_value='{_mask_sensitive(key, new_value)}'")
     OmegaConf.update(cfg, key, new_value)
 
 
