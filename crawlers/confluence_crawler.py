@@ -56,13 +56,19 @@ def append_links(metadata: dict[str, Any], page_data: dict[str, Any]):
         metadata (dict[str, Any]): A dictionary to augment with link info.
         page_data (dict[str, Any]): Confluence page data, expected to contain '_links'.
     """
-    if page_data['_links']:
-        links = {}
-        for path_name in ['editui', 'webui', 'edituiv2', 'tinyui']:
-            path_part = page_data['_links'][path_name]
-            base_url = furl(page_data['_links']['base'])
-            base_url.path = os.path.join(str(base_url.path), path_part[1:])
-            links[path_name] = base_url.url
+    links_data = page_data.get('_links') or {}
+    base = links_data.get('base')
+    if not base:
+        return
+    links = {}
+    for path_name in ['editui', 'webui', 'edituiv2', 'tinyui']:
+        path_part = links_data.get(path_name)
+        if not path_part:
+            continue
+        base_url = furl(base)
+        base_url.path = os.path.join(str(base_url.path), path_part[1:])
+        links[path_name] = base_url.url
+    if links:
         metadata['links'] = links
 
 
@@ -77,18 +83,19 @@ def append_labels(metadata: dict[str, Any], page_data: dict[str, Any]):
         metadata (dict[str, Any]): A dictionary to augment with label info.
         page_data (dict[str, Any]): Confluence page data, expected to include 'metadata' with 'labels'.
     """
-    if 'metadata' in page_data:
-        if 'labels' in page_data['metadata']:
-            labels = []
-            label_names = []
-            label_ids = []
-            for label in page_data['metadata']['labels']:
-                labels.append(label['label'])
-                label_names.append(label['name'])
-                label_ids.append(label['id'])
-            metadata['labels'] = labels
-            metadata['label_names'] = label_names
-            metadata['label_ids'] = label_ids
+    labels_data = page_data.get('metadata', {}).get('labels')
+    if not labels_data:
+        return
+    labels = []
+    label_names = []
+    label_ids = []
+    for label in labels_data:
+        labels.append(label.get('label', ''))
+        label_names.append(label.get('name', ''))
+        label_ids.append(label.get('id', ''))
+    metadata['labels'] = labels
+    metadata['label_names'] = label_names
+    metadata['label_ids'] = label_ids
 
 
 class ConfluenceCrawler(Crawler):

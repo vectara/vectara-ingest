@@ -508,12 +508,18 @@ class WebsiteCrawler(Crawler):
         # Filter and deduplicate URLs
         excluded_extensions = archive_extensions + img_extensions
         urls = [
-            url for url in all_urls 
-            if (url.startswith('http') and 
+            url for url in all_urls
+            if (url.startswith('http') and
                 not any(url.lower().endswith(ext) for ext in excluded_extensions) and
                 url_matches_patterns(url, self.pos_patterns, self.neg_patterns))
         ]
-        urls = list(set(urls))
+        # Deduplicate on the normalized URL — the same form used for doc ids
+        # and remove_old_content comparisons — so encoding variants of one
+        # page are crawled once. Keep the first-seen original URL for fetching.
+        unique_urls = {}
+        for url in urls:
+            unique_urls.setdefault(normalize_url_for_metadata(url), url)
+        urls = list(unique_urls.values())
 
         # Store URLS in crawl_report if needed
         if self.cfg.website_crawler.get("crawl_report", False):

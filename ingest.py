@@ -67,7 +67,7 @@ def reset_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: s
         'Accept': 'application/json',
         'Authorization': f'Bearer {token}'
     }
-    response = requests.request("POST", url, headers=headers)
+    response = requests.request("POST", url, headers=headers, timeout=60)
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -89,7 +89,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         'Accept': 'application/json',
         'x-api-key': api_key
     }
-    response = requests.request("POST", url, headers=headers)
+    response = requests.request("POST", url, headers=headers, timeout=60)
     if response.status_code == 200:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -117,7 +117,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
         'key': corpus_key
     }
 
-    response = requests.request("POST", url, headers=headers, json=payload)
+    response = requests.request("POST", url, headers=headers, json=payload, timeout=60)
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -143,7 +143,7 @@ def create_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
         'key': corpus_key
     }
 
-    response = requests.request("POST", url, headers=headers, json=payload)
+    response = requests.request("POST", url, headers=headers, json=payload, timeout=60)
     if response.status_code == 201:
         logger.info(f"Reset corpus {corpus_key}")
     else:
@@ -158,6 +158,14 @@ def is_valid_url(url: str) -> bool:
 
 
 
+_SENSITIVE_KEY_PATTERN = re.compile(r'key|token|secret|password|pwd|auth', re.IGNORECASE)
+
+def _mask_sensitive(key: str, value: Any) -> Any:
+    """Mask values of credential-like config keys so they never reach the logs."""
+    if value is not None and _SENSITIVE_KEY_PATTERN.search(key):
+        return '***'
+    return value
+
 def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     """
     Method is used for troubleshooting. When config settings are change, they are logging with the source of the change.
@@ -168,7 +176,8 @@ def update_omega_conf(cfg: DictConfig, source: str, key: str, new_value)-> None:
     :return:
     """
     old_value = cfg.get(key, None)
-    logger.debug(f"Updating Config: source='{source}' key='{key}' old_value='{old_value}' new_value='{new_value}'")
+    logger.debug(f"Updating Config: source='{source}' key='{key}' "
+                 f"old_value='{_mask_sensitive(key, old_value)}' new_value='{_mask_sensitive(key, new_value)}'")
     OmegaConf.update(cfg, key, new_value)
 
 

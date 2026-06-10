@@ -1097,7 +1097,9 @@ class BoxCrawler(Crawler):
                         try:
                             file_full = self.client.file(file_id).get(fields=["parent"])
                             parent_id = file_full.parent.id if file_full.parent else None
-                        except Exception:
+                        except Exception as e:
+                            logging.warning(f"Could not fetch parent of file {file_id}; "
+                                            f"inherited permissions will be missing: {e}")
                             parent_id = None
                         if parent_id:
                             folder_perms = self._get_folder_collaborations(parent_id, info["path"])

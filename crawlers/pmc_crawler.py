@@ -104,10 +104,7 @@ class PmcCrawler(Crawler):
                 else:
                     day_text = str(day.text)
 
-                try:
-                    pub_date = f"{year_text}-{month_text}-{day_text}"
-                except Exception:
-                    pub_date = 'unknown'
+                pub_date = f"{year_text}-{month_text}-{day_text}"
             else:
                 pub_date = "Publication date not found"
 
