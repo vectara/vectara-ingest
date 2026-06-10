@@ -35,8 +35,8 @@ class ContextualChunker():
             context = generate(self.cfg, system_prompt, prompt, self.contextual_model_config)
             return chunk + "\n" + context
         except Exception as e:
-            logger.error(f"Failed to summarize table text: {e}")
-            return ""
+            logger.error(f"Failed to generate context for chunk: {e}")
+            return chunk
 
     def parallel_transform(self, texts, max_workers=None):
         """
@@ -62,7 +62,8 @@ class ContextualChunker():
                 try:
                     results[idx] = future.result()
                 except Exception as e:
-                    # Handle exceptions if needed; for now, we just log them and leave that index as None
+                    # Fall back to the original text so the chunk is not lost
                     logger.error(f"Error transforming text at index {idx}: {e}")
-        
+                    results[idx] = texts[idx]
+
         return results
