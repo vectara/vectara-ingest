@@ -35,7 +35,13 @@ At index time each document is stamped with a `fingerprint` over its content, it
 | folder | `slugify(path)+hash` | file mtime |
 | gdrive | Drive `file.id` | none — ACL changes don't bump `modifiedTime`, so the fingerprint (which includes `acl_groups`) is evaluated for every file |
 
-`incremental` is independent of `vectara.reindex`: `incremental` decides *whether* to send a document, `reindex` decides how a 409 (already-exists) is handled. The intended "keep in sync" combination is `incremental: true` + `reindex: true` + `remove_old_content: true`. The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run — including non-incremental ones — from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore the old unguarded behavior. The metadata fields `fingerprint`, `content_hash`, `source`, and `parent_doc_id` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+`incremental` is independent of `vectara.reindex`: `incremental` decides *whether* to send a document, `reindex` decides how a 409 (already-exists) is handled. The intended "keep in sync" combination is `incremental: true` + `reindex: true` + `remove_old_content: true`. The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore unguarded deletion. The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+
+Caveats:
+
+- **File crawlers (folder, s3): `remove_old_content` requires `incremental: true`.** A single file can produce several corpus documents (media transcripts, one document per spreadsheet sheet, split-PDF parts) whose ids differ from the file's primary id. These are tagged as sub-documents only under `incremental`, which is what keeps the deletion pass from removing them. With `remove_old_content` set but `incremental` off, the deletion is skipped (with a warning).
+- **Media, spreadsheet, and split-PDF documents do not get the skip optimization** — they are re-indexed every run — but they are protected from wrongful deletion. They are also not auto-deleted when their source file is removed (they remain as orphans); only the primary-document file types are fully synced.
+- **RSS `remove_old_content` deletes any corpus document not in the current feed window.** Because an RSS feed only exposes the last `days_past` days, enabling this makes the corpus mirror the current window (articles that age out are deleted). Leave it off (the default) if you want to accumulate history. It is no longer implied by `incremental`.
 
 ### Website crawler
 

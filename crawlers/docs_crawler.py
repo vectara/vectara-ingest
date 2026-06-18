@@ -221,6 +221,7 @@ class DocsCrawler(Crawler):
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
+        crawl_completed = False
         if ray_workers > 0:
             logger.info(f"Using {ray_workers} ray workers")
             self.indexer.p = self.indexer.browser = None
@@ -243,13 +244,14 @@ class DocsCrawler(Crawler):
                 crawl_worker.process(url, source=source)
             # Cleanup worker
             crawl_worker.cleanup()
+        crawl_completed = True
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list,
         # guarded by plan_deletions against a partial/interrupted crawl mass-deleting live docs.
         if self.cfg.docs_crawler.get("remove_old_content", False):
             present_keys = {normalize_url_for_metadata(u) for u in all_urls if u}
-            listing_complete = len(present_keys) > 0
+            listing_complete = crawl_completed and len(present_keys) > 0
             ratio = self.cfg.docs_crawler.get("deletion_safety_ratio", 0.5)
             to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
             removed_urls = []

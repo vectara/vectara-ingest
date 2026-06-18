@@ -38,7 +38,13 @@ logger = logging.getLogger(__name__)
 # that pipeline-derived fields (which are deterministic functions of content + config and
 # thus already captured by content_hash + config_sig) do not cause churn.
 RESERVED_METADATA_KEYS = frozenset(
-    {"fingerprint", "content_hash", "source", "parent_doc_id", "last_updated", "file_name"}
+    {
+        "fingerprint", "content_hash", "source", "parent_doc_id", "last_updated", "file_name",
+        # Per-run / ingest-time volatile fields. They must not enter the fingerprint or every
+        # run would look "changed": sitemap_lastmod is the stored cheap signal; crawl_date /
+        # crawl_date_int are set to "now" by the RSS crawler on every crawl.
+        "sitemap_lastmod", "crawl_date", "crawl_date_int",
+    }
 )
 
 # Config keys that change how a document is processed. A change to any of these must
@@ -71,6 +77,7 @@ class ManifestEntry:
     last_updated: Optional[str] = None
     parent_doc_id: Optional[str] = None
     url: Optional[str] = None
+    sitemap_lastmod: Optional[str] = None
 
 
 def _canonical_json(obj: Any) -> str:
@@ -103,18 +110,14 @@ def compute_fingerprint(content_hash: Optional[str],
 
 
 def config_signature(cfg: Any) -> str:
-    """md5 of the processing-relevant config subset; compute once per run."""
-    doc_processing = {}
-    if "doc_processing" in cfg:
-        for k in _CONFIG_SIG_DOC_PROCESSING_KEYS:
-            if k in cfg.doc_processing:
-                doc_processing[k] = cfg.doc_processing.get(k)
-    vectara = {}
-    if "vectara" in cfg:
-        for k in _CONFIG_SIG_VECTARA_KEYS:
-            if k in cfg.vectara:
-                vectara[k] = cfg.vectara.get(k)
+    """md5 of the processing-relevant config subset; compute once per run. Works for both
+    OmegaConf and plain-dict cfg objects (both expose .get / `in`)."""
+    dp_cfg = cfg.get("doc_processing", {}) or {}
+    v_cfg = cfg.get("vectara", {}) or {}
+    doc_processing = {k: dp_cfg.get(k) for k in _CONFIG_SIG_DOC_PROCESSING_KEYS if k in dp_cfg}
+    vectara = {k: v_cfg.get(k) for k in _CONFIG_SIG_VECTARA_KEYS if k in v_cfg}
     # OmegaConf containers must be resolved to plain Python before JSON serialization.
+    # _canonical_json's default=str is the backstop if resolution is unavailable.
     try:
         from omegaconf import OmegaConf
         doc_processing = OmegaConf.to_container(OmegaConf.create(doc_processing), resolve=True)
@@ -141,6 +144,7 @@ def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None)
             last_updated=d.get("last_updated"),
             parent_doc_id=d.get("parent_doc_id"),
             url=d.get("url"),
+            sitemap_lastmod=d.get("sitemap_lastmod"),
         )
         if key == "url":
             if not entry.url:
@@ -232,9 +236,16 @@ def plan_deletions(manifest: Dict[str, ManifestEntry],
 
     def _is_present(k: str, e: ManifestEntry) -> bool:
         if e.parent_doc_id:
-            # A sub-doc survives iff its parent survives. If the parent is unknown to this
-            # manifest (e.g. different keying / not listed), stay conservative and keep it.
-            return (e.parent_doc_id in present_doc_ids) or (e.parent_doc_id not in all_doc_ids)
+            # A sub-doc survives iff its parent survives. The parent may be referenced either by
+            # the primary doc's key (file crawlers key present_keys on the same doc_id used as a
+            # sub-doc's parent_doc_id) or by the primary doc's id (url crawlers). If the parent
+            # is unknown to this manifest (e.g. different keying / not listed), stay conservative
+            # and keep it rather than risk deleting a live sub-document.
+            return (
+                e.parent_doc_id in present_keys
+                or e.parent_doc_id in present_doc_ids
+                or e.parent_doc_id not in all_doc_ids
+            )
         return k in present_keys
 
     to_delete = [e.doc_id for k, e in manifest.items() if not _is_present(k, e)]
@@ -245,12 +256,16 @@ def plan_deletions(manifest: Dict[str, ManifestEntry],
             "refusing to mass-delete live documents.", len(to_delete))
         return [], True
 
-    if min_ratio > 0 and len(present_keys) < len(manifest) * min_ratio:
+    # Compare against primary docs only. Counting sub-documents (image/PDF-part/sheet docs) in
+    # the denominator would let a corpus with many sub-docs per file fall below the ratio on a
+    # complete crawl and refuse deletions forever.
+    primary_count = sum(1 for e in manifest.values() if not e.parent_doc_id)
+    if min_ratio > 0 and len(present_keys) < primary_count * min_ratio:
         logger.warning(
-            "Skipping deletion of %d doc(s): source produced %d items vs %d in corpus "
-            "(below deletion_safety_ratio=%.2f) — refusing to mass-delete. Set "
+            "Skipping deletion of %d doc(s): source produced %d items vs %d primary docs in "
+            "corpus (below deletion_safety_ratio=%.2f) — refusing to mass-delete. Set "
             "deletion_safety_ratio: 0 to override.",
-            len(to_delete), len(present_keys), len(manifest), min_ratio)
+            len(to_delete), len(present_keys), primary_count, min_ratio)
         return [], True
 
     return to_delete, False

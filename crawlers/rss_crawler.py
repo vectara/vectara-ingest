@@ -116,19 +116,21 @@ class RssCrawler(Crawler):
         # Incremental reindexing: build the corpus manifest once, source-scoped, then use it
         # for a Layer-1 pre-fetch skip (pub_date not newer than what we last indexed) and to
         # pass prior fingerprints to the workers (Layer-2 post-fetch skip).
+        remove_old_content = self.cfg.rss_crawler.get("remove_old_content", False)
         manifest = {}
         prior_fingerprints = {}
-        present_keys = set()       # normalized urls present at the source (indexed or skipped)
-        if self.incremental:
-            manifest = build_manifest(self.indexer, key="url", source=source)
+        # Every feed entry in the window is "present at source" for the deletion diff.
+        present_keys = {normalize_url_for_metadata(u) for u, _t, _p in unique_urls}
+        if self.incremental or remove_old_content:
+            manifest = build_manifest(self.indexer, key="url",
+                                      source=(source if self.incremental else None))
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+        if self.incremental and manifest:
             prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
             kept = []
             skipped = 0
             for url, title, pub_date in unique_urls:
-                nu = normalize_url_for_metadata(url)
-                present_keys.add(nu)
-                entry = manifest.get(nu)
+                entry = manifest.get(normalize_url_for_metadata(url))
                 if entry and entry.last_updated and not source_is_newer(pub_date, entry.last_updated):
                     skipped += 1
                     continue
@@ -141,6 +143,7 @@ class RssCrawler(Crawler):
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
+        crawl_completed = False
         if ray_workers > 0:
             logger.info(f"Using {ray_workers} ray workers to process {len(unique_urls)} URLs")
             # Disable browser for parallel processing
@@ -181,12 +184,14 @@ class RssCrawler(Crawler):
             # Cleanup worker
             rss_worker.cleanup()
             logger.info(f"RSS crawling complete: {successful} URLs successfully indexed")
+        crawl_completed = True
 
-        # Incremental: delete corpus docs that are no longer present at the source, guarded
-        # against a partial feed mass-deleting live docs. present_keys includes both freshly
-        # indexed and Layer-1 unchanged-skipped entries (all still live at the source).
-        if self.incremental:
-            listing_complete = len(present_keys) > 0
+        # Delete corpus docs not present in the current feed window — opt-in via
+        # remove_old_content (NOT auto-enabled by incremental). Note: RSS only sees the last
+        # `days_past` days, so this removes any corpus doc older than the window. Enable it only
+        # if you want the corpus to mirror the current feed rather than accumulate history.
+        if remove_old_content:
+            listing_complete = crawl_completed and len(present_keys) > 0
             ratio = self.cfg.rss_crawler.get("deletion_safety_ratio", 0.5)
             to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
             if not refused:
@@ -194,6 +199,6 @@ class RssCrawler(Crawler):
                 for entry in manifest.values():
                     if entry.doc_id in to_delete_set:
                         self.indexer.delete_doc(entry.doc_id)
-            logger.info(f"Removed {len(to_delete)} docs that are no longer present in the RSS feeds.")
+                logger.info(f"Removed {len(to_delete)} docs that are no longer present in the RSS feeds.")
 
         return

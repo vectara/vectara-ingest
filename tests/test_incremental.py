@@ -50,6 +50,16 @@ class TestComputeFingerprint(unittest.TestCase):
         }, "cfg")
         self.assertEqual(base, stamped)
 
+    def test_volatile_keys_excluded(self):
+        # Per-run volatile fields (RSS crawl_date, sitemap_lastmod) must not enter the
+        # fingerprint, else every run would look changed.
+        base = compute_fingerprint("h", {"url": "u"}, "cfg")
+        with_volatile = compute_fingerprint("h", {
+            "url": "u", "crawl_date": "2024-06-18", "crawl_date_int": 1718668800,
+            "sitemap_lastmod": "2024-06-10",
+        }, "cfg")
+        self.assertEqual(base, with_volatile)
+
 
 class TestConfigSignature(unittest.TestCase):
     def _cfg(self, doc_processing=None, vectara=None):
@@ -143,6 +153,28 @@ class TestPlanDeletions(unittest.TestCase):
         self.assertEqual(to_del, [])
         self.assertFalse(refused)
 
+    def test_ratio_counts_primaries_only(self):
+        # 2 primary files + 8 image sub-docs in corpus; this crawl saw both files. The ratio
+        # must compare 2 present vs 2 primaries (1.0), not 2 vs 10 (0.2) which would refuse.
+        m = {"f1": ManifestEntry(doc_id="f1"), "f2": ManifestEntry(doc_id="f2")}
+        for i in range(8):
+            m[f"f1_img_{i}"] = ManifestEntry(doc_id=f"f1_img_{i}", parent_doc_id="f1")
+        to_del, refused = plan_deletions(m, {"f1", "f2"}, True, 0.5)
+        self.assertFalse(refused)
+        self.assertEqual(to_del, [])
+
+    def test_file_crawler_subdoc_kept_via_present_keys(self):
+        # File crawlers key present_keys on the same doc_id used as a sub-doc's parent_doc_id,
+        # and the parent file itself may have no primary doc (split PDF). The sub-doc must be
+        # kept when its parent key is present.
+        m = {
+            "split_part_0": ManifestEntry(doc_id="split_part_0", parent_doc_id="bigfile-key"),
+            "split_part_1": ManifestEntry(doc_id="split_part_1", parent_doc_id="bigfile-key"),
+        }
+        to_del, refused = plan_deletions(m, {"bigfile-key"}, True, 0.0)
+        self.assertFalse(refused)
+        self.assertEqual(to_del, [])
+
 
 class TestExtractLastModifiedHash(unittest.TestCase):
     def test_hash_present_in_every_branch(self):
@@ -173,6 +205,7 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         ix.source_tag = "website"
         ix.config_sig = "CFG"
         ix.last_skip_reason = None
+        ix.verbose = False
         ix.api_url = "https://api.example.test"
         ix.corpus_key = "ck"
         ix.api_key = "key"
@@ -225,6 +258,22 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         ix._stamp_subdoc_metadata(sub, "parent123")
         self.assertEqual(sub["parent_doc_id"], "parent123")
         self.assertEqual(sub["source"], "website")
+
+    def test_index_document_skips_unchanged(self):
+        # notion-style structured doc: index_document(prior_fingerprint=...) must skip an
+        # unchanged document (matching fingerprint) without POSTing.
+        ix = self._indexer()
+        ix.static_metadata = None
+        ix.use_core_indexing = False
+        ix.cfg = MagicMock()
+        ix._last_response_status = None
+        doc = {"id": "p1", "metadata": {"url": "u", "title": "t"}, "sections": [{"text": "hello"}]}
+        content_hash = __import__("hashlib").md5("hello".encode()).hexdigest()
+        fp = compute_fingerprint(content_hash, {"url": "u", "title": "t"}, "CFG")
+        ok = ix.index_document(dict(doc, metadata=dict(doc["metadata"])), prior_fingerprint=fp)
+        self.assertTrue(ok)
+        self.assertEqual(ix.last_skip_reason, "unchanged")
+        ix.session.post.assert_not_called()
 
     def test_list_docs_surfaces_fields_and_scopes_source(self):
         ix = self._indexer()

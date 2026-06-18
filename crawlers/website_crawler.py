@@ -129,7 +129,8 @@ def _apply_auth_to_indexer(
 
 
 class PageCrawlWorker(object):
-    def __init__(self, cfg: dict, num_per_second: int, prior_fingerprints: dict = None):
+    def __init__(self, cfg: dict, num_per_second: int, prior_fingerprints: dict = None,
+                 sitemap_lastmods: dict = None):
         self.cfg = cfg
         self.rate_limiter = RateLimiter(num_per_second)
         self.indexer = None
@@ -137,6 +138,10 @@ class PageCrawlWorker(object):
         # {normalized_url: fingerprint} from the prior corpus state. Lets index_url skip an
         # unchanged page. Passed by the dispatcher (via ray.put for Ray actors).
         self.prior_fingerprints = prior_fingerprints or {}
+        # {normalized_url: sitemap <lastmod>} for the CURRENT crawl, stamped into each doc so
+        # the next run can compare sitemap-lastmod against sitemap-lastmod (not against the
+        # HTML-derived last_updated, which is a different clock).
+        self.sitemap_lastmods = sitemap_lastmods or {}
         website_crawler_cfg = self.cfg.get('website_crawler', {})
         self.html_processing = website_crawler_cfg.get('html_processing', {})
         self.saml_config = website_crawler_cfg.get('saml_auth')
@@ -247,8 +252,13 @@ class PageCrawlWorker(object):
             logging.error(f"[Worker {os.getpid()}] Indexer not set up. Call setup() before process().")
             return self.RESULT_FAILED
 
+        nu = normalize_url_for_metadata(url)
         metadata = {"source": source, "url": url}
-        prior_fingerprint = self.prior_fingerprints.get(normalize_url_for_metadata(url))
+        # Record the sitemap lastmod (if any) so next run's Layer-1 compares like-for-like.
+        sm_lastmod = self.sitemap_lastmods.get(nu)
+        if sm_lastmod:
+            metadata["sitemap_lastmod"] = sm_lastmod
+        prior_fingerprint = self.prior_fingerprints.get(nu)
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
         try:
@@ -603,8 +613,10 @@ class WebsiteCrawler(Crawler):
         logger.info(f"Loaded corpus manifest: {len(self._manifest)} existing documents")
 
     def _lastmod_prefilter(self, urls: list) -> list:
-        """Drop URLs whose sitemap <lastmod> is not newer than what we last indexed — without
-        fetching them. Skipped URLs are still 'present' for deletion (they exist at source)."""
+        """Drop URLs whose sitemap <lastmod> is not newer than the sitemap <lastmod> we stored
+        at the previous index — without fetching them. Comparing the stored sitemap lastmod
+        (not the HTML-derived last_updated, a different clock) keeps this sound. Skipped URLs
+        are still 'present' for deletion (they exist at source)."""
         if not self._sitemap_lastmod or not self._manifest:
             return urls
         kept, skipped = [], 0
@@ -612,8 +624,8 @@ class WebsiteCrawler(Crawler):
             nu = normalize_url_for_metadata(u)
             entry = self._manifest.get(nu)
             lastmod = self._sitemap_lastmod.get(nu)
-            if (entry and lastmod and entry.last_updated
-                    and not source_is_newer(lastmod, entry.last_updated)):
+            if (entry and lastmod and entry.sitemap_lastmod
+                    and not source_is_newer(lastmod, entry.sitemap_lastmod)):
                 skipped += 1
                 if self.tracker:
                     self.tracker.track_skipped(nu, url=u)
@@ -653,10 +665,13 @@ class WebsiteCrawler(Crawler):
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
+        sitemap_lastmods = self._sitemap_lastmod if self.incremental else {}
         if ray_workers > 0:
-            self._dispatch_to_ray_workers(urls, ray_workers, num_per_second, source, prior_fingerprints)
+            self._dispatch_to_ray_workers(urls, ray_workers, num_per_second, source,
+                                          prior_fingerprints, sitemap_lastmods)
         else:
-            self._dispatch_to_single_process(urls, num_per_second, source, prior_fingerprints)
+            self._dispatch_to_single_process(urls, num_per_second, source,
+                                             prior_fingerprints, sitemap_lastmods)
 
     def _track_result(self, url: str, result: int):
         """Record a worker outcome to the crawl tracker (no-op if tracking disabled)."""
@@ -672,7 +687,7 @@ class WebsiteCrawler(Crawler):
             self.tracker.track_failed(url, url=url)
 
     def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str,
-                                 prior_fingerprints: dict = None):
+                                 prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Dispatch jobs to Ray workers for parallel processing."""
         logger.info(f"Using {ray_workers} ray workers")
         # Stop Playwright from URL discovery to close its asyncio event loop
@@ -687,15 +702,17 @@ class WebsiteCrawler(Crawler):
         self.indexer.web_extractor = None
         ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
 
-        # Broadcast the fingerprint map once via the object store (zero-copied per node, not
+        # Broadcast the per-url maps once via the object store (zero-copied per node, not
         # duplicated per actor). Ray dereferences the ObjectRef into the dict in each actor.
         pf_ref = ray.put(prior_fingerprints or {})
+        lm_ref = ray.put(sitemap_lastmods or {})
 
         # Create workers with serializable config
         actors = [ray.remote(PageCrawlWorker).remote(
             self.cfg,
             num_per_second,
-            pf_ref
+            pf_ref,
+            lm_ref
         ) for _ in range(ray_workers)]
         ray.get([a.setup.remote() for a in actors])
         pool = ray.util.ActorPool(actors)
@@ -713,7 +730,7 @@ class WebsiteCrawler(Crawler):
         ray.shutdown()
 
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str,
-                                    prior_fingerprints: dict = None):
+                                    prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Process URLs sequentially in a single process."""
         # Stop Playwright from URL discovery to close its asyncio event loop
         # This allows worker to create fresh Playwright instance without conflicts
@@ -729,7 +746,8 @@ class WebsiteCrawler(Crawler):
         crawl_worker = PageCrawlWorker(
             self.cfg,
             num_per_second,
-            prior_fingerprints
+            prior_fingerprints,
+            sitemap_lastmods
         )
         crawl_worker.setup()
         for inx, url in enumerate(urls):
@@ -766,8 +784,9 @@ class WebsiteCrawler(Crawler):
             return
 
         removed_urls = []
+        to_delete_set = set(to_delete)
         for k, entry in manifest.items():
-            if entry.doc_id in set(to_delete):
+            if entry.doc_id in to_delete_set:
                 if self.indexer.delete_doc(entry.doc_id) and entry.url:
                     removed_urls.append(entry.url)
         logger.info(f"Removed {len(to_delete)} docs that are not included in the crawl but are in the corpus.")

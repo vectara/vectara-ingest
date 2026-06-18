@@ -1,6 +1,5 @@
 import logging
 logger = logging.getLogger(__name__)
-import hashlib
 from core.crawler import Crawler
 from omegaconf import OmegaConf
 from notion_client import Client
@@ -126,7 +125,9 @@ class NotionCrawler(Crawler):
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
-            if page_id in indexed_ids:
+            # Legacy blind crash-recovery pre-filter — suppressed under incremental, where the
+            # fingerprint (not "was it indexed before") decides, so a changed page is re-fetched.
+            if page_id in indexed_ids and not self.incremental:
                 present_keys.add(page_id)
                 continue
             self.check_shutdown()
@@ -149,9 +150,6 @@ class NotionCrawler(Crawler):
                 present_keys.add(page_id)
                 continue
 
-            # Notion indexes via index_document (not index_url), so the fingerprint skip is
-            # driven here: hash the page text as the content signal and let the indexer compute
-            # + stamp the fingerprint. Returns True (skip upload) when nothing changed.
             present_keys.add(page_id)
             doc = {
                 'id': page_id,
@@ -163,15 +161,15 @@ class NotionCrawler(Crawler):
                 },
                 'sections': [{'text': all_text}]
             }
-            if self.incremental:
-                content_hash = hashlib.md5(all_text.encode("utf-8")).hexdigest()
-                prior_fingerprint = manifest[page_id].fingerprint if page_id in manifest else None
-                if self.indexer._incremental_skip(content_hash, doc['metadata'], prior_fingerprint):
-                    logger.info(f"Notion page {page_id} unchanged (fingerprint match) — skipping")
-                    if self.tracker:
-                        self.tracker.track_skipped(page_id, url=page['url'], title=doc['title'])
-                    continue
-            succeeded = self.indexer.index_document(doc)
+            # index_document computes the fingerprint from the page text + metadata + config and
+            # skips the upload (returning True, last_skip_reason='unchanged') when nothing changed.
+            prior_fingerprint = manifest[page_id].fingerprint if page_id in manifest else None
+            succeeded = self.indexer.index_document(doc, prior_fingerprint=prior_fingerprint)
+            if succeeded and getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+                logger.info(f"Notion page {page_id} unchanged (fingerprint match) — skipping")
+                if self.tracker:
+                    self.tracker.track_skipped(page_id, url=page['url'], title=doc['title'])
+                continue
             if succeeded:
                 logger.info(f"Indexed notion page {page_id}")
                 if self.tracker:

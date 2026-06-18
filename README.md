@@ -574,7 +574,8 @@ Notes and limitations:
 
 * The content fingerprint for web pages is computed over the page HTML. An image whose pixels change behind a stable URL (and which the website crawler indexes as a separate summarized document) is not detected by the HTML hash alone; rely on the source's last-changed signal or an occasional full reindex for those.
 * GDrive permission/sharing changes do not bump Drive `modifiedTime`, so the gdrive crawler does not use a timestamp pre-skip — it always evaluates the (metadata-inclusive) fingerprint so ACL changes are reflected in the corpus.
-* The metadata fields `fingerprint`, `content_hash`, `source`, and `parent_doc_id` are written by the ingest pipeline when `incremental` is on; do not set them yourself.
+* The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are written by the ingest pipeline when `incremental` is on; do not set them yourself.
+* For file crawlers (folder, s3), `remove_old_content` requires `incremental: true` (a single file can map to several corpus documents that are only made safe to diff under incremental). Media, spreadsheet, and split-PDF documents are protected from deletion but are re-indexed every run rather than skipped. For RSS, `remove_old_content` deletes anything outside the current feed window, so leave it off unless you want the corpus to mirror the feed.
 
 ## Deployment
 

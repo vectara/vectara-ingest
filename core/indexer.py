@@ -398,6 +398,7 @@ class Indexer:
                     'content_hash': md.get('content_hash'),
                     'last_updated': md.get('last_updated'),
                     'parent_doc_id': md.get('parent_doc_id'),
+                    'sitemap_lastmod': md.get('sitemap_lastmod'),
                 })
 
             response_metadata = res.get('metadata', None)
@@ -529,18 +530,24 @@ class Indexer:
         self.last_error = f"upload returned HTTP {response.status_code}: {response.text[:200]}"
         return False
 
-    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
+    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False,
+                       prior_fingerprint: Optional[str] = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
 
         Args:
             document (dict): Document to index.
             use_core_indexing (bool): Whether to use the core indexing API.
+            prior_fingerprint (str, optional): When incremental reindexing is enabled, the
+                fingerprint this document had in the corpus on the prior run. If the freshly
+                computed fingerprint matches, the upload is skipped. Lets crawlers that index
+                via structured documents (e.g. notion) use the same skip path as index_url.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
         self._last_response_status = None
+        self.last_skip_reason = None
         api_endpoint = f"{self.api_url}/v2/corpora/{self.corpus_key}/documents"
 
         # Prepare the document data
@@ -562,6 +569,17 @@ class Indexer:
             for section in document['sections']:
                 if 'metadata' in section and 'url' in section['metadata']:
                     section['metadata']['url'] = normalize_url_for_metadata(section['metadata']['url'])
+
+        # Incremental reindexing: fingerprint over the document's text + metadata + config,
+        # stamped into doc metadata and used to skip an unchanged document before upload.
+        if self.incremental and 'metadata' in document:
+            content_hash = hashlib.md5(
+                "".join(s.get('text', '') for s in document.get('sections', [])).encode('utf-8')
+            ).hexdigest()
+            if self._incremental_skip(content_hash, document['metadata'], prior_fingerprint):
+                if self.verbose:
+                    logger.info(f"Document {document['id']} unchanged (fingerprint match) — skipping")
+                return True
 
         if use_core_indexing:
             document['type'] = 'core'
@@ -1097,6 +1115,10 @@ class Indexer:
             bool: True if indexing was successful, False otherwise.
         """
         self.last_error = None
+        # Reset here too (index_url resets its own): index_file is called directly by the
+        # file/folder/s3/gdrive workers on a reused indexer, so a stale 'unchanged' from a
+        # previously-skipped file must not leak into the next file's outcome.
+        self.last_skip_reason = None
         if not os.path.exists(filename):
             self.last_error = f"file does not exist: {filename}"
             logger.error(f"File {filename} does not exist")
@@ -1170,6 +1192,10 @@ class Indexer:
                     error_count = 0
                     
                     for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                        # Tag each split part as a sub-doc of the original file so deletion
+                        # never removes a live part (its doc_id is never in the crawl's present
+                        # set, which is keyed on the original file).
+                        self._stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                         try:
                             part_success = self._index_file(pdf_path, uri, pdf_metadata, pdf_id)
                             if not part_success:
@@ -1250,6 +1276,8 @@ class Indexer:
                 return False
             overall_success = True
             for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                # Tag each split part as a sub-doc of the original file (see Case A above).
+                self._stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                 try:
                     part_success = self.index_file(pdf_path, uri, pdf_metadata, id=pdf_id, title_hint=title_hint)
                     if not part_success:

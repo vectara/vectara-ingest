@@ -98,6 +98,10 @@ class FileCrawlWorker(object):
                 if last_modified:
                     metadata['last_updated'] = str(last_modified)
                 if extension.lower() in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
+                    # index_media_file stores under slugify(local_fname), not the url-derived
+                    # doc_id the crawl tracks. Tag it as a sub-doc of the file's primary key so
+                    # the deletion pass never removes a live media doc (no-op unless incremental).
+                    self.indexer._stamp_subdoc_metadata(metadata, slugify(url))
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata,
@@ -287,8 +291,13 @@ class S3Crawler(Crawler):
             crawl_complete = False
             raise
 
-        # Delete objects removed from S3 (guarded against a partial crawl).
-        if remove_old_content and manifest:
+        # Delete objects removed from S3 (guarded against a partial crawl). Requires
+        # incremental: only then do media docs carry the parent_doc_id tag that keeps the
+        # deletion pass from wrongly removing them.
+        if remove_old_content and not incremental:
+            logger.warning("s3_crawler.remove_old_content requires incremental: true to safely "
+                           "handle media documents; skipping deletion.")
+        elif remove_old_content and incremental and manifest:
             ratio = self.cfg.s3_crawler.get("deletion_safety_ratio", 0.5)
             to_delete, refused = plan_deletions(manifest, present_keys, crawl_complete, ratio)
             if not refused:

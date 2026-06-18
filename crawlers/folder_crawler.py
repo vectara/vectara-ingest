@@ -53,11 +53,19 @@ class FileCrawlWorker(object):
     def process(self, file_path: str, file_name: str, metadata: dict, prior_fingerprint: str = None):
         extension = pathlib.Path(file_path).suffix.lower()
         succeeded = False
+        # Media and dataframe docs are stored under doc_ids unrelated to _doc_id_for_file
+        # (slugify(path) for media, the dataframe doc_id for tables, plus one doc per xls
+        # sheet). Tag them as sub-docs of the file's primary key so the deletion pass treats
+        # them as present iff the file is present (no-op unless incremental). Without this they
+        # would be flagged as orphans and deleted on every incremental run.
+        parent_key = _doc_id_for_file(file_name)
         try:
             if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
+                self.indexer._stamp_subdoc_metadata(metadata, parent_key)
                 succeeded = self.indexer.index_media_file(file_path, metadata=metadata)
 
             elif supported_by_dataframe_parser(file_path):
+                self.indexer._stamp_subdoc_metadata(metadata, parent_key)
                 logger.info(f"Parsing dataframe {file_path}")
                 file_type = determine_dataframe_type(file_path)
                 doc_title = os.path.basename(file_path)
@@ -253,7 +261,12 @@ class FolderCrawler(Crawler):
             raise
 
         # Delete files removed from the source folder (guarded against a partial crawl).
-        if remove_old_content and manifest:
+        # Requires incremental: only then do media/dataframe/split-PDF docs carry the
+        # parent_doc_id tag that keeps the deletion pass from wrongly removing them.
+        if remove_old_content and not incremental:
+            logger.warning("folder_crawler.remove_old_content requires incremental: true to "
+                           "safely handle media/dataframe/split-PDF documents; skipping deletion.")
+        elif remove_old_content and incremental and manifest:
             ratio = folder_config.get("deletion_safety_ratio", 0.5)
             to_delete, refused = plan_deletions(manifest, present_keys, crawl_complete, ratio)
             if not refused:
