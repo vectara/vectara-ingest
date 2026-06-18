@@ -344,29 +344,24 @@ class Indexer:
         self._doc_exists_cache.pop(doc_id, None)
         return True
 
-    def _list_docs(self, source: Optional[str] = None,
-                   metadata_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _list_docs(self, metadata_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         List documents in the corpus.
 
         Args:
-            source (str, optional): If set, scope the listing to documents whose `source`
-                metadata equals this value (so a corpus shared by multiple crawlers is not
-                cross-deleted). Builds a metadata_filter unless one is given explicitly.
-            metadata_filter (str, optional): Raw Vectara metadata filter expression; overrides
-                `source` if provided.
+            metadata_filter (str, optional): Raw Vectara metadata filter expression (same
+                syntax as a query metadata filter, e.g. "doc.source = 'website'"). NOTE: the
+                list API only honors filters on metadata declared as a *filter attribute* on
+                the corpus; otherwise it errors. Source-scoping for incremental crawls is done
+                client-side in build_manifest instead, so it does not depend on corpus config.
 
         Returns:
-            list of dicts, one per document, with: id, url, fingerprint, content_hash,
-            last_updated, parent_doc_id. Values are taken from metadata; missing keys are None.
+            list of dicts, one per document, with: id, url, source, fingerprint, content_hash,
+            last_updated, parent_doc_id, sitemap_lastmod. Values are taken from metadata;
+            missing keys are None.
         """
         page_key = None  # Initialize page_key as None
         docs = []
-
-        if metadata_filter is None and source:
-            # Vectara metadata filter expressions reference fields as doc.<field>.
-            escaped = str(source).replace("'", "\\'")
-            metadata_filter = f"doc.source = '{escaped}'"
 
         # Loop until there's no next page
         while True:
@@ -394,6 +389,7 @@ class Indexer:
                 docs.append({
                     'id': doc['id'],
                     'url': md.get('url'),
+                    'source': md.get('source'),
                     'fingerprint': md.get('fingerprint'),
                     'content_hash': md.get('content_hash'),
                     'last_updated': md.get('last_updated'),

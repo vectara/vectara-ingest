@@ -132,11 +132,20 @@ def config_signature(cfg: Any) -> str:
 def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None) -> Dict[str, ManifestEntry]:
     """
     One corpus scan -> {key: ManifestEntry}. `key` is "url" (normalized doc URL) for
-    URL-based crawlers or "id" (doc_id) for file-based crawlers. `source` scopes the listing
-    to this crawler's own documents so a shared corpus is not cross-deleted.
+    URL-based crawlers or "id" (doc_id) for file-based crawlers.
+
+    `source` scopes the manifest to this crawler's own documents so a corpus shared by
+    multiple crawlers is not cross-deleted. Scoping is done CLIENT-SIDE (by each doc's stored
+    `source` metadata) rather than via the list API's metadata_filter, because that filter only
+    works when `source` was declared a filter attribute at corpus creation — otherwise it would
+    silently fail and degrade incremental to a full re-index. Docs missing a `source` (indexed
+    before incremental was enabled) are excluded from a source-scoped manifest; they are then
+    treated as new and re-indexed (and stamped) on the first incremental run.
     """
     manifest: Dict[str, ManifestEntry] = {}
-    for d in indexer._list_docs(source=source):
+    for d in indexer._list_docs():
+        if source is not None and d.get("source") != source:
+            continue
         entry = ManifestEntry(
             doc_id=d.get("id"),
             fingerprint=d.get("fingerprint"),

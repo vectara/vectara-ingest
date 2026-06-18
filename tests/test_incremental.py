@@ -275,37 +275,38 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         self.assertEqual(ix.last_skip_reason, "unchanged")
         ix.session.post.assert_not_called()
 
-    def test_list_docs_surfaces_fields_and_scopes_source(self):
+    def test_list_docs_surfaces_fields_no_auto_filter(self):
         ix = self._indexer()
         resp = MagicMock()
         resp.status_code = 200
         resp.json.return_value = {
             "documents": [
-                {"id": "d1", "metadata": {"url": "u1", "fingerprint": "f1",
+                {"id": "d1", "metadata": {"url": "u1", "source": "website", "fingerprint": "f1",
                                           "content_hash": "c1", "last_updated": "2024-01-01"}},
                 {"id": "d2", "metadata": {"url": "u2"}},  # missing keys -> None
             ],
             "metadata": {"page_key": None},
         }
         ix.session.get.return_value = resp
-        docs = ix._list_docs(source="website")
+        docs = ix._list_docs()
         self.assertEqual(docs[0]["fingerprint"], "f1")
+        self.assertEqual(docs[0]["source"], "website")
         self.assertIsNone(docs[1]["fingerprint"])  # no KeyError
         self.assertIsNone(docs[1]["parent_doc_id"])
-        # source scoping applied as a metadata_filter
+        # No automatic metadata_filter is sent (source-scoping is client-side, so it does not
+        # depend on the corpus having `source` as a filter attribute).
         _, kwargs = ix.session.get.call_args
-        self.assertIn("metadata_filter", kwargs["params"])
-        self.assertIn("doc.source", kwargs["params"]["metadata_filter"])
+        self.assertNotIn("metadata_filter", kwargs["params"])
 
 
 class TestBuildManifest(unittest.TestCase):
     def test_url_keyed_normalizes(self):
         ix = MagicMock()
         ix._list_docs.return_value = [
-            {"id": "d1", "url": "https://ex.com/A%20B", "fingerprint": "f1",
+            {"id": "d1", "url": "https://ex.com/A%20B", "source": "website", "fingerprint": "f1",
              "content_hash": "c1", "last_updated": "2024-01-01", "parent_doc_id": None},
-            {"id": "d2", "url": None, "fingerprint": None, "content_hash": None,
-             "last_updated": None, "parent_doc_id": None},  # skipped (no url)
+            {"id": "d2", "url": None, "source": "website", "fingerprint": None,
+             "content_hash": None, "last_updated": None, "parent_doc_id": None},  # skipped (no url)
         ]
         m = build_manifest(ix, key="url", source="website")
         self.assertEqual(len(m), 1)
@@ -315,11 +316,30 @@ class TestBuildManifest(unittest.TestCase):
     def test_id_keyed(self):
         ix = MagicMock()
         ix._list_docs.return_value = [
-            {"id": "file123", "url": "s3://b/k", "fingerprint": "f1",
+            {"id": "file123", "url": "s3://b/k", "source": "S3", "fingerprint": "f1",
              "content_hash": "c1", "last_updated": None, "parent_doc_id": None},
         ]
         m = build_manifest(ix, key="id", source="S3")
         self.assertIn("file123", m)
+
+    def test_source_scoping_is_client_side(self):
+        # A corpus shared by two crawlers: build_manifest(source="website") must include only
+        # the website docs, regardless of any list-API filter support.
+        ix = MagicMock()
+        ix._list_docs.return_value = [
+            {"id": "w1", "url": "https://a", "source": "website", "fingerprint": "f1",
+             "content_hash": None, "last_updated": None, "parent_doc_id": None},
+            {"id": "s1", "url": "https://b", "source": "docs", "fingerprint": "f2",
+             "content_hash": None, "last_updated": None, "parent_doc_id": None},
+            {"id": "n1", "url": "https://c", "source": None, "fingerprint": None,
+             "content_hash": None, "last_updated": None, "parent_doc_id": None},  # legacy, no source
+        ]
+        m = build_manifest(ix, key="url", source="website")
+        self.assertEqual(len(m), 1)
+        self.assertEqual(next(iter(m.values())).doc_id, "w1")
+        # Unscoped (legacy remove_old_content) returns everything with a url.
+        m_all = build_manifest(ix, key="url", source=None)
+        self.assertEqual(len(m_all), 3)
 
 
 class TestSitemapLastmod(unittest.TestCase):
