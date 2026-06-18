@@ -297,5 +297,31 @@ class TestInternalCrawlerDiscovery(unittest.TestCase):
         self.assertIsNot(kwargs.get("session"), fake_self.saml_session)
 
 
+class TestFilterAndPrepareUrls(unittest.TestCase):
+    """Regression: discovery deduplicated raw URLs while doc ids and
+    remove_old_content use normalize_url_for_metadata, so encoding variants
+    of the same page were crawled (and indexed to the same doc id) twice."""
+
+    def _run(self, urls):
+        fake_self = SimpleNamespace(
+            cfg=_make_cfg(crawl_report=False),
+            pos_patterns=[],
+            neg_patterns=[],
+        )
+        return WebsiteCrawler._filter_and_prepare_urls(fake_self, urls)
+
+    def test_encoding_variants_deduplicated(self):
+        urls = [
+            "https://example.com/page%20name",
+            "https://example.com/page name",
+        ]
+        result = self._run(urls)
+        self.assertEqual(len(result), 1)
+
+    def test_distinct_urls_are_kept(self):
+        urls = ["https://example.com/a", "https://example.com/b"]
+        self.assertEqual(sorted(self._run(urls)), sorted(urls))
+
+
 if __name__ == "__main__":
     unittest.main()

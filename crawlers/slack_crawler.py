@@ -244,52 +244,54 @@ class SlackCrawler(Crawler):
         self.retries = self.cfg.slack_crawler.get("retries", 5)
         self.workspace_url = self.cfg.slack_crawler.get("workspace_url", "https://vectara.slack.com")
 
+    def _with_retries(self, what, fn):
+        """
+        Call fn() up to self.retries times, returning its result on the first
+        success. Returns None when all attempts fail.
+        """
+        for _ in range(self.retries):
+            try:
+                return fn()
+            except IncompleteRead as e:
+                handle_incomplete_request_error(what, e)
+            except SlackApiError as e:
+                handle_slack_api_error(what, e)
+            except KeyError as e:
+                logger.error(f"Error while fetching the {what}: {e}")
+        logger.error(f"Giving up fetching {what} after {self.retries} attempts")
+        return None
+
     def get_users_info(self):
         """
         Returns the list of the users of the workspace.
         API docs: https://api.slack.com/methods/users.list
         """
-        for _ in range(self.retries):
-            try:
-                users_info = {}
-                users_response = self.client.users_list()
-                users = users_response["members"]
-                for user in users:
-                    users_info[user["id"]] = user["profile"]["display_name_normalized"]
+        def fetch():
+            users_info = {}
+            users_response = self.client.users_list()
+            for user in users_response["members"]:
+                users_info[user["id"]] = user["profile"]["display_name_normalized"]
+            logger.info("Users information retrieved")
+            return users_info
 
-                logger.info("Users information retrieved")
-                return users_info
-
-            except IncompleteRead as e:
-                handle_incomplete_request_error("users", e)
-
-            except SlackApiError as e:
-                handle_slack_api_error("users", e)
-
-            except KeyError as e:
-                logger.error(f"Error while fetching the users info: {e}")
+        users_info = self._with_retries("users info", fetch)
+        return users_info if users_info is not None else {}
 
     def get_channels(self):
         """
         Returns the list of the channels of the workspace.
         API docs: https://api.slack.com/methods/conversations.list
         """
+        def fetch():
+            channels = []
+            for result in self.client.conversations_list():
+                for channel in result["channels"]:
+                    channels.append(channel)
+            logger.info("channels retrieved")
+            return channels
 
-        channels = []
-        for _ in range(self.retries):
-            try:
-                for result in self.client.conversations_list():
-                    for channel in result["channels"]:
-                        channels.append(channel)
-
-                logger.info("channels retrieved")
-                return channels
-
-            except IncompleteRead as e:
-                handle_incomplete_request_error("channels", e)
-
-            except SlackApiError as e:
-                handle_slack_api_error("channels", e)
+        channels = self._with_retries("channels", fetch)
+        return channels if channels is not None else []
 
     def get_messages_of_channel(self, channel, users_info):
         """
@@ -302,34 +304,30 @@ class SlackCrawler(Crawler):
         messages = []
         cursor = None
         last_message_timestamp = None
-        response = None
         if self.days_past is not None:
             last_message_timestamp = str(get_timestamp(self.days_past))
 
         while True:
-            for _ in range(self.retries):
-                try:
+            # limit represent number of messages to return in a request. Default value is 100 and
+            # max is 999. Slack recommends no more than 200 results at a time.
+            # Check API docs for more detail.
+            response = self._with_retries(
+                f"messages of channel `{channel['name']}`",
+                lambda: self.client.conversations_history(channel=channel["id"], oldest=last_message_timestamp,
+                                                          cursor=cursor,
+                                                          limit=200))
+            if response is None:
+                logger.error(f"Aborting message fetch for channel `{channel['name']}`; "
+                             f"returning {len(messages)} messages fetched so far")
+                break
 
-                    # limit represent number of messages to return in a request. Default value is 100 and
-                    # max is 999. Slack recommends no more than 200 results at a time.
-                    # Check API docs for more detail.
-                    response = self.client.conversations_history(channel=channel["id"], oldest=last_message_timestamp,
-                                                                 cursor=cursor,
-                                                                 limit=200)
-                except IncompleteRead as e:
-                    handle_incomplete_request_error("messages", e)
+            messages += response["messages"]
+            # Check if there are more messages to retrieve
+            if not response["has_more"]:
+                logger.info(f"messages fetched successfully for channel `{channel['name']}`")
+                break
+            cursor = response["response_metadata"]["next_cursor"]
 
-                except SlackApiError as e:
-                    handle_slack_api_error("messages", e)
-
-            if response is not None:
-                messages += response["messages"]
-                # Check if there are more messages to retrieve
-                if not response["has_more"]:
-                    break
-                cursor = response["response_metadata"]["next_cursor"]
-
-        logger.info(f"messages fetched successfully for channel `{channel['name']}`")
         replace_user_id_with_user_handler(messages, users_info)
         return messages
 
@@ -349,18 +347,14 @@ class SlackCrawler(Crawler):
         :param users_info: list of Slack users
         :return:
         """
-        for _ in range(self.retries):
-            try:
-                replies_response = self.client.conversations_replies(channel=channel_id, ts=message_ts)
-                replies = replies_response["messages"][1:]  # skipping the 1st message since it's a parent message
-                replace_user_id_with_user_handler(replies, users_info)
-                return replies
+        def fetch():
+            replies_response = self.client.conversations_replies(channel=channel_id, ts=message_ts)
+            replies = replies_response["messages"][1:]  # skipping the 1st message since it's a parent message
+            replace_user_id_with_user_handler(replies, users_info)
+            return replies
 
-            except IncompleteRead as e:
-                handle_incomplete_request_error("threaded messages", e)
-
-            except SlackApiError as e:
-                handle_slack_api_error("threaded messages", e)
+        replies = self._with_retries("threaded messages", fetch)
+        return replies if replies is not None else []
 
     def crawl(self) -> None:
         """

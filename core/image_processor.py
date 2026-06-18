@@ -81,7 +81,7 @@ class ImageProcessor:
 
                 elif image_url.startswith('http'):
                     # download as before
-                    response = requests.get(image_url, headers=get_headers(self.cfg), stream=True)
+                    response = requests.get(image_url, headers=get_headers(self.cfg), stream=True, timeout=30)
                     if response.status_code != 200:
                         logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
                         continue

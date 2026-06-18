@@ -97,11 +97,12 @@ class YtCrawler(Crawler):
             'id': playlist.playlist_id,
             'title': playlist.title,
             'metadata': {'url': playlist.playlist_url},
+            'sections': [],
         }
         try:
             main_doc['sections'].append({'text': playlist.description})
-        except Exception:
-            logger.info(f"Can't index description of playlist {playlist.title}, skipping")
+        except Exception as e:
+            logger.warning(f"Can't index description of playlist {playlist.title}, skipping (error: {e})")
 
         self.indexer.index_document(main_doc)
 

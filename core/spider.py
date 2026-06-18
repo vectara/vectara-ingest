@@ -87,8 +87,8 @@ def recursive_crawl(url: str, depth: int,
         for new_url in new_urls:
             visited = recursive_crawl(new_url, depth-1, pos_patterns, neg_patterns, indexer, visited, verbose)
     except Exception as e:
-        logger.error(f"Error {e} in recursive_crawl for {url}")
-        pass
+        logger.error(f"recursive_crawl failed for {url} ({type(e).__name__}: {e}); "
+                     "links discovered from this page may be incomplete")
 
     return set(visited)
 

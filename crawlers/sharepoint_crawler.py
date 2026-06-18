@@ -216,14 +216,19 @@ class SharepointCrawler(Crawler):
             
         Returns:
             The result of the function execution
+
+        Raises:
+            The last error when all attempts fail (including auth errors).
         """
-        retries = self.cfg.sharepoint_crawler.get("retry_attempts", 3)
+        retries = max(1, self.cfg.sharepoint_crawler.get("retry_attempts", 3))
         delay = self.cfg.sharepoint_crawler.get("retry_delay", 5)
         auto_refresh_session = self.cfg.sharepoint_crawler.get("auto_refresh_session", True)
+        last_error = None
         for attempt in range(retries):
             try:
                 return func.execute_query()
             except Exception as e:
+                last_error = e
                 error_str = str(e).lower()
                 if "401" in error_str or "unauthorized" in error_str:
                     logger.warning(f"Authentication error detected (attempt {attempt + 1}): {e}")
@@ -236,11 +241,10 @@ class SharepointCrawler(Crawler):
                             logger.warning(f"Session refresh failed: {refresh_error}")
                     elif not auto_refresh_session:
                         logger.info("Session auto-refresh is disabled in configuration")
-                elif attempt == retries - 1:
-                    raise
-                else:
+                if attempt < retries - 1:
                     logger.warning(f"Attempt {attempt + 1} failed with error: {e}. Retrying in {delay} seconds...")
                     time.sleep(delay)
+        raise last_error
     
     def refresh_sharepoint_session(self):
         """
