@@ -418,6 +418,25 @@ def _walk(url: str, seen: Set[str] | None = None, session=None) -> Iterable[str]
             yield from _walk(child, seen, session=session)
 
 
+def _walk_with_meta(url: str, seen: Set[str] | None = None, session=None):
+    """
+    Like _walk, but yields (loc, lastmod) tuples. `lastmod` is the sitemap <lastmod> string
+    when present, else None. Children reached via a sitemap-index carry no lastmod of their own
+    (their entries' lastmod is yielded from the leaf urlset they point to).
+    """
+    seen = seen or set()
+    sm = Sitemap(_download(url, session=session))
+    if sm.type == "urlset":
+        for entry in sm:                       # scrapy yields dicts: loc, lastmod, ...
+            loc = entry.get("loc")
+            if loc and loc not in seen:
+                seen.add(loc)
+                yield loc, entry.get("lastmod")
+    elif sm.type == "sitemapindex":
+        for child in iterloc(sm):
+            yield from _walk_with_meta(child, seen, session=session)
+
+
 COMMON_SITEMAP_FILENAMES = (
     "sitemap.xml",
     "sitemap_index.xml",
@@ -488,6 +507,33 @@ def sitemap_to_urls(url: str, session=None) -> list[str]:
             # Swallow individual sitemap failures but record what happened
             logger.warning(f"[sitemap_to_urls] -- skipping {sm_url}: {exc}")
     return list(dict.fromkeys(all_urls))  # de-dupe while keeping order
+
+
+def sitemap_to_urls_with_meta(url: str, session=None) -> list[tuple[str, Optional[str]]]:
+    """
+    Same discovery as sitemap_to_urls, but returns (loc, lastmod) tuples so incremental
+    crawling can skip URLs whose sitemap <lastmod> is not newer than what is already indexed.
+    `lastmod` is None when the sitemap does not declare one. De-duped on loc, order preserved.
+    """
+    parsed_path = PurePosixPath(urlparse(url).path.lower())
+    is_explicit_sitemap = parsed_path.suffix in {".xml", ".gz"}
+
+    pairs: list[tuple[str, Optional[str]]] = []
+    if is_explicit_sitemap:
+        pairs = list(_walk_with_meta(url, session=session))
+    else:
+        for sm_url in discover_sitemaps(url, session=session):
+            try:
+                pairs.extend(_walk_with_meta(sm_url, session=session))
+            except Exception as exc:
+                logger.warning(f"[sitemap_to_urls_with_meta] -- skipping {sm_url}: {exc}")
+
+    # De-dupe on loc, keep first lastmod seen, preserve order
+    out: dict[str, Optional[str]] = {}
+    for loc, lastmod in pairs:
+        if loc not in out:
+            out[loc] = lastmod
+    return list(out.items())
 
 
 if __name__ == "__main__":

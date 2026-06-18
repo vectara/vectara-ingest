@@ -11,6 +11,7 @@ from slugify import slugify
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import setup_logging, get_docker_or_local_path, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+from core.incremental import build_manifest, plan_deletions, source_is_newer
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -49,7 +50,7 @@ class FileCrawlWorker(object):
         self.df_parser = None
         release_memory()
 
-    def process(self, file_path: str, file_name: str, metadata: dict):
+    def process(self, file_path: str, file_name: str, metadata: dict, prior_fingerprint: str = None):
         extension = pathlib.Path(file_path).suffix.lower()
         succeeded = False
         try:
@@ -87,7 +88,8 @@ class FileCrawlWorker(object):
                 # after metadata changes (e.g. adding a "url" field) updates the
                 # existing document instead of creating a new one with a URL-derived id.
                 doc_id = _doc_id_for_file(file_name)
-                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata, id=doc_id))
+                succeeded = bool(self.indexer.index_file(filename=file_path, uri=uri_to_use, metadata=metadata,
+                                                         id=doc_id, prior_fingerprint=prior_fingerprint))
 
             logger.info(f"Finished indexing {file_path} with metadata={metadata}")
 
@@ -97,6 +99,8 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
+        if succeeded and getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+            return 2  # unchanged — skipped
         return 0 if succeeded else 1
 
 
@@ -114,6 +118,8 @@ class FolderCrawler(Crawler):
         ray_workers = folder_config.get("ray_workers", 0)
         num_per_second = max(folder_config.get("num_per_second", 10), 1)
         source = folder_config.get("source", "folder")
+        incremental = folder_config.get("incremental", False)
+        remove_old_content = folder_config.get("remove_old_content", False)
 
         if metadata_file:
             df = pd.read_csv(f"{folder}/{metadata_file}")
@@ -152,12 +158,52 @@ class FolderCrawler(Crawler):
                     
                     files_to_process.append((file_path, file_name, file_metadata))
 
-        # Pre-filter already-indexed files for crash recovery / resume (skip when reindex=True)
-        if self.tracker and not self.cfg.vectara.get("reindex", False):
+        # Full discovered set (everything that still exists at the source) keyed by Vectara
+        # doc_id — used for safe deletion of removed files. Captured before any skipping.
+        present_keys = {_doc_id_for_file(fn) for _fp, fn, _fm in files_to_process}
+        crawl_complete = True
+
+        # Build the corpus manifest once when needed for incremental skipping and/or deletion.
+        manifest = {}
+        if incremental or remove_old_content:
+            manifest = build_manifest(self.indexer, key="id",
+                                      source=(source if incremental else None))
+            logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+
+        prior_fingerprints = {}
+        if incremental and manifest:
+            prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
+            # Layer 1: skip files whose mtime (file_metadata['last_updated']) is not newer
+            # than what we indexed — without reading/parsing them.
+            kept, skipped = [], 0
+            for fp, fn, fm in files_to_process:
+                entry = manifest.get(_doc_id_for_file(fn))
+                if entry and entry.last_updated and not source_is_newer(fm.get("last_updated"), entry.last_updated):
+                    skipped += 1
+                    if self.tracker:
+                        self.tracker.track_skipped(fp, title=fn)
+                else:
+                    kept.append((fp, fn, fm))
+            if skipped:
+                logger.info(f"Incremental: skipped {skipped} unchanged files via mtime "
+                            f"({len(kept)} remaining)")
+            files_to_process = kept
+        elif self.tracker and not self.cfg.vectara.get("reindex", False):
+            # Legacy blind crash-recovery pre-filter — suppressed under incremental.
             indexed = self.tracker.get_indexed_ids()
             before = len(files_to_process)
             files_to_process = [(fp, fn, fm) for fp, fn, fm in files_to_process if fp not in indexed]
             logger.info(f"Skipping {before - len(files_to_process)} already-indexed files ({len(files_to_process)} remaining)")
+
+        def _track(file_path, file_name, result):
+            if not self.tracker:
+                return
+            if result == 0:
+                self.tracker.track_indexed(file_path, title=file_name)
+            elif result == 2:
+                self.tracker.track_skipped(file_path, title=file_name)
+            else:
+                self.tracker.track_failed(file_path, title=file_name)
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
@@ -165,41 +211,52 @@ class FolderCrawler(Crawler):
         # Decide which config to use for the dataframe parser
         df_parser_config = self.cfg.get('dataframe_processing', self.cfg.get('folder_crawler'))
 
-        if ray_workers > 0:
-            logger.info(f"Using {ray_workers} ray workers to process {len(files_to_process)} files")
-            self.indexer.p = self.indexer.browser = None
-            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [
-                ray.remote(FileCrawlWorker).remote(self.cfg, df_parser_config, self.indexer, num_per_second)
-                for _ in range(ray_workers)
-            ]
-            ray.get([a.setup.remote() for a in actors])
-            pool = ray.util.ActorPool(actors)
-            batch_size = ray_workers * 4
-            for batch_start in range(0, len(files_to_process), batch_size):
-                self.check_shutdown()
-                batch = files_to_process[batch_start:batch_start + batch_size]
-                results = list(pool.map(lambda a, u: a.process.remote(u[0], u[1], u[2]), batch))
-                if self.tracker:
+        try:
+            if ray_workers > 0:
+                logger.info(f"Using {ray_workers} ray workers to process {len(files_to_process)} files")
+                self.indexer.p = self.indexer.browser = None
+                ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+                actors = [
+                    ray.remote(FileCrawlWorker).remote(self.cfg, df_parser_config, self.indexer, num_per_second)
+                    for _ in range(ray_workers)
+                ]
+                ray.get([a.setup.remote() for a in actors])
+                pool = ray.util.ActorPool(actors)
+                batch_size = ray_workers * 4
+                for batch_start in range(0, len(files_to_process), batch_size):
+                    self.check_shutdown()
+                    batch = files_to_process[batch_start:batch_start + batch_size]
+                    results = list(pool.map(
+                        lambda a, u: a.process.remote(
+                            u[0], u[1], u[2],
+                            prior_fingerprint=prior_fingerprints.get(_doc_id_for_file(u[1]))),
+                        batch))
                     for (file_path, file_name, _fm), result in zip(batch, results):
-                        if result == 0:
-                            self.tracker.track_indexed(file_path, title=file_name)
-                        else:
-                            self.tracker.track_failed(file_path, title=file_name)
-                logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
-            ray.get([a.cleanup.remote() for a in actors])
-            ray.shutdown()
-        else:
-            crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
-            crawl_worker.setup()
-            for inx, (file_path, file_name, file_metadata) in enumerate(files_to_process):
-                self.check_shutdown()
-                if (inx + 1) % 100 == 0:
-                    logger.info(f"Crawling file number {inx+1} out of {len(files_to_process)}")
-                result = crawl_worker.process(file_path, file_name, file_metadata)
-                if self.tracker:
-                    if result == 0:
-                        self.tracker.track_indexed(file_path, title=file_name)
-                    else:
-                        self.tracker.track_failed(file_path, title=file_name)
-            crawl_worker.cleanup()
+                        _track(file_path, file_name, result)
+                    logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
+                ray.get([a.cleanup.remote() for a in actors])
+                ray.shutdown()
+            else:
+                crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
+                crawl_worker.setup()
+                for inx, (file_path, file_name, file_metadata) in enumerate(files_to_process):
+                    self.check_shutdown()
+                    if (inx + 1) % 100 == 0:
+                        logger.info(f"Crawling file number {inx+1} out of {len(files_to_process)}")
+                    result = crawl_worker.process(
+                        file_path, file_name, file_metadata,
+                        prior_fingerprint=prior_fingerprints.get(_doc_id_for_file(file_name)))
+                    _track(file_path, file_name, result)
+                crawl_worker.cleanup()
+        except Exception:
+            crawl_complete = False
+            raise
+
+        # Delete files removed from the source folder (guarded against a partial crawl).
+        if remove_old_content and manifest:
+            ratio = folder_config.get("deletion_safety_ratio", 0.5)
+            to_delete, refused = plan_deletions(manifest, present_keys, crawl_complete, ratio)
+            if not refused:
+                for doc_id in to_delete:
+                    self.indexer.delete_doc(doc_id)
+                logger.info(f"Removed {len(to_delete)} docs not present in the source folder.")

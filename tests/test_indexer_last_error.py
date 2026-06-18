@@ -33,6 +33,10 @@ def _make_indexer():
     ix.reindex = False
     ix.static_metadata = {}
     ix.last_error = None
+    # Incremental reindexing attrs (real __init__ sets these; __new__ bypasses it).
+    ix.incremental = False
+    ix.source_tag = "test"
+    ix.config_sig = "cfg"
     return ix
 
 

@@ -5,6 +5,8 @@ import ray
 import psutil
 from core.crawler import Crawler
 from core.indexer import Indexer
+from core.indexer_utils import normalize_url_for_metadata
+from core.incremental import build_manifest, plan_deletions, source_is_newer
 from core.utils import setup_logging
 import feedparser
 from datetime import datetime, timedelta
@@ -12,10 +14,13 @@ from time import mktime
 from omegaconf import DictConfig
 
 class RssUrlWorker(object):
-    def __init__(self, cfg: DictConfig, indexer: Indexer, source: str):
+    def __init__(self, cfg: DictConfig, indexer: Indexer, source: str, prior_fingerprints: dict = None):
         self.indexer = indexer
         self.cfg = cfg
         self.source = source
+        # {normalized_url: fingerprint} from the prior corpus state; lets index_url skip an
+        # unchanged entry after fetching. Empty unless incremental is enabled.
+        self.prior_fingerprints = prior_fingerprints or {}
 
     def setup(self):
         self.indexer.setup()
@@ -44,7 +49,8 @@ class RssUrlWorker(object):
                 'crawl_date': str(today),
                 'crawl_date_int': crawl_date_int
             }
-            succeeded = self.indexer.index_url(url, metadata=metadata)
+            prior_fingerprint = self.prior_fingerprints.get(normalize_url_for_metadata(url))
+            succeeded = self.indexer.index_url(url, metadata=metadata, prior_fingerprint=prior_fingerprint)
             if succeeded:
                 logger.info(f"Successfully indexed {url}")
                 return 1
@@ -59,6 +65,8 @@ class RssCrawler(Crawler):
     
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
+        # Incremental reindexing state (see core/incremental.py).
+        self.incremental = self.cfg.rss_crawler.get("incremental", False)
         # Get scrape_method from rss_crawler config if available
         scrape_method = self.cfg.rss_crawler.get('scrape_method')
         if scrape_method:
@@ -105,6 +113,31 @@ class RssCrawler(Crawler):
                 logger.debug(f"Skipping duplicate URL {url}")
         logger.info(f"After deduplication, we have found {len(unique_urls)} URLs to index from the last {self.cfg.rss_crawler.days_past} days ({source})")
 
+        # Incremental reindexing: build the corpus manifest once, source-scoped, then use it
+        # for a Layer-1 pre-fetch skip (pub_date not newer than what we last indexed) and to
+        # pass prior fingerprints to the workers (Layer-2 post-fetch skip).
+        manifest = {}
+        prior_fingerprints = {}
+        present_keys = set()       # normalized urls present at the source (indexed or skipped)
+        if self.incremental:
+            manifest = build_manifest(self.indexer, key="url", source=source)
+            logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+            prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
+            kept = []
+            skipped = 0
+            for url, title, pub_date in unique_urls:
+                nu = normalize_url_for_metadata(url)
+                present_keys.add(nu)
+                entry = manifest.get(nu)
+                if entry and entry.last_updated and not source_is_newer(pub_date, entry.last_updated):
+                    skipped += 1
+                    continue
+                kept.append((url, title, pub_date))
+            unique_urls = kept
+            if skipped:
+                logger.info(f"Incremental: skipped {skipped} unchanged entries via pub_date "
+                            f"({len(unique_urls)} remaining to index)")
+
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
@@ -114,7 +147,7 @@ class RssCrawler(Crawler):
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
             actors = [
-                ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source)
+                ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source, prior_fingerprints)
                 for _ in range(ray_workers)
             ]
             for a in actors:
@@ -134,7 +167,7 @@ class RssCrawler(Crawler):
             ray.shutdown()
         else:
             # Sequential processing (original behavior)
-            rss_worker = RssUrlWorker(self.cfg, self.indexer, source)
+            rss_worker = RssUrlWorker(self.cfg, self.indexer, source, prior_fingerprints)
             rss_worker.setup()
             successful = 0
             for inx, url_data in enumerate(unique_urls):
@@ -148,5 +181,19 @@ class RssCrawler(Crawler):
             # Cleanup worker
             rss_worker.cleanup()
             logger.info(f"RSS crawling complete: {successful} URLs successfully indexed")
+
+        # Incremental: delete corpus docs that are no longer present at the source, guarded
+        # against a partial feed mass-deleting live docs. present_keys includes both freshly
+        # indexed and Layer-1 unchanged-skipped entries (all still live at the source).
+        if self.incremental:
+            listing_complete = len(present_keys) > 0
+            ratio = self.cfg.rss_crawler.get("deletion_safety_ratio", 0.5)
+            to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
+            if not refused:
+                to_delete_set = set(to_delete)
+                for entry in manifest.values():
+                    if entry.doc_id in to_delete_set:
+                        self.indexer.delete_doc(entry.doc_id)
+            logger.info(f"Removed {len(to_delete)} docs that are no longer present in the RSS feeds.")
 
         return

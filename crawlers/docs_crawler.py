@@ -16,6 +16,8 @@ from core.utils import (
 )
 from core.spider import run_link_spider_isolated
 from core.indexer import Indexer
+from core.indexer_utils import normalize_url_for_metadata
+from core.incremental import build_manifest, plan_deletions
 
 import ray
 
@@ -39,10 +41,13 @@ class UrlCrawlWorker(object):
             logger.info("URL is None, skipping")
             return -1
         metadata = {"source": source, "url": url}
+        prior_fingerprint = self.crawler.prior_fingerprints.get(normalize_url_for_metadata(url))
         logger.info(f"Crawling and indexing {url}")
         try:
             with self.rate_limiter:
-                succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.crawler.html_processing)
+                succeeded = self.indexer.index_url(
+                    url, metadata=metadata, html_processing=self.crawler.html_processing,
+                    prior_fingerprint=prior_fingerprint)
             if not succeeded:
                 logger.warning(f"Indexing failed for {url}")
             else:
@@ -59,6 +64,12 @@ class DocsCrawler(Crawler):
     
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
+        # Incremental reindexing state (see core/incremental.py).
+        self.incremental = self.cfg.docs_crawler.get("incremental", False)
+        self.source = self.cfg.docs_crawler.get("source", self.cfg.docs_crawler.docs_system)
+        # {normalized_url: fingerprint} from the prior corpus state; lets index_url skip
+        # an unchanged page. Populated in crawl() when incremental is enabled.
+        self.prior_fingerprints = {}
         # Get scrape_method from docs_crawler config if available
         scrape_method = self.cfg.docs_crawler.get('scrape_method')
         if scrape_method:
@@ -197,6 +208,17 @@ class DocsCrawler(Crawler):
         else:
             logger.info(f"Collected {len(all_urls)} URLs to crawl and index.")
 
+        # Build the corpus manifest once when incremental skipping or deletion needs it.
+        # Source-scoped in incremental mode so a shared corpus is not cross-deleted; left
+        # unscoped for legacy remove_old_content to preserve its behavior.
+        manifest = {}
+        if self.incremental or self.cfg.docs_crawler.get("remove_old_content", False):
+            manifest_source = self.source if self.incremental else None
+            manifest = build_manifest(self.indexer, key="url", source=manifest_source)
+            logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+        if self.incremental:
+            self.prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
+
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
         if ray_workers > 0:
@@ -223,14 +245,21 @@ class DocsCrawler(Crawler):
             crawl_worker.cleanup()
 
         # If remove_old_content is set to true:
-        # remove from corpus any document previously indexed that is NOT in the crawl list
+        # remove from corpus any document previously indexed that is NOT in the crawl list,
+        # guarded by plan_deletions against a partial/interrupted crawl mass-deleting live docs.
         if self.cfg.docs_crawler.get("remove_old_content", False):
-            existing_docs = self.indexer._list_docs()
-            docs_to_remove = [t for t in existing_docs if t['url'] and t['url'] not in all_urls]
-            for doc in docs_to_remove:
-                if doc['url']:
-                    self.indexer.delete_doc(doc['id'])
-            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
+            present_keys = {normalize_url_for_metadata(u) for u in all_urls if u}
+            listing_complete = len(present_keys) > 0
+            ratio = self.cfg.docs_crawler.get("deletion_safety_ratio", 0.5)
+            to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
+            removed_urls = []
+            if not refused:
+                to_delete_set = set(to_delete)
+                for entry in manifest.values():
+                    if entry.doc_id in to_delete_set:
+                        if self.indexer.delete_doc(entry.doc_id) and entry.url:
+                            removed_urls.append(entry.url)
+            logger.info(f"Removing {len(to_delete)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.docs_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
                 docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
@@ -245,5 +274,5 @@ class DocsCrawler(Crawler):
                     file_path = os.path.join(file_path, filename)
 
                 with open(file_path, 'w') as f:
-                    for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                    for url in sorted(removed_urls):
                         f.write(url + '\n')

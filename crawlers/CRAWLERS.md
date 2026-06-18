@@ -14,6 +14,29 @@ If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.
 
 Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
+### Incremental reindexing (website, docs, rss, s3, folder, gdrive)
+
+These crawlers can keep a corpus in sync with a changing source without re-processing everything on each run. Enable it per crawler block:
+
+```yaml
+<crawler>:
+  incremental: true            # skip unchanged items; re-index changed ones (default false)
+  remove_old_content: true     # delete docs that no longer exist at the source
+  deletion_safety_ratio: 0.5   # refuse deletion if the crawl saw < this fraction of the corpus
+```
+
+At index time each document is stamped with a `fingerprint` over its content, its written metadata (e.g. gdrive `acl_groups`), and the processing config. On the next run the crawler lists the corpus once, compares fingerprints, and skips unchanged documents, re-indexes changed ones, and (when `remove_old_content: true`) deletes documents that are gone from the source. Each crawler also uses a cheap pre-fetch signal where available so unchanged items are skipped without being downloaded:
+
+| Crawler | doc id keyed on | pre-fetch change signal |
+|---|---|---|
+| website / docs | normalized URL | sitemap `<lastmod>` (website, sitemap mode) |
+| rss | normalized URL | feed entry `pub_date` |
+| s3 | `slugify(s3://…)` | object `LastModified` |
+| folder | `slugify(path)+hash` | file mtime |
+| gdrive | Drive `file.id` | none — ACL changes don't bump `modifiedTime`, so the fingerprint (which includes `acl_groups`) is evaluated for every file |
+
+`incremental` is independent of `vectara.reindex`: `incremental` decides *whether* to send a document, `reindex` decides how a 409 (already-exists) is handled. The intended "keep in sync" combination is `incremental: true` + `reindex: true` + `remove_old_content: true`. The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run — including non-incremental ones — from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore the old unguarded behavior. The metadata fields `fingerprint`, `content_hash`, `source`, and `parent_doc_id` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+
 ### Website crawler
 
 ```yaml
