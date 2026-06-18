@@ -1375,8 +1375,7 @@ class GdriveCrawler(Crawler):
         # along with the crawler object. Source-scoped to this crawler's docs.
         if self.cfg.gdrive_crawler.get("incremental", False):
             manifest = build_manifest(
-                self.indexer, key="id",
-                source=self.cfg.gdrive_crawler.get("source", "gdrive"))
+                self.indexer, key="id", source=self.indexer.source_tag)
             self.prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
             logger.info(f"Incremental: loaded {len(self.prior_fingerprints)} prior fingerprints "
                         f"from {len(manifest)} corpus docs")

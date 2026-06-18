@@ -116,7 +116,7 @@ class NotionCrawler(Crawler):
         # source-scoped) so an unchanged page can be skipped before upload.
         manifest = {}
         if self.incremental or self.cfg.notion_crawler.get("remove_old_content", False):
-            manifest_source = self.source if self.incremental else None
+            manifest_source = self.indexer.source_tag if self.incremental else None
             manifest = build_manifest(self.indexer, key="id", source=manifest_source)
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
         present_keys = set()       # page ids present at the source (indexed or skipped)
@@ -165,7 +165,7 @@ class NotionCrawler(Crawler):
             # skips the upload (returning True, last_skip_reason='unchanged') when nothing changed.
             prior_fingerprint = manifest[page_id].fingerprint if page_id in manifest else None
             succeeded = self.indexer.index_document(doc, prior_fingerprint=prior_fingerprint)
-            if succeeded and getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+            if succeeded and self.indexer.was_skipped():
                 logger.info(f"Notion page {page_id} unchanged (fingerprint match) — skipping")
                 if self.tracker:
                     self.tracker.track_skipped(page_id, url=page['url'], title=doc['title'])

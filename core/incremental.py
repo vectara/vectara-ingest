@@ -21,7 +21,6 @@ Design notes:
   refuse to delete rather than risk wiping live documents.
 """
 
-import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from core.indexer_utils import normalize_url_for_metadata
+from core.indexer_utils import normalize_url_for_metadata, md5_hex
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +105,7 @@ def compute_fingerprint(content_hash: Optional[str],
         _canonical_json(_meaningful_metadata(metadata)),
         config_sig or "",
     ])
-    return hashlib.md5(payload.encode("utf-8")).hexdigest()
+    return md5_hex(payload)
 
 
 def config_signature(cfg: Any) -> str:
@@ -124,9 +123,7 @@ def config_signature(cfg: Any) -> str:
         vectara = OmegaConf.to_container(OmegaConf.create(vectara), resolve=True)
     except Exception:
         pass
-    return hashlib.md5(
-        _canonical_json({"doc_processing": doc_processing, "vectara": vectara}).encode("utf-8")
-    ).hexdigest()
+    return md5_hex(_canonical_json({"doc_processing": doc_processing, "vectara": vectara}))
 
 
 def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None) -> Dict[str, ManifestEntry]:
@@ -167,7 +164,10 @@ def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None)
 
 
 def _parse_dt(sig: Any) -> Optional[datetime]:
-    """Parse a date/time signal (RFC822 / ISO8601 / YYYY-MM-DD / epoch) into aware UTC."""
+    """Parse a date/time signal into aware UTC. Handles datetime objects, numeric epochs
+    (file mtime), and date strings (ISO8601 / RFC822 — sitemap lastmod, RSS pub_date, S3
+    LastModified). Numeric epochs only arrive as int/float, never as bare strings, so a string
+    like '2024' is treated as an (unparseable) date, not an epoch."""
     if sig is None:
         return None
     if isinstance(sig, datetime):
@@ -182,18 +182,12 @@ def _parse_dt(sig: Any) -> Optional[datetime]:
         if not s:
             return None
         dt = None
-        # epoch-as-string
-        try:
-            dt = datetime.fromtimestamp(float(s), tz=timezone.utc)
-        except (ValueError, OverflowError, OSError):
-            dt = None
-        if dt is None:
-            for parser in (datetime.fromisoformat, parsedate_to_datetime):
-                try:
-                    dt = parser(s.replace("Z", "+00:00") if parser is datetime.fromisoformat else s)
-                    break
-                except (ValueError, TypeError):
-                    continue
+        for parser in (datetime.fromisoformat, parsedate_to_datetime):
+            try:
+                dt = parser(s.replace("Z", "+00:00") if parser is datetime.fromisoformat else s)
+                break
+            except (ValueError, TypeError):
+                continue
         if dt is None:
             return None
     if dt.tzinfo is None:

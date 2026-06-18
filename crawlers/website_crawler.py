@@ -278,7 +278,7 @@ class PageCrawlWorker(object):
             return self.RESULT_FAILED
         # An "unchanged" skip returns True (success) but should be counted separately
         # from a freshly indexed page so the corpus is not needlessly churned.
-        if getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+        if self.indexer.was_skipped():
             return self.RESULT_SKIPPED
         if succeeded:
             return self.RESULT_INDEXED
@@ -608,7 +608,7 @@ class WebsiteCrawler(Crawler):
         need = self.incremental or self.cfg.website_crawler.get("remove_old_content", False)
         if not need:
             return
-        source = self.source if self.incremental else None
+        source = self.indexer.source_tag if self.incremental else None
         self._manifest = build_manifest(self.indexer, key="url", source=source)
         logger.info(f"Loaded corpus manifest: {len(self._manifest)} existing documents")
 
@@ -660,7 +660,7 @@ class WebsiteCrawler(Crawler):
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
         ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
-        source = self.cfg.website_crawler.get("source", "website")
+        source = self.source
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)

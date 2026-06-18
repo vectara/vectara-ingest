@@ -40,7 +40,7 @@ from core.image_processor import ImageProcessor
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
     safe_file_cleanup, prepare_file_metadata, store_file,
-    normalize_url_for_metadata, auth_redirect_reason
+    normalize_url_for_metadata, auth_redirect_reason, md5_hex
 )
 from core.incremental import compute_fingerprint, config_signature
 from core.web_extractor_base import create_web_extractor
@@ -441,9 +441,17 @@ class Indexer:
                 h.update(chunk)
         return h.hexdigest()
 
-    def _stamp_subdoc_metadata(self, sub_metadata: Dict[str, Any], parent_doc_id: str) -> None:
-        """Tag a sub-document (image / PDF part) so deletion treats it as present iff its
-        parent is present, and so it carries the same `source` scope. No-op unless incremental."""
+    def was_skipped(self) -> bool:
+        """True if the most recent index_* call skipped an unchanged document (incremental).
+        Lets crawler workers distinguish a skip from a fresh index without poking at the
+        last_skip_reason attribute directly."""
+        return self.last_skip_reason == "unchanged"
+
+    def stamp_subdoc_metadata(self, sub_metadata: Dict[str, Any], parent_doc_id: str) -> None:
+        """Tag a sub-document (image / PDF part / media transcript / spreadsheet sheet) so the
+        deletion pass treats it as present iff its parent is present, and so it carries the same
+        `source` scope. Public so file crawlers can tag docs they create via index_media_file /
+        the dataframe parser. No-op unless incremental."""
         if not self.incremental or sub_metadata is None:
             return
         sub_metadata['parent_doc_id'] = parent_doc_id
@@ -569,9 +577,7 @@ class Indexer:
         # Incremental reindexing: fingerprint over the document's text + metadata + config,
         # stamped into doc metadata and used to skip an unchanged document before upload.
         if self.incremental and 'metadata' in document:
-            content_hash = hashlib.md5(
-                "".join(s.get('text', '') for s in document.get('sections', [])).encode('utf-8')
-            ).hexdigest()
+            content_hash = md5_hex("".join(s.get('text', '') for s in document.get('sections', [])))
             if self._incremental_skip(content_hash, document['metadata'], prior_fingerprint):
                 if self.verbose:
                     logger.info(f"Document {document['id']} unchanged (fingerprint match) — skipping")
@@ -942,7 +948,7 @@ class Indexer:
                         for doc_id, image_summary, image_metadata in processed_images:
                             # Pass web image bits if available and enabled
                             image_bytes_param = web_image_bytes if self.add_image_bytes else []
-                            self._stamp_subdoc_metadata(image_metadata, parent_doc_id)
+                            self.stamp_subdoc_metadata(image_metadata, parent_doc_id)
 
                             succeeded &= self.index_segments(
                                 doc_id=doc_id,
@@ -1191,7 +1197,7 @@ class Indexer:
                         # Tag each split part as a sub-doc of the original file so deletion
                         # never removes a live part (its doc_id is never in the crawl's present
                         # set, which is keyed on the original file).
-                        self._stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
+                        self.stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                         try:
                             part_success = self._index_file(pdf_path, uri, pdf_metadata, pdf_id)
                             if not part_success:
@@ -1231,7 +1237,7 @@ class Indexer:
                     if ex_metadata:
                         img_metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
-                    self._stamp_subdoc_metadata(img_metadata, id if id else slugify(uri))
+                    self.stamp_subdoc_metadata(img_metadata, id if id else slugify(uri))
 
                     # Pass only the single relevant image's bytes
                     img_id = img_metadata.get('image_id')
@@ -1273,7 +1279,7 @@ class Indexer:
             overall_success = True
             for pdf_path, pdf_metadata, pdf_id in pdf_parts:
                 # Tag each split part as a sub-doc of the original file (see Case A above).
-                self._stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
+                self.stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                 try:
                     part_success = self.index_file(pdf_path, uri, pdf_metadata, id=pdf_id, title_hint=title_hint)
                     if not part_success:
@@ -1422,7 +1428,7 @@ class Indexer:
                     base_doc_id = id if id else slugify(uri)
                     doc_id = f"{base_doc_id}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
-                    self._stamp_subdoc_metadata(image_metadata, base_doc_id)
+                    self.stamp_subdoc_metadata(image_metadata, base_doc_id)
                     try:
                         # Pass only the single relevant image's bytes (not entire list)
                         img_id = image_metadata.get('image_id')

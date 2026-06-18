@@ -255,9 +255,10 @@ class TestIndexerIncrementalHook(unittest.TestCase):
     def test_subdoc_stamp(self):
         ix = self._indexer()
         sub = {"image_id": "x"}
-        ix._stamp_subdoc_metadata(sub, "parent123")
+        ix.stamp_subdoc_metadata(sub, "parent123")
         self.assertEqual(sub["parent_doc_id"], "parent123")
         self.assertEqual(sub["source"], "website")
+        self.assertTrue(ix.was_skipped() is False)  # no skip happened
 
     def test_index_document_skips_unchanged(self):
         # notion-style structured doc: index_document(prior_fingerprint=...) must skip an

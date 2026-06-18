@@ -61,11 +61,11 @@ class FileCrawlWorker(object):
         parent_key = _doc_id_for_file(file_name)
         try:
             if extension in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
-                self.indexer._stamp_subdoc_metadata(metadata, parent_key)
+                self.indexer.stamp_subdoc_metadata(metadata, parent_key)
                 succeeded = self.indexer.index_media_file(file_path, metadata=metadata)
 
             elif supported_by_dataframe_parser(file_path):
-                self.indexer._stamp_subdoc_metadata(metadata, parent_key)
+                self.indexer.stamp_subdoc_metadata(metadata, parent_key)
                 logger.info(f"Parsing dataframe {file_path}")
                 file_type = determine_dataframe_type(file_path)
                 doc_title = os.path.basename(file_path)
@@ -107,7 +107,7 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
-        if succeeded and getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+        if succeeded and self.indexer.was_skipped():
             return 2  # unchanged — skipped
         return 0 if succeeded else 1
 
@@ -166,16 +166,19 @@ class FolderCrawler(Crawler):
                     
                     files_to_process.append((file_path, file_name, file_metadata))
 
+        # Compute each file's Vectara doc_id once (sha256+slugify) and reuse it for present_keys,
+        # the mtime prefilter, and the per-file prior_fingerprint lookup.
+        doc_id_by_name = {fn: _doc_id_for_file(fn) for _fp, fn, _fm in files_to_process}
         # Full discovered set (everything that still exists at the source) keyed by Vectara
         # doc_id — used for safe deletion of removed files. Captured before any skipping.
-        present_keys = {_doc_id_for_file(fn) for _fp, fn, _fm in files_to_process}
+        present_keys = set(doc_id_by_name.values())
         crawl_complete = True
 
         # Build the corpus manifest once when needed for incremental skipping and/or deletion.
         manifest = {}
         if incremental or remove_old_content:
             manifest = build_manifest(self.indexer, key="id",
-                                      source=(source if incremental else None))
+                                      source=(self.indexer.source_tag if incremental else None))
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
 
         prior_fingerprints = {}
@@ -185,7 +188,7 @@ class FolderCrawler(Crawler):
             # than what we indexed — without reading/parsing them.
             kept, skipped = [], 0
             for fp, fn, fm in files_to_process:
-                entry = manifest.get(_doc_id_for_file(fn))
+                entry = manifest.get(doc_id_by_name[fn])
                 if entry and entry.last_updated and not source_is_newer(fm.get("last_updated"), entry.last_updated):
                     skipped += 1
                     if self.tracker:
@@ -237,7 +240,7 @@ class FolderCrawler(Crawler):
                     results = list(pool.map(
                         lambda a, u: a.process.remote(
                             u[0], u[1], u[2],
-                            prior_fingerprint=prior_fingerprints.get(_doc_id_for_file(u[1]))),
+                            prior_fingerprint=prior_fingerprints.get(doc_id_by_name[u[1]])),
                         batch))
                     for (file_path, file_name, _fm), result in zip(batch, results):
                         _track(file_path, file_name, result)
@@ -253,7 +256,7 @@ class FolderCrawler(Crawler):
                         logger.info(f"Crawling file number {inx+1} out of {len(files_to_process)}")
                     result = crawl_worker.process(
                         file_path, file_name, file_metadata,
-                        prior_fingerprint=prior_fingerprints.get(_doc_id_for_file(file_name)))
+                        prior_fingerprint=prior_fingerprints.get(doc_id_by_name[file_name]))
                     _track(file_path, file_name, result)
                 crawl_worker.cleanup()
         except Exception:

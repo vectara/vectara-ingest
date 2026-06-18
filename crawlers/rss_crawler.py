@@ -123,7 +123,7 @@ class RssCrawler(Crawler):
         present_keys = {normalize_url_for_metadata(u) for u, _t, _p in unique_urls}
         if self.incremental or remove_old_content:
             manifest = build_manifest(self.indexer, key="url",
-                                      source=(source if self.incremental else None))
+                                      source=(self.indexer.source_tag if self.incremental else None))
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
         if self.incremental and manifest:
             prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
@@ -149,8 +149,11 @@ class RssCrawler(Crawler):
             # Disable browser for parallel processing
             self.indexer.p = self.indexer.browser = None
             ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+            # Broadcast the fingerprint map once via the object store (zero-copied per node)
+            # rather than serializing the full dict into every actor.
+            pf_ref = ray.put(prior_fingerprints)
             actors = [
-                ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source, prior_fingerprints)
+                ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source, pf_ref)
                 for _ in range(ray_workers)
             ]
             for a in actors:

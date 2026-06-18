@@ -101,7 +101,7 @@ class FileCrawlWorker(object):
                     # index_media_file stores under slugify(local_fname), not the url-derived
                     # doc_id the crawl tracks. Tag it as a sub-doc of the file's primary key so
                     # the deletion pass never removes a live media doc (no-op unless incremental).
-                    self.indexer._stamp_subdoc_metadata(metadata, slugify(url))
+                    self.indexer.stamp_subdoc_metadata(metadata, slugify(url))
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
                     succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata,
@@ -118,7 +118,7 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
-        if succeeded and getattr(self.indexer, "last_skip_reason", None) == "unchanged":
+        if succeeded and self.indexer.was_skipped():
             return 2  # unchanged — skipped (distinct from indexed)
         return 0 if succeeded else 1
 
@@ -201,16 +201,19 @@ class S3Crawler(Crawler):
                 files_to_process.append(s3_file)
                 lastmod_by_file[s3_file] = lastmod
 
+        # Compute each object's Vectara doc_id once (slugify of the s3 uri) and reuse it for
+        # present_keys, the LastModified prefilter, and the per-object prior_fingerprint lookup.
+        doc_id_by_file = {f: _doc_id_for(f) for f in files_to_process}
         # Full discovered set (everything that still exists at the source) keyed by Vectara
         # doc_id — used for safe deletion of removed objects. Captured before any skipping.
-        present_keys = {_doc_id_for(f) for f in files_to_process}
+        present_keys = set(doc_id_by_file.values())
         crawl_complete = True
 
         # Build the corpus manifest once when needed for incremental skipping and/or deletion.
         manifest = {}
         if incremental or remove_old_content:
             manifest = build_manifest(self.indexer, key="id",
-                                      source=(source if incremental else None))
+                                      source=(self.indexer.source_tag if incremental else None))
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
 
         prior_fingerprints = {}
@@ -219,7 +222,7 @@ class S3Crawler(Crawler):
             # Layer 1: skip objects whose LastModified is not newer than what we indexed.
             kept, skipped = [], 0
             for f in files_to_process:
-                entry = manifest.get(_doc_id_for(f))
+                entry = manifest.get(doc_id_by_file[f])
                 if entry and entry.last_updated and not source_is_newer(lastmod_by_file.get(f), entry.last_updated):
                     skipped += 1
                     if self.tracker:
@@ -267,7 +270,7 @@ class S3Crawler(Crawler):
                     results = list(pool.map(
                         lambda a, u: a.process.remote(
                             u, metadata=metadata, source=source,
-                            prior_fingerprint=prior_fingerprints.get(_doc_id_for(u)),
+                            prior_fingerprint=prior_fingerprints.get(doc_id_by_file[u]),
                             last_modified=lastmod_by_file.get(u)),
                         batch))
                     for s3_file, result in zip(batch, results):
@@ -284,7 +287,7 @@ class S3Crawler(Crawler):
                         logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
                     result = crawl_worker.process(
                         url, metadata=metadata, source=source,
-                        prior_fingerprint=prior_fingerprints.get(_doc_id_for(url)),
+                        prior_fingerprint=prior_fingerprints.get(doc_id_by_file[url]),
                         last_modified=lastmod_by_file.get(url))
                     _track(url, result)
         except Exception:

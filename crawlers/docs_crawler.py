@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 import os
 
 from core.crawler import Crawler
+from core.crawl_tracker import CrawlShutdownException
 from core.utils import (
     create_session_with_retries, binary_extensions, RateLimiter, setup_logging,
     configure_session_for_ssl, get_docker_or_local_path, get_headers
@@ -213,7 +214,7 @@ class DocsCrawler(Crawler):
         # unscoped for legacy remove_old_content to preserve its behavior.
         manifest = {}
         if self.incremental or self.cfg.docs_crawler.get("remove_old_content", False):
-            manifest_source = self.source if self.incremental else None
+            manifest_source = self.indexer.source_tag if self.incremental else None
             manifest = build_manifest(self.indexer, key="url", source=manifest_source)
             logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
         if self.incremental:
@@ -221,30 +222,43 @@ class DocsCrawler(Crawler):
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
+        # Tracks whether the crawl ran to completion; an interruption (shutdown/exception) leaves
+        # it False so the deletion pass below refuses to treat a partial crawl as the full source.
         crawl_completed = False
-        if ray_workers > 0:
-            logger.info(f"Using {ray_workers} ray workers")
-            self.indexer.p = self.indexer.browser = None
-            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(UrlCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
-            for a in actors:
-                a.setup.remote()
-            pool = ray.util.ActorPool(actors)
-            _ = list(pool.map(lambda a, u: a.process.remote(u, source=source), all_urls))
-            # Cleanup Ray workers
-            for a in actors:
-                ray.get(a.cleanup.remote())
-            ray.shutdown()
+        try:
+            if ray_workers > 0:
+                logger.info(f"Using {ray_workers} ray workers")
+                self.indexer.p = self.indexer.browser = None
+                ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+                actors = [ray.remote(UrlCrawlWorker).remote(self.indexer, self, num_per_second) for _ in range(ray_workers)]
+                for a in actors:
+                    a.setup.remote()
+                pool = ray.util.ActorPool(actors)
+                # Batch like the other crawlers so check_shutdown can interrupt mid-run and the
+                # full result vector isn't buffered at once.
+                batch_size = max(ray_workers * 4, 20)
+                for batch_start in range(0, len(all_urls), batch_size):
+                    self.check_shutdown()
+                    batch = all_urls[batch_start:batch_start + batch_size]
+                    list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                # Cleanup Ray workers
+                for a in actors:
+                    ray.get(a.cleanup.remote())
+                ray.shutdown()
 
-        else:
-            crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
-            for inx, url in enumerate(all_urls):
-                if inx % 100 == 0:
-                    logger.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
-                crawl_worker.process(url, source=source)
-            # Cleanup worker
-            crawl_worker.cleanup()
-        crawl_completed = True
+            else:
+                crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
+                for inx, url in enumerate(all_urls):
+                    self.check_shutdown()
+                    if inx % 100 == 0:
+                        logger.info(f"Crawling URL number {inx+1} out of {len(all_urls)}")
+                    crawl_worker.process(url, source=source)
+                # Cleanup worker
+                crawl_worker.cleanup()
+            crawl_completed = True
+        except CrawlShutdownException:
+            crawl_completed = False
+            raise
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list,

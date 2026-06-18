@@ -14,6 +14,12 @@ from omegaconf import OmegaConf
 logger = logging.getLogger(__name__)
 
 
+def md5_hex(text: str) -> str:
+    """md5 hex digest of a string (utf-8). Single source for the content-hash idiom used by
+    incremental reindexing (page HTML, structured-doc text, config signature, fingerprints)."""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
 def get_chunking_config(cfg: OmegaConf) -> Optional[Dict]:
     """Helper function to get chunking configuration"""
     if cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
@@ -35,7 +41,7 @@ def extract_last_modified(url: str, html: str) -> dict:
     result = {
         'url': url,
         'detection_method': None,
-        'content_hash': hashlib.md5(html.encode('utf-8')).hexdigest(),
+        'content_hash': md5_hex(html),
     }
     soup = BeautifulSoup(html, 'html.parser')
 
