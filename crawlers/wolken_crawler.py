@@ -13,12 +13,16 @@ Flow:
 4. For each article, fetch full details and index into Vectara
 """
 
+import json
 import logging
 import re
 import time
+from collections.abc import Iterable
+from typing import Any
 
 import requests
 from core.crawler import Crawler
+from core.indexer import Indexer
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,32 @@ def clean_html(text: str) -> str:
 def _str_or_empty(v) -> str:
     """Convert a value to string, mapping None to empty string (avoids 'None' literal in metadata)."""
     return "" if v is None else str(v)
+
+
+def _as_plain_container(value: Any) -> Any:
+    """Convert OmegaConf containers to plain Python containers when OmegaConf is available."""
+    try:
+        from omegaconf import OmegaConf
+
+        if OmegaConf.is_config(value):
+            return OmegaConf.to_container(value, resolve=True)
+    except Exception:
+        pass
+    return value
+
+
+def _dedupe_strings(values: Iterable[Any]) -> list[str]:
+    """Return non-empty string values in input order, without duplicates."""
+    seen = set()
+    result = []
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
 
 
 class WolkenCrawler(Crawler):
@@ -55,9 +85,28 @@ class WolkenCrawler(Crawler):
         self.kb_source_id = crawler_cfg.get("kb_source_id", None)
 
         # Content fields to extract from articleOtherInfo
-        self.content_fields = crawler_cfg.get("content_fields", [
+        self.content_fields = list(crawler_cfg.get("content_fields", [
             "introduction", "cause", "environment", "resolution", "additionalInfo"
-        ])
+        ]))
+
+        self.corpus_key = corpus_key
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.mode = crawler_cfg.get("mode", "single_corpus")
+        self.corpus_mappings = _as_plain_container(crawler_cfg.get("corpus_mappings", {})) or {}
+        self.product_fields = list(crawler_cfg.get("product_fields", [
+            "productname", "products", "product", "articleOtherInfo.productname", "articleOtherInfo.products"
+        ]))
+        self.metadata_product_key = crawler_cfg.get("metadata_product_key", "product")
+        self.acl_fields = list(crawler_cfg.get("acl_fields", []))
+        self.entitlements_metadata_key = crawler_cfg.get("entitlements_metadata_key", "entitlements")
+        self.default_entitlements = self._normalize_list(crawler_cfg.get("default_entitlements", []))
+
+        self.indexers = {corpus_key: self.indexer}
+        if self.mode == "multi_corpus":
+            for target_corpus_key in self.corpus_mappings.keys():
+                if target_corpus_key != corpus_key:
+                    self.indexers[target_corpus_key] = Indexer(cfg, endpoint, target_corpus_key, api_key)
 
         self.access_token = None
         self.token_expires_at = 0
@@ -210,6 +259,120 @@ class WolkenCrawler(Crawler):
 
         return sections
 
+    def _field_value(self, data: dict, path: str) -> Any:
+        """Return a nested dict value using a dotted field path."""
+        current = data
+        for part in path.split("."):
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+            if current is None:
+                return None
+        return current
+
+    def _candidate_roots(self, details: dict, article: dict) -> list[dict]:
+        roots = [details or {}, article or {}]
+        for root in list(roots):
+            if isinstance(root, dict):
+                for child_key in ("articleOtherInfo", "articleOtherInfoVO"):
+                    child = root.get(child_key)
+                    if isinstance(child, dict):
+                        roots.append(child)
+        return roots
+
+    def _normalize_list(self, value: Any) -> list[str]:
+        """Normalize string/list/dict-ish API values to a list of strings."""
+        value = _as_plain_container(value)
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            try:
+                parsed = json.loads(raw)
+                if parsed != value:
+                    return self._normalize_list(parsed)
+            except Exception:
+                pass
+            if "," in raw:
+                return _dedupe_strings(part.strip() for part in raw.split(","))
+            return [raw]
+        if isinstance(value, dict):
+            for key in ("name", "value", "id", "email"):
+                if key in value:
+                    return self._normalize_list(value[key])
+            return _dedupe_strings(value.values())
+        if isinstance(value, Iterable):
+            flattened = []
+            for item in value:
+                flattened.extend(self._normalize_list(item))
+            return _dedupe_strings(flattened)
+        return [str(value)]
+
+    def _extract_products(self, details: dict, article: dict = None) -> list[str]:
+        """Extract product names from configured fields in article summary/details."""
+        products = []
+        for root in self._candidate_roots(details, article or {}):
+            for field in self.product_fields:
+                products.extend(self._normalize_list(self._field_value(root, field)))
+        return _dedupe_strings(products)
+
+    def _extract_entitlements(self, details: dict, article: dict = None) -> list[str]:
+        """Extract ACL/entitlement values from configured fields and defaults."""
+        entitlements = list(self.default_entitlements)
+        for root in self._candidate_roots(details, article or {}):
+            for field in self.acl_fields:
+                entitlements.extend(self._normalize_list(self._field_value(root, field)))
+        return _dedupe_strings(entitlements)
+
+    def _determine_target_corpora(self, details: dict, article: dict = None) -> list[str]:
+        """Determine which corpus/corpora should receive this article."""
+        if self.mode != "multi_corpus":
+            return [self.corpus_key]
+
+        products = self._extract_products(details, article or {})
+        target_corpora = []
+        for target_corpus, mapped_products in self.corpus_mappings.items():
+            normalized_mapping = {p.strip() for p in self._normalize_list(mapped_products)}
+            if any(product.strip() in normalized_mapping for product in products):
+                target_corpora.append(target_corpus)
+
+        if not target_corpora:
+            article_id = details.get("articleId") or (article or {}).get("articleId")
+            logger.warning(
+                "Article %s with products %s does not match corpus_mappings; using primary corpus %s",
+                article_id, products, self.corpus_key,
+            )
+            target_corpora = [self.corpus_key]
+        return _dedupe_strings(target_corpora)
+
+    def _index_article(self, doc_id: str, texts: list[str], titles: list[str], metadata: dict, title: str,
+                       details: dict, article: dict) -> bool:
+        """Index an article into each selected target corpus."""
+        target_corpora = self._determine_target_corpora(details, article)
+        all_succeeded = True
+        for target_corpus in target_corpora:
+            indexer = self.indexers.get(target_corpus)
+            if indexer is None:
+                logger.error("No indexer configured for target corpus %s", target_corpus)
+                all_succeeded = False
+                continue
+
+            corpus_metadata = dict(metadata)
+            if self.mode == "multi_corpus":
+                corpus_metadata["target_corpus"] = target_corpus
+
+            succeeded = indexer.index_segments(
+                doc_id=doc_id,
+                texts=texts,
+                titles=titles,
+                doc_metadata=corpus_metadata,
+                doc_title=title,
+            )
+            all_succeeded = all_succeeded and succeeded
+        return all_succeeded
+
     def crawl(self) -> None:
         """Main crawl loop: categories → articles → details → index."""
         categories = self._get_categories()
@@ -278,21 +441,22 @@ class WolkenCrawler(Crawler):
                         "published_date": _str_or_empty(other_info.get("publishedDate")),
                     }
 
+                    products = self._extract_products(details, article)
+                    if products:
+                        metadata[self.metadata_product_key] = products
+
+                    # Always include the entitlement metadata key so filters have a stable schema.
+                    metadata[self.entitlements_metadata_key] = self._extract_entitlements(details, article)
+
                     # Build article URL if available
-                    url_name = details.get("articleUrlName", "")
+                    url_name = details.get("articleUrlName", "") or details.get("extArticleUrl", "")
                     if url_name:
                         metadata["url"] = url_name
 
                     texts = [text for _, text in content_sections]
                     titles = [section_title for section_title, _ in content_sections]
 
-                    succeeded = self.indexer.index_segments(
-                        doc_id=doc_id,
-                        texts=texts,
-                        titles=titles,
-                        doc_metadata=metadata,
-                        doc_title=title,
-                    )
+                    succeeded = self._index_article(doc_id, texts, titles, metadata, title, details, article)
 
                     if succeeded:
                         total_indexed += 1
