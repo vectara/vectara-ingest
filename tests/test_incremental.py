@@ -13,7 +13,7 @@ sys.modules.setdefault('cairosvg', MagicMock())
 
 from core.incremental import (
     compute_fingerprint, config_signature, build_manifest, source_is_newer,
-    plan_deletions, ManifestEntry,
+    plan_deletions, ManifestEntry, content_hash_from_text,
 )
 from core.indexer_utils import extract_last_modified
 
@@ -193,6 +193,71 @@ class TestExtractLastModifiedHash(unittest.TestCase):
         h_same = extract_last_modified("u", "<p>a</p>")["content_hash"]
         self.assertNotEqual(h1, h2)
         self.assertEqual(h1, h_same)
+
+
+class TestContentHashFromText(unittest.TestCase):
+    """Stable web-page content hash: hash the normalized visible text, not the rendered DOM.
+    This is what lets incremental skip work for dynamically-rendered pages whose markup
+    (nonces / hydration ids / attribute order) changes every fetch while the text is stable."""
+
+    def test_whitespace_and_markup_noise_invariant(self):
+        # Same visible text, different incidental whitespace -> same hash.
+        self.assertEqual(
+            content_hash_from_text("Hello   world\n\tagain  "),
+            content_hash_from_text("Hello world again"),
+        )
+
+    def test_none_and_empty_equivalent(self):
+        self.assertEqual(content_hash_from_text(None), content_hash_from_text(""))
+
+    def test_real_content_change_detected(self):
+        self.assertNotEqual(
+            content_hash_from_text("pricing is $10"),
+            content_hash_from_text("pricing is $20"),
+        )
+
+
+class TestIndexFileContentHashOverride(unittest.TestCase):
+    """index_file must use a caller-provided content_hash (web text hash) when given, and
+    fall back to hashing the file bytes otherwise (folder/s3 files)."""
+
+    def _indexer(self):
+        from core.indexer import Indexer
+        ix = Indexer.__new__(Indexer)
+        ix.incremental = True
+        ix.source_tag = "website"
+        ix.config_sig = "CFG"
+        ix.last_skip_reason = None
+        ix.last_error = None
+        ix.verbose = False
+        return ix
+
+    def _tmpfile(self):
+        import tempfile, os
+        fd, path = tempfile.mkstemp(suffix=".html")
+        os.write(fd, b"<html>rendered noise nonce-abc123</html>")
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        return path
+
+    def test_override_used_and_file_not_hashed(self):
+        ix = self._indexer()
+        ix._hash_file = MagicMock(side_effect=AssertionError("file bytes must not be hashed when override given"))
+        override = content_hash_from_text("stable visible text")
+        fp = compute_fingerprint(override, {"url": "u"}, "CFG")
+        ok = ix.index_file(self._tmpfile(), "http://x", {"url": "u"},
+                           prior_fingerprint=fp, content_hash_override=override)
+        self.assertTrue(ok)                    # skipped as unchanged
+        self.assertEqual(ix.last_skip_reason, "unchanged")
+        ix._hash_file.assert_not_called()
+
+    def test_without_override_falls_back_to_file_hash(self):
+        ix = self._indexer()
+        ix._hash_file = MagicMock(return_value="filehash")
+        fp = compute_fingerprint("filehash", {"url": "u"}, "CFG")
+        ok = ix.index_file(self._tmpfile(), "http://x", {"url": "u"}, prior_fingerprint=fp)
+        self.assertTrue(ok)
+        ix._hash_file.assert_called_once()
 
 
 class TestIndexerIncrementalHook(unittest.TestCase):

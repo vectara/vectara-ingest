@@ -42,7 +42,7 @@ from core.indexer_utils import (
     safe_file_cleanup, prepare_file_metadata, store_file,
     normalize_url_for_metadata, auth_redirect_reason, md5_hex
 )
-from core.incremental import compute_fingerprint, config_signature
+from core.incremental import compute_fingerprint, config_signature, content_hash_from_text
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
 
@@ -814,7 +814,8 @@ class Indexer:
                         # via extra_image_urls so index_file can supplement with web images.
                         result = self.index_file(
                             temp_html_path, url, metadata, title_hint=res.get('title', ''),
-                            extra_image_urls=res.get('images', []), prior_fingerprint=prior_fingerprint
+                            extra_image_urls=res.get('images', []), prior_fingerprint=prior_fingerprint,
+                            content_hash_override=content_hash_from_text(text)
                         )
                         safe_remove_file(temp_html_path)
                         return result
@@ -831,10 +832,11 @@ class Indexer:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
 
                 # Incremental reindexing: fingerprint from content + source metadata + config.
-                # Computed here (before extract_metadata / image summarization) so the value is
-                # stable across runs (LLM output excluded) and those costs plus the upload are
-                # skipped when the document is unchanged.
-                if self._incremental_skip(ext_res.get('content_hash'), metadata, prior_fingerprint):
+                # Hash the normalized extracted text (not the rendered HTML, whose per-request
+                # noise changes every fetch) and compute it before extract_metadata / image
+                # summarization, so the value is stable across runs (LLM output excluded) and
+                # those costs plus the upload are skipped when the document is unchanged.
+                if self._incremental_skip(content_hash_from_text(text), metadata, prior_fingerprint):
                     if self.verbose:
                         logger.info(f"URL {url} unchanged (fingerprint match) — skipping")
                     return True
@@ -1106,7 +1108,8 @@ class Indexer:
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None, title_hint: str = None,
                    extra_image_urls: Optional[List[Dict[str, str]]] = None,
-                   prior_fingerprint: Optional[str] = None) -> bool:
+                   prior_fingerprint: Optional[str] = None,
+                   content_hash_override: Optional[str] = None) -> bool:
         """
         Index a local file into the Vectara corpus.
 
@@ -1134,11 +1137,13 @@ class Indexer:
             logger.error(f"File {filename} does not exist")
             return False
 
-        # Incremental reindexing: hash the raw file bytes and decide before any (expensive)
-        # parsing whether this document is unchanged. The hash covers embedded tables/images
-        # since they are part of the bytes. Skips here avoid Docling/OCR/LLM + upload entirely.
+        # Incremental reindexing: decide before any (expensive) parsing whether this document
+        # is unchanged. For local files we hash the raw bytes (covers embedded tables/images).
+        # Web callers (index_url) instead pass content_hash_override — the normalized page text —
+        # because the rendered HTML they hand us is non-deterministic per fetch and would defeat
+        # the skip. Skips here avoid Docling/OCR/LLM + upload entirely.
         if self.incremental and 'fingerprint' not in metadata:
-            content_hash = self._hash_file(filename)
+            content_hash = content_hash_override if content_hash_override is not None else self._hash_file(filename)
             if self._incremental_skip(content_hash, metadata, prior_fingerprint):
                 if self.verbose:
                     logger.info(f"File {uri} unchanged (fingerprint match) — skipping")

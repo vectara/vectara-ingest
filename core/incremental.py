@@ -108,6 +108,19 @@ def compute_fingerprint(content_hash: Optional[str],
     return md5_hex(payload)
 
 
+def content_hash_from_text(text: Optional[str]) -> str:
+    """Stable content hash for fetched web pages: hash the normalized visible text rather
+    than the rendered HTML.
+
+    The Playwright-rendered DOM carries per-request noise — CSP nonces, hydration markers,
+    randomized element ids, attribute reordering — that changes on every fetch even when the
+    page content is identical. Hashing it makes the fingerprint differ every run, so the
+    incremental skip never fires and every page is re-indexed. Collapsing the extracted text
+    to single-spaced tokens yields a hash that changes only when the actual content changes.
+    """
+    return md5_hex(" ".join((text or "").split()))
+
+
 def config_signature(cfg: Any) -> str:
     """md5 of the processing-relevant config subset; compute once per run. Works for both
     OmegaConf and plain-dict cfg objects (both expose .get / `in`)."""
