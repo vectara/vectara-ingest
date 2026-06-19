@@ -98,7 +98,10 @@ class TestIndexFileLastError(unittest.TestCase):
     def test_reindex_disabled_409_treated_as_success(self):
         """When reindex is off and the doc already exists, _index_file returns
         True (skipping). No last_error contract here, but the path mustn't
-        crash and must NOT set last_error to a falsy success-looking value."""
+        crash and must NOT set last_error to a falsy success-looking value.
+
+        Note: _make_indexer sets incremental=False, so this asserts the legacy
+        (non-incremental) 409-swallow behavior is preserved."""
         ix = _make_indexer()
         ix.reindex = False
         conflict = MagicMock()
@@ -107,6 +110,48 @@ class TestIndexFileLastError(unittest.TestCase):
 
         ok = ix._index_file(self.path, uri="https://example.test/a.pdf", metadata={})
         self.assertTrue(ok)
+
+    def test_incremental_409_updates_even_when_reindex_disabled(self):
+        """Under incremental, a doc only reaches the upload if it is new or
+        changed (unchanged docs are skipped earlier by fingerprint). So a 409
+        means it exists and must be replaced, even with reindex off — otherwise
+        the changed content is silently dropped (the foot-gun this fixes)."""
+        ix = _make_indexer()
+        ix.incremental = True
+        ix.reindex = False
+        ix.delete_doc = MagicMock(return_value=True)
+        conflict = MagicMock(status_code=409)
+        success = MagicMock(status_code=201)
+        ix.session.request.side_effect = [conflict, success]
+
+        ok = ix._index_file(self.path, uri="https://example.test/a.pdf", metadata={})
+        self.assertTrue(ok)
+        ix.delete_doc.assert_called_once()
+        self.assertEqual(ix.session.request.call_count, 2)
+
+
+class TestIndexDocumentIncrementalReindex(unittest.TestCase):
+    """index_document() (structured/core path) must apply updates to changed
+    documents under incremental mode regardless of the reindex flag."""
+
+    def test_incremental_409_updates_document_even_when_reindex_disabled(self):
+        ix = _make_indexer()
+        ix.incremental = True
+        ix.reindex = False
+        ix.use_core_indexing = True  # skip the chunking-config branch (cfg is a mock)
+        ix.x_source = "test"
+        ix.delete_doc = MagicMock(return_value=True)
+        conflict = MagicMock(status_code=409)
+        success = MagicMock(status_code=201)
+        ix.session.post.side_effect = [conflict, success]
+
+        document = {"id": "doc1", "metadata": {"k": "v"},
+                    "sections": [{"text": "hello world"}]}
+        ok = ix.index_document(document)
+
+        self.assertTrue(ok)
+        ix.delete_doc.assert_called_once_with("doc1")
+        self.assertEqual(ix.session.post.call_count, 2)
 
 
 class TestIndexFileRoutingDoesNotLeak(unittest.TestCase):

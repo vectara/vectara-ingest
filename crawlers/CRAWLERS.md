@@ -35,7 +35,32 @@ At index time each document is stamped with a `fingerprint` over its content, it
 | folder | `slugify(path)+hash` | file mtime |
 | gdrive | Drive `file.id` | none — ACL changes don't bump `modifiedTime`, so the fingerprint (which includes `acl_groups`) is evaluated for every file |
 
-`incremental` is independent of `vectara.reindex`: `incremental` decides *whether* to send a document, `reindex` decides how a 409 (already-exists) is handled. The intended "keep in sync" combination is `incremental: true` + `reindex: true` + `remove_old_content: true`. The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore unguarded deletion. The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+With `incremental: true` you do not also need `vectara.reindex`. Incremental decides *whether* to send a document (unchanged ones are skipped before upload); when a document that *is* sent already exists in the corpus, incremental replaces it automatically — a changed document is deleted and re-indexed in one step. So `incremental: true` + `remove_old_content: true` is the full "keep in sync" combination; `reindex` is superseded and can be omitted (if left set, it is harmless and an info line notes it is redundant). The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore unguarded deletion. The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+
+#### Which mode should I use?
+
+| Goal | Use |
+|---|---|
+| Keep the corpus in sync with a changing source — skip unchanged, update changed, delete what's gone | `incremental: true` + `remove_old_content: true` |
+| Skip unchanged and update changed, but never delete (accumulate) | `incremental: true` |
+| Re-process and overwrite every document every run | `incremental: false` + `vectara.reindex: true` |
+| Index once, skip anything already present, never overwrite (default) | `incremental: false` + `vectara.reindex: false` |
+| Crawler without incremental support (jira, notion, confluence, hubspot, …) | `vectara.reindex` controls overwrite-vs-skip; incremental is unavailable |
+
+`vectara.reindex` (global) controls how an already-exists conflict is handled on crawlers that are **not** running incremental: `true` deletes and re-uploads, `false` (the default) leaves the existing document untouched. It only matters outside incremental mode.
+
+#### Upgrade path
+
+Adopting incremental is backward compatible — existing configs keep working unchanged, and fingerprint metadata is only written once `incremental: true` is set. For an incremental-capable crawler (website, docs, rss, s3, folder, gdrive):
+
+1. Existing config (e.g. `vectara.reindex: true`, no `incremental`) keeps behaving as before.
+2. Add `incremental: true` to the crawler block (and `remove_old_content: true` if the corpus should mirror deletions). You can drop `vectara.reindex` — it is now implied for changed documents.
+3. The **first** incremental run is a one-time full re-index: existing documents have no stored `fingerprint`, so each is re-sent once (now correctly updated, even with `reindex` unset) and stamped. Later runs skip unchanged items cheaply.
+4. Crawlers without incremental support keep using `vectara.reindex` exactly as before.
+
+#### Deprecation roadmap
+
+`incremental` is the primary way to keep a corpus in sync. `vectara.reindex` is retained for backward compatibility and for crawlers that do not yet support incremental, so it is not being removed now. The plan is to deprecate it gradually for incremental-capable crawlers: today setting both logs an info line that `reindex` is redundant; a future release will turn that into a deprecation warning; and longer-term incremental may become the default for the crawlers that support it. `reindex` will remain available until incremental covers all crawlers.
 
 Caveats:
 

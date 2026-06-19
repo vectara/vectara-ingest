@@ -549,7 +549,7 @@ Use these when you build the `document` JSON structure directly and want to inde
 
 #### Parameters
 
-The `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then indexes the document.
+The `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then indexes the document. This flag governs crawls that do not run in incremental mode; under `incremental: true` changed documents are replaced automatically and `reindex` is not needed (see [Incremental reindexing](#incremental-reindexing)).
 
 ## Incremental reindexing
 
@@ -568,7 +568,7 @@ Config knobs (per crawler block):
 * `remove_old_content: true` — delete documents that no longer exist at the source.
 * `deletion_safety_ratio` (default `0.5`) — refuse to delete if the crawl saw fewer than this fraction of the documents already in the corpus, or if it was interrupted. This guards against a partial/failed crawl wiping live data. Set to `0` to disable the guard.
 
-To keep a corpus consistent with a changing source, run with `incremental: true`, `reindex: true`, and `remove_old_content: true`. With `incremental: true`, `reindex: true` no longer means "re-upload everything" — only changed documents are re-sent.
+To keep a corpus consistent with a changing source, run with `incremental: true` and `remove_old_content: true`. Under incremental mode only changed documents are re-sent, and they are replaced automatically — you do not need `reindex: true` (if set it is harmless and logged as redundant). See [crawlers/CRAWLERS.md](crawlers/CRAWLERS.md#incremental-reindexing-website-docs-rss-s3-folder-gdrive) for a mode-selection guide, the upgrade path, and the deprecation roadmap for `reindex`.
 
 Notes and limitations:
 

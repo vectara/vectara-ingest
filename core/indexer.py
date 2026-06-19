@@ -98,6 +98,9 @@ class Indexer:
         self.incremental = bool(_crawler_cfg.get("incremental", False))
         self.source_tag = _crawler_cfg.get("source", self.crawler_type)
         self.config_sig = config_signature(self.cfg)
+        if self.incremental and self.reindex:
+            logger.info("vectara.reindex is redundant under incremental mode (changed "
+                        "documents are replaced automatically); you can remove it.")
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
         self.static_metadata = cfg.get('metadata', None)
@@ -474,7 +477,7 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
         upload_filename = id if id is not None else os.path.basename(filename)
 
-        # Simple approach: upload the file, handle conflicts if reindex is enabled
+        # Simple approach: upload the file, replacing on conflict when reindex or incremental is set
         try:
             with open(filename, 'rb') as file_handle:
                 files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
@@ -493,8 +496,11 @@ class Indexer:
                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             return True
         elif response.status_code in [409, 412]:
-            if self.reindex:
-                # File already exists and reindex is enabled
+            # reindex replaces on conflict by request; incremental implies it — a doc only
+            # reaches this upload if it is new or changed, so an existing-doc conflict means
+            # the content changed and must be replaced (else the update is silently dropped).
+            if self.reindex or self.incremental:
+                # File already exists and must be replaced
                 if self.verbose:
                     logger.info(f"File {uri} already exists. Deleting and re-indexing...")
 
@@ -610,7 +616,7 @@ class Indexer:
         else:
             logger.info(f"Document '{document['id']}' size: {doc_size / 1024:.1f} KB")
 
-        # Simple approach: POST the document, handle conflicts if reindex is enabled
+        # Simple approach: POST the document, replacing on conflict when reindex or incremental is set
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
         except Exception as e:
@@ -628,8 +634,10 @@ class Indexer:
                     json.dump(document, f)
             return True
         elif response.status_code in [409, 412]:
-            if self.reindex:
-                # Document already exists and reindex is enabled
+            # See _index_file: incremental implies replace-on-conflict, because an unchanged
+            # document would have been skipped before upload — a conflict here means it changed.
+            if self.reindex or self.incremental:
+                # Document already exists and must be replaced
                 if self.verbose:
                     logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
 
