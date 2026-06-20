@@ -22,6 +22,7 @@ from crawlers.gdrive_crawler import (
     canonical_save_name,
     extract_acl_metadata,
     extract_folder_id,
+    gdrive_content_hash,
     resolve_root_folders,
 )
 
@@ -1670,6 +1671,31 @@ class TestDiagnosticPropagation(unittest.TestCase):
         bucket, reason = captured[0]
         self.assertEqual(bucket, 'download_failed')
         self.assertIn("HttpError 403", reason)
+
+
+class TestGdriveContentHash(unittest.TestCase):
+    """Google-native docs (Docs/Sheets/Slides) are exported on each crawl and the export
+    bytes are not stable across runs, so hashing them defeats incremental skipping. Use
+    Drive's modifiedTime as the content signal for native files; let the indexer hash the
+    bytes for binary files (whose bytes are stable)."""
+
+    def test_native_doc_uses_modified_time(self):
+        f = {"mimeType": "application/vnd.google-apps.document", "modifiedTime": "2026-06-19T00:00:00Z"}
+        self.assertEqual(gdrive_content_hash(f), "gdrive-native:2026-06-19T00:00:00Z")
+
+    def test_native_presentation_and_spreadsheet(self):
+        for mime in ("application/vnd.google-apps.presentation",
+                     "application/vnd.google-apps.spreadsheet"):
+            h = gdrive_content_hash({"mimeType": mime, "modifiedTime": "t"})
+            self.assertEqual(h, "gdrive-native:t")
+
+    def test_binary_returns_none(self):
+        # PDF/image: stable bytes -> let the indexer hash the file (return None).
+        self.assertIsNone(gdrive_content_hash(
+            {"mimeType": "application/pdf", "modifiedTime": "t", "md5Checksum": "abc"}))
+
+    def test_native_without_modified_time_returns_none(self):
+        self.assertIsNone(gdrive_content_hash({"mimeType": "application/vnd.google-apps.document"}))
 
 
 if __name__ == "__main__":

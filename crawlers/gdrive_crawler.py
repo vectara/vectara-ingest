@@ -116,8 +116,30 @@ ACL_SOURCE_MY_DRIVE_PARTIAL = 'my_drive_partial'
 
 FOLDER_MIME = 'application/vnd.google-apps.folder'
 SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+NATIVE_MIME_PREFIX = 'application/vnd.google-apps.'
 
 _FOLDER_ID_PATTERN = re.compile(r'/folders/([a-zA-Z0-9_-]+)')
+
+
+def gdrive_content_hash(file: dict) -> Optional[str]:
+    """Stable content-change signal for incremental skipping.
+
+    Google-native docs (Docs/Sheets/Slides) are *exported* on every crawl, and Drive's export
+    is not byte-stable across runs — so hashing the exported bytes (the indexer's default)
+    makes the fingerprint change every run and the file is never skipped. Drive's modifiedTime
+    is the canonical content-change signal for native docs, so use it as the content hash.
+    (ACL/sharing changes don't move modifiedTime, but they are caught separately via acl_groups
+    in the fingerprint metadata, not the content hash.)
+
+    Binary files (PDFs, images, …) are downloaded as-is with stable bytes, so return None and
+    let the indexer hash the file. Returns None for native docs missing modifiedTime so the
+    indexer falls back to byte hashing rather than producing a useless constant.
+    """
+    mime = file.get('mimeType', '') or ''
+    if mime.startswith(NATIVE_MIME_PREFIX):
+        modified_time = file.get('modifiedTime')
+        return f"gdrive-native:{modified_time}" if modified_time else None
+    return None
 
 
 def extract_folder_id(value: Optional[str]) -> Optional[str]:
@@ -1191,6 +1213,7 @@ class UserWorker(object):
                     metadata=file_metadata,
                     id=file_id,
                     prior_fingerprint=getattr(self.crawler, 'prior_fingerprints', {}).get(file_id),
+                    content_hash_override=gdrive_content_hash(file),
                 )
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
