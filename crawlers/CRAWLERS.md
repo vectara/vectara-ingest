@@ -25,7 +25,15 @@ These crawlers can keep a corpus in sync with a changing source without re-proce
   deletion_safety_ratio: 0.5   # refuse deletion if the crawl saw < this fraction of the corpus
 ```
 
-At index time each document is stamped with a `fingerprint` over its content, its written metadata (e.g. gdrive `acl_groups`), and the processing config. On the next run the crawler lists the corpus once, compares fingerprints, and skips unchanged documents, re-indexes changed ones, and (when `remove_old_content: true`) deletes documents that are gone from the source. Each crawler also uses a cheap pre-fetch signal where available so unchanged items are skipped without being downloaded:
+At index time each document is stamped with a `fingerprint` over its content signal, its written metadata (e.g. gdrive `acl_groups`), and the processing config. On the next run the crawler lists the corpus once, compares fingerprints, and skips unchanged documents, re-indexes changed ones, and (when `remove_old_content: true`) deletes documents that are gone from the source.
+
+The content signal is chosen to be **stable across runs** so an unchanged document actually matches its prior fingerprint:
+
+* **fetched web pages** (website, docs, rss) — the normalized extracted **text**, not the rendered HTML (the rendered DOM carries per-request noise — CSP nonces, hydration ids, attribute reordering — that would otherwise change the hash every run and defeat skipping).
+* **downloaded files** (folder, s3, gdrive binary files) — the raw file **bytes**.
+* **Google-native docs** (gdrive Docs/Sheets/Slides) — Drive's **`modifiedTime`**, because Drive's export of these is not byte-stable across runs. (ACL/sharing changes don't move `modifiedTime`, but they are caught separately via `acl_groups` in the fingerprint metadata.)
+
+Each crawler also uses a cheap pre-fetch signal where available so unchanged items are skipped without being downloaded:
 
 | Crawler | doc id keyed on | pre-fetch change signal |
 |---|---|---|
@@ -33,7 +41,7 @@ At index time each document is stamped with a `fingerprint` over its content, it
 | rss | normalized URL | feed entry `pub_date` |
 | s3 | `slugify(s3://…)` | object `LastModified` |
 | folder | `slugify(path)+hash` | file mtime |
-| gdrive | Drive `file.id` | none — ACL changes don't bump `modifiedTime`, so the fingerprint (which includes `acl_groups`) is evaluated for every file |
+| gdrive | Drive `file.id` | none — every file is fetched and fingerprinted each run; unchanged files still skip parse + upload via the content signal above (and `acl_groups` in the fingerprint catches sharing changes) |
 
 With `incremental: true` you do not also need `vectara.reindex`. Incremental decides *whether* to send a document (unchanged ones are skipped before upload); when a document that *is* sent already exists in the corpus, incremental replaces it automatically — a changed document is deleted and re-indexed in one step. So `incremental: true` + `remove_old_content: true` is the full "keep in sync" combination; `reindex` is superseded and can be omitted (if left set, it is harmless and an info line notes it is redundant). The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore unguarded deletion. The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
 
@@ -67,6 +75,7 @@ Caveats:
 - **File crawlers (folder, s3): `remove_old_content` requires `incremental: true`.** A single file can produce several corpus documents (media transcripts, one document per spreadsheet sheet, split-PDF parts) whose ids differ from the file's primary id. These are tagged as sub-documents only under `incremental`, which is what keeps the deletion pass from removing them. With `remove_old_content` set but `incremental` off, the deletion is skipped (with a warning).
 - **Media, spreadsheet, and split-PDF documents do not get the skip optimization** — they are re-indexed every run — but they are protected from wrongful deletion. They are also not auto-deleted when their source file is removed (they remain as orphans); only the primary-document file types are fully synced.
 - **RSS `remove_old_content` deletes any corpus document not in the current feed window.** Because an RSS feed only exposes the last `days_past` days, enabling this makes the corpus mirror the current window (articles that age out are deleted). Leave it off (the default) if you want to accumulate history. It is no longer implied by `incremental`.
+- **gdrive has no deletion pass.** Incremental on gdrive skips unchanged files and updates changed ones, but it never removes corpus documents whose source file was deleted from Drive (there is no `remove_old_content` support for gdrive in either mode). Also note gdrive only considers files modified within `days_back`, so a small `days_back` limits what is even seen on each run.
 
 ### Website crawler
 
