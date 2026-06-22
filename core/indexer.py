@@ -360,8 +360,8 @@ class Indexer:
 
         Returns:
             list of dicts, one per document, with: id, url, source, fingerprint, content_hash,
-            last_updated, parent_doc_id, sitemap_lastmod. Values are taken from metadata;
-            missing keys are None.
+            last_updated, parent_doc_id, sitemap_lastmod, pub_date. Values are taken from
+            metadata; missing keys are None.
         """
         page_key = None  # Initialize page_key as None
         docs = []
@@ -398,6 +398,7 @@ class Indexer:
                     'last_updated': md.get('last_updated'),
                     'parent_doc_id': md.get('parent_doc_id'),
                     'sitemap_lastmod': md.get('sitemap_lastmod'),
+                    'pub_date': md.get('pub_date'),
                 })
 
             response_metadata = res.get('metadata', None)

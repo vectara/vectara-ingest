@@ -628,7 +628,10 @@ class WebsiteCrawler(Crawler):
                     and not source_is_newer(lastmod, entry.sitemap_lastmod)):
                 skipped += 1
                 if self.tracker:
-                    self.tracker.track_skipped(nu, url=u)
+                    # Track under the raw URL — the same doc_id the worker path uses
+                    # (track_indexed/skipped(url, ...)). Using the normalized form here would
+                    # create a second, never-matching tracker entry for resume/stats.
+                    self.tracker.track_skipped(u, url=u)
             else:
                 kept.append(u)
         if skipped:

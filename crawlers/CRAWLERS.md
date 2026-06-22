@@ -14,7 +14,7 @@ If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.
 
 Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
-### Incremental reindexing (website, docs, rss, s3, folder, gdrive)
+### Incremental reindexing (website, docs, rss, s3, folder, gdrive, notion)
 
 These crawlers can keep a corpus in sync with a changing source without re-processing everything on each run. Enable it per crawler block:
 
@@ -53,13 +53,13 @@ With `incremental: true` you do not also need `vectara.reindex`. Incremental dec
 | Skip unchanged and update changed, but never delete (accumulate) | `incremental: true` |
 | Re-process and overwrite every document every run | `incremental: false` + `vectara.reindex: true` |
 | Index once, skip anything already present, never overwrite (default) | `incremental: false` + `vectara.reindex: false` |
-| Crawler without incremental support (jira, notion, confluence, hubspot, …) | `vectara.reindex` controls overwrite-vs-skip; incremental is unavailable |
+| Crawler without incremental support (jira, confluence, hubspot, …) | `vectara.reindex` controls overwrite-vs-skip; incremental is unavailable |
 
 `vectara.reindex` (global) controls how an already-exists conflict is handled on crawlers that are **not** running incremental: `true` deletes and re-uploads, `false` (the default) leaves the existing document untouched. It only matters outside incremental mode.
 
 #### Upgrade path
 
-Adopting incremental is backward compatible — existing configs keep working unchanged, and fingerprint metadata is only written once `incremental: true` is set. For an incremental-capable crawler (website, docs, rss, s3, folder, gdrive):
+Adopting incremental is backward compatible — existing configs keep working unchanged, and fingerprint metadata is only written once `incremental: true` is set. For an incremental-capable crawler (website, docs, rss, s3, folder, gdrive, notion):
 
 1. Existing config (e.g. `vectara.reindex: true`, no `incremental`) keeps behaving as before.
 2. Add `incremental: true` to the crawler block (and `remove_old_content: true` if the corpus should mirror deletions). You can drop `vectara.reindex` — it is now implied for changed documents.
@@ -76,6 +76,7 @@ Caveats:
 - **Media, spreadsheet, and split-PDF documents do not get the skip optimization** — they are re-indexed every run — but they are protected from wrongful deletion. They are also not auto-deleted when their source file is removed (they remain as orphans); only the primary-document file types are fully synced.
 - **RSS `remove_old_content` deletes any corpus document not in the current feed window.** Because an RSS feed only exposes the last `days_past` days, enabling this makes the corpus mirror the current window (articles that age out are deleted). Leave it off (the default) if you want to accumulate history. It is no longer implied by `incremental`.
 - **gdrive has no deletion pass.** Incremental on gdrive skips unchanged files and updates changed ones, but it never removes corpus documents whose source file was deleted from Drive (there is no `remove_old_content` support for gdrive in either mode). Also note gdrive only considers files modified within `days_back`, so a small `days_back` limits what is even seen on each run.
+- **notion has no cheap pre-fetch signal.** The Notion API exposes no per-page change token the crawler uses up front, so incremental on notion always fetches each page's block tree and then skips on a fingerprint match (no "skip before fetch" step like sitemap `<lastmod>` or RSS `pub_date`). It supports `remove_old_content` (guarded by `deletion_safety_ratio`) to delete pages no longer reachable by the integration.
 
 ### Website crawler
 
@@ -574,6 +575,7 @@ To set up Notion, create a [Notion integration](https://www.notion.so/help/creat
 ```yaml
 ...
   notion_crawler:
+    incremental: false
     remove_old_content: false
     crawl_report: false
     output_dir: vectara_ingest_output
@@ -581,6 +583,7 @@ To set up Notion, create a [Notion integration](https://www.notion.so/help/creat
 
 The Notion crawler discovers all pages reachable by the integration via the Notion `search` API, fetches each page's block tree, and indexes the text content. Child pages (`child_page` blocks) are skipped during recursion to avoid duplicate indexing — they are picked up directly via `search`.
 
+- `incremental`: if `true`, skip pages whose content is unchanged since the last run (fingerprint match) instead of re-uploading them. See [Incremental reindexing](#incremental-reindexing-website-docs-rss-s3-folder-gdrive-notion). Notion has no cheap pre-fetch change signal, so each page's block tree is still fetched before the skip decision. Default `false`.
 - `remove_old_content`: if `true`, removes any document that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
 - `crawl_report`: if `true`, writes a `pages_indexed.txt` file under `output_dir` listing the pages indexed.
 - `output_dir`: directory for the crawl report. Default: `vectara_ingest_output`.

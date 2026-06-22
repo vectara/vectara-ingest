@@ -246,7 +246,6 @@ class FolderCrawler(Crawler):
                         _track(file_path, file_name, result)
                     logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} files")
                 ray.get([a.cleanup.remote() for a in actors])
-                ray.shutdown()
             else:
                 crawl_worker = FileCrawlWorker(self.cfg, df_parser_config, self.indexer, num_per_second)
                 crawl_worker.setup()
@@ -262,6 +261,11 @@ class FolderCrawler(Crawler):
         except Exception:
             crawl_complete = False
             raise
+        finally:
+            # Always release Ray, even if a batch raised mid-crawl — otherwise the cluster
+            # and its worker processes leak into subsequent runs in the same environment.
+            if ray_workers > 0:
+                ray.shutdown()
 
         # Delete files removed from the source folder (guarded against a partial crawl).
         # Requires incremental: only then do media/dataframe/split-PDF docs carry the

@@ -348,7 +348,8 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         resp.json.return_value = {
             "documents": [
                 {"id": "d1", "metadata": {"url": "u1", "source": "website", "fingerprint": "f1",
-                                          "content_hash": "c1", "last_updated": "2024-01-01"}},
+                                          "content_hash": "c1", "last_updated": "2024-01-01",
+                                          "pub_date": "2024-01-01 00:00:00+00:00"}},
                 {"id": "d2", "metadata": {"url": "u2"}},  # missing keys -> None
             ],
             "metadata": {"page_key": None},
@@ -357,8 +358,10 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         docs = ix._list_docs()
         self.assertEqual(docs[0]["fingerprint"], "f1")
         self.assertEqual(docs[0]["source"], "website")
+        self.assertEqual(docs[0]["pub_date"], "2024-01-01 00:00:00+00:00")
         self.assertIsNone(docs[1]["fingerprint"])  # no KeyError
         self.assertIsNone(docs[1]["parent_doc_id"])
+        self.assertIsNone(docs[1]["pub_date"])
         # No automatic metadata_filter is sent (source-scoping is client-side, so it does not
         # depend on the corpus having `source` as a filter attribute).
         _, kwargs = ix.session.get.call_args
@@ -387,6 +390,24 @@ class TestBuildManifest(unittest.TestCase):
         ]
         m = build_manifest(ix, key="id", source="S3")
         self.assertIn("file123", m)
+
+    def test_pub_date_surfaced_for_rss_prefilter(self):
+        # The RSS Layer-1 pre-fetch skip compares the feed pub_date against the pub_date stored
+        # last run (same clock), so build_manifest must carry it through. Comparing against
+        # last_updated instead (derived from page HTML, a different clock) can wrongly skip a
+        # genuinely updated entry.
+        ix = MagicMock()
+        ix._list_docs.return_value = [
+            {"id": "d1", "url": "https://ex.com/a", "source": "rss", "fingerprint": "f1",
+             "content_hash": "c1", "last_updated": "2025-01-01", "parent_doc_id": None,
+             "pub_date": "2024-01-01 00:00:00+00:00"},
+        ]
+        m = build_manifest(ix, key="url", source="rss")
+        entry = next(iter(m.values()))
+        self.assertEqual(entry.pub_date, "2024-01-01 00:00:00+00:00")
+        # A feed entry republished with a newer pub_date is "newer" -> re-fetch, even though the
+        # HTML-derived last_updated reads later than the new pub_date.
+        self.assertTrue(source_is_newer("2024-06-01 00:00:00+00:00", entry.pub_date))
 
     def test_source_scoping_is_client_side(self):
         # A corpus shared by two crawlers: build_manifest(source="website") must include only

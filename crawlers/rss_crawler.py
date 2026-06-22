@@ -131,7 +131,11 @@ class RssCrawler(Crawler):
             skipped = 0
             for url, title, pub_date in unique_urls:
                 entry = manifest.get(normalize_url_for_metadata(url))
-                if entry and entry.last_updated and not source_is_newer(pub_date, entry.last_updated):
+                # Compare the feed pub_date against the pub_date we stored last run — the same
+                # clock. (Not entry.last_updated, which index_url derives from the page HTML: a
+                # different clock that can read newer than the feed and wrongly skip a real
+                # update.) source_is_newer fails safe to "fetch" when either side is missing.
+                if entry and entry.pub_date and not source_is_newer(pub_date, entry.pub_date):
                     skipped += 1
                     continue
                 kept.append((url, title, pub_date))

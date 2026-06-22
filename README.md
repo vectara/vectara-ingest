@@ -553,7 +553,7 @@ The `reindex` parameter determines whether an existing document should be reinde
 
 ## Incremental reindexing
 
-By default a crawl re-fetches, re-parses and re-uploads every document on every run. For large or slow sources that is wasteful when most content has not changed. Several crawlers (website, docs, rss, s3, folder, gdrive) support an `incremental` mode that keeps the corpus in sync with the source while skipping unchanged work.
+By default a crawl re-fetches, re-parses and re-uploads every document on every run. For large or slow sources that is wasteful when most content has not changed. Several crawlers (website, docs, rss, s3, folder, gdrive, notion) support an `incremental` mode that keeps the corpus in sync with the source while skipping unchanged work.
 
 How it works (no external state — the corpus itself is the manifest):
 
@@ -568,11 +568,11 @@ Config knobs (per crawler block):
 * `remove_old_content: true` — delete documents that no longer exist at the source.
 * `deletion_safety_ratio` (default `0.5`) — refuse to delete if the crawl saw fewer than this fraction of the documents already in the corpus, or if it was interrupted. This guards against a partial/failed crawl wiping live data. Set to `0` to disable the guard.
 
-To keep a corpus consistent with a changing source, run with `incremental: true` and `remove_old_content: true`. Under incremental mode only changed documents are re-sent, and they are replaced automatically — you do not need `reindex: true` (if set it is harmless and logged as redundant). See [crawlers/CRAWLERS.md](crawlers/CRAWLERS.md#incremental-reindexing-website-docs-rss-s3-folder-gdrive) for a mode-selection guide, the upgrade path, and the deprecation roadmap for `reindex`.
+To keep a corpus consistent with a changing source, run with `incremental: true` and `remove_old_content: true`. Under incremental mode only changed documents are re-sent, and they are replaced automatically — you do not need `reindex: true` (if set it is harmless and logged as redundant). See [crawlers/CRAWLERS.md](crawlers/CRAWLERS.md#incremental-reindexing-website-docs-rss-s3-folder-gdrive-notion) for a mode-selection guide, the upgrade path, and the deprecation roadmap for `reindex`.
 
 Notes and limitations:
 
-* The content fingerprint for web pages is computed over the page HTML. An image whose pixels change behind a stable URL (and which the website crawler indexes as a separate summarized document) is not detected by the HTML hash alone; rely on the source's last-changed signal or an occasional full reindex for those.
+* The content fingerprint for web pages is computed over the page's normalized extracted text (not the rendered HTML, which isn't byte-stable across fetches). An image whose pixels change behind a stable URL (and which the website crawler indexes as a separate summarized document) is not detected by the text hash alone; rely on the source's last-changed signal or an occasional full reindex for those.
 * GDrive permission/sharing changes do not bump Drive `modifiedTime`, so the gdrive crawler does not use a timestamp pre-skip — it always evaluates the (metadata-inclusive) fingerprint so ACL changes are reflected in the corpus.
 * The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are written by the ingest pipeline when `incremental` is on; do not set them yourself.
 * For file crawlers (folder, s3), `remove_old_content` requires `incremental: true` (a single file can map to several corpus documents that are only made safe to diff under incremental). Media, spreadsheet, and split-PDF documents are protected from deletion but are re-indexed every run rather than skipped. For RSS, `remove_old_content` deletes anything outside the current feed window, so leave it off unless you want the corpus to mirror the feed.

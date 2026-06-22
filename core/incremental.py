@@ -77,6 +77,7 @@ class ManifestEntry:
     parent_doc_id: Optional[str] = None
     url: Optional[str] = None
     sitemap_lastmod: Optional[str] = None
+    pub_date: Optional[str] = None
 
 
 def _canonical_json(obj: Any) -> str:
@@ -164,6 +165,7 @@ def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None)
             parent_doc_id=d.get("parent_doc_id"),
             url=d.get("url"),
             sitemap_lastmod=d.get("sitemap_lastmod"),
+            pub_date=d.get("pub_date"),
         )
         if key == "url":
             if not entry.url:

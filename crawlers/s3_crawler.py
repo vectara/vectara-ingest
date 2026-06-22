@@ -1,7 +1,7 @@
 import pathlib
 import boto3
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class FileCrawlWorker(object):
         return 0 if succeeded else 1
 
 
-def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[Tuple[str, str]]:
+def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[Tuple[str, Optional[str]]]:
     """
     List all files in an S3 bucket.
 
@@ -133,7 +133,8 @@ def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[Tuple[st
         cfg: configuration object for S3 client creation
 
     Returns a list of (key, last_modified) tuples. `last_modified` is the object's
-    LastModified (ISO string), used as the cheap change signal for incremental crawls.
+    LastModified (ISO string), used as the cheap change signal for incremental crawls;
+    it is None when the object has no LastModified.
     """
     s3 = create_s3_client(cfg)
     result = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -277,7 +278,6 @@ class S3Crawler(Crawler):
                         _track(s3_file, result)
                     logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} S3 files")
                 ray.get([a.cleanup.remote() for a in actors])
-                ray.shutdown()
             else:
                 crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
                 crawl_worker.setup()
@@ -293,6 +293,11 @@ class S3Crawler(Crawler):
         except Exception:
             crawl_complete = False
             raise
+        finally:
+            # Always release Ray, even if a batch raised mid-crawl — otherwise the cluster
+            # and its worker processes leak into subsequent runs in the same environment.
+            if ray_workers > 0:
+                ray.shutdown()
 
         # Delete objects removed from S3 (guarded against a partial crawl). Requires
         # incremental: only then do media docs carry the parent_doc_id tag that keeps the
