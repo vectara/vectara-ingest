@@ -549,7 +549,33 @@ Use these when you build the `document` JSON structure directly and want to inde
 
 #### Parameters
 
-The `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then indexes the document.
+The `reindex` parameter determines whether an existing document should be reindexed or not. If reindexing is required, the code automatically takes care of that by calling `delete_doc()` to first remove the document from the corpus and then indexes the document. This flag governs crawls that do not run in incremental mode; under `incremental: true` changed documents are replaced automatically and `reindex` is not needed (see [Incremental reindexing](#incremental-reindexing)).
+
+## Incremental reindexing
+
+By default a crawl re-fetches, re-parses and re-uploads every document on every run. For large or slow sources that is wasteful when most content has not changed. Several crawlers (website, docs, rss, s3, folder, gdrive, notion) support an `incremental` mode that keeps the corpus in sync with the source while skipping unchanged work.
+
+How it works (no external state — the corpus itself is the manifest):
+
+1. At index time each document is stamped with a `fingerprint` in its metadata. The fingerprint covers the document's content signal **plus** the metadata written to Vectara (e.g. GDrive `acl_groups`) **plus** the processing config (`doc_parser`, chunking, `extract_metadata`, etc.). Any of those changing re-indexes the document. The content signal is chosen to be stable across runs: the normalized extracted **text** for fetched web pages (the rendered HTML isn't byte-stable), the raw **bytes** for downloaded files, and Drive's **`modifiedTime`** for Google-native Docs/Sheets/Slides (whose exports aren't byte-stable).
+2. On the next run a single corpus listing reconstructs what is already indexed and its fingerprint.
+3. Each item is compared: unchanged → skipped; changed → re-indexed; present in the corpus but gone from the source → deleted (only when `remove_old_content: true`).
+4. Where the source exposes a cheap "last changed" signal — sitemap `<lastmod>`, RSS `pub_date`, S3 `LastModified`, file mtime — items that are not newer than what was last indexed are skipped **before** they are even fetched.
+
+Config knobs (per crawler block):
+
+* `incremental: true` — enable the skip/fingerprint logic. Default `false`; with it off the crawler behaves exactly as before and writes no new metadata.
+* `remove_old_content: true` — delete documents that no longer exist at the source.
+* `deletion_safety_ratio` (default `0.5`) — refuse to delete if the crawl saw fewer than this fraction of the documents already in the corpus, or if it was interrupted. This guards against a partial/failed crawl wiping live data. Set to `0` to disable the guard.
+
+To keep a corpus consistent with a changing source, run with `incremental: true` and `remove_old_content: true`. Under incremental mode only changed documents are re-sent, and they are replaced automatically — you do not need `reindex: true` (if set it is harmless and logged as redundant). See [crawlers/CRAWLERS.md](crawlers/CRAWLERS.md#incremental-reindexing-website-docs-rss-s3-folder-gdrive-notion) for a mode-selection guide, the upgrade path, and the deprecation roadmap for `reindex`.
+
+Notes and limitations:
+
+* The content fingerprint for web pages is computed over the page's normalized extracted text (not the rendered HTML, which isn't byte-stable across fetches). An image whose pixels change behind a stable URL (and which the website crawler indexes as a separate summarized document) is not detected by the text hash alone; rely on the source's last-changed signal or an occasional full reindex for those.
+* GDrive permission/sharing changes do not bump Drive `modifiedTime`, so the gdrive crawler does not use a timestamp pre-skip — it always evaluates the (metadata-inclusive) fingerprint so ACL changes are reflected in the corpus.
+* The metadata fields `fingerprint`, `content_hash`, `source`, `parent_doc_id`, and `sitemap_lastmod` are written by the ingest pipeline when `incremental` is on; do not set them yourself.
+* For file crawlers (folder, s3), `remove_old_content` requires `incremental: true` (a single file can map to several corpus documents that are only made safe to diff under incremental). Media, spreadsheet, and split-PDF documents are protected from deletion but are re-indexed every run rather than skipped. For RSS, `remove_old_content` deletes anything outside the current feed window, so leave it off unless you want the corpus to mirror the feed.
 
 ## Deployment
 

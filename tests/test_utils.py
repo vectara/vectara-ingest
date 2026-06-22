@@ -536,6 +536,7 @@ class TestUtils(unittest.TestCase):
         """Test logging setup with default level."""
         mock_root_logger = Mock()
         mock_root_logger.handlers = []  # Empty handlers list to trigger handler setup
+        mock_root_logger.filters = []  # Real list so the pdfminer-filter check can iterate
         mock_get_logger.return_value = mock_root_logger
         mock_handler_instance = Mock()
         mock_handler.return_value = mock_handler_instance
@@ -551,8 +552,9 @@ class TestUtils(unittest.TestCase):
     def test_setup_logging_env_level(self, mock_get_logger):
         """Test logging setup with environment variable."""
         mock_root_logger = Mock()
+        mock_root_logger.filters = []  # Real list so the pdfminer-filter check can iterate
         mock_get_logger.return_value = mock_root_logger
-        
+
         with patch('logging.StreamHandler'):
             setup_logging()
         

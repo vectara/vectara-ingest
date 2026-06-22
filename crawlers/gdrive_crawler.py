@@ -26,6 +26,7 @@ from core.dataframe_parser import (
     process_dataframe_file,
 )
 from core.indexer import Indexer
+from core.incremental import build_manifest
 from core.summary import TableSummarizer
 from core.utils import setup_logging, safe_remove_file, get_docker_or_local_path
 
@@ -115,8 +116,30 @@ ACL_SOURCE_MY_DRIVE_PARTIAL = 'my_drive_partial'
 
 FOLDER_MIME = 'application/vnd.google-apps.folder'
 SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+NATIVE_MIME_PREFIX = 'application/vnd.google-apps.'
 
 _FOLDER_ID_PATTERN = re.compile(r'/folders/([a-zA-Z0-9_-]+)')
+
+
+def gdrive_content_hash(file: dict) -> Optional[str]:
+    """Stable content-change signal for incremental skipping.
+
+    Google-native docs (Docs/Sheets/Slides) are *exported* on every crawl, and Drive's export
+    is not byte-stable across runs — so hashing the exported bytes (the indexer's default)
+    makes the fingerprint change every run and the file is never skipped. Drive's modifiedTime
+    is the canonical content-change signal for native docs, so use it as the content hash.
+    (ACL/sharing changes don't move modifiedTime, but they are caught separately via acl_groups
+    in the fingerprint metadata, not the content hash.)
+
+    Binary files (PDFs, images, …) are downloaded as-is with stable bytes, so return None and
+    let the indexer hash the file. Returns None for native docs missing modifiedTime so the
+    indexer falls back to byte hashing rather than producing a useless constant.
+    """
+    mime = file.get('mimeType', '') or ''
+    if mime.startswith(NATIVE_MIME_PREFIX):
+        modified_time = file.get('modifiedTime')
+        return f"gdrive-native:{modified_time}" if modified_time else None
+    return None
 
 
 def extract_folder_id(value: Optional[str]) -> Optional[str]:
@@ -1177,6 +1200,10 @@ class UserWorker(object):
                     df_parser=self.df_parser,
                     df_config=self.cfg.get('dataframe_processing', {}),
                     source_name='gdrive',
+                    # Incremental: native Sheets export to .xlsx (not byte-stable) and their
+                    # table summary is LLM-generated, so skip via Drive modifiedTime instead.
+                    prior_fingerprints=getattr(self.crawler, 'prior_fingerprints', {}),
+                    content_hash_override=gdrive_content_hash(file),
                 )
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
@@ -1189,6 +1216,8 @@ class UserWorker(object):
                     uri=url,
                     metadata=file_metadata,
                     id=file_id,
+                    prior_fingerprint=getattr(self.crawler, 'prior_fingerprints', {}).get(file_id),
+                    content_hash_override=gdrive_content_hash(file),
                 )
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
@@ -1310,6 +1339,14 @@ class GdriveCrawler(Crawler):
         super().__init__(cfg, endpoint, corpus_key, api_key)
         logger.info("Google Drive Crawler initialized")
 
+        # Incremental reindexing: {file_id: fingerprint} of what's already in the corpus.
+        # Read by UserWorker.crawl_file (via self.crawler) to skip unchanged files. Built in
+        # crawl() before workers are created so it serializes into Ray actors. The fingerprint
+        # includes the doc metadata (incl. acl_groups), so a permission/ACL change re-indexes
+        # the file even when its bytes are unchanged — a Drive modifiedTime would NOT, which is
+        # why gdrive intentionally does no timestamp-based pre-skip.
+        self.prior_fingerprints = {}
+
         # Get auth type
         auth_type = cfg.gdrive_crawler.get("auth_type", "service_account")
 
@@ -1360,6 +1397,15 @@ class GdriveCrawler(Crawler):
             logger.info(f"Crawling documents from {date_threshold.date()}")
         ray_workers = self.cfg.gdrive_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         permission_display_filter = self._resolve_permission_display_filter()
+
+        # Build the incremental manifest before workers start so it ships into the Ray actors
+        # along with the crawler object. Source-scoped to this crawler's docs.
+        if self.cfg.gdrive_crawler.get("incremental", False):
+            manifest = build_manifest(
+                self.indexer, key="id", source=self.indexer.source_tag)
+            self.prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
+            logger.info(f"Incremental: loaded {len(self.prior_fingerprints)} prior fingerprints "
+                        f"from {len(manifest)} corpus docs")
 
         if ray_workers > 0:
             logger.info(f"Using {ray_workers} ray workers")

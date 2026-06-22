@@ -7,6 +7,7 @@ from typing import Any
 import os
 
 from core.utils import get_docker_or_local_path
+from core.incremental import build_manifest, plan_deletions
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -99,6 +100,9 @@ class NotionCrawler(Crawler):
     def __init__(self, cfg: OmegaConf, endpoint: str, corpus_key: str, api_key: str) -> None:
         super().__init__(cfg, endpoint, corpus_key, api_key)
         self.notion_api_key = self.cfg.notion_crawler.notion_api_key
+        # Incremental reindexing state (see core/incremental.py).
+        self.incremental = self.cfg.notion_crawler.get("incremental", False)
+        self.source = self.cfg.notion_crawler.get("source", "notion")
 
     def crawl(self) -> None:
         notion = Client(auth=self.notion_api_key)
@@ -108,10 +112,23 @@ class NotionCrawler(Crawler):
         if self.tracker and not self.cfg.vectara.get("reindex", False):
             indexed_ids = self.tracker.get_indexed_ids()
 
+        # Incremental reindexing: build the corpus manifest once (keyed by Notion page id,
+        # source-scoped) so an unchanged page can be skipped before upload.
+        manifest = {}
+        if self.incremental or self.cfg.notion_crawler.get("remove_old_content", False):
+            manifest_source = self.indexer.source_tag if self.incremental else None
+            manifest = build_manifest(self.indexer, key="id", source=manifest_source)
+            logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+        present_keys = set()       # page ids present at the source (indexed or skipped)
+        crawl_completed = False
+
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
-            if page_id in indexed_ids:
+            # Legacy blind crash-recovery pre-filter — suppressed under incremental, where the
+            # fingerprint (not "was it indexed before") decides, so a changed page is re-fetched.
+            if page_id in indexed_ids and not self.incremental:
+                present_keys.add(page_id)
                 continue
             self.check_shutdown()
             try:
@@ -130,19 +147,29 @@ class NotionCrawler(Crawler):
 
             if len(all_text)==0:
                 logger.info(f"Skipping notion page {page['url']}, since no text available")
+                present_keys.add(page_id)
                 continue
 
+            present_keys.add(page_id)
             doc = {
                 'id': page_id,
                 'title': extract_title(page),
                 'metadata': {
-                    'source': 'notion',
+                    'source': self.source,
                     'url': page['url'],
                     'title': extract_title(page),
                 },
                 'sections': [{'text': all_text}]
             }
-            succeeded = self.indexer.index_document(doc)
+            # index_document computes the fingerprint from the page text + metadata + config and
+            # skips the upload (returning True, last_skip_reason='unchanged') when nothing changed.
+            prior_fingerprint = manifest[page_id].fingerprint if page_id in manifest else None
+            succeeded = self.indexer.index_document(doc, prior_fingerprint=prior_fingerprint)
+            if succeeded and self.indexer.was_skipped():
+                logger.info(f"Notion page {page_id} unchanged (fingerprint match) — skipping")
+                if self.tracker:
+                    self.tracker.track_skipped(page_id, url=page['url'], title=doc['title'])
+                continue
             if succeeded:
                 logger.info(f"Indexed notion page {page_id}")
                 if self.tracker:
@@ -152,6 +179,9 @@ class NotionCrawler(Crawler):
                 if self.tracker:
                     self.tracker.track_failed(page_id, url=page['url'], title=doc['title'])
 
+        # The loop ran to completion (check_shutdown raises on interruption), so the present
+        # set is complete and safe to drive deletions.
+        crawl_completed = True
 
         # report pages crawled if specified
         if self.cfg.notion_crawler.get("crawl_report", False):
@@ -173,14 +203,19 @@ class NotionCrawler(Crawler):
 
 
         # If remove_old_content is set to true:
-        # remove from corpus any document previously indexed that is NOT in pages added
+        # remove from corpus any document previously indexed that is NOT in pages added,
+        # guarded by plan_deletions against a partial/interrupted crawl mass-deleting live docs.
         if self.cfg.notion_crawler.get("remove_old_content", False):
-            indexed_ids = set([page['id'] for page in pages])
-            existing_docs = self.indexer._list_docs()
-            docs_to_remove = [doc for doc in existing_docs if doc['id'] not in indexed_ids]
-            logger.info(f"Removing {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
-            for doc in docs_to_remove:
-                self.indexer.delete_doc(doc['id'])
+            listing_complete = crawl_completed and len(present_keys) > 0
+            ratio = self.cfg.notion_crawler.get("deletion_safety_ratio", 0.5)
+            to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
+            removed = []
+            if not refused:
+                to_delete_set = set(to_delete)
+                for entry in manifest.values():
+                    if entry.doc_id in to_delete_set and self.indexer.delete_doc(entry.doc_id):
+                        removed.append(entry)
+            logger.info(f"Removing {len(to_delete)} docs that are not included in the crawl but are in the corpus.")
             if self.cfg.notion_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
                 docker_path = f'/home/vectara/{output_dir}/pages_removed.txt'
@@ -194,5 +229,5 @@ class NotionCrawler(Crawler):
                     file_path = os.path.join(file_path, filename)
 
                 with open(file_path, 'w') as f:
-                    for doc in docs_to_remove:
-                        f.write(f"Page with ID {doc['id']}: {doc['url']}\n")
+                    for entry in removed:
+                        f.write(f"Page with ID {entry.doc_id}: {entry.url}\n")
