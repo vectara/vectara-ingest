@@ -244,7 +244,6 @@ class DocsCrawler(Crawler):
                 # Cleanup Ray workers
                 for a in actors:
                     ray.get(a.cleanup.remote())
-                ray.shutdown()
 
             else:
                 crawl_worker = UrlCrawlWorker(self.indexer, self, num_per_second)
@@ -259,6 +258,11 @@ class DocsCrawler(Crawler):
         except CrawlShutdownException:
             crawl_completed = False
             raise
+        finally:
+            # Always release Ray, even if check_shutdown() or a worker task raised mid-crawl —
+            # otherwise the cluster and its worker processes leak into subsequent runs.
+            if ray_workers > 0:
+                ray.shutdown()
 
         # If remove_old_content is set to true:
         # remove from corpus any document previously indexed that is NOT in the crawl list,

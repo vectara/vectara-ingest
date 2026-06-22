@@ -704,33 +704,36 @@ class WebsiteCrawler(Crawler):
                     logger.warning(f"Failed to stop Playwright: {e}")
         self.indexer.web_extractor = None
         ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+        try:
+            # Broadcast the per-url maps once via the object store (zero-copied per node, not
+            # duplicated per actor). Ray dereferences the ObjectRef into the dict in each actor.
+            pf_ref = ray.put(prior_fingerprints or {})
+            lm_ref = ray.put(sitemap_lastmods or {})
 
-        # Broadcast the per-url maps once via the object store (zero-copied per node, not
-        # duplicated per actor). Ray dereferences the ObjectRef into the dict in each actor.
-        pf_ref = ray.put(prior_fingerprints or {})
-        lm_ref = ray.put(sitemap_lastmods or {})
-
-        # Create workers with serializable config
-        actors = [ray.remote(PageCrawlWorker).remote(
-            self.cfg,
-            num_per_second,
-            pf_ref,
-            lm_ref
-        ) for _ in range(ray_workers)]
-        ray.get([a.setup.remote() for a in actors])
-        pool = ray.util.ActorPool(actors)
-        batch_size = max(ray_workers * 4, 20)
-        for batch_start in range(0, len(urls), batch_size):
-            self.check_shutdown()
-            batch = urls[batch_start:batch_start + batch_size]
-            results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
-            for url, result in zip(batch, results):
-                self._track_result(url, result)
-            logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
-        # Cleanup Ray workers
-        for a in actors:
-            ray.get(a.cleanup.remote())
-        ray.shutdown()
+            # Create workers with serializable config
+            actors = [ray.remote(PageCrawlWorker).remote(
+                self.cfg,
+                num_per_second,
+                pf_ref,
+                lm_ref
+            ) for _ in range(ray_workers)]
+            ray.get([a.setup.remote() for a in actors])
+            pool = ray.util.ActorPool(actors)
+            batch_size = max(ray_workers * 4, 20)
+            for batch_start in range(0, len(urls), batch_size):
+                self.check_shutdown()
+                batch = urls[batch_start:batch_start + batch_size]
+                results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                for url, result in zip(batch, results):
+                    self._track_result(url, result)
+                logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
+            # Cleanup Ray workers
+            for a in actors:
+                ray.get(a.cleanup.remote())
+        finally:
+            # Always release Ray, even if check_shutdown() or a worker task raised mid-crawl —
+            # otherwise the cluster and its worker processes leak into subsequent runs.
+            ray.shutdown()
 
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str,
                                     prior_fingerprints: dict = None, sitemap_lastmods: dict = None):

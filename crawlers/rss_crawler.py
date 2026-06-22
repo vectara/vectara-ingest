@@ -148,50 +148,55 @@ class RssCrawler(Crawler):
             ray_workers = psutil.cpu_count(logical=True)
 
         crawl_completed = False
-        if ray_workers > 0:
-            logger.info(f"Using {ray_workers} ray workers to process {len(unique_urls)} URLs")
-            # Disable browser for parallel processing
-            self.indexer.p = self.indexer.browser = None
-            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            # Broadcast the fingerprint map once via the object store (zero-copied per node)
-            # rather than serializing the full dict into every actor.
-            pf_ref = ray.put(prior_fingerprints)
-            actors = [
-                ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source, pf_ref)
-                for _ in range(ray_workers)
-            ]
-            for a in actors:
-                a.setup.remote()
-            pool = ray.util.ActorPool(actors)
-            results = list(pool.map(lambda a, u: a.process.remote(u), unique_urls))
-            
-            # Log summary
-            successful = sum(1 for r in results if r == 1)
-            failed = sum(1 for r in results if r == 0)
-            errors = sum(1 for r in results if r == -1)
-            logger.info(f"RSS crawling complete: {successful} successful, {failed} failed, {errors} errors")
-            
-            # Cleanup Ray workers
-            for a in actors:
-                ray.get(a.cleanup.remote())
-            ray.shutdown()
-        else:
-            # Sequential processing (original behavior)
-            rss_worker = RssUrlWorker(self.cfg, self.indexer, source, prior_fingerprints)
-            rss_worker.setup()
-            successful = 0
-            for inx, url_data in enumerate(unique_urls):
-                if (inx + 1) % 10 == 0:
-                    logger.info(f"Processing URL {inx+1} out of {len(unique_urls)}")
-                result = rss_worker.process(url_data)
-                if result == 1:
-                    successful += 1
-                if delay_in_secs > 0:
-                    time.sleep(delay_in_secs)
-            # Cleanup worker
-            rss_worker.cleanup()
-            logger.info(f"RSS crawling complete: {successful} URLs successfully indexed")
-        crawl_completed = True
+        try:
+            if ray_workers > 0:
+                logger.info(f"Using {ray_workers} ray workers to process {len(unique_urls)} URLs")
+                # Disable browser for parallel processing
+                self.indexer.p = self.indexer.browser = None
+                ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+                # Broadcast the fingerprint map once via the object store (zero-copied per node)
+                # rather than serializing the full dict into every actor.
+                pf_ref = ray.put(prior_fingerprints)
+                actors = [
+                    ray.remote(RssUrlWorker).remote(self.cfg, self.indexer, source, pf_ref)
+                    for _ in range(ray_workers)
+                ]
+                for a in actors:
+                    a.setup.remote()
+                pool = ray.util.ActorPool(actors)
+                results = list(pool.map(lambda a, u: a.process.remote(u), unique_urls))
+
+                # Log summary
+                successful = sum(1 for r in results if r == 1)
+                failed = sum(1 for r in results if r == 0)
+                errors = sum(1 for r in results if r == -1)
+                logger.info(f"RSS crawling complete: {successful} successful, {failed} failed, {errors} errors")
+
+                # Cleanup Ray workers
+                for a in actors:
+                    ray.get(a.cleanup.remote())
+            else:
+                # Sequential processing (original behavior)
+                rss_worker = RssUrlWorker(self.cfg, self.indexer, source, prior_fingerprints)
+                rss_worker.setup()
+                successful = 0
+                for inx, url_data in enumerate(unique_urls):
+                    if (inx + 1) % 10 == 0:
+                        logger.info(f"Processing URL {inx+1} out of {len(unique_urls)}")
+                    result = rss_worker.process(url_data)
+                    if result == 1:
+                        successful += 1
+                    if delay_in_secs > 0:
+                        time.sleep(delay_in_secs)
+                # Cleanup worker
+                rss_worker.cleanup()
+                logger.info(f"RSS crawling complete: {successful} URLs successfully indexed")
+            crawl_completed = True
+        finally:
+            # Always release Ray, even if a worker task raised mid-crawl — otherwise the
+            # cluster and its worker processes leak into subsequent runs.
+            if ray_workers > 0:
+                ray.shutdown()
 
         # Delete corpus docs not present in the current feed window — opt-in via
         # remove_old_content (NOT auto-enabled by incremental). Note: RSS only sees the last

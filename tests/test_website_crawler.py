@@ -336,5 +336,39 @@ class TestFilterAndPrepareUrls(unittest.TestCase):
         self.assertEqual(sorted(self._run(urls)), sorted(urls))
 
 
+class TestRayShutdownOnFailure(unittest.TestCase):
+    """Regression: _dispatch_to_ray_workers must always shut Ray down. If a worker task (or
+    check_shutdown) raises after ray.init(), a happy-path-only shutdown leaks the cluster into
+    subsequent runs."""
+
+    def _fake_self(self):
+        fake_self = WebsiteCrawler.__new__(WebsiteCrawler)
+        fake_self.cfg = _make_cfg()
+        fake_self.indexer = MagicMock()
+        fake_self.check_shutdown = MagicMock()
+        fake_self._track_result = MagicMock()
+        return fake_self
+
+    def test_ray_shutdown_called_when_dispatch_raises(self):
+        fake_self = self._fake_self()
+        with patch("crawlers.website_crawler.ray") as mock_ray:
+            # The actor pool blows up mid-crawl (e.g. a worker task error).
+            mock_ray.util.ActorPool.return_value.map.side_effect = RuntimeError("worker died")
+            with self.assertRaises(RuntimeError):
+                WebsiteCrawler._dispatch_to_ray_workers(
+                    fake_self, ["https://example.com/a"], ray_workers=2,
+                    num_per_second=1, source="website")
+            mock_ray.shutdown.assert_called_once()
+
+    def test_ray_shutdown_called_on_happy_path(self):
+        fake_self = self._fake_self()
+        with patch("crawlers.website_crawler.ray") as mock_ray:
+            mock_ray.util.ActorPool.return_value.map.return_value = []
+            WebsiteCrawler._dispatch_to_ray_workers(
+                fake_self, ["https://example.com/a"], ray_workers=2,
+                num_per_second=1, source="website")
+            mock_ray.shutdown.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
