@@ -15,7 +15,7 @@ from core.incremental import (
     compute_fingerprint, config_signature, build_manifest, source_is_newer,
     plan_deletions, ManifestEntry, content_hash_from_text,
 )
-from core.indexer_utils import extract_last_modified
+from core.indexer_utils import extract_last_modified, md5_hex
 
 
 class TestComputeFingerprint(unittest.TestCase):
@@ -340,6 +340,40 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(ix.last_skip_reason, "unchanged")
         ix.session.post.assert_not_called()
+
+    def test_index_document_content_hash_override_used_for_skip(self):
+        # gdrive native Sheets route through the dataframe parser, whose section text is a
+        # non-deterministic LLM table summary. The skip must key off content_hash_override
+        # (Drive modifiedTime), not the section text, or the document would never skip.
+        ix = self._indexer()
+        ix.static_metadata = None
+        ix.use_core_indexing = False
+        ix.cfg = MagicMock()
+        ix._last_response_status = None
+        override = "gdrive-native:2024-01-01T00:00:00Z"
+        fp = compute_fingerprint(override, {"url": "u", "title": "t"}, "CFG")
+        # Section text differs from last run (summary drift) but the override is unchanged.
+        doc = {"id": "s1", "metadata": {"url": "u", "title": "t"},
+               "sections": [{"text": "a freshly generated summary that differs every run"}]}
+        ok = ix.index_document(dict(doc, metadata=dict(doc["metadata"])),
+                               prior_fingerprint=fp, content_hash_override=override)
+        self.assertTrue(ok)
+        self.assertEqual(ix.last_skip_reason, "unchanged")
+        ix.session.post.assert_not_called()
+
+    def test_index_document_without_override_hashes_section_text(self):
+        # Without an override the section-text hash is used (existing behavior preserved).
+        ix = self._indexer()
+        ix.static_metadata = None
+        ix.use_core_indexing = False
+        ix.cfg = MagicMock()
+        ix._last_response_status = None
+        content_hash = md5_hex("hello")
+        fp = compute_fingerprint(content_hash, {"url": "u"}, "CFG")
+        doc = {"id": "d1", "metadata": {"url": "u"}, "sections": [{"text": "hello"}]}
+        ok = ix.index_document(dict(doc, metadata=dict(doc["metadata"])), prior_fingerprint=fp)
+        self.assertTrue(ok)
+        self.assertEqual(ix.last_skip_reason, "unchanged")
 
     def test_list_docs_surfaces_fields_no_auto_filter(self):
         ix = self._indexer()

@@ -542,7 +542,8 @@ class Indexer:
         return False
 
     def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False,
-                       prior_fingerprint: Optional[str] = None) -> bool:
+                       prior_fingerprint: Optional[str] = None,
+                       content_hash_override: Optional[str] = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
 
@@ -553,6 +554,11 @@ class Indexer:
                 fingerprint this document had in the corpus on the prior run. If the freshly
                 computed fingerprint matches, the upload is skipped. Lets crawlers that index
                 via structured documents (e.g. notion) use the same skip path as index_url.
+            content_hash_override (str, optional): Use this as the content signal instead of
+                hashing the section text. Required when the section text is non-deterministic
+                across runs (e.g. a gdrive native Sheet, whose dataframe sections are an LLM
+                table summary) — pass a stable signal like Drive's modifiedTime so the
+                fingerprint is comparable run-to-run.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
@@ -584,7 +590,8 @@ class Indexer:
         # Incremental reindexing: fingerprint over the document's text + metadata + config,
         # stamped into doc metadata and used to skip an unchanged document before upload.
         if self.incremental and 'metadata' in document:
-            content_hash = md5_hex("".join(s.get('text', '') for s in document.get('sections', [])))
+            content_hash = (content_hash_override if content_hash_override is not None
+                            else md5_hex("".join(s.get('text', '') for s in document.get('sections', []))))
             if self._incremental_skip(content_hash, document['metadata'], prior_fingerprint):
                 if self.verbose:
                     logger.info(f"Document {document['id']} unchanged (fingerprint match) — skipping")
@@ -985,12 +992,17 @@ class Indexer:
                        doc_metadata: Dict[str, Any] = None, doc_title: str = "",
                        tables: Optional[Sequence[Dict[str, Any]]] = None,
                        image_bytes: Optional[List[Tuple[str, bytes]]] = None,
-                       use_core_indexing: bool = False) -> bool:
+                       use_core_indexing: bool = False,
+                       prior_fingerprint: Optional[str] = None,
+                       content_hash_override: Optional[str] = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
-        
+
         Args:
             image_bytes: Optional list of (image_id, binary_data) tuples containing image binary data
+            prior_fingerprint: Incremental skip — the document's fingerprint on the prior run.
+            content_hash_override: Incremental content signal to use instead of the section text
+                hash (e.g. Drive modifiedTime for a native Sheet whose summary text drifts).
         """
         self._init_processors()
         
@@ -1086,7 +1098,9 @@ class Indexer:
         if self.verbose:
             logger.info(f"Indexing document {doc_id} with json {str(document)[:1000]}...")
 
-        result = self.index_document(document, use_core_indexing)
+        result = self.index_document(document, use_core_indexing,
+                                     prior_fingerprint=prior_fingerprint,
+                                     content_hash_override=content_hash_override)
 
         if not result and not use_core_indexing and self._last_response_status == 400:
             logger.info(f"Document {doc_id} failed with 400, retrying with split_oversized=True")

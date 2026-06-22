@@ -1200,6 +1200,10 @@ class UserWorker(object):
                     df_parser=self.df_parser,
                     df_config=self.cfg.get('dataframe_processing', {}),
                     source_name='gdrive',
+                    # Incremental: native Sheets export to .xlsx (not byte-stable) and their
+                    # table summary is LLM-generated, so skip via Drive modifiedTime instead.
+                    prior_fingerprints=getattr(self.crawler, 'prior_fingerprints', {}),
+                    content_hash_override=gdrive_content_hash(file),
                 )
                 if ok:
                     self._record_indexed(file, file_metadata, parent_permissions=parent_perms)
