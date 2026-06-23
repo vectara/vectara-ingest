@@ -1,0 +1,58 @@
+vectara:
+  corpus_key: fluid-topics
+  reindex: false
+  create_corpus: false
+  # Optional: apply Presidio PII masking to structured text/metadata before indexing.
+  mask_pii: false
+
+crawling:
+  crawler_type: fluidtopics
+
+fluidtopics_crawler:
+  # Fluid Topics tenant base URL, e.g. https://docs.example.fluidtopics.net
+  base_url: ""
+
+  # API key auth. Keep api_key in secrets.toml as FLUIDTOPICS_API_KEY or
+  # FLUID_TOPICS_API_KEY instead of committing it here.
+  api_key: ""
+  api_key_header: "X-FluidTopics-Api-Key"
+  # Set to "Bearer" if the tenant expects Authorization: Bearer <token>.
+  auth_scheme: ""
+
+  # The Fluid Topics API surface can differ by tenant/version. Configure the
+  # list/search endpoint and per-item content endpoint to match the tenant docs.
+  search_endpoint: "/api/search"
+  content_endpoint_template: "/api/topics/{id}"
+
+  # Search/list parameters.
+  query: "*"
+  query_param: "q"
+  page_param: "page"
+  page_size_param: "limit"
+  page_size: 100
+  start_page: 0
+  # since_param: "modifiedSince"
+  # since: "2026-01-01T00:00:00Z"
+
+  # JSON paths used to read list items and content records.
+  # Override these to match the tenant's API response shape.
+  # items_path: "results"
+  id_paths: ["id", "khubId", "contentId", "topicId", "mapId"]
+  title_paths: ["title", "name", "label", "metadata.title"]
+  content_paths: ["content", "body", "html", "text", "xml", "dita", "data.content", "data.body"]
+  url_paths: ["url", "htmlUrl", "readerUrl", "metadata.url"]
+
+  # Metadata fields to expose for filtering/access control. Values are JSON
+  # paths read from the merged list item + content detail payload.
+  metadata_paths:
+    device_family: "metadata.device_family"
+    content_type: "metadata.content_type"
+    version: "metadata.version"
+    access_tier: "metadata.access_tier"
+    publication_date: "metadata.publication_date"
+
+  static_metadata:
+    source: "fluid-topics"
+
+  # Source API throttling.
+  num_per_second: 5
