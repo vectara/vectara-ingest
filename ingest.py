@@ -80,7 +80,7 @@ def reset_corpus_apikey(endpoint: str, corpus_key: str, api_key: str) -> None:
     Args:
         endpoint (str): Endpoint for the Vectara API.
         appclient_id (str): ID of the Vectara app client.
-        appclient_secret (str): Secret key for the Vectara app client.
+        appclient_secret (str): Secret key for the Vectara API.
         corpus_key (str): Corpus key of the Vectara corpus to index to.
     """
     url = f"{endpoint}/v2/corpora/{corpus_key}/reset"
@@ -102,7 +102,7 @@ def create_corpus_oauth(endpoint: str, corpus_key: str, auth_url: str, auth_id: 
     Args:
         endpoint (str): Endpoint for the Vectara API.
         appclient_id (str): ID of the Vectara app client.
-        appclient_secret (str): Secret key for the Vectara app client.
+        appclient_secret (str): Secret key for the Vectara API.
         corpus_key (str): Corpus key of the Vectara corpus to create
     """
     url = f"{endpoint}/v2/corpora"
@@ -235,6 +235,12 @@ def update_environment(cfg: DictConfig, source: str, env_dict) -> None:
             continue
         if k.startswith('WOLKEN_'):
             update_omega_conf(cfg, reason, f'wolken_crawler.{k[7:].lower()}', v)
+            continue
+        if k.startswith('FLUIDTOPICS_'):
+            update_omega_conf(cfg, reason, f'fluidtopics_crawler.{k[12:].lower()}', v)
+            continue
+        if k.startswith('FLUID_TOPICS_'):
+            update_omega_conf(cfg, reason, f'fluidtopics_crawler.{k[13:].lower()}', v)
             continue
 
         patterns = {
