@@ -78,7 +78,7 @@ pypdf >= 3.0.0
 furl==2.1.3
 office365-rest-python-client==2.6.2
 cairosvg==2.9.0
-scrapy==2.14.2
+scrapy==2.16.0
 typer==0.15.4
 boxsdk[jwt]==3.10.0
 google-cloud-aiplatform==1.133.0
@@ -95,7 +95,9 @@ onnx>=1.21.0
 tornado>=6.5.6
 jaraco-context>=6.1.0
 wheel>=0.46.2
-# Transitive pins to pull in CVE fixes (see CVE-2026-44209, CVE-2026-44019/44023):
-# banks via llama-index-core; docling-core via docling.
+# Transitive pins to pull in CVE fixes (see CVE-2026-44209, CVE-2026-44019/44023,
+# CVE-2026-42304): banks via llama-index-core; docling-core via docling;
+# twisted via scrapy.
 banks>=2.4.2
 docling-core>=2.74.1
+twisted>=26.4.0

@@ -1109,7 +1109,7 @@ scipy==1.15.3
     #   unstructured-inference
 scramp==1.4.5
     # via pg8000
-scrapy==2.14.2
+scrapy==2.16.0
     # via -r requirements.in
 sec-downloader==0.12.2
     # via -r requirements.in
@@ -1272,8 +1272,10 @@ triton==3.3.1 ; (platform_machine == 'x86_64' and sys_platform == 'linux') or sy
     #   torch
 tweepy==4.14.0
     # via -r requirements.in
-twisted==24.11.0
-    # via scrapy
+twisted==26.4.0
+    # via
+    #   -r requirements.in
+    #   scrapy
 typer==0.15.4
     # via
     #   -r requirements.in
