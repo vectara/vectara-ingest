@@ -64,11 +64,11 @@ openpyxl==3.1.5
 python-calamine==0.6.2
 tweepy==4.14.0
 matplotlib==3.8.4
-cryptography==46.0.7
+cryptography==48.0.1
 python-pptx==1.0.2
 python-docx==1.1.2
 Pillow==12.2.0
-docling==2.77.0
+docling==2.94.0
 easyocr>=1.7.0
 llama-parse==0.6.68
 llama-cloud-services==0.6.68
@@ -87,11 +87,15 @@ aiohttp>=3.13.3
 pdfminer.six>=20251230
 protobuf>=5.29.6
 urllib3>=2.7.0
-python-multipart>=0.0.27
+python-multipart>=0.0.30
 pyasn1>=0.6.3
 pyjwt>=2.12.0
 pyopenssl>=26.0.0
 onnx>=1.21.0
-tornado>=6.5.5
+tornado>=6.5.6
 jaraco-context>=6.1.0
 wheel>=0.46.2
+# Transitive pins to pull in CVE fixes (see CVE-2026-44209, CVE-2026-44019/44023):
+# banks via llama-index-core; docling-core via docling.
+banks>=2.4.2
+docling-core>=2.74.1
