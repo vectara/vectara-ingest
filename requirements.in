@@ -97,7 +97,8 @@ jaraco-context>=6.1.0
 wheel>=0.46.2
 # Transitive pins to pull in CVE fixes (see CVE-2026-44209, CVE-2026-44019/44023,
 # CVE-2026-42304): banks via llama-index-core; docling-core via docling;
-# twisted via scrapy.
+# twisted via scrapy; msgpack via ray.
 banks>=2.4.2
 docling-core>=2.74.1
 twisted>=26.4.0
+msgpack>=1.2.1

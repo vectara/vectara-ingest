@@ -510,8 +510,10 @@ mpmath==1.3.0
     # via sympy
 msal==1.37.0
     # via office365-rest-python-client
-msgpack==1.1.0
-    # via ray
+msgpack==1.2.1
+    # via
+    #   -r requirements.in
+    #   ray
 multidict==6.4.4
     # via
     #   aiohttp
