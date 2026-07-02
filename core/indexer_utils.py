@@ -16,8 +16,9 @@ logger = logging.getLogger(__name__)
 
 def md5_hex(text: str) -> str:
     """md5 hex digest of a string (utf-8). Single source for the content-hash idiom used by
-    incremental reindexing (page HTML, structured-doc text, config signature, fingerprints)."""
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
+    incremental reindexing (page HTML, structured-doc text, config signature, fingerprints).
+    Not a security hash (usedforsecurity=False keeps FIPS builds and scanners happy)."""
+    return hashlib.md5(text.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def get_chunking_config(cfg: OmegaConf) -> Optional[Dict]:

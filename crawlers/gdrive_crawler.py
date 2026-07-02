@@ -1172,7 +1172,9 @@ class UserWorker(object):
             'owners': owners,
             'size': size,
             'url': url,
-            'source': 'gdrive'
+            # source_tag defaults to 'gdrive'; honoring a user-set gdrive_crawler.source here
+            # keeps the stamped value aligned with the incremental manifest scope.
+            'source': self.indexer.source_tag
         }
 
         parent_perms: Optional[List[Dict[str, Any]]] = None

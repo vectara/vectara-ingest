@@ -42,7 +42,9 @@ from core.indexer_utils import (
     safe_file_cleanup, prepare_file_metadata, store_file,
     normalize_url_for_metadata, auth_redirect_reason, md5_hex
 )
-from core.incremental import compute_fingerprint, config_signature, content_hash_from_text
+from core.incremental import (
+    compute_fingerprint, config_signature, content_hash_from_text, source_tag_for,
+)
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
 
@@ -96,7 +98,7 @@ class Indexer:
         self.crawler_type = self.cfg.crawling.get("crawler_type", "")
         _crawler_cfg = self.cfg.get(f"{self.crawler_type}_crawler", {}) or {}
         self.incremental = bool(_crawler_cfg.get("incremental", False))
-        self.source_tag = _crawler_cfg.get("source", self.crawler_type)
+        self.source_tag = source_tag_for(self.crawler_type, _crawler_cfg)
         self.config_sig = config_signature(self.cfg)
         if self.incremental and self.reindex:
             logger.info("vectara.reindex is redundant under incremental mode (changed "
@@ -368,7 +370,7 @@ class Indexer:
 
         # Loop until there's no next page
         while True:
-            params = {"limit": 100}
+            params = {"limit": 1000}
             if page_key:  # Add page_key to the request if it's not None
                 params["page_key"] = page_key
             if metadata_filter:
@@ -438,8 +440,9 @@ class Indexer:
 
     @staticmethod
     def _hash_file(filename: str) -> str:
-        """Streaming md5 of a file's raw bytes (memory-safe for large files)."""
-        h = hashlib.md5()
+        """Streaming md5 of a file's raw bytes (memory-safe for large files). Not a security
+        hash (usedforsecurity=False keeps FIPS builds and scanners happy)."""
+        h = hashlib.md5(usedforsecurity=False)
         with open(filename, 'rb') as fh:
             for chunk in iter(lambda: fh.read(1024 * 1024), b''):
                 h.update(chunk)

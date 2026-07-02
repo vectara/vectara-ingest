@@ -13,7 +13,7 @@ sys.modules.setdefault('cairosvg', MagicMock())
 
 from core.incremental import (
     compute_fingerprint, config_signature, build_manifest, source_is_newer,
-    plan_deletions, ManifestEntry, content_hash_from_text,
+    plan_deletions, ManifestEntry, content_hash_from_text, source_tag_for,
 )
 from core.indexer_utils import extract_last_modified, md5_hex
 
@@ -82,6 +82,91 @@ class TestConfigSignature(unittest.TestCase):
         a = config_signature(self._cfg({"doc_parser": "docling"}, {"corpus_key": "k1"}))
         b = config_signature(self._cfg({"doc_parser": "docling"}, {"corpus_key": "k2"}))
         self.assertEqual(a, b)
+
+    def test_model_change_changes_signature(self):
+        # Swapping the summarization/vision model changes generated summaries, contextual
+        # chunks and extracted metadata, so it must invalidate the skip decision.
+        a = config_signature(self._cfg(
+            {"model_config": {"text": {"provider": "openai", "model_name": "gpt-4o"}}}))
+        b = config_signature(self._cfg(
+            {"model_config": {"text": {"provider": "openai", "model_name": "gpt-4o-mini"}}}))
+        c = config_signature(self._cfg(
+            {"model_config": {"text": {"provider": "anthropic", "model_name": "gpt-4o"}}}))
+        self.assertNotEqual(a, b)   # model_name change
+        self.assertNotEqual(a, c)   # provider change
+
+    def test_model_deployment_fields_ignored(self):
+        # base_url / credentials / project are deployment details that do not change model
+        # output; moving to a proxy must not re-index the whole corpus.
+        a = config_signature(self._cfg({"model_config": {"text": {
+            "provider": "openai", "model_name": "gpt-4o",
+            "base_url": "https://api.openai.com/v1"}}}))
+        b = config_signature(self._cfg({"model_config": {"text": {
+            "provider": "openai", "model_name": "gpt-4o",
+            "base_url": "https://llm-proxy.internal/v1"}}}))
+        self.assertEqual(a, b)
+
+    def test_legacy_model_form_stable_across_setup_rewrite(self):
+        # Indexer._setup_model_config rewrites legacy doc_processing.model/model_name into
+        # model_config *in place*. The signature must be the same before and after that
+        # mutation, or it would depend on when in Indexer init it is computed.
+        legacy = self._cfg({"model": "openai", "model_name": "gpt-4o"})
+        pcfg = {"provider": "openai", "model_name": "gpt-4o",
+                "base_url": "https://api.openai.com/v1"}
+        rewritten = self._cfg({"model": "openai", "model_name": "gpt-4o",
+                               "model_config": {"text": pcfg, "vision": pcfg}})
+        self.assertEqual(config_signature(legacy), config_signature(rewritten))
+
+    def test_whisper_model_change_changes_signature(self):
+        a = config_signature(self._cfg({}, {"whisper_model": "base"}))
+        b = config_signature(self._cfg({}, {"whisper_model": "large-v3"}))
+        self.assertNotEqual(a, b)
+
+    def test_ocr_settings_change_changes_signature(self):
+        base = {"do_ocr": True, "ocr_engine": "easyocr",
+                "easy_ocr_config": {"force_full_page_ocr": True}}
+        a = config_signature(self._cfg(dict(base)))
+        b = config_signature(self._cfg({**base, "easy_ocr_config": {"force_full_page_ocr": False}}))
+        c = config_signature(self._cfg({**base, "ocr_engine": "rapidocr"}))
+        d = config_signature(self._cfg({**base, "fallback_ocr": True}))
+        self.assertNotEqual(a, b)   # active engine config change
+        self.assertNotEqual(a, c)   # engine swap
+        self.assertNotEqual(a, d)   # fallback_ocr toggle
+
+    def test_inactive_ocr_engine_config_ignored(self):
+        # Only the active engine's config affects output; tweaking the unused one (both are
+        # always present via config_defaults) must not re-index anything.
+        a = config_signature(self._cfg({"ocr_engine": "easyocr",
+                                        "rapid_ocr_config": {"force_full_page_ocr": True}}))
+        b = config_signature(self._cfg({"ocr_engine": "easyocr",
+                                        "rapid_ocr_config": {"force_full_page_ocr": False}}))
+        self.assertEqual(a, b)
+
+
+class TestSourceTagFor(unittest.TestCase):
+    """source_tag must equal the `source` value the crawler has always stamped in metadata,
+    or turning on incremental silently renames the user-filterable `source` field (and a
+    mismatch between the stamped value and the manifest scope would make skips/deletions
+    no-op)."""
+
+    def test_explicit_source_wins(self):
+        self.assertEqual(source_tag_for("docs", {"source": "myproj", "docs_system": "readthedocs"}),
+                         "myproj")
+        self.assertEqual(source_tag_for("s3", {"source": "mybucket"}), "mybucket")
+
+    def test_docs_defaults_to_docs_system(self):
+        # The docs crawler has always stamped source=docs_system, not "docs".
+        self.assertEqual(source_tag_for("docs", {"docs_system": "readthedocs"}), "readthedocs")
+
+    def test_s3_defaults_to_capitalized_legacy_value(self):
+        # The s3 crawler has always stamped source="S3", not "s3".
+        self.assertEqual(source_tag_for("s3", {}), "S3")
+
+    def test_other_crawlers_default_to_crawler_type(self):
+        self.assertEqual(source_tag_for("website", {}), "website")
+        self.assertEqual(source_tag_for("folder", {}), "folder")
+        self.assertEqual(source_tag_for("notion", {}), "notion")
+        self.assertEqual(source_tag_for("gdrive", {}), "gdrive")
 
 
 class TestSourceIsNewer(unittest.TestCase):

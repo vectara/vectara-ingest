@@ -167,7 +167,9 @@ class DocsCrawler(Crawler):
         self.session = create_session_with_retries()
         configure_session_for_ssl(self.session, self.cfg.docs_crawler)
 
-        source = self.cfg.docs_crawler.docs_system
+        # Resolved in __init__ (config `source`, falling back to docs_system) so a user-set
+        # source reaches the metadata and matches the indexer's source_tag scope.
+        source = self.source
         ray_workers = self.cfg.docs_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         num_per_second = max(self.cfg.docs_crawler.get("num_per_second", 10), 1)
 

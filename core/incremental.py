@@ -48,6 +48,8 @@ RESERVED_METADATA_KEYS = frozenset(
 
 # Config keys that change how a document is processed. A change to any of these must
 # invalidate the skip decision, otherwise documents stay processed under the old pipeline.
+# The LLM model and the active OCR engine's config also affect output but need normalization
+# and scoping, so they are handled separately in config_signature() rather than listed here.
 _CONFIG_SIG_DOC_PROCESSING_KEYS = (
     "doc_parser",
     "extract_metadata",
@@ -59,12 +61,14 @@ _CONFIG_SIG_DOC_PROCESSING_KEYS = (
     "parse_tables",
     "enable_gmft",
     "do_ocr",
+    "ocr_engine",
+    "fallback_ocr",
     "use_core_indexing",
     "unstructured_config",
     "docling_config",
     "image_context",
 )
-_CONFIG_SIG_VECTARA_KEYS = ("chunking_strategy", "chunk_size")
+_CONFIG_SIG_VECTARA_KEYS = ("chunking_strategy", "chunk_size", "whisper_model")
 
 
 @dataclass
@@ -122,12 +126,55 @@ def content_hash_from_text(text: Optional[str]) -> str:
     return md5_hex(" ".join((text or "").split()))
 
 
+def _model_signature(dp_cfg: Any) -> Dict[str, Any]:
+    """Effective (provider, model_name) per modality — the only model settings that change
+    generated output (summaries, contextual chunks, extracted metadata). Deployment fields
+    (base_url, credentials_file, project_id, ...) are excluded so pointing at a proxy or
+    moving credentials does not re-index the corpus. Mirrors the legacy `model`/`model_name`
+    precedence of Indexer._setup_model_config, which rewrites the legacy form into
+    `model_config` *in place* — checking `model` first keeps the signature identical whether
+    it is computed before or after that rewrite."""
+    if "model" in dp_cfg or "model_config" not in dp_cfg:
+        legacy = {"provider": dp_cfg.get("model", "openai"),
+                  "model_name": dp_cfg.get("model_name", "gpt-4o")}
+        return {"text": legacy, "vision": legacy}
+    return {
+        modality: {"provider": (mc or {}).get("provider"),
+                   "model_name": (mc or {}).get("model_name")}
+        for modality, mc in (dp_cfg.get("model_config") or {}).items()
+    }
+
+
+def source_tag_for(crawler_type: str, crawler_cfg: Any) -> str:
+    """The `source` value stamped on incremental documents and used to scope the manifest
+    (and thus the deletion pass). It must equal the value the crawler has always written to
+    each document's `source` metadata, or enabling incremental would silently rename the
+    user-filterable field — hence the per-crawler defaults that differ from the crawler type
+    (docs stamps its `docs_system`, s3 stamps "S3"). An explicit `source` in the crawler's
+    config block always wins."""
+    explicit = crawler_cfg.get("source")
+    if explicit:
+        return explicit
+    if crawler_type == "docs":
+        return crawler_cfg.get("docs_system", "docs")
+    if crawler_type == "s3":
+        return "S3"
+    return crawler_type
+
+
 def config_signature(cfg: Any) -> str:
     """md5 of the processing-relevant config subset; compute once per run. Works for both
     OmegaConf and plain-dict cfg objects (both expose .get / `in`)."""
     dp_cfg = cfg.get("doc_processing", {}) or {}
     v_cfg = cfg.get("vectara", {}) or {}
     doc_processing = {k: dp_cfg.get(k) for k in _CONFIG_SIG_DOC_PROCESSING_KEYS if k in dp_cfg}
+    # Only the active OCR engine's config affects output; both engines' configs are always
+    # present via config_defaults, so hashing both would churn on edits to the unused one.
+    ocr_cfg_key = ("rapid_ocr_config" if dp_cfg.get("ocr_engine", "easyocr") == "rapidocr"
+                   else "easy_ocr_config")
+    if ocr_cfg_key in dp_cfg:
+        doc_processing[ocr_cfg_key] = dp_cfg.get(ocr_cfg_key)
+    doc_processing["model"] = _model_signature(dp_cfg)
     vectara = {k: v_cfg.get(k) for k in _CONFIG_SIG_VECTARA_KEYS if k in v_cfg}
     # OmegaConf containers must be resolved to plain Python before JSON serialization.
     # _canonical_json's default=str is the backstop if resolution is unavailable.
