@@ -281,7 +281,8 @@ class DocsCrawler(Crawler):
                     if entry.doc_id in to_delete_set:
                         if self.indexer.delete_doc(entry.doc_id) and entry.url:
                             removed_urls.append(entry.url)
-            logger.info(f"Removing {len(to_delete)} docs that are not included in the crawl but are in the corpus.")
+            logger.info(f"Removed {len(removed_urls)} of {len(to_delete)} docs that are not "
+                        f"included in the crawl but are in the corpus.")
             if self.cfg.docs_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
                 docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'

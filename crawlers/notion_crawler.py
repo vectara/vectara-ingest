@@ -125,10 +125,13 @@ class NotionCrawler(Crawler):
         logger.info(f"Found {len(pages)} pages in Notion.")
         for page in pages:
             page_id = page["id"]
+            # Every discovered page is "present at source" for the deletion diff — including
+            # pages whose block fetch fails below. A transient API error is not evidence the
+            # page was deleted, and must never turn into a deletion.
+            present_keys.add(page_id)
             # Legacy blind crash-recovery pre-filter — suppressed under incremental, where the
             # fingerprint (not "was it indexed before") decides, so a changed page is re-fetched.
             if page_id in indexed_ids and not self.incremental:
-                present_keys.add(page_id)
                 continue
             self.check_shutdown()
             try:
@@ -147,10 +150,8 @@ class NotionCrawler(Crawler):
 
             if len(all_text)==0:
                 logger.info(f"Skipping notion page {page['url']}, since no text available")
-                present_keys.add(page_id)
                 continue
 
-            present_keys.add(page_id)
             doc = {
                 'id': page_id,
                 'title': extract_title(page),
@@ -215,7 +216,8 @@ class NotionCrawler(Crawler):
                 for entry in manifest.values():
                     if entry.doc_id in to_delete_set and self.indexer.delete_doc(entry.doc_id):
                         removed.append(entry)
-            logger.info(f"Removing {len(to_delete)} docs that are not included in the crawl but are in the corpus.")
+            logger.info(f"Removed {len(removed)} of {len(to_delete)} docs that are not "
+                        f"included in the crawl but are in the corpus.")
             if self.cfg.notion_crawler.get("crawl_report", False):
                 output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
                 docker_path = f'/home/vectara/{output_dir}/pages_removed.txt'

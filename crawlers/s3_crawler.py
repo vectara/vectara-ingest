@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
-from core.incremental import build_manifest, plan_deletions, source_is_newer
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
 
 from slugify import slugify
 import pandas as pd
@@ -208,7 +208,6 @@ class S3Crawler(Crawler):
         # Full discovered set (everything that still exists at the source) keyed by Vectara
         # doc_id — used for safe deletion of removed objects. Captured before any skipping.
         present_keys = set(doc_id_by_file.values())
-        crawl_complete = True
 
         # Build the corpus manifest once when needed for incremental skipping and/or deletion.
         manifest = {}
@@ -221,10 +220,13 @@ class S3Crawler(Crawler):
         if incremental and manifest:
             prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
             # Layer 1: skip objects whose LastModified is not newer than what we indexed.
+            # Gated on the stored config_sig so a processing-config change re-indexes objects
+            # whose LastModified is unchanged.
             kept, skipped = [], 0
             for f in files_to_process:
                 entry = manifest.get(doc_id_by_file[f])
-                if entry and entry.last_updated and not source_is_newer(lastmod_by_file.get(f), entry.last_updated):
+                if prefilter_unchanged(entry, lastmod_by_file.get(f), "last_updated",
+                                       self.indexer.config_sig):
                     skipped += 1
                     if self.tracker:
                         self.tracker.track_skipped(f, url=f's3://{bucket}/{f}', title=f)
@@ -290,25 +292,22 @@ class S3Crawler(Crawler):
                         prior_fingerprint=prior_fingerprints.get(doc_id_by_file[url]),
                         last_modified=lastmod_by_file.get(url))
                     _track(url, result)
-        except Exception:
-            crawl_complete = False
-            raise
         finally:
             # Always release Ray, even if a batch raised mid-crawl — otherwise the cluster
             # and its worker processes leak into subsequent runs in the same environment.
             if ray_workers > 0:
                 ray.shutdown()
 
-        # Delete objects removed from S3 (guarded against a partial crawl). Requires
-        # incremental: only then do media docs carry the parent_doc_id tag that keeps the
-        # deletion pass from wrongly removing them.
+        # Delete objects removed from S3 (guarded against a partial crawl: an exception above
+        # propagates and never reaches this pass, so listing_complete is True by construction
+        # here). Requires incremental: only then do media docs carry the parent_doc_id tag
+        # that keeps the deletion pass from wrongly removing them.
         if remove_old_content and not incremental:
             logger.warning("s3_crawler.remove_old_content requires incremental: true to safely "
                            "handle media documents; skipping deletion.")
         elif remove_old_content and incremental and manifest:
             ratio = self.cfg.s3_crawler.get("deletion_safety_ratio", 0.5)
-            to_delete, refused = plan_deletions(manifest, present_keys, crawl_complete, ratio)
+            to_delete, refused = plan_deletions(manifest, present_keys, True, ratio)
             if not refused:
-                for doc_id in to_delete:
-                    self.indexer.delete_doc(doc_id)
-                logger.info(f"Removed {len(to_delete)} S3 docs not present in the source bucket.")
+                deleted = sum(1 for doc_id in to_delete if self.indexer.delete_doc(doc_id))
+                logger.info(f"Removed {deleted} of {len(to_delete)} S3 docs not present in the source bucket.")

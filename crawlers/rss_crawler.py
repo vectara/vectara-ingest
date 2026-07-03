@@ -6,7 +6,7 @@ import psutil
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
-from core.incremental import build_manifest, plan_deletions, source_is_newer
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
 from core.utils import setup_logging
 import feedparser
 from datetime import datetime, timedelta
@@ -134,8 +134,10 @@ class RssCrawler(Crawler):
                 # Compare the feed pub_date against the pub_date we stored last run — the same
                 # clock. (Not entry.last_updated, which index_url derives from the page HTML: a
                 # different clock that can read newer than the feed and wrongly skip a real
-                # update.) source_is_newer fails safe to "fetch" when either side is missing.
-                if entry and entry.pub_date and not source_is_newer(pub_date, entry.pub_date):
+                # update.) Fails safe to "fetch" when either side is missing, and is gated on
+                # the stored config_sig so a processing-config change re-indexes entries whose
+                # pub_date is unchanged.
+                if prefilter_unchanged(entry, pub_date, "pub_date", self.indexer.config_sig):
                     skipped += 1
                     continue
                 kept.append((url, title, pub_date))
@@ -207,10 +209,8 @@ class RssCrawler(Crawler):
             ratio = self.cfg.rss_crawler.get("deletion_safety_ratio", 0.5)
             to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
             if not refused:
-                to_delete_set = set(to_delete)
-                for entry in manifest.values():
-                    if entry.doc_id in to_delete_set:
-                        self.indexer.delete_doc(entry.doc_id)
-                logger.info(f"Removed {len(to_delete)} docs that are no longer present in the RSS feeds.")
+                deleted = sum(1 for doc_id in to_delete if self.indexer.delete_doc(doc_id))
+                logger.info(f"Removed {deleted} of {len(to_delete)} docs that are no longer "
+                            f"present in the RSS feeds.")
 
         return

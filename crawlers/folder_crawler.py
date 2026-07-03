@@ -11,7 +11,7 @@ from slugify import slugify
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import setup_logging, get_docker_or_local_path, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
-from core.incremental import build_manifest, plan_deletions, source_is_newer
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
 from core.summary import TableSummarizer
 from omegaconf import DictConfig
 from core.dataframe_parser import (
@@ -172,7 +172,6 @@ class FolderCrawler(Crawler):
         # Full discovered set (everything that still exists at the source) keyed by Vectara
         # doc_id — used for safe deletion of removed files. Captured before any skipping.
         present_keys = set(doc_id_by_name.values())
-        crawl_complete = True
 
         # Build the corpus manifest once when needed for incremental skipping and/or deletion.
         manifest = {}
@@ -185,11 +184,13 @@ class FolderCrawler(Crawler):
         if incremental and manifest:
             prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
             # Layer 1: skip files whose mtime (file_metadata['last_updated']) is not newer
-            # than what we indexed — without reading/parsing them.
+            # than what we indexed — without reading/parsing them. Gated on the stored
+            # config_sig so a processing-config change re-indexes files whose mtime is unchanged.
             kept, skipped = [], 0
             for fp, fn, fm in files_to_process:
                 entry = manifest.get(doc_id_by_name[fn])
-                if entry and entry.last_updated and not source_is_newer(fm.get("last_updated"), entry.last_updated):
+                if prefilter_unchanged(entry, fm.get("last_updated"), "last_updated",
+                                       self.indexer.config_sig):
                     skipped += 1
                     if self.tracker:
                         self.tracker.track_skipped(fp, title=fn)
@@ -258,25 +259,23 @@ class FolderCrawler(Crawler):
                         prior_fingerprint=prior_fingerprints.get(doc_id_by_name[file_name]))
                     _track(file_path, file_name, result)
                 crawl_worker.cleanup()
-        except Exception:
-            crawl_complete = False
-            raise
         finally:
             # Always release Ray, even if a batch raised mid-crawl — otherwise the cluster
             # and its worker processes leak into subsequent runs in the same environment.
             if ray_workers > 0:
                 ray.shutdown()
 
-        # Delete files removed from the source folder (guarded against a partial crawl).
-        # Requires incremental: only then do media/dataframe/split-PDF docs carry the
-        # parent_doc_id tag that keeps the deletion pass from wrongly removing them.
+        # Delete files removed from the source folder (guarded against a partial crawl:
+        # an exception above propagates and never reaches this pass, so listing_complete
+        # is True by construction here). Requires incremental: only then do media/dataframe/
+        # split-PDF docs carry the parent_doc_id tag that keeps the deletion pass from
+        # wrongly removing them.
         if remove_old_content and not incremental:
             logger.warning("folder_crawler.remove_old_content requires incremental: true to "
                            "safely handle media/dataframe/split-PDF documents; skipping deletion.")
         elif remove_old_content and incremental and manifest:
             ratio = folder_config.get("deletion_safety_ratio", 0.5)
-            to_delete, refused = plan_deletions(manifest, present_keys, crawl_complete, ratio)
+            to_delete, refused = plan_deletions(manifest, present_keys, True, ratio)
             if not refused:
-                for doc_id in to_delete:
-                    self.indexer.delete_doc(doc_id)
-                logger.info(f"Removed {len(to_delete)} docs not present in the source folder.")
+                deleted = sum(1 for doc_id in to_delete if self.indexer.delete_doc(doc_id))
+                logger.info(f"Removed {deleted} of {len(to_delete)} docs not present in the source folder.")

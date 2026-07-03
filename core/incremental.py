@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 # thus already captured by content_hash + config_sig) do not cause churn.
 RESERVED_METADATA_KEYS = frozenset(
     {
-        "fingerprint", "content_hash", "source", "parent_doc_id", "last_updated", "file_name",
+        "fingerprint", "content_hash", "config_sig", "source", "parent_doc_id", "last_updated",
+        "file_name",
         # Per-run / ingest-time volatile fields. They must not enter the fingerprint or every
         # run would look "changed": sitemap_lastmod is the stored cheap signal; crawl_date /
         # crawl_date_int are set to "now" by the RSS crawler on every crawl.
@@ -77,6 +78,7 @@ class ManifestEntry:
     doc_id: str
     fingerprint: Optional[str] = None
     content_hash: Optional[str] = None
+    config_sig: Optional[str] = None
     last_updated: Optional[str] = None
     parent_doc_id: Optional[str] = None
     url: Optional[str] = None
@@ -208,6 +210,7 @@ def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None)
             doc_id=d.get("id"),
             fingerprint=d.get("fingerprint"),
             content_hash=d.get("content_hash"),
+            config_sig=d.get("config_sig"),
             last_updated=d.get("last_updated"),
             parent_doc_id=d.get("parent_doc_id"),
             url=d.get("url"),
@@ -269,6 +272,30 @@ def source_is_newer(current_sig: Any, stored_sig: Any) -> bool:
     if cur is None or stored is None:
         return True
     return cur > stored
+
+
+def prefilter_unchanged(entry: Optional[ManifestEntry], current_signal: Any,
+                        signal_attr: str, config_sig: str) -> bool:
+    """
+    Layer-1 pre-fetch skip decision: True when the cheap source signal (file mtime, S3
+    LastModified, RSS pub_date, sitemap <lastmod> — named by `signal_attr`) says the item
+    has not changed since it was last indexed, so it can be skipped without fetching.
+
+    The stored config_sig must match the current one. The fingerprint also covers the
+    processing config, but it is only evaluated *after* a fetch — without this check, a
+    config change (doc_parser, model, chunking, ...) would never reach items whose source
+    timestamp doesn't move, leaving them processed under the old pipeline forever. Docs
+    indexed before incremental (or before config_sig stamping) have no stored config_sig,
+    so they are fetched once, re-indexed, and stamped.
+
+    Note this pre-skip cannot see metadata-only changes that don't move the source
+    timestamp (e.g. an edited folder/s3 metadata_file row); those are only caught by the
+    fingerprint when the item is fetched.
+    """
+    if entry is None or entry.config_sig != config_sig:
+        return False
+    stored = getattr(entry, signal_attr)
+    return bool(stored) and not source_is_newer(current_signal, stored)
 
 
 def plan_deletions(manifest: Dict[str, ManifestEntry],

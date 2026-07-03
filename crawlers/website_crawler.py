@@ -12,7 +12,7 @@ from core.utils import (
 )
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
-from core.incremental import build_manifest, plan_deletions, source_is_newer
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
 from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls, sitemap_to_urls_with_meta
 from crawlers.auth.saml_manager import SAMLAuthManager
 from crawlers.auth.google_manager import GoogleAuthManager
@@ -615,8 +615,10 @@ class WebsiteCrawler(Crawler):
     def _lastmod_prefilter(self, urls: list) -> list:
         """Drop URLs whose sitemap <lastmod> is not newer than the sitemap <lastmod> we stored
         at the previous index — without fetching them. Comparing the stored sitemap lastmod
-        (not the HTML-derived last_updated, a different clock) keeps this sound. Skipped URLs
-        are still 'present' for deletion (they exist at source)."""
+        (not the HTML-derived last_updated, a different clock) keeps this sound, and the skip
+        is gated on the stored config_sig so a processing-config change re-indexes pages whose
+        lastmod is unchanged. Skipped URLs are still 'present' for deletion (they exist at
+        source)."""
         if not self._sitemap_lastmod or not self._manifest:
             return urls
         kept, skipped = [], 0
@@ -624,8 +626,8 @@ class WebsiteCrawler(Crawler):
             nu = normalize_url_for_metadata(u)
             entry = self._manifest.get(nu)
             lastmod = self._sitemap_lastmod.get(nu)
-            if (entry and lastmod and entry.sitemap_lastmod
-                    and not source_is_newer(lastmod, entry.sitemap_lastmod)):
+            if lastmod and prefilter_unchanged(entry, lastmod, "sitemap_lastmod",
+                                               self.indexer.config_sig):
                 skipped += 1
                 if self.tracker:
                     # Track under the raw URL — the same doc_id the worker path uses
@@ -791,11 +793,12 @@ class WebsiteCrawler(Crawler):
 
         removed_urls = []
         to_delete_set = set(to_delete)
-        for k, entry in manifest.items():
+        for entry in manifest.values():
             if entry.doc_id in to_delete_set:
                 if self.indexer.delete_doc(entry.doc_id) and entry.url:
                     removed_urls.append(entry.url)
-        logger.info(f"Removed {len(to_delete)} docs that are not included in the crawl but are in the corpus.")
+        logger.info(f"Removed {len(removed_urls)} of {len(to_delete)} docs that are not "
+                    f"included in the crawl but are in the corpus.")
 
         if self.cfg.website_crawler.get("crawl_report", False):
             output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")

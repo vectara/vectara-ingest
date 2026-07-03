@@ -362,8 +362,8 @@ class Indexer:
 
         Returns:
             list of dicts, one per document, with: id, url, source, fingerprint, content_hash,
-            last_updated, parent_doc_id, sitemap_lastmod, pub_date. Values are taken from
-            metadata; missing keys are None.
+            config_sig, last_updated, parent_doc_id, sitemap_lastmod, pub_date. Values are
+            taken from metadata; missing keys are None.
         """
         page_key = None  # Initialize page_key as None
         docs = []
@@ -397,6 +397,7 @@ class Indexer:
                     'source': md.get('source'),
                     'fingerprint': md.get('fingerprint'),
                     'content_hash': md.get('content_hash'),
+                    'config_sig': md.get('config_sig'),
                     'last_updated': md.get('last_updated'),
                     'parent_doc_id': md.get('parent_doc_id'),
                     'sitemap_lastmod': md.get('sitemap_lastmod'),
@@ -420,8 +421,10 @@ class Indexer:
 
         Computes the composite content+metadata+config fingerprint from the *source* metadata
         (call before pipeline-derived fields are added so the value is stable across runs),
-        stamps `content_hash`/`fingerprint`/`source` into `metadata` for round-trip, and
-        returns True if the document is unchanged and should be skipped.
+        stamps `content_hash`/`fingerprint`/`config_sig`/`source` into `metadata` for
+        round-trip, and returns True if the document is unchanged and should be skipped.
+        The standalone `config_sig` stamp lets the crawlers' Layer-1 pre-fetch skips detect a
+        processing-config change (the composite fingerprint can't be checked without a fetch).
 
         Idempotent: a fingerprint is already present (e.g. index_url delegating to index_file)
         means an upstream call already decided — don't recompute or re-skip.
@@ -435,6 +438,7 @@ class Indexer:
         if content_hash:
             metadata['content_hash'] = content_hash
         metadata['fingerprint'] = fingerprint
+        metadata['config_sig'] = self.config_sig
         metadata['source'] = self.source_tag
         return False
 

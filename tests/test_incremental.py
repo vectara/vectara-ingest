@@ -14,6 +14,7 @@ sys.modules.setdefault('cairosvg', MagicMock())
 from core.incremental import (
     compute_fingerprint, config_signature, build_manifest, source_is_newer,
     plan_deletions, ManifestEntry, content_hash_from_text, source_tag_for,
+    prefilter_unchanged,
 )
 from core.indexer_utils import extract_last_modified, md5_hex
 
@@ -45,7 +46,7 @@ class TestComputeFingerprint(unittest.TestCase):
         base = compute_fingerprint("h", {"url": "u", "acl_groups": ["g1"]}, "cfg")
         stamped = compute_fingerprint("h", {
             "url": "u", "acl_groups": ["g1"],
-            "fingerprint": "x", "content_hash": "y", "source": "s",
+            "fingerprint": "x", "content_hash": "y", "config_sig": "z", "source": "s",
             "last_updated": "2024-01-01", "file_name": "f", "parent_doc_id": "p",
         }, "cfg")
         self.assertEqual(base, stamped)
@@ -192,6 +193,51 @@ class TestSourceIsNewer(unittest.TestCase):
         self.assertTrue(source_is_newer("2024-02-01T00:00:00Z", "2024-01-01"))
 
 
+class TestPrefilterUnchanged(unittest.TestCase):
+    """Layer-1 pre-fetch skip: cheap timestamp says unchanged AND the stored config_sig
+    matches. Without the config gate, a processing-config change would never re-index items
+    whose source timestamp doesn't move (the fingerprint is only evaluated after a fetch)."""
+
+    def _entry(self, **kw):
+        return ManifestEntry(doc_id="d", **kw)
+
+    def test_skips_when_signal_old_and_config_matches(self):
+        e = self._entry(last_updated="2024-02-01", config_sig="CFG")
+        self.assertTrue(prefilter_unchanged(e, "2024-01-01", "last_updated", "CFG"))
+
+    def test_fetches_when_signal_newer(self):
+        e = self._entry(last_updated="2024-01-01", config_sig="CFG")
+        self.assertFalse(prefilter_unchanged(e, "2024-02-01", "last_updated", "CFG"))
+
+    def test_config_change_disables_preskip(self):
+        # doc_parser/model/chunking changed -> must fetch even though the timestamp says
+        # unchanged, so the item is re-processed under the new config.
+        e = self._entry(last_updated="2024-02-01", config_sig="OLD")
+        self.assertFalse(prefilter_unchanged(e, "2024-01-01", "last_updated", "NEW"))
+
+    def test_pre_incremental_docs_have_no_config_sig_and_are_fetched(self):
+        # Docs stamped before config_sig existed (or before incremental) must be fetched
+        # once so they get fingerprint + config_sig — this is what makes the "first
+        # incremental run re-indexes everything once" upgrade path hold for folder/rss too.
+        e = self._entry(last_updated="2024-02-01", config_sig=None)
+        self.assertFalse(prefilter_unchanged(e, "2024-01-01", "last_updated", "CFG"))
+
+    def test_no_entry_or_no_stored_signal_fetches(self):
+        self.assertFalse(prefilter_unchanged(None, "2024-01-01", "last_updated", "CFG"))
+        e = self._entry(last_updated=None, config_sig="CFG")
+        self.assertFalse(prefilter_unchanged(e, "2024-01-01", "last_updated", "CFG"))
+
+    def test_missing_current_signal_fetches(self):
+        # source_is_newer fails safe to "fetch" when the source stops reporting a signal.
+        e = self._entry(pub_date="2024-01-01", config_sig="CFG")
+        self.assertFalse(prefilter_unchanged(e, None, "pub_date", "CFG"))
+
+    def test_other_signal_attrs(self):
+        e = self._entry(pub_date="2024-02-01", sitemap_lastmod="2024-02-01", config_sig="CFG")
+        self.assertTrue(prefilter_unchanged(e, "2024-01-01", "pub_date", "CFG"))
+        self.assertTrue(prefilter_unchanged(e, "2024-01-01", "sitemap_lastmod", "CFG"))
+
+
 class TestPlanDeletions(unittest.TestCase):
     def _manifest(self):
         return {
@@ -318,7 +364,8 @@ class TestIndexFileContentHashOverride(unittest.TestCase):
         return ix
 
     def _tmpfile(self):
-        import tempfile, os
+        import os
+        import tempfile
         fd, path = tempfile.mkstemp(suffix=".html")
         os.write(fd, b"<html>rendered noise nonce-abc123</html>")
         os.close(fd)
@@ -379,6 +426,7 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         self.assertFalse(skipped)
         self.assertEqual(md["fingerprint"], fp)
         self.assertEqual(md["content_hash"], "h")
+        self.assertEqual(md["config_sig"], "CFG")   # Layer-1 prefilters compare this next run
         self.assertEqual(md["source"], "website")
 
     def test_skips_when_fingerprint_matches(self):
@@ -467,7 +515,8 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         resp.json.return_value = {
             "documents": [
                 {"id": "d1", "metadata": {"url": "u1", "source": "website", "fingerprint": "f1",
-                                          "content_hash": "c1", "last_updated": "2024-01-01",
+                                          "content_hash": "c1", "config_sig": "sig1",
+                                          "last_updated": "2024-01-01",
                                           "pub_date": "2024-01-01 00:00:00+00:00"}},
                 {"id": "d2", "metadata": {"url": "u2"}},  # missing keys -> None
             ],
@@ -477,10 +526,12 @@ class TestIndexerIncrementalHook(unittest.TestCase):
         docs = ix._list_docs()
         self.assertEqual(docs[0]["fingerprint"], "f1")
         self.assertEqual(docs[0]["source"], "website")
+        self.assertEqual(docs[0]["config_sig"], "sig1")
         self.assertEqual(docs[0]["pub_date"], "2024-01-01 00:00:00+00:00")
         self.assertIsNone(docs[1]["fingerprint"])  # no KeyError
         self.assertIsNone(docs[1]["parent_doc_id"])
         self.assertIsNone(docs[1]["pub_date"])
+        self.assertIsNone(docs[1]["config_sig"])
         # No automatic metadata_filter is sent (source-scoping is client-side, so it does not
         # depend on the corpus having `source` as a filter attribute).
         _, kwargs = ix.session.get.call_args
