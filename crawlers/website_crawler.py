@@ -5,13 +5,15 @@ import psutil
 import os
 
 from core.crawler import Crawler
+from core.crawl_tracker import CrawlShutdownException
 from core.utils import (
     clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, 
     setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint
 )
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
-from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
+from core.spider import run_link_spider_isolated, recursive_crawl, sitemap_to_urls, sitemap_to_urls_with_meta
 from crawlers.auth.saml_manager import SAMLAuthManager
 from crawlers.auth.google_manager import GoogleAuthManager
 
@@ -127,11 +129,19 @@ def _apply_auth_to_indexer(
 
 
 class PageCrawlWorker(object):
-    def __init__(self, cfg: dict, num_per_second: int):
+    def __init__(self, cfg: dict, num_per_second: int, prior_fingerprints: dict = None,
+                 sitemap_lastmods: dict = None):
         self.cfg = cfg
         self.rate_limiter = RateLimiter(num_per_second)
         self.indexer = None
         self.session = None
+        # {normalized_url: fingerprint} from the prior corpus state. Lets index_url skip an
+        # unchanged page. Passed by the dispatcher (via ray.put for Ray actors).
+        self.prior_fingerprints = prior_fingerprints or {}
+        # {normalized_url: sitemap <lastmod>} for the CURRENT crawl, stamped into each doc so
+        # the next run can compare sitemap-lastmod against sitemap-lastmod (not against the
+        # HTML-derived last_updated, which is a different clock).
+        self.sitemap_lastmods = sitemap_lastmods or {}
         website_crawler_cfg = self.cfg.get('website_crawler', {})
         self.html_processing = website_crawler_cfg.get('html_processing', {})
         self.saml_config = website_crawler_cfg.get('saml_auth')
@@ -235,18 +245,27 @@ class PageCrawlWorker(object):
     RESULT_INDEXED = 0
     RESULT_FAILED = 1
     RESULT_AUTH_REQUIRED = 2
+    RESULT_SKIPPED = 3
 
     def process(self, url: str, source: str):
         if not self.indexer:
             logging.error(f"[Worker {os.getpid()}] Indexer not set up. Call setup() before process().")
             return self.RESULT_FAILED
 
+        nu = normalize_url_for_metadata(url)
         metadata = {"source": source, "url": url}
+        # Record the sitemap lastmod (if any) so next run's Layer-1 compares like-for-like.
+        sm_lastmod = self.sitemap_lastmods.get(nu)
+        if sm_lastmod:
+            metadata["sitemap_lastmod"] = sm_lastmod
+        prior_fingerprint = self.prior_fingerprints.get(nu)
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
         try:
             with self.rate_limiter:
-                succeeded = self.indexer.index_url(url, metadata=metadata, html_processing=self.html_processing)
+                succeeded = self.indexer.index_url(
+                    url, metadata=metadata, html_processing=self.html_processing,
+                    prior_fingerprint=prior_fingerprint)
             if not succeeded:
                 logging.info(f"[Worker {os.getpid()}] Indexing failed for {url}")
             else:
@@ -257,6 +276,10 @@ class PageCrawlWorker(object):
                 f"[Worker {os.getpid()}] Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return self.RESULT_FAILED
+        # An "unchanged" skip returns True (success) but should be counted separately
+        # from a freshly indexed page so the corpus is not needlessly churned.
+        if self.indexer.was_skipped():
+            return self.RESULT_SKIPPED
         if succeeded:
             return self.RESULT_INDEXED
         if getattr(self.indexer, "last_skip_reason", None):
@@ -269,6 +292,12 @@ class WebsiteCrawler(Crawler):
         self.saml_session = None
         self.google_cookies = None
         self.google_storage_state_path = None
+        # Incremental reindexing state (see core/incremental.py).
+        self.incremental = self.cfg.website_crawler.get("incremental", False)
+        self.source = self.cfg.website_crawler.get("source", "website")
+        self._sitemap_lastmod = {}   # normalized_url -> sitemap <lastmod> (sitemap mode only)
+        self._manifest = None        # corpus manifest, built once when needed
+        self._crawl_interrupted = False
         self._setup_saml_auth()
         self._setup_google_auth()
 
@@ -368,8 +397,19 @@ class WebsiteCrawler(Crawler):
         # 3. Filter and prepare the final URL list
         urls_to_crawl = self._filter_and_prepare_urls(all_urls)
 
+        # An empty discovery is treated as an interrupted/failed crawl so the deletion guard
+        # never mass-deletes the corpus when discovery silently produced nothing.
+        if not urls_to_crawl:
+            self._crawl_interrupted = True
+
         # 4. Dispatch the jobs to workers (Ray or single process)
-        self._dispatch_crawl_jobs(urls_to_crawl)
+        try:
+            self._dispatch_crawl_jobs(urls_to_crawl)
+        except CrawlShutdownException:
+            # A graceful shutdown means we did not finish the crawl — do not let the deletion
+            # pass run against a partial present-set.
+            self._crawl_interrupted = True
+            raise
 
         # 5. Handle post-crawl cleanup
         self._remove_old_content_if_needed(urls_to_crawl)
@@ -479,11 +519,22 @@ class WebsiteCrawler(Crawler):
                 # `indexer.session` carries both SAML and Google cookies after
                 # `_configure_indexer_session` has run, so sitemap fetches work
                 # against authenticated origins regardless of which auth is set.
-                urls = sitemap_to_urls(homepage, session=self.indexer.session)
-                urls = [
-                    url for url in urls
-                    if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
-                ]
+                if self.incremental:
+                    # Capture <lastmod> alongside each URL so the dispatcher can skip
+                    # pages that have not changed since the last index — without fetching them.
+                    pairs = sitemap_to_urls_with_meta(homepage, session=self.indexer.session)
+                    urls = []
+                    for url, lastmod in pairs:
+                        if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns):
+                            urls.append(url)
+                            if lastmod:
+                                self._sitemap_lastmod[normalize_url_for_metadata(url)] = lastmod
+                else:
+                    urls = sitemap_to_urls(homepage, session=self.indexer.session)
+                    urls = [
+                        url for url in urls
+                        if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
+                    ]
             elif pages_source == "crawl":
                 urls_set = recursive_crawl(
                     homepage, max_depth,
@@ -548,30 +599,100 @@ class WebsiteCrawler(Crawler):
         
         return urls
 
+    def _ensure_manifest(self):
+        """Build the corpus manifest once (when incremental skipping or deletion needs it).
+        Source-scoped in incremental mode so a shared corpus is not cross-deleted; left
+        unscoped for legacy remove_old_content to preserve its behavior."""
+        if self._manifest is not None:
+            return
+        need = self.incremental or self.cfg.website_crawler.get("remove_old_content", False)
+        if not need:
+            return
+        source = self.indexer.source_tag if self.incremental else None
+        self._manifest = build_manifest(self.indexer, key="url", source=source)
+        logger.info(f"Loaded corpus manifest: {len(self._manifest)} existing documents")
+
+    def _lastmod_prefilter(self, urls: list) -> list:
+        """Drop URLs whose sitemap <lastmod> is not newer than the sitemap <lastmod> we stored
+        at the previous index — without fetching them. Comparing the stored sitemap lastmod
+        (not the HTML-derived last_updated, a different clock) keeps this sound, and the skip
+        is gated on the stored config_sig so a processing-config change re-indexes pages whose
+        lastmod is unchanged. Skipped URLs are still 'present' for deletion (they exist at
+        source)."""
+        if not self._sitemap_lastmod or not self._manifest:
+            return urls
+        kept, skipped = [], 0
+        for u in urls:
+            nu = normalize_url_for_metadata(u)
+            entry = self._manifest.get(nu)
+            lastmod = self._sitemap_lastmod.get(nu)
+            if lastmod and prefilter_unchanged(entry, lastmod, "sitemap_lastmod",
+                                               self.indexer.config_sig):
+                skipped += 1
+                if self.tracker:
+                    # Track under the raw URL — the same doc_id the worker path uses
+                    # (track_indexed/skipped(url, ...)). Using the normalized form here would
+                    # create a second, never-matching tracker entry for resume/stats.
+                    self.tracker.track_skipped(u, url=u)
+            else:
+                kept.append(u)
+        if skipped:
+            logger.info(f"Incremental: skipped {skipped} unchanged URLs via sitemap lastmod "
+                        f"({len(kept)} remaining to crawl)")
+        return kept
+
     def _dispatch_crawl_jobs(self, urls: list):
         """
         Dispatch crawl jobs to Ray workers or process sequentially.
         """
-        # Pre-filter already-indexed URLs for crash recovery / resume (skip when reindex=True)
-        if self.tracker and not self.cfg.vectara.get("reindex", False):
-            indexed = self.tracker.get_indexed_ids()
-            before = len(urls)
-            urls = [u for u in urls if u not in indexed]
-            logger.info(f"Skipping {before - len(urls)} already-indexed URLs ({len(urls)} remaining)")
+        self._ensure_manifest()
+
+        if self.incremental and self._manifest is not None:
+            # Layer 1: skip unchanged pages before fetching, using sitemap <lastmod>.
+            urls = self._lastmod_prefilter(urls)
+            # Layer 2: give workers the prior fingerprint so index_url can skip an
+            # unchanged page after fetching (and before the upload / LLM work).
+            prior_fingerprints = {k: e.fingerprint for k, e in self._manifest.items() if e.fingerprint}
+        else:
+            prior_fingerprints = {}
+            # Legacy blind crash-recovery pre-filter — suppressed under incremental, where the
+            # manifest + fingerprint decide (so a changed page is not wrongly skipped).
+            if self.tracker and not self.cfg.vectara.get("reindex", False):
+                indexed = self.tracker.get_indexed_ids()
+                before = len(urls)
+                urls = [u for u in urls if u not in indexed]
+                logger.info(f"Skipping {before - len(urls)} already-indexed URLs ({len(urls)} remaining)")
 
         num_per_second = max(self.cfg.website_crawler.get("num_per_second", 10), 1)
         ray_workers = self.cfg.website_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
-        source = self.cfg.website_crawler.get("source", "website")
+        source = self.source
 
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
+        sitemap_lastmods = self._sitemap_lastmod if self.incremental else {}
         if ray_workers > 0:
-            self._dispatch_to_ray_workers(urls, ray_workers, num_per_second, source)
+            self._dispatch_to_ray_workers(urls, ray_workers, num_per_second, source,
+                                          prior_fingerprints, sitemap_lastmods)
         else:
-            self._dispatch_to_single_process(urls, num_per_second, source)
+            self._dispatch_to_single_process(urls, num_per_second, source,
+                                             prior_fingerprints, sitemap_lastmods)
 
-    def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str):
+    def _track_result(self, url: str, result: int):
+        """Record a worker outcome to the crawl tracker (no-op if tracking disabled)."""
+        if not self.tracker:
+            return
+        if result == PageCrawlWorker.RESULT_INDEXED:
+            self.tracker.track_indexed(url, url=url)
+        elif result == PageCrawlWorker.RESULT_SKIPPED:
+            self.tracker.track_skipped(url, url=url)
+        elif result == PageCrawlWorker.RESULT_AUTH_REQUIRED:
+            self.tracker.track_auth_required(url, url=url)
+        else:
+            self.tracker.track_failed(url, url=url)
+
+    def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str,
+                                 prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Dispatch jobs to Ray workers for parallel processing."""
         logger.info(f"Using {ray_workers} ray workers")
         # Stop Playwright from URL discovery to close its asyncio event loop
@@ -585,34 +706,39 @@ class WebsiteCrawler(Crawler):
                     logger.warning(f"Failed to stop Playwright: {e}")
         self.indexer.web_extractor = None
         ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-        
-        # Create workers with serializable config
-        actors = [ray.remote(PageCrawlWorker).remote(
-            self.cfg,
-            num_per_second
-        ) for _ in range(ray_workers)]
-        ray.get([a.setup.remote() for a in actors])
-        pool = ray.util.ActorPool(actors)
-        batch_size = max(ray_workers * 4, 20)
-        for batch_start in range(0, len(urls), batch_size):
-            self.check_shutdown()
-            batch = urls[batch_start:batch_start + batch_size]
-            results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
-            if self.tracker:
-                for url, result in zip(batch, results):
-                    if result == PageCrawlWorker.RESULT_INDEXED:
-                        self.tracker.track_indexed(url, url=url)
-                    elif result == PageCrawlWorker.RESULT_AUTH_REQUIRED:
-                        self.tracker.track_auth_required(url, url=url)
-                    else:
-                        self.tracker.track_failed(url, url=url)
-            logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
-        # Cleanup Ray workers
-        for a in actors:
-            ray.get(a.cleanup.remote())
-        ray.shutdown()
+        try:
+            # Broadcast the per-url maps once via the object store (zero-copied per node, not
+            # duplicated per actor). Ray dereferences the ObjectRef into the dict in each actor.
+            pf_ref = ray.put(prior_fingerprints or {})
+            lm_ref = ray.put(sitemap_lastmods or {})
 
-    def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str):
+            # Create workers with serializable config
+            actors = [ray.remote(PageCrawlWorker).remote(
+                self.cfg,
+                num_per_second,
+                pf_ref,
+                lm_ref
+            ) for _ in range(ray_workers)]
+            ray.get([a.setup.remote() for a in actors])
+            pool = ray.util.ActorPool(actors)
+            batch_size = max(ray_workers * 4, 20)
+            for batch_start in range(0, len(urls), batch_size):
+                self.check_shutdown()
+                batch = urls[batch_start:batch_start + batch_size]
+                results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                for url, result in zip(batch, results):
+                    self._track_result(url, result)
+                logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
+            # Cleanup Ray workers
+            for a in actors:
+                ray.get(a.cleanup.remote())
+        finally:
+            # Always release Ray, even if check_shutdown() or a worker task raised mid-crawl —
+            # otherwise the cluster and its worker processes leak into subsequent runs.
+            ray.shutdown()
+
+    def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str,
+                                    prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Process URLs sequentially in a single process."""
         # Stop Playwright from URL discovery to close its asyncio event loop
         # This allows worker to create fresh Playwright instance without conflicts
@@ -627,7 +753,9 @@ class WebsiteCrawler(Crawler):
 
         crawl_worker = PageCrawlWorker(
             self.cfg,
-            num_per_second
+            num_per_second,
+            prior_fingerprints,
+            sitemap_lastmods
         )
         crawl_worker.setup()
         for inx, url in enumerate(urls):
@@ -635,40 +763,43 @@ class WebsiteCrawler(Crawler):
             if inx % 100 == 0:
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
             result = crawl_worker.process(url, source=source)
-            if self.tracker:
-                if result == PageCrawlWorker.RESULT_INDEXED:
-                    self.tracker.track_indexed(url, url=url)
-                elif result == PageCrawlWorker.RESULT_AUTH_REQUIRED:
-                    self.tracker.track_auth_required(url, url=url)
-                else:
-                    self.tracker.track_failed(url, url=url)
+            self._track_result(url, result)
         # Cleanup worker
         crawl_worker.cleanup()
 
     def _remove_old_content_if_needed(self, crawled_urls: list):
         """
         Remove old content from corpus if remove_old_content is enabled.
+
+        Deletes any corpus document whose URL is not in the (full, discovered) crawl set —
+        guarded by plan_deletions against a partial/interrupted crawl mass-deleting live docs.
+        `crawled_urls` is the full discovered set (before any incremental skipping); lastmod/
+        fingerprint-skipped pages are still present at the source, hence still "present".
         """
-        # If remove_old_content is set to true:
-        # remove from corpus any document previously indexed that is NOT in the crawl list
         if not self.cfg.website_crawler.get("remove_old_content", False):
             return
-        
-        existing_docs = self.indexer._list_docs()
-        # Normalize both sides: the indexer stores metadata['url'] after
-        # normalize_url_for_metadata (URL-decoded), but crawled_urls comes
-        # straight from URL discovery and may still be percent-encoded.
-        # Without this, encoded discovery URLs would never match decoded
-        # stored URLs and would be flagged for deletion every crawl.
-        crawled_set = {normalize_url_for_metadata(u) for u in crawled_urls if u}
-        docs_to_remove = [
-            t for t in existing_docs
-            if t['url'] and normalize_url_for_metadata(t['url']) not in crawled_set
-        ]
-        for doc in docs_to_remove:
-            self.indexer.delete_doc(doc['id'])
-        logger.info(f"Removed {len(docs_to_remove)} docs that are not included in the crawl but are in the corpus.")
-        
+
+        self._ensure_manifest()
+        manifest = self._manifest or {}
+        # Normalize: the indexer stores metadata['url'] URL-decoded, but crawled_urls may
+        # still be percent-encoded. build_manifest already keys on the normalized URL.
+        present_keys = {normalize_url_for_metadata(u) for u in crawled_urls if u}
+        listing_complete = (not self._crawl_interrupted) and len(present_keys) > 0
+        ratio = self.cfg.website_crawler.get("deletion_safety_ratio", 0.5)
+
+        to_delete, refused = plan_deletions(manifest, present_keys, listing_complete, ratio)
+        if refused:
+            return
+
+        removed_urls = []
+        to_delete_set = set(to_delete)
+        for entry in manifest.values():
+            if entry.doc_id in to_delete_set:
+                if self.indexer.delete_doc(entry.doc_id) and entry.url:
+                    removed_urls.append(entry.url)
+        logger.info(f"Removed {len(removed_urls)} of {len(to_delete)} docs that are not "
+                    f"included in the crawl but are in the corpus.")
+
         if self.cfg.website_crawler.get("crawl_report", False):
             output_dir = self.cfg.vectara.get("output_dir", "vectara_ingest_output")
             docker_path = f'/home/vectara/{output_dir}/urls_removed.txt'
@@ -682,5 +813,5 @@ class WebsiteCrawler(Crawler):
                 file_path = os.path.join(file_path, filename)
 
             with open(file_path, 'w') as f:
-                for url in sorted([t['url'] for t in docs_to_remove if t['url']]):
+                for url in sorted(removed_urls):
                     f.write(url + '\n')

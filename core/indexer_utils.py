@@ -14,6 +14,13 @@ from omegaconf import OmegaConf
 logger = logging.getLogger(__name__)
 
 
+def md5_hex(text: str) -> str:
+    """md5 hex digest of a string (utf-8). Single source for the content-hash idiom used by
+    incremental reindexing (page HTML, structured-doc text, config signature, fingerprints).
+    Not a security hash (usedforsecurity=False keeps FIPS builds and scanners happy)."""
+    return hashlib.md5(text.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+
 def get_chunking_config(cfg: OmegaConf) -> Optional[Dict]:
     """Helper function to get chunking configuration"""
     if cfg.vectara.get("chunking_strategy", "sentence") == "fixed":
@@ -30,7 +37,13 @@ def extract_last_modified(url: str, html: str) -> dict:
     Extract last modified date from HTML content.
     Strategies: meta tags, time elements, regex search, fallback to hash
     """
-    result = {'url': url, 'detection_method': None}
+    # Always carry a content hash so callers can fingerprint the page regardless of which
+    # last-modified detection method (if any) succeeds. Used by incremental reindexing.
+    result = {
+        'url': url,
+        'detection_method': None,
+        'content_hash': md5_hex(html),
+    }
     soup = BeautifulSoup(html, 'html.parser')
 
     # 1) META tags
@@ -82,9 +95,8 @@ def extract_last_modified(url: str, html: str) -> dict:
         result.update(last_modified=max(candidates), detection_method='regex')
         return result
 
-    # 4) Fallback to hash
-    result.update(content_hash=hashlib.md5(html.encode('utf-8')).hexdigest(),
-                  detection_method='hash')
+    # 4) Fallback: no date found — content_hash (already set above) is the only signal
+    result.update(detection_method='hash')
     return result
 
 

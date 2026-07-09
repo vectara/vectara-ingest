@@ -12,3 +12,9 @@ website_crawler:
   pages_source: sitemap
   pos_regex: [".*"]
   ray_workers: 0
+  # Incremental reindexing (default off). When enabled, unchanged pages are skipped
+  # (via sitemap <lastmod> and a content fingerprint) and removed pages are deleted.
+  # See "Incremental reindexing" in crawlers/CRAWLERS.md.
+  # incremental: true
+  # remove_old_content: true      # delete pages no longer present in the sitemap/crawl
+  # deletion_safety_ratio: 0.5    # refuse deletion if the crawl saw < 50% of the corpus

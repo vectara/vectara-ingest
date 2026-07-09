@@ -275,5 +275,23 @@ class TestBatchPdfProcessing(unittest.TestCase):
         self.assertEqual(parser.pdf_batch_size, 300)
 
 
+class TestMarkdownNativeSupport(unittest.TestCase):
+    """Markdown is handled natively by the local parser (no HTML conversion): Docling's
+    DocumentConverter must allow InputFormat.MD. Without it, a .md file (gdrive/folder/s3)
+    fails with 'File format not allowed' and is dropped."""
+
+    def test_docling_converter_allows_markdown(self):
+        from core.doc_parser import DoclingDocumentParser
+        from docling.datamodel.base_models import InputFormat
+        parser = DoclingDocumentParser(
+            cfg=make_cfg(), verbose=False, model_config={},
+            parse_tables=False, enable_gmft=False, do_ocr=False, summarize_images=False,
+            chunking_strategy='none', chunk_size=1024, image_scale=1.0,
+            image_context={'num_previous_chunks': 1, 'num_next_chunks': 1},
+        )
+        converter = parser._get_or_create_converter()
+        self.assertIn(InputFormat.MD, converter.allowed_formats)
+
+
 if __name__ == "__main__":
     unittest.main()
