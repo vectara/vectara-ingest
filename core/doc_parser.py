@@ -791,6 +791,19 @@ class LlamaParseDocumentParser(DocumentParser):
             image_bytes=image_bytes
         )
 
+# Pre-baked Docling model cache (see docker/bin/download-docling-models.py). When
+# absent (default images), _get_or_create_converter() leaves artifacts_path unset
+# and Docling fetches models from HuggingFace Hub lazily, as it always has.
+#
+# Deliberately hardcoded rather than read from a DOCLING_ARTIFACTS_PATH env var:
+# docling's own pydantic-settings config (docling.datamodel.settings.AppSettings,
+# env_prefix="DOCLING_") already binds that exact env var name as a global
+# artifacts_path fallback checked by every pipeline (docling.pipeline.base_pipeline
+# .BasePipeline.__init__). Setting it would make docling require this folder to
+# exist even on images that never baked models in, breaking default image builds.
+DOCLING_ARTIFACTS_PATH = "/opt/docling-models"
+
+
 class DoclingDocumentParser(DocumentParser):
 
     def __init__(
@@ -979,6 +992,13 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.generate_picture_images = True
         pdf_opts.do_ocr = False
         pdf_opts.do_formula_enrichment = self.do_formula_enrichment
+
+        # Use pre-baked model artifacts if this image was built with
+        # DOWNLOAD_DOCLING_MODELS=true, instead of fetching from HuggingFace Hub.
+        artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
+        if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
+            pdf_opts.artifacts_path = artifacts_path
+            logger.info(f"Using pre-baked Docling model artifacts from {artifacts_path}")
 
         # Configure layout model if specified
         valid_layout_models = [k for k in layout_model_specs.keys() if k != 'LayoutOptions']

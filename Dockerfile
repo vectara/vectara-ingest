@@ -85,14 +85,24 @@ RUN playwright install chromium \
 # Set working directory
 WORKDIR ${HOME}
 
-COPY docker/bin/download-easyocr-models.py /bin/
+COPY docker/bin/download-easyocr-models.py docker/bin/download-docling-models.py /bin/
 
 ARG DOWNLOAD_EASYOCR_MODELS=false
+ARG DOWNLOAD_DOCLING_MODELS=false
 
 RUN if [ "$DOWNLOAD_EASYOCR_MODELS" = "true" ]; then \
             python3 /bin/download-easyocr-models.py 1>&2; \
     fi
 
+RUN if [ "$DOWNLOAD_DOCLING_MODELS" = "true" ]; then \
+            HF_HUB_DISABLE_XET=1 python3 /bin/download-docling-models.py 1>&2 && \
+            rm -rf $HOME/.cache/huggingface; \
+    fi
+
+# Once models are pre-baked above, force docling/huggingface_hub to use them
+# instead of attempting a network fetch (required for air-gapped deployments).
+ENV HF_HUB_OFFLINE=${DOWNLOAD_DOCLING_MODELS}
+ENV TRANSFORMERS_OFFLINE=${DOWNLOAD_DOCLING_MODELS}
 
 # Copy application code
 COPY *.py $HOME/

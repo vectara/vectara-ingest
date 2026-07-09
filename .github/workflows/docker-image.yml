@@ -125,6 +125,36 @@ jobs:
             type=gha,mode=max
             type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Monitor disk space after full build
+        run: |
+          echo "Disk space after full build:"
+          df -h
+
+      # Build and push on-prem/air-gapped version (pre-bakes Docling + EasyOCR
+      # model weights so ingest doesn't need HuggingFace/GitHub network access)
+      - name: Build and push on-prem Docker image
+        id: push_onprem
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            INSTALL_EXTRA=false
+            DOWNLOAD_DOCLING_MODELS=true
+            DOWNLOAD_EASYOCR_MODELS=true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}.onprem
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest.onprem
+            ${{ env.DOCKERHUB_IMAGE_NAME }}:${{ steps.version.outputs.version }}.onprem
+            ${{ env.DOCKERHUB_IMAGE_NAME }}:latest.onprem
+          cache-from: |
+            type=gha
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
+
       - name: Rotate build cache
         run: |
           # Rotate Docker build cache to prevent accumulation
@@ -132,7 +162,7 @@ jobs:
             rm -rf /tmp/.buildx-cache || true
             mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
           fi
-          
+
       - name: Final cleanup and disk space report
         run: |
           # Comprehensive cleanup after all builds complete
@@ -177,4 +207,12 @@ jobs:
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push_full.outputs.digest }}
+          push-to-registry: true
+
+      # Generate attestation for on-prem image
+      - name: Generate artifact attestation for on-prem image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-digest: ${{ steps.push_onprem.outputs.digest }}
           push-to-registry: true 
