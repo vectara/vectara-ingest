@@ -611,12 +611,6 @@ Not covered: `ocr_engine: rapidocr` fetches its models from ModelScope over plai
 independent of `HF_HUB_OFFLINE`, and has no pre-bake support today. Air-gapped deployments
 should use `ocr_engine: easyocr` (the default) with `DOWNLOAD_EASYOCR_MODELS=true`.
 
-**Known issue (pre-existing, unrelated to on-prem bundling):** `do_formula_enrichment: true`
-currently fails with `docling==2.94.0` + `transformers==4.55.0` regardless of network access or
-pre-baked models — the CodeFormula VLM loader passes a `dtype` kwarg that this `transformers`
-version's `Idefics3ForConditionalGeneration` doesn't accept. Reproduces identically with models
-fetched live from HuggingFace.
-
 ### Local deployment
 
 To run `vectara-ingest` locally, perform the following steps:
