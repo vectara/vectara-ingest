@@ -616,7 +616,18 @@ Two build-args pre-bake these models into the image at build time instead:
 docker build \
   --build-arg DOWNLOAD_DOCLING_MODELS=true \
   --build-arg DOWNLOAD_EASYOCR_MODELS=true \
-  -t vectara-ingest:onprem .
+  -t vectara-ingest:latest.onprem .
+```
+
+Or build and run in one step through `run.sh` by setting the same flags as environment
+variables (default off). `run.sh` forwards them to the build, tags the resulting image
+`latest.onprem` so it never overwrites your regular `:latest` image, and — when docling
+models are baked — sets `HF_ENDPOINT` to an unreachable host at runtime so any regression
+that still tries to reach the Hub fails loudly instead of silently:
+
+```bash
+DOWNLOAD_DOCLING_MODELS=true DOWNLOAD_EASYOCR_MODELS=true \
+  bash run.sh <config-file> <secrets-profile>
 ```
 
 - `DOWNLOAD_DOCLING_MODELS=true` bakes docling's default layout model (heron), both alternate
@@ -631,8 +642,8 @@ docker build \
 Measured on a `regular` (`INSTALL_EXTRA=false`) build: base image 4.04GB, on-prem image (both
 build-args enabled) 8.55GB — a ~4.5GB increase, mostly EasyOCR's all-language model bundle.
 
-A pre-built `:onprem` tag (both build-args enabled) is published to `ghcr.io` and Docker Hub
-alongside the regular and `.full` tags.
+Pre-built `latest.onprem` and `<version>.onprem` tags (both build-args enabled) are published to
+`ghcr.io` and Docker Hub alongside the regular (`latest`) and `.full` tags.
 
 Not covered: `ocr_engine: rapidocr` fetches its models from ModelScope over plain HTTPS,
 independent of `HF_HUB_OFFLINE`, and has no pre-bake support today. Air-gapped deployments

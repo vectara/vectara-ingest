@@ -152,6 +152,17 @@ if [[ -n "${no_proxy}" ]]; then
   BUILD_ARGS="$BUILD_ARGS --build-arg NO_PROXY=\"${no_proxy}\""
 fi
 
+# Opt-in (env vars, default off): bake docling / EasyOCR models into the image for
+# air-gapped / on-prem use. When DOWNLOAD_DOCLING_MODELS=true, the Dockerfile also sets
+# HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE so no HuggingFace fetch is attempted at runtime.
+#   DOWNLOAD_DOCLING_MODELS=true DOWNLOAD_EASYOCR_MODELS=true bash run.sh <config> <profile>
+if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg DOWNLOAD_DOCLING_MODELS=true"
+fi
+if [[ "${DOWNLOAD_EASYOCR_MODELS}" == "true" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg DOWNLOAD_EASYOCR_MODELS=true"
+fi
+
 
 # Read config values for extra features
 sum_tables=$(read_yaml_nested "data.get('doc_processing', {}).get('summarize_tables', 'false').lower()")
@@ -172,8 +183,18 @@ else
   echo "Building base image"
 fi
 
+# Pre-baked model images (DOWNLOAD_DOCLING_MODELS / DOWNLOAD_EASYOCR_MODELS) are tagged
+# 'latest.onprem' so they never overwrite the regular ':latest' image. This matches the
+# '.onprem' suffix the CI workflow publishes (.github/workflows/docker-image.yml).
+if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" || "${DOWNLOAD_EASYOCR_MODELS}" == "true" ]]; then
+  image_tag="latest.onprem"
+  echo "Baking models into image: $tag:$image_tag (docling=${DOWNLOAD_DOCLING_MODELS:-false}, easyocr=${DOWNLOAD_EASYOCR_MODELS:-false})"
+else
+  image_tag="latest"
+fi
+
 # Build Docker image
-docker_build_cmd="docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA=\"$(needs_extra_features && echo true || echo false)\" --platform linux/$ARCH . --tag=\"$tag:latest\""
+docker_build_cmd="docker $BUILD_CMD $BUILD_ARGS --build-arg INSTALL_EXTRA=\"$(needs_extra_features && echo true || echo false)\" --platform linux/$ARCH . --tag=\"$tag:$image_tag\""
 echo "$docker_build_cmd"
 eval "$docker_build_cmd"
 
@@ -389,12 +410,20 @@ DOCKER_RUN_ARGS+=(-v "$HOME/tmp/mount:/home/vectara/${output_dir}:rw")
 
 DOCKER_RUN_ARGS+=(-e "CONFIG=/home/vectara/env/$config_file_name")
 
+# Air-gap guard: the docling-baked image already sets HF_HUB_OFFLINE, so no HuggingFace
+# fetch should happen. Point HF_ENDPOINT at a dead host so any regression that still tries
+# to reach the Hub fails loudly instead of silently succeeding. Only HF traffic is affected
+# (Vectara's API host is untouched).
+if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" ]]; then
+  DOCKER_RUN_ARGS+=(-e "HF_ENDPOINT=http://127.0.0.1:1")
+fi
+
 # Increase shared memory size for Ray workers to prevent OOM
 # Set to 15GB (adjust based on available system RAM)
 DOCKER_RUN_ARGS+=(--shm-size=15gb)
 
-echo Running docker: docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
-docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag
+echo Running docker: docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag:$image_tag
+docker run -d "${DOCKER_RUN_ARGS[@]}" -e PROFILE=$2 --name "${CONTAINER_NAME}" $tag:$image_tag
 
 if [ $? -eq 0 ]; then
   echo "Success! Ingest job is running."
