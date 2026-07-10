@@ -919,12 +919,17 @@ class DoclingDocumentParser(DocumentParser):
         """Return the pre-baked Docling model dir if this image was built with
         DOWNLOAD_DOCLING_MODELS=true, else None (fall back to HF Hub download).
 
-        A missing or empty dir must yield None so a non-baked image doesn't point
-        Docling at an empty path and break its lazy-download fallback.
+        A missing, empty, or unreadable dir must yield None so a non-baked image
+        doesn't point Docling at a bad path and break its lazy-download fallback.
+        An unreadable dir (EACCES) makes is_dir()/iterdir() raise, so treat any
+        OSError the same as "not baked" rather than crashing converter creation.
         """
-        artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
-        if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
-            return artifacts_path
+        try:
+            artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
+            if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
+                return artifacts_path
+        except OSError:
+            pass
         return None
 
     def _get_or_create_converter(self, fallback_ocr: bool = False):

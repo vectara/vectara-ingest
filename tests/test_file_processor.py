@@ -323,6 +323,24 @@ class TestBakedArtifactsPath(unittest.TestCase):
             with patch('core.doc_parser.DOCLING_ARTIFACTS_PATH', d):
                 self.assertIsNone(DoclingDocumentParser._resolve_baked_artifacts_path())
 
+    def test_unreadable_dir_returns_none(self):
+        # An existing-but-unreadable dir must not crash converter creation
+        # (is_dir()/iterdir() raise PermissionError on EACCES); fall back to None.
+        from core.doc_parser import DoclingDocumentParser
+        if os.geteuid() == 0:
+            self.skipTest("root bypasses filesystem permission checks")
+        with tempfile.TemporaryDirectory() as d:
+            models = os.path.join(d, "docling-models")
+            os.mkdir(models)
+            with open(os.path.join(models, "layout"), "w") as f:
+                f.write("model")
+            os.chmod(models, 0o000)
+            try:
+                with patch('core.doc_parser.DOCLING_ARTIFACTS_PATH', models):
+                    self.assertIsNone(DoclingDocumentParser._resolve_baked_artifacts_path())
+            finally:
+                os.chmod(models, 0o755)  # allow TemporaryDirectory cleanup
+
 
 if __name__ == "__main__":
     unittest.main()
