@@ -214,10 +214,16 @@ class DataframeParser:
         # after a False return to enrich drop/error records.
         self.last_error: Optional[str] = None
 
-    def process_dataframe(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict):
+    def process_dataframe(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict,
+                          prior_fingerprints: dict = None, content_hash_override: str = None):
         """
         Primary entry point. Receives a single DataFrame and processes it
         based on the configured mode.
+
+        prior_fingerprints / content_hash_override carry incremental-reindex state: the per
+        doc_id prior fingerprint map (the table summary is LLM-generated and not stable across
+        runs, so the skip must key off content_hash_override — e.g. Drive modifiedTime — not the
+        section text). Empty/None for crawlers that don't run incremental.
         """
         # Apply column type conversions if specified
         column_types = self.crawler_config.get("column_types", None)
@@ -234,9 +240,9 @@ class DataframeParser:
             df = df.query(self.select_condition)
 
         if self.mode == "table":
-            self._parse_as_table(df, doc_id, doc_title, metadata)
+            self._parse_as_table(df, doc_id, doc_title, metadata, prior_fingerprints, content_hash_override)
         elif self.mode == "element":
-            self._parse_as_elements(df, doc_id, doc_title, metadata)
+            self._parse_as_elements(df, doc_id, doc_title, metadata, prior_fingerprints, content_hash_override)
 
     def _summarize_table(self, df: pd.DataFrame, name: str) -> Optional[Tuple[str, dict]]:
         """
@@ -269,7 +275,8 @@ class DataframeParser:
             )
             return None
 
-    def _parse_as_table(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict):
+    def _parse_as_table(self, df: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict,
+                        prior_fingerprints: dict = None, content_hash_override: str = None):
         """
         Handles 'table' mode logic for a single DataFrame.
         """
@@ -281,10 +288,13 @@ class DataframeParser:
                 doc_title=doc_title,
                 doc_metadata=metadata,
                 tables=[table_dict],
-                texts=[table_summary]
+                texts=[table_summary],
+                prior_fingerprint=(prior_fingerprints or {}).get(doc_id),
+                content_hash_override=content_hash_override,
             )
 
-    def _parse_as_elements(self, df: pd.DataFrame, doc_id_prefix: str, doc_title: str, metadata: dict):
+    def _parse_as_elements(self, df: pd.DataFrame, doc_id_prefix: str, doc_title: str, metadata: dict,
+                           prior_fingerprints: dict = None, content_hash_override: str = None):
         """
         Handles 'element' mode logic for a single DataFrame.
         """
@@ -295,9 +305,11 @@ class DataframeParser:
 
         for chunk_id, child_df in generate_dfs_to_index(df, doc_id_columns, rows_per_chunk):
             final_doc_id = f"{doc_id_prefix}-{chunk_id}" if doc_id_columns else doc_id_prefix
-            self._process_element_chunk(child_df, final_doc_id, doc_title, metadata)
+            self._process_element_chunk(child_df, final_doc_id, doc_title, metadata,
+                                        prior_fingerprints, content_hash_override)
 
-    def _process_element_chunk(self, df_chunk: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict):
+    def _process_element_chunk(self, df_chunk: pd.DataFrame, doc_id: str, doc_title: str, metadata: dict,
+                               prior_fingerprints: dict = None, content_hash_override: str = None):
         """
         Parses a single dataframe chunk in 'element' mode, extracting text, titles, and metadata from specified columns.
         """
@@ -352,6 +364,8 @@ class DataframeParser:
             metadatas=metadatas,
             texts=texts,
             titles=titles,
+            prior_fingerprint=(prior_fingerprints or {}).get(doc_id),
+            content_hash_override=content_hash_override,
         )
 
 
@@ -361,7 +375,9 @@ def process_dataframe_file(
     doc_id: str,
     df_parser,
     df_config: dict,
-    source_name: str = None
+    source_name: str = None,
+    prior_fingerprints: dict = None,
+    content_hash_override: str = None,
 ) -> bool:
     """
     Common utility to process CSV or Excel files using the DataframeParser.
@@ -374,6 +390,11 @@ def process_dataframe_file(
         df_parser: DataframeParser instance (should be initialized)
         df_config: Dataframe processing configuration dict
         source_name: Optional source name to add to metadata (e.g., 'sharepoint', 'confluence_attachment')
+        prior_fingerprints: Incremental-reindex map {corpus_doc_id: fingerprint}. Each emitted
+            document (per sheet / per element chunk) is skipped when its fingerprint matches.
+        content_hash_override: Stable content signal (e.g. Drive modifiedTime) used instead of
+            the LLM table-summary text, which is not stable across runs. Both default to
+            None/empty, so crawlers that don't run incremental keep their current behavior.
 
     Returns:
         bool: Success status
@@ -416,7 +437,9 @@ def process_dataframe_file(
                 df=df,
                 doc_id=doc_id,
                 doc_title=doc_title,
-                metadata=df_metadata
+                metadata=df_metadata,
+                prior_fingerprints=prior_fingerprints,
+                content_hash_override=content_hash_override,
             )
 
         elif file_type in ['xls', 'xlsx']:
@@ -442,7 +465,9 @@ def process_dataframe_file(
                     df=df,
                     doc_id=sheet_doc_id,
                     doc_title=sheet_doc_title,
-                    metadata=sheet_metadata
+                    metadata=sheet_metadata,
+                    prior_fingerprints=prior_fingerprints,
+                    content_hash_override=content_hash_override,
                 )
 
         return True

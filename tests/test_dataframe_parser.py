@@ -229,7 +229,12 @@ class TestDataFrameParser(unittest.TestCase):
                 doc_id = config.test.doc_id
                 parser.process_dataframe(df, doc_id=f"{doc_id}_{sheet_name}", doc_title=sheet_doc_title, metadata=doc_metadata)
 
-        expected_calls = [call(**params) for params in expected_calls_data]
+        # index_segments now always receives the incremental signals (None here — these
+        # YAML cases don't run incremental); inject them so expectations match the real call.
+        expected_calls = [
+            call(**params, prior_fingerprint=None, content_hash_override=None)
+            for params in expected_calls_data
+        ]
         mock_indexer.index_segments.assert_has_calls(expected_calls, any_order=True)
 
     # --- Test Cases ---
@@ -265,6 +270,47 @@ class TestDataFrameParser(unittest.TestCase):
 
     def test_dataframe_parser_xlsx_element_mode(self):
         self.run_dataframe_parser_test('tests', 'data', 'dataframe', 'config', 'test_dataframe_parser_xlsx_element_mode.yml')
+
+    def test_incremental_signals_threaded_to_index_segments_table_mode(self):
+        # gdrive native Sheets: the per-doc_id prior fingerprint and a stable content_hash
+        # override (Drive modifiedTime) must reach index_segments so the document can skip —
+        # the LLM table summary is not stable enough to key the skip off the section text.
+        cfg = OmegaConf.create({"vectara": {}, "doc_processing": {}})
+        parser_config = OmegaConf.create({"mode": "table"})
+        mock_indexer = MagicMock(spec=Indexer)
+        mock_summarizer = MagicMock(spec=TableSummarizer)
+        mock_summarizer.summarize_table_text.return_value = "a summary"
+        parser = DataframeParser(cfg, parser_config, mock_indexer, mock_summarizer)
+
+        df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        parser.process_dataframe(
+            df, doc_id="file123", doc_title="t", metadata={"url": "u"},
+            prior_fingerprints={"file123": "fp-123"},
+            content_hash_override="gdrive-native:2024-01-01",
+        )
+        _, kwargs = mock_indexer.index_segments.call_args
+        self.assertEqual(kwargs["prior_fingerprint"], "fp-123")
+        self.assertEqual(kwargs["content_hash_override"], "gdrive-native:2024-01-01")
+
+    def test_incremental_prior_fingerprint_looked_up_per_chunk_element_mode(self):
+        # element mode emits one doc per chunk (doc_id = "<prefix>-<chunk>"); each chunk must
+        # get its own prior fingerprint, while the content override (the file's signal) is shared.
+        cfg = OmegaConf.create({"vectara": {}, "doc_processing": {}})
+        parser_config = OmegaConf.create(
+            {"mode": "element", "doc_id_columns": ["k"], "text_columns": ["v"]})
+        mock_indexer = MagicMock(spec=Indexer)
+        parser = DataframeParser(cfg, parser_config, mock_indexer, MagicMock(spec=TableSummarizer))
+
+        df = pd.DataFrame({"k": ["x", "y"], "v": ["v1", "v2"]})
+        parser.process_dataframe(
+            df, doc_id="file9", doc_title="t", metadata={"url": "u"},
+            prior_fingerprints={"file9-x": "fp-x", "file9-y": "fp-y"},
+            content_hash_override="sig",
+        )
+        by_doc = {c.kwargs["doc_id"]: c.kwargs for c in mock_indexer.index_segments.call_args_list}
+        self.assertEqual(by_doc["file9-x"]["prior_fingerprint"], "fp-x")
+        self.assertEqual(by_doc["file9-y"]["prior_fingerprint"], "fp-y")
+        self.assertEqual(by_doc["file9-x"]["content_hash_override"], "sig")
 
     def test_generate_dfs_to_index_by_rows(self):
         input_df = pd.read_csv(os.path.join('tests', 'data', 'dataframe', 'fdic-failed-banks.csv'))

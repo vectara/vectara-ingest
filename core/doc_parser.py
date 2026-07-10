@@ -27,6 +27,7 @@ from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.html import partition_html
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.docx import partition_docx
+from unstructured.partition.md import partition_md
 from unstructured.chunking.title import chunk_by_title
 from unstructured.chunking.basic import chunk_elements
 
@@ -1075,6 +1076,7 @@ class DoclingDocumentParser(DocumentParser):
         converter = DocumentConverter(
             allowed_formats=[
                 InputFormat.PDF, InputFormat.HTML, InputFormat.PPTX, InputFormat.DOCX,
+                InputFormat.MD,
             ],
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts),
@@ -1592,7 +1594,11 @@ class UnstructuredDocumentParser(DocumentParser):
                 'hi_res_model_name': self.hi_res_model_name,
             })
 
-        if mime_type == 'application/pdf':
+        # Markdown is matched by extension: libmagic often reports .md as text/plain,
+        # so a mime check would miss it. Unstructured parses Markdown natively.
+        if filename.lower().endswith(('.md', '.markdown')):
+            partition_func = partition_md
+        elif mime_type == 'application/pdf':
             partition_func = partition_pdf
         elif mime_type == 'text/html' or mime_type == 'application/xml':
             partition_func = partition_html
@@ -1601,7 +1607,7 @@ class UnstructuredDocumentParser(DocumentParser):
         elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
             partition_func = partition_pptx
         else:
-            logger.info(f"data from {filename} is not HTML, PPTX, DOCX or PDF (mime type = {mime_type}), skipping")
+            logger.info(f"data from {filename} is not HTML, PPTX, DOCX, PDF or Markdown (mime type = {mime_type}), skipping")
             return []
 
         try:

@@ -17,12 +17,15 @@ sys.modules.setdefault("playwright.sync_api", MagicMock())
 from crawlers.website_crawler import WebsiteCrawler
 
 
-def _make_cfg(remove_old_content=True, crawl_report=False):
+def _make_cfg(remove_old_content=True, crawl_report=False, deletion_safety_ratio=0.0):
     return SimpleNamespace(
         website_crawler=SimpleNamespace(
             get=lambda key, default=None: {
                 "remove_old_content": remove_old_content,
                 "crawl_report": crawl_report,
+                # Default 0.0 in tests so the (separately tested) safety guard does not trip on
+                # the tiny fixtures these diff-correctness tests use.
+                "deletion_safety_ratio": deletion_safety_ratio,
             }.get(key, default)
         ),
         vectara=SimpleNamespace(get=lambda key, default=None: default),
@@ -42,7 +45,16 @@ class TestRemoveOldContentEncoding(unittest.TestCase):
     def _run(self, crawled_urls, existing_docs):
         fake_indexer = MagicMock()
         fake_indexer._list_docs.return_value = existing_docs
-        fake_self = SimpleNamespace(cfg=_make_cfg(), indexer=fake_indexer)
+        fake_indexer.delete_doc.return_value = True
+        # Use __new__ so the real _ensure_manifest/_remove_old_content_if_needed methods are
+        # available; set the incremental-state attributes that __init__ would normally set.
+        fake_self = WebsiteCrawler.__new__(WebsiteCrawler)
+        fake_self.cfg = _make_cfg()
+        fake_self.indexer = fake_indexer
+        fake_self.incremental = False
+        fake_self.source = "website"
+        fake_self._manifest = None
+        fake_self._crawl_interrupted = False
         WebsiteCrawler._remove_old_content_if_needed(fake_self, crawled_urls)
         return [c.args[0] for c in fake_indexer.delete_doc.call_args_list]
 
@@ -284,6 +296,7 @@ class TestInternalCrawlerDiscovery(unittest.TestCase):
             saml_session=MagicMock(name="saml_session"),
             pos_patterns=[],
             neg_patterns=[],
+            incremental=False,
         )
 
         with patch("crawlers.website_crawler.sitemap_to_urls", return_value=[]) as mock_s2u:
@@ -321,6 +334,40 @@ class TestFilterAndPrepareUrls(unittest.TestCase):
     def test_distinct_urls_are_kept(self):
         urls = ["https://example.com/a", "https://example.com/b"]
         self.assertEqual(sorted(self._run(urls)), sorted(urls))
+
+
+class TestRayShutdownOnFailure(unittest.TestCase):
+    """Regression: _dispatch_to_ray_workers must always shut Ray down. If a worker task (or
+    check_shutdown) raises after ray.init(), a happy-path-only shutdown leaks the cluster into
+    subsequent runs."""
+
+    def _fake_self(self):
+        fake_self = WebsiteCrawler.__new__(WebsiteCrawler)
+        fake_self.cfg = _make_cfg()
+        fake_self.indexer = MagicMock()
+        fake_self.check_shutdown = MagicMock()
+        fake_self._track_result = MagicMock()
+        return fake_self
+
+    def test_ray_shutdown_called_when_dispatch_raises(self):
+        fake_self = self._fake_self()
+        with patch("crawlers.website_crawler.ray") as mock_ray:
+            # The actor pool blows up mid-crawl (e.g. a worker task error).
+            mock_ray.util.ActorPool.return_value.map.side_effect = RuntimeError("worker died")
+            with self.assertRaises(RuntimeError):
+                WebsiteCrawler._dispatch_to_ray_workers(
+                    fake_self, ["https://example.com/a"], ray_workers=2,
+                    num_per_second=1, source="website")
+            mock_ray.shutdown.assert_called_once()
+
+    def test_ray_shutdown_called_on_happy_path(self):
+        fake_self = self._fake_self()
+        with patch("crawlers.website_crawler.ray") as mock_ray:
+            mock_ray.util.ActorPool.return_value.map.return_value = []
+            WebsiteCrawler._dispatch_to_ray_workers(
+                fake_self, ["https://example.com/a"], ray_workers=2,
+                num_per_second=1, source="website")
+            mock_ray.shutdown.assert_called_once()
 
 
 if __name__ == "__main__":
