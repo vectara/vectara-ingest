@@ -1,7 +1,7 @@
 import pathlib
 import boto3
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 from core.indexer import Indexer
 from core.utils import RateLimiter, setup_logging, release_memory, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+from core.incremental import build_manifest, plan_deletions, prefilter_unchanged
 
 from slugify import slugify
 import pandas as pd
@@ -77,7 +78,8 @@ class FileCrawlWorker(object):
         self.indexer.cleanup()
         release_memory()
 
-    def process(self, s3_file: str, metadata: dict, source: str):
+    def process(self, s3_file: str, metadata: dict, source: str,
+                prior_fingerprint: str = None, last_modified: str = None):
         s3 = create_s3_client(self.cfg)
         extension = pathlib.Path(s3_file).suffix
         local_fname = slugify(s3_file.replace(extension, ''), separator='_') + '.' + extension
@@ -86,15 +88,24 @@ class FileCrawlWorker(object):
         try:
             with self.rate_limiter:
                 s3.download_file(self.bucket, s3_file, local_fname)
+                metadata = dict(metadata)  # don't mutate the shared/base metadata
                 metadata.update({
                     'source': source,
                     'title': s3_file,
                     'url': url
                 })
+                # Store the object's LastModified as the cheap change signal for next run.
+                if last_modified:
+                    metadata['last_updated'] = str(last_modified)
                 if extension.lower() in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
+                    # index_media_file stores under slugify(local_fname), not the url-derived
+                    # doc_id the crawl tracks. Tag it as a sub-doc of the file's primary key so
+                    # the deletion pass never removes a live media doc (no-op unless incremental).
+                    self.indexer.stamp_subdoc_metadata(metadata, slugify(url))
                     succeeded = self.indexer.index_media_file(local_fname, metadata)
                 else:
-                    succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata)
+                    succeeded = self.indexer.index_file(filename=local_fname, uri=url, metadata=metadata,
+                                                        prior_fingerprint=prior_fingerprint)
             if not succeeded:
                 logger.info(f"Indexing failed for {url}")
             else:
@@ -107,10 +118,12 @@ class FileCrawlWorker(object):
             return -1
         finally:
             release_memory()
+        if succeeded and self.indexer.was_skipped():
+            return 2  # unchanged — skipped (distinct from indexed)
         return 0 if succeeded else 1
 
 
-def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[str]:
+def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[Tuple[str, Optional[str]]]:
     """
     List all files in an S3 bucket.
 
@@ -118,20 +131,25 @@ def list_files_in_s3_bucket(bucket_name: str, prefix: str, cfg) -> List[str]:
         bucket_name: name of the S3 bucket
         prefix: the "folder" on S3 to list files from
         cfg: configuration object for S3 client creation
+
+    Returns a list of (key, last_modified) tuples. `last_modified` is the object's
+    LastModified (ISO string), used as the cheap change signal for incremental crawls;
+    it is None when the object has no LastModified.
     """
     s3 = create_s3_client(cfg)
     result = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
     files = []
 
-    for content in result.get('Contents', []):
-        files.append(content['Key'])
+    def _collect(res):
+        for content in res.get('Contents', []):
+            lm = content.get('LastModified')
+            files.append((content['Key'], lm.isoformat() if lm is not None else None))
 
+    _collect(result)
     while result.get('IsTruncated', False):
         continuation_key = result.get('NextContinuationToken')
         result = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix, ContinuationToken=continuation_key)
-
-        for content in result.get('Contents', []):
-            files.append(content['Key'])
+        _collect(result)
 
     return files
 
@@ -155,9 +173,14 @@ class S3Crawler(Crawler):
         ray_workers = self.cfg.s3_crawler.get("ray_workers", 0)            # -1: use ray with ALL cores, 0: dont use ray
         num_per_second = max(self.cfg.s3_crawler.get("num_per_second", 10), 1)
         source = self.cfg.s3_crawler.get("source", "S3")
+        incremental = self.cfg.s3_crawler.get("incremental", False)
+        remove_old_content = self.cfg.s3_crawler.get("remove_old_content", False)
 
         s3 = create_s3_client(self.cfg)
         bucket, key = split_s3_uri(folder)
+
+        def _doc_id_for(s3_file: str) -> str:
+            return slugify(f's3://{bucket}/{s3_file}')
 
         if metadata_file:
             local_metadata_fname = slugify(metadata_file)
@@ -169,58 +192,122 @@ class S3Crawler(Crawler):
 
         # process all files
         s3_files = list_files_in_s3_bucket(bucket, key, self.cfg)
-        files_to_process = []
-        for s3_file in s3_files:
+        files_to_process = []          # list of file keys
+        lastmod_by_file = {}           # key -> LastModified (cheap change signal)
+        for s3_file, lastmod in s3_files:
             if metadata_file and s3_file.endswith(metadata_file):
                 continue
             file_extension = pathlib.Path(s3_file).suffix.lower()
             if file_extension in extensions or "*" in extensions:
                 files_to_process.append(s3_file)
+                lastmod_by_file[s3_file] = lastmod
 
-        # Pre-filter already-indexed S3 files for crash recovery / resume (skip when reindex=True)
-        if self.tracker and not self.cfg.vectara.get("reindex", False):
+        # Compute each object's Vectara doc_id once (slugify of the s3 uri) and reuse it for
+        # present_keys, the LastModified prefilter, and the per-object prior_fingerprint lookup.
+        doc_id_by_file = {f: _doc_id_for(f) for f in files_to_process}
+        # Full discovered set (everything that still exists at the source) keyed by Vectara
+        # doc_id — used for safe deletion of removed objects. Captured before any skipping.
+        present_keys = set(doc_id_by_file.values())
+
+        # Build the corpus manifest once when needed for incremental skipping and/or deletion.
+        manifest = {}
+        if incremental or remove_old_content:
+            manifest = build_manifest(self.indexer, key="id",
+                                      source=(self.indexer.source_tag if incremental else None))
+            logger.info(f"Loaded corpus manifest: {len(manifest)} existing documents")
+
+        prior_fingerprints = {}
+        if incremental and manifest:
+            prior_fingerprints = {k: e.fingerprint for k, e in manifest.items() if e.fingerprint}
+            # Layer 1: skip objects whose LastModified is not newer than what we indexed.
+            # Gated on the stored config_sig so a processing-config change re-indexes objects
+            # whose LastModified is unchanged.
+            kept, skipped = [], 0
+            for f in files_to_process:
+                entry = manifest.get(doc_id_by_file[f])
+                if prefilter_unchanged(entry, lastmod_by_file.get(f), "last_updated",
+                                       self.indexer.config_sig):
+                    skipped += 1
+                    if self.tracker:
+                        self.tracker.track_skipped(f, url=f's3://{bucket}/{f}', title=f)
+                else:
+                    kept.append(f)
+            if skipped:
+                logger.info(f"Incremental: skipped {skipped} unchanged S3 files via LastModified "
+                            f"({len(kept)} remaining)")
+            files_to_process = kept
+        elif self.tracker and not self.cfg.vectara.get("reindex", False):
+            # Legacy blind crash-recovery pre-filter — suppressed under incremental.
             indexed = self.tracker.get_indexed_ids()
             before = len(files_to_process)
             files_to_process = [f for f in files_to_process if f not in indexed]
             logger.info(f"Skipping {before - len(files_to_process)} already-indexed S3 files ({len(files_to_process)} remaining)")
 
+        def _track(s3_file, result):
+            if not self.tracker:
+                return
+            s3_url = f's3://{bucket}/{s3_file}'
+            if result == 0:
+                self.tracker.track_indexed(s3_file, url=s3_url, title=s3_file)
+            elif result == 2:
+                self.tracker.track_skipped(s3_file, url=s3_url, title=s3_file)
+            else:
+                self.tracker.track_failed(s3_file, url=s3_url, title=s3_file)
+
         # Now process all files
         if ray_workers == -1:
             ray_workers = psutil.cpu_count(logical=True)
 
-        if ray_workers > 0:
-            logger.info(f"Using {ray_workers} ray workers")
-            self.indexer.p = self.indexer.browser = None
-            ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
-            actors = [ray.remote(FileCrawlWorker).remote(self.indexer, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
-            ray.get([a.setup.remote() for a in actors])
-            pool = ray.util.ActorPool(actors)
-            batch_size = max(ray_workers * 4, 20)
-            for batch_start in range(0, len(files_to_process), batch_size):
-                self.check_shutdown()
-                batch = files_to_process[batch_start:batch_start + batch_size]
-                results = list(pool.map(lambda a, u: a.process.remote(u, metadata=metadata, source=source), batch))
-                if self.tracker:
+        try:
+            if ray_workers > 0:
+                logger.info(f"Using {ray_workers} ray workers")
+                self.indexer.p = self.indexer.browser = None
+                ray.init(num_cpus=ray_workers, log_to_driver=True, include_dashboard=False)
+                actors = [ray.remote(FileCrawlWorker).remote(self.indexer, num_per_second, bucket, self.cfg) for _ in range(ray_workers)]
+                ray.get([a.setup.remote() for a in actors])
+                pool = ray.util.ActorPool(actors)
+                batch_size = max(ray_workers * 4, 20)
+                for batch_start in range(0, len(files_to_process), batch_size):
+                    self.check_shutdown()
+                    batch = files_to_process[batch_start:batch_start + batch_size]
+                    results = list(pool.map(
+                        lambda a, u: a.process.remote(
+                            u, metadata=metadata, source=source,
+                            prior_fingerprint=prior_fingerprints.get(doc_id_by_file[u]),
+                            last_modified=lastmod_by_file.get(u)),
+                        batch))
                     for s3_file, result in zip(batch, results):
-                        s3_url = f's3://{bucket}/{s3_file}'
-                        if result == 0:
-                            self.tracker.track_indexed(s3_file, url=s3_url, title=s3_file)
-                        else:
-                            self.tracker.track_failed(s3_file, url=s3_url, title=s3_file)
-                logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} S3 files")
-            ray.get([a.cleanup.remote() for a in actors])
-            ray.shutdown()
-        else:
-            crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
-            crawl_worker.setup()
-            for inx, url in enumerate(files_to_process):
-                self.check_shutdown()
-                if inx % 100 == 0:
-                    logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
-                result = crawl_worker.process(url, metadata=metadata, source=source)
-                if self.tracker:
-                    s3_url = f's3://{bucket}/{url}'
-                    if result == 0:
-                        self.tracker.track_indexed(url, url=s3_url, title=url)
-                    else:
-                        self.tracker.track_failed(url, url=s3_url, title=url)
+                        _track(s3_file, result)
+                    logger.info(f"Processed {min(batch_start + batch_size, len(files_to_process))}/{len(files_to_process)} S3 files")
+                ray.get([a.cleanup.remote() for a in actors])
+            else:
+                crawl_worker = FileCrawlWorker(self.indexer, num_per_second, bucket, self.cfg)
+                crawl_worker.setup()
+                for inx, url in enumerate(files_to_process):
+                    self.check_shutdown()
+                    if inx % 100 == 0:
+                        logger.info(f"Crawling URL number {inx+1} out of {len(files_to_process)}")
+                    result = crawl_worker.process(
+                        url, metadata=metadata, source=source,
+                        prior_fingerprint=prior_fingerprints.get(doc_id_by_file[url]),
+                        last_modified=lastmod_by_file.get(url))
+                    _track(url, result)
+        finally:
+            # Always release Ray, even if a batch raised mid-crawl — otherwise the cluster
+            # and its worker processes leak into subsequent runs in the same environment.
+            if ray_workers > 0:
+                ray.shutdown()
+
+        # Delete objects removed from S3 (guarded against a partial crawl: an exception above
+        # propagates and never reaches this pass, so listing_complete is True by construction
+        # here). Requires incremental: only then do media docs carry the parent_doc_id tag
+        # that keeps the deletion pass from wrongly removing them.
+        if remove_old_content and not incremental:
+            logger.warning("s3_crawler.remove_old_content requires incremental: true to safely "
+                           "handle media documents; skipping deletion.")
+        elif remove_old_content and incremental and manifest:
+            ratio = self.cfg.s3_crawler.get("deletion_safety_ratio", 0.5)
+            to_delete, refused = plan_deletions(manifest, present_keys, True, ratio)
+            if not refused:
+                deleted = sum(1 for doc_id in to_delete if self.indexer.delete_doc(doc_id))
+                logger.info(f"Removed {deleted} of {len(to_delete)} S3 docs not present in the source bucket.")

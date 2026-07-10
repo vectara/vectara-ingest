@@ -10,4 +10,10 @@ folder_crawler:
   path: "/Users/ofer/Downloads/transformer-papers/"
   extensions: ['.pdf']
   source: 'pdf-folder'
+  # Incremental reindexing (default off). When enabled, files whose mtime + content
+  # fingerprint are unchanged are skipped, and files removed from the folder are deleted.
+  # See "Incremental reindexing" in crawlers/CRAWLERS.md.
+  # incremental: true
+  # remove_old_content: true      # delete docs for files no longer in the folder
+  # deletion_safety_ratio: 0.5    # refuse deletion if the crawl saw < 50% of the corpus
 

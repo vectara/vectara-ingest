@@ -385,5 +385,33 @@ class TestChunkingSinglePartition(unittest.TestCase):
         spy_basic.assert_not_called()
 
 
+class TestMarkdownPartition(unittest.TestCase):
+    """Unstructured parses Markdown natively. .md is matched by extension (libmagic often
+    reports it as text/plain), so _get_elements must route .md to partition_md instead of
+    silently returning [] (which dropped the document)."""
+
+    def _make_parser(self):
+        from omegaconf import OmegaConf
+        from core.doc_parser import UnstructuredDocumentParser
+        return UnstructuredDocumentParser(
+            cfg=OmegaConf.create({}), chunking_strategy='none', chunk_size=500,
+            parse_tables=False, summarize_images=False,
+        )
+
+    def test_md_routes_to_partition_md(self):
+        import tempfile
+        parser = self._make_parser()
+        fd, md = tempfile.mkstemp(suffix='.md')
+        os.write(fd, b'# Title\n\nsome **text**')
+        os.close(fd)
+        try:
+            with patch('core.doc_parser.partition_md', return_value=['EL']) as pmd:
+                elements = parser._get_elements(md)
+            pmd.assert_called_once()
+            self.assertEqual(elements, ['EL'])
+        finally:
+            os.remove(md)
+
+
 if __name__ == '__main__':
     unittest.main()

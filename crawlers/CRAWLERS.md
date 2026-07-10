@@ -14,6 +14,73 @@ If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.
 
 Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
 
+### Incremental reindexing (website, docs, rss, s3, folder, gdrive, notion)
+
+These crawlers can keep a corpus in sync with a changing source without re-processing everything on each run. Enable it per crawler block:
+
+```yaml
+<crawler>:
+  incremental: true            # skip unchanged items; re-index changed ones (default false)
+  remove_old_content: true     # delete docs that no longer exist at the source
+  deletion_safety_ratio: 0.5   # refuse deletion if the crawl saw < this fraction of the corpus
+```
+
+At index time each document is stamped with a `fingerprint` over its content signal, its written metadata (e.g. gdrive `acl_groups`), and the processing config — parser, chunking, `extract_metadata`, the `model_config` provider/model names, OCR and `whisper_model` settings (deployment-only model fields like `base_url` or credentials are excluded, so they can change without re-indexing). On the next run the crawler lists the corpus once, compares fingerprints, and skips unchanged documents, re-indexes changed ones, and (when `remove_old_content: true`) deletes documents that are gone from the source.
+
+The content signal is chosen to be **stable across runs** so an unchanged document actually matches its prior fingerprint:
+
+* **fetched web pages** (website, docs, rss) — the normalized extracted **text**, not the rendered HTML (the rendered DOM carries per-request noise — CSP nonces, hydration ids, attribute reordering — that would otherwise change the hash every run and defeat skipping).
+* **downloaded files** (folder, s3, gdrive binary files) — the raw file **bytes**.
+* **Google-native docs** (gdrive Docs/Sheets/Slides) — Drive's **`modifiedTime`**, because Drive's export of these is not byte-stable across runs. (ACL/sharing changes don't move `modifiedTime`, but they are caught separately via `acl_groups` in the fingerprint metadata.)
+
+Each crawler also uses a cheap pre-fetch signal where available so unchanged items are skipped without being downloaded:
+
+| Crawler | doc id keyed on | pre-fetch change signal |
+|---|---|---|
+| website / docs | normalized URL | sitemap `<lastmod>` (website, sitemap mode) |
+| rss | normalized URL | feed entry `pub_date` |
+| s3 | `slugify(s3://…)` | object `LastModified` |
+| folder | `slugify(path)+hash` | file mtime |
+| gdrive | Drive `file.id` | none — every file is fetched and fingerprinted each run; unchanged files still skip parse + upload via the content signal above (and `acl_groups` in the fingerprint catches sharing changes) |
+
+The pre-fetch skip only fires when the stored `config_sig` (the config signature the document was processed with) matches the current one — a processing-config change re-indexes items even when their timestamp is unchanged. It cannot see metadata-only changes that don't move the source timestamp (e.g. an edited folder/s3 `metadata_file` row); those are caught by the fingerprint only when the item is fetched.
+
+With `incremental: true` you do not also need `vectara.reindex`. Incremental decides *whether* to send a document (unchanged ones are skipped before upload); when a document that *is* sent already exists in the corpus, incremental replaces it automatically — a changed document is deleted and re-indexed in one step. So `incremental: true` + `remove_old_content: true` is the full "keep in sync" combination; `reindex` is superseded and can be omitted (if left set, it is harmless and an info line notes it is redundant). The `deletion_safety_ratio` guard (default 0.5) protects every `remove_old_content` run from mass-deleting live data on a partial or interrupted crawl; set it to `0` to restore unguarded deletion. The metadata fields `fingerprint`, `content_hash`, `config_sig`, `source`, `parent_doc_id`, and `sitemap_lastmod` are reserved by the pipeline. The Box crawler has its own incremental mode (`incremental_update` / `hours_back`); see its section below.
+
+#### Which mode should I use?
+
+| Goal | Use |
+|---|---|
+| Keep the corpus in sync with a changing source — skip unchanged, update changed, delete what's gone | `incremental: true` + `remove_old_content: true` |
+| Skip unchanged and update changed, but never delete (accumulate) | `incremental: true` |
+| Re-process and overwrite every document every run | `incremental: false` + `vectara.reindex: true` |
+| Index once, skip anything already present, never overwrite (default) | `incremental: false` + `vectara.reindex: false` |
+| Crawler without incremental support (jira, confluence, hubspot, …) | `vectara.reindex` controls overwrite-vs-skip; incremental is unavailable |
+
+`vectara.reindex` (global) controls how an already-exists conflict is handled on crawlers that are **not** running incremental: `true` deletes and re-uploads, `false` (the default) leaves the existing document untouched. It only matters outside incremental mode.
+
+#### Upgrade path
+
+Adopting incremental is backward compatible — existing configs keep working unchanged, and fingerprint metadata is only written once `incremental: true` is set. For an incremental-capable crawler (website, docs, rss, s3, folder, gdrive, notion):
+
+1. Existing config (e.g. `vectara.reindex: true`, no `incremental`) keeps behaving as before.
+2. Add `incremental: true` to the crawler block (and `remove_old_content: true` if the corpus should mirror deletions). You can drop `vectara.reindex` — it is now implied for changed documents.
+3. The **first** incremental run is a one-time full re-index: existing documents have no stored `fingerprint`, so each is re-sent once (now correctly updated, even with `reindex` unset) and stamped. Later runs skip unchanged items cheaply.
+4. Crawlers without incremental support keep using `vectara.reindex` exactly as before.
+
+#### Deprecation roadmap
+
+`incremental` is the primary way to keep a corpus in sync. `vectara.reindex` is retained for backward compatibility and for crawlers that do not yet support incremental, so it is not being removed now. The plan is to deprecate it gradually for incremental-capable crawlers: today setting both logs an info line that `reindex` is redundant; a future release will turn that into a deprecation warning; and longer-term incremental may become the default for the crawlers that support it. `reindex` will remain available until incremental covers all crawlers.
+
+Caveats:
+
+- **The `source` metadata field scopes incremental.** Documents are stamped with the crawler's usual `source` value (the `source` key in the crawler block if set, else the crawler's historical default: `docs_system` for docs, `S3` for s3, the crawler name otherwise), and the skip/deletion pass only considers corpus documents whose stored `source` matches. This is what lets several crawlers share one corpus without cross-deleting. Don't change `source` between runs of the same crawler — the next run won't recognize the previously indexed documents, so everything re-indexes and the old documents are left behind as duplicates.
+- **File crawlers (folder, s3): `remove_old_content` requires `incremental: true`.** A single file can produce several corpus documents (media transcripts, one document per spreadsheet sheet, split-PDF parts) whose ids differ from the file's primary id. These are tagged as sub-documents only under `incremental`, which is what keeps the deletion pass from removing them. With `remove_old_content` set but `incremental` off, the deletion is skipped (with a warning).
+- **File crawlers (folder, s3): media, spreadsheet, and split-PDF documents do not get the skip optimization** — they are re-indexed every run — but they are protected from wrongful deletion. They are also not auto-deleted when their source file is removed (they remain as orphans); only the primary-document file types are fully synced. (gdrive is the exception for spreadsheets: a **native Google Sheet** is skipped via Drive `modifiedTime` like other native docs — see the change-signal list above — because its exported `.xlsx` isn't byte-stable and its table summary is LLM-generated. Regular binary `.csv`/`.xlsx` files still re-index every run.)
+- **RSS `remove_old_content` deletes any corpus document not in the current feed window.** Because an RSS feed only exposes the last `days_past` days, enabling this makes the corpus mirror the current window (articles that age out are deleted). Leave it off (the default) if you want to accumulate history. It is no longer implied by `incremental`.
+- **gdrive has no deletion pass.** Incremental on gdrive skips unchanged files and updates changed ones, but it never removes corpus documents whose source file was deleted from Drive (there is no `remove_old_content` support for gdrive in either mode). Also note gdrive only considers files modified within `days_back`, so a small `days_back` limits what is even seen on each run.
+- **notion has no cheap pre-fetch signal.** The Notion API exposes no per-page change token the crawler uses up front, so incremental on notion always fetches each page's block tree and then skips on a fingerprint match (no "skip before fetch" step like sitemap `<lastmod>` or RSS `pub_date`). It supports `remove_old_content` (guarded by `deletion_safety_ratio`) to delete pages no longer reachable by the integration.
+
 ### Website crawler
 
 ```yaml
@@ -511,6 +578,7 @@ To set up Notion, create a [Notion integration](https://www.notion.so/help/creat
 ```yaml
 ...
   notion_crawler:
+    incremental: false
     remove_old_content: false
     crawl_report: false
     output_dir: vectara_ingest_output
@@ -518,6 +586,7 @@ To set up Notion, create a [Notion integration](https://www.notion.so/help/creat
 
 The Notion crawler discovers all pages reachable by the integration via the Notion `search` API, fetches each page's block tree, and indexes the text content. Child pages (`child_page` blocks) are skipped during recursion to avoid duplicate indexing — they are picked up directly via `search`.
 
+- `incremental`: if `true`, skip pages whose content is unchanged since the last run (fingerprint match) instead of re-uploading them. See [Incremental reindexing](#incremental-reindexing-website-docs-rss-s3-folder-gdrive-notion). Notion has no cheap pre-fetch change signal, so each page's block tree is still fetched before the skip decision. Default `false`.
 - `remove_old_content`: if `true`, removes any document that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
 - `crawl_report`: if `true`, writes a `pages_indexed.txt` file under `output_dir` listing the pages indexed.
 - `output_dir`: directory for the crawl report. Default: `vectara_ingest_output`.

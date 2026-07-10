@@ -4,6 +4,7 @@ import json
 import time
 import warnings
 import base64
+import hashlib
 from typing import Dict, Any, List, Optional, Sequence, Tuple
 from collections import OrderedDict
 import shutil
@@ -39,7 +40,10 @@ from core.image_processor import ImageProcessor
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
     safe_file_cleanup, prepare_file_metadata, store_file,
-    normalize_url_for_metadata, auth_redirect_reason
+    normalize_url_for_metadata, auth_redirect_reason, md5_hex
+)
+from core.incremental import (
+    compute_fingerprint, config_signature, content_hash_from_text, source_tag_for,
 )
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
@@ -85,6 +89,20 @@ class Indexer:
         self.last_skip_reason: Optional[str] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.scrape_method = scrape_method  # Store scrape_method for web extractor
+
+        # Incremental reindexing. When enabled (per-crawler `incremental: true`), index_url /
+        # index_file stamp a content+metadata+config fingerprint into doc metadata and skip
+        # uploads whose fingerprint is unchanged. Gated so non-incremental users see no
+        # metadata change at all. `source_tag` scopes a doc to its crawler so a shared corpus
+        # is not cross-deleted; `config_sig` invalidates skips when processing config changes.
+        self.crawler_type = self.cfg.crawling.get("crawler_type", "")
+        _crawler_cfg = self.cfg.get(f"{self.crawler_type}_crawler", {}) or {}
+        self.incremental = bool(_crawler_cfg.get("incremental", False))
+        self.source_tag = source_tag_for(self.crawler_type, _crawler_cfg)
+        self.config_sig = config_signature(self.cfg)
+        if self.incremental and self.reindex:
+            logger.info("vectara.reindex is redundant under incremental mode (changed "
+                        "documents are replaced automatically); you can remove it.")
         self.whisper_model = None
         self.whisper_model_name = cfg.vectara.get("whisper_model", "base")
         self.static_metadata = cfg.get('metadata', None)
@@ -351,21 +369,32 @@ class Indexer:
         self._doc_exists_cache.pop(doc_id, None)
         return True
 
-    def _list_docs(self) -> List[Dict[str, str]]:
+    def _list_docs(self, metadata_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         List documents in the corpus.
+
+        Args:
+            metadata_filter (str, optional): Raw Vectara metadata filter expression (same
+                syntax as a query metadata filter, e.g. "doc.source = 'website'"). NOTE: the
+                list API only honors filters on metadata declared as a *filter attribute* on
+                the corpus; otherwise it errors. Source-scoping for incremental crawls is done
+                client-side in build_manifest instead, so it does not depend on corpus config.
+
         Returns:
-            list of [docId, URL] for each document in the corpus
-            URL taken from metadata if exists, otherwise it'd be None
+            list of dicts, one per document, with: id, url, source, fingerprint, content_hash,
+            config_sig, last_updated, parent_doc_id, sitemap_lastmod, pub_date. Values are
+            taken from metadata; missing keys are None.
         """
         page_key = None  # Initialize page_key as None
         docs = []
 
         # Loop until there's no next page
         while True:
-            params = {"limit": 100}
+            params = {"limit": 1000}
             if page_key:  # Add page_key to the request if it's not None
                 params["page_key"] = page_key
+            if metadata_filter:
+                params["metadata_filter"] = metadata_filter
 
             post_headers = {
                 'x-api-key': self.api_key,
@@ -379,10 +408,21 @@ class Indexer:
                 return []
             res = response.json()
 
-            # Extract URLs from documents
+            # Extract id + reindexing fields from document metadata
             for doc in res.get('documents', []):
-                url = doc['metadata']['url'] if 'url' in doc['metadata'] else None
-                docs.append({'id': doc['id'], 'url': url})
+                md = doc.get('metadata', {}) or {}
+                docs.append({
+                    'id': doc['id'],
+                    'url': md.get('url'),
+                    'source': md.get('source'),
+                    'fingerprint': md.get('fingerprint'),
+                    'content_hash': md.get('content_hash'),
+                    'config_sig': md.get('config_sig'),
+                    'last_updated': md.get('last_updated'),
+                    'parent_doc_id': md.get('parent_doc_id'),
+                    'sitemap_lastmod': md.get('sitemap_lastmod'),
+                    'pub_date': md.get('pub_date'),
+                })
 
             response_metadata = res.get('metadata', None)
             # Check if we need to go further
@@ -393,6 +433,60 @@ class Indexer:
 
         return docs
 
+
+    def _incremental_skip(self, content_hash: Optional[str], metadata: Dict[str, Any],
+                          prior_fingerprint: Optional[str]) -> bool:
+        """
+        Incremental reindexing decision + metadata stamping (no-op unless `incremental`).
+
+        Computes the composite content+metadata+config fingerprint from the *source* metadata
+        (call before pipeline-derived fields are added so the value is stable across runs),
+        stamps `content_hash`/`fingerprint`/`config_sig`/`source` into `metadata` for
+        round-trip, and returns True if the document is unchanged and should be skipped.
+        The standalone `config_sig` stamp lets the crawlers' Layer-1 pre-fetch skips detect a
+        processing-config change (the composite fingerprint can't be checked without a fetch).
+
+        Idempotent: a fingerprint is already present (e.g. index_url delegating to index_file)
+        means an upstream call already decided — don't recompute or re-skip.
+        """
+        if not self.incremental or 'fingerprint' in metadata:
+            return False
+        fingerprint = compute_fingerprint(content_hash, metadata, self.config_sig)
+        if prior_fingerprint and prior_fingerprint == fingerprint:
+            self.last_skip_reason = "unchanged"
+            return True
+        if content_hash:
+            metadata['content_hash'] = content_hash
+        metadata['fingerprint'] = fingerprint
+        metadata['config_sig'] = self.config_sig
+        metadata['source'] = self.source_tag
+        return False
+
+    @staticmethod
+    def _hash_file(filename: str) -> str:
+        """Streaming md5 of a file's raw bytes (memory-safe for large files). Not a security
+        hash (usedforsecurity=False keeps FIPS builds and scanners happy)."""
+        h = hashlib.md5(usedforsecurity=False)
+        with open(filename, 'rb') as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def was_skipped(self) -> bool:
+        """True if the most recent index_* call skipped an unchanged document (incremental).
+        Lets crawler workers distinguish a skip from a fresh index without poking at the
+        last_skip_reason attribute directly."""
+        return self.last_skip_reason == "unchanged"
+
+    def stamp_subdoc_metadata(self, sub_metadata: Dict[str, Any], parent_doc_id: str) -> None:
+        """Tag a sub-document (image / PDF part / media transcript / spreadsheet sheet) so the
+        deletion pass treats it as present iff its parent is present, and so it carries the same
+        `source` scope. Public so file crawlers can tag docs they create via index_media_file /
+        the dataframe parser. No-op unless incremental."""
+        if not self.incremental or sub_metadata is None:
+            return
+        sub_metadata['parent_doc_id'] = parent_doc_id
+        sub_metadata['source'] = self.source_tag
 
     def _index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None) -> bool:
         """
@@ -411,7 +505,7 @@ class Indexer:
         url = f"{self.api_url}/v2/corpora/{self.corpus_key}/upload_file"
         upload_filename = id if id is not None else os.path.basename(filename)
 
-        # Simple approach: upload the file, handle conflicts if reindex is enabled
+        # Simple approach: upload the file, replacing on conflict when reindex or incremental is set
         try:
             with open(filename, 'rb') as file_handle:
                 files, _, content_type = create_upload_files_dict(filename, metadata, self.parse_tables, self.cfg)
@@ -430,8 +524,11 @@ class Indexer:
                 store_file(filename, url_to_filename(uri), self.store_docs, self.store_docs_folder)
             return True
         elif response.status_code in [409, 412]:
-            if self.reindex:
-                # File already exists and reindex is enabled
+            # reindex replaces on conflict by request; incremental implies it — a doc only
+            # reaches this upload if it is new or changed, so an existing-doc conflict means
+            # the content changed and must be replaced (else the update is silently dropped).
+            if self.reindex or self.incremental:
+                # File already exists and must be replaced
                 if self.verbose:
                     logger.info(f"File {uri} already exists. Deleting and re-indexing...")
 
@@ -471,18 +568,30 @@ class Indexer:
         self.last_error = f"upload returned HTTP {response.status_code}: {response.text[:200]}"
         return False
 
-    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False) -> bool:
+    def index_document(self, document: Dict[str, Any], use_core_indexing: bool = False,
+                       prior_fingerprint: Optional[str] = None,
+                       content_hash_override: Optional[str] = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the document dictionary
 
         Args:
             document (dict): Document to index.
             use_core_indexing (bool): Whether to use the core indexing API.
+            prior_fingerprint (str, optional): When incremental reindexing is enabled, the
+                fingerprint this document had in the corpus on the prior run. If the freshly
+                computed fingerprint matches, the upload is skipped. Lets crawlers that index
+                via structured documents (e.g. notion) use the same skip path as index_url.
+            content_hash_override (str, optional): Use this as the content signal instead of
+                hashing the section text. Required when the section text is non-deterministic
+                across runs (e.g. a gdrive native Sheet, whose dataframe sections are an LLM
+                table summary) — pass a stable signal like Drive's modifiedTime so the
+                fingerprint is comparable run-to-run.
 
         Returns:
             bool: True if the upload was successful, False otherwise.
         """
         self._last_response_status = None
+        self.last_skip_reason = None
         api_endpoint = f"{self.api_url}/v2/corpora/{self.corpus_key}/documents"
 
         # Prepare the document data
@@ -504,6 +613,16 @@ class Indexer:
             for section in document['sections']:
                 if 'metadata' in section and 'url' in section['metadata']:
                     section['metadata']['url'] = normalize_url_for_metadata(section['metadata']['url'])
+
+        # Incremental reindexing: fingerprint over the document's text + metadata + config,
+        # stamped into doc metadata and used to skip an unchanged document before upload.
+        if self.incremental and 'metadata' in document:
+            content_hash = (content_hash_override if content_hash_override is not None
+                            else md5_hex("".join(s.get('text', '') for s in document.get('sections', []))))
+            if self._incremental_skip(content_hash, document['metadata'], prior_fingerprint):
+                if self.verbose:
+                    logger.info(f"Document {document['id']} unchanged (fingerprint match) — skipping")
+                return True
 
         if use_core_indexing:
             document['type'] = 'core'
@@ -532,7 +651,7 @@ class Indexer:
         else:
             logger.info(f"Document '{document['id']}' size: {doc_size / 1024:.1f} KB")
 
-        # Simple approach: POST the document, handle conflicts if reindex is enabled
+        # Simple approach: POST the document, replacing on conflict when reindex or incremental is set
         try:
             response = self.session.post(api_endpoint, data=data, headers=post_headers)
         except Exception as e:
@@ -550,8 +669,10 @@ class Indexer:
                     json.dump(document, f)
             return True
         elif response.status_code in [409, 412]:
-            if self.reindex:
-                # Document already exists and reindex is enabled
+            # See _index_file: incremental implies replace-on-conflict, because an unchanged
+            # document would have been skipped before upload — a conflict here means it changed.
+            if self.reindex or self.incremental:
+                # Document already exists and must be replaced
                 if self.verbose:
                     logger.info(f"Document {document['id']} already exists. Deleting and re-indexing...")
 
@@ -584,7 +705,7 @@ class Indexer:
 
 
     def index_url(self, url: str, metadata: Dict[str, Any], html_processing: dict = None,
-                  metadata_extractor: callable = None) -> bool:
+                  metadata_extractor: callable = None, prior_fingerprint: Optional[str] = None) -> bool:
         """
         Index a url by rendering it, extracting content and metadata, then uploading to the Vectara corpus.
 
@@ -621,7 +742,7 @@ class Indexer:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 logger.info(f"File downloaded successfully and saved as {file_path}")
-                res = self.index_file(file_path, url, metadata)
+                res = self.index_file(file_path, url, metadata, prior_fingerprint=prior_fingerprint)
                 safe_remove_file(file_path)
                 return res
             else:
@@ -663,7 +784,7 @@ class Indexer:
                     
                     file_path = os.path.join(tempfile.gettempdir(), filename)
                     download.save_as(file_path)
-                    result = self.index_file(file_path, final_url, metadata)
+                    result = self.index_file(file_path, final_url, metadata, prior_fingerprint=prior_fingerprint)
                     safe_remove_file(file_path)
                     return result
                     
@@ -679,7 +800,7 @@ class Indexer:
                         metadata['url'] = normalize_url_for_metadata(final_url)
                     with open(file_path, "wb") as f:
                         f.write(result["content"])
-                    res = self.index_file(file_path, final_url, metadata)
+                    res = self.index_file(file_path, final_url, metadata, prior_fingerprint=prior_fingerprint)
                     safe_remove_file(file_path)
                     return res
 
@@ -740,8 +861,8 @@ class Indexer:
                         # docling parse + image-bytes attachment we routed here for.
                         result = self.index_file(
                             temp_html_path, url, metadata, title_hint=res.get('title', ''),
-                            extra_image_urls=res.get('images', []),
-                            force_local_processing=True
+                            extra_image_urls=res.get('images', []), prior_fingerprint=prior_fingerprint,
+                            content_hash_override=content_hash_from_text(text), focrce_local_processing=True
                         )
                         safe_remove_file(temp_html_path)
                         return result
@@ -756,6 +877,16 @@ class Indexer:
                 last_modified = ext_res.get('last_modified', None)
                 if last_modified:
                     metadata['last_updated'] = last_modified.strftime("%Y-%m-%d")
+
+                # Incremental reindexing: fingerprint from content + source metadata + config.
+                # Hash the normalized extracted text (not the rendered HTML, whose per-request
+                # noise changes every fetch) and compute it before extract_metadata / image
+                # summarization, so the value is stable across runs (LLM output excluded) and
+                # those costs plus the upload are skipped when the document is unchanged.
+                if self._incremental_skip(content_hash_from_text(text), metadata, prior_fingerprint):
+                    if self.verbose:
+                        logger.info(f"URL {url} unchanged (fingerprint match) — skipping")
+                    return True
 
                 # Extract custom metadata if extractor provided
                 if metadata_extractor and callable(metadata_extractor):
@@ -850,12 +981,13 @@ class Indexer:
                     # Legacy mode: Index text and images separately
                     # Index text and tables first
                     doc_id = slugify(normalize_url_for_metadata(url))
+                    parent_doc_id = doc_id
                     succeeded = self.index_segments(
-                        doc_id=doc_id, 
-                        texts=parts, 
-                        metadatas=metadatas, 
+                        doc_id=doc_id,
+                        texts=parts,
+                        metadatas=metadatas,
                         tables=vec_tables,
-                        doc_metadata=metadata, 
+                        doc_metadata=metadata,
                         doc_title=doc_title
                     )
                     
@@ -873,7 +1005,8 @@ class Indexer:
                         for doc_id, image_summary, image_metadata in processed_images:
                             # Pass web image bits if available and enabled
                             image_bytes_param = web_image_bytes if self.add_image_bytes else []
-                            
+                            self.stamp_subdoc_metadata(image_metadata, parent_doc_id)
+
                             succeeded &= self.index_segments(
                                 doc_id=doc_id,
                                 texts=[image_summary],
@@ -898,12 +1031,17 @@ class Indexer:
                        doc_metadata: Dict[str, Any] = None, doc_title: str = "",
                        tables: Optional[Sequence[Dict[str, Any]]] = None,
                        image_bytes: Optional[List[Tuple[str, bytes]]] = None,
-                       use_core_indexing: bool = False) -> bool:
+                       use_core_indexing: bool = False,
+                       prior_fingerprint: Optional[str] = None,
+                       content_hash_override: Optional[str] = None) -> bool:
         """
         Index a document (by uploading it to the Vectara corpus) from the set of segments (parts) that make up the document.
-        
+
         Args:
             image_bytes: Optional list of (image_id, binary_data) tuples containing image binary data
+            prior_fingerprint: Incremental skip — the document's fingerprint on the prior run.
+            content_hash_override: Incremental content signal to use instead of the section text
+                hash (e.g. Drive modifiedTime for a native Sheet whose summary text drifts).
         """
         self._init_processors()
         
@@ -1016,7 +1154,9 @@ class Indexer:
         if self.verbose:
             logger.info(f"Indexing document {doc_id} with json {str(document)[:1000]}...")
 
-        result = self.index_document(document, use_core_indexing)
+        result = self.index_document(document, use_core_indexing,
+                                     prior_fingerprint=prior_fingerprint,
+                                     content_hash_override=content_hash_override)
 
         if not result and not use_core_indexing and self._last_response_status == 400:
             logger.info(f"Document {doc_id} failed with 400, retrying with split_oversized=True")
@@ -1039,7 +1179,9 @@ class Indexer:
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None, title_hint: str = None,
                    extra_image_urls: Optional[List[Dict[str, str]]] = None,
-                   force_local_processing: bool = False) -> bool:
+                   force_local_processing: bool = False,
+                   prior_fingerprint: Optional[str] = None,
+                   content_hash_override: Optional[str] = None) -> bool:
         """
         Index a local file into the Vectara corpus.
 
@@ -1063,10 +1205,26 @@ class Indexer:
             bool: True if indexing was successful, False otherwise.
         """
         self.last_error = None
+        # Reset here too (index_url resets its own): index_file is called directly by the
+        # file/folder/s3/gdrive workers on a reused indexer, so a stale 'unchanged' from a
+        # previously-skipped file must not leak into the next file's outcome.
+        self.last_skip_reason = None
         if not os.path.exists(filename):
             self.last_error = f"file does not exist: {filename}"
             logger.error(f"File {filename} does not exist")
             return False
+
+        # Incremental reindexing: decide before any (expensive) parsing whether this document
+        # is unchanged. For local files we hash the raw bytes (covers embedded tables/images).
+        # Web callers (index_url) instead pass content_hash_override — the normalized page text —
+        # because the rendered HTML they hand us is non-deterministic per fetch and would defeat
+        # the skip. Skips here avoid Docling/OCR/LLM + upload entirely.
+        if self.incremental and 'fingerprint' not in metadata:
+            content_hash = content_hash_override if content_hash_override is not None else self._hash_file(filename)
+            if self._incremental_skip(content_hash, metadata, prior_fingerprint):
+                if self.verbose:
+                    logger.info(f"File {uri} unchanged (fingerprint match) — skipping")
+                return True
 
         # Determine processing strategy
         self._init_processors()
@@ -1127,6 +1285,10 @@ class Indexer:
                     error_count = 0
                     
                     for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                        # Tag each split part as a sub-doc of the original file so deletion
+                        # never removes a live part (its doc_id is never in the crawl's present
+                        # set, which is keyed on the original file).
+                        self.stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                         try:
                             part_success = self._index_file(pdf_path, uri, pdf_metadata, pdf_id)
                             if not part_success:
@@ -1166,6 +1328,7 @@ class Indexer:
                     if ex_metadata:
                         img_metadata.update(ex_metadata)
                     doc_id = slugify(uri) + "_image_" + str(inx)
+                    self.stamp_subdoc_metadata(img_metadata, id if id else slugify(uri))
 
                     # Pass only the single relevant image's bytes
                     img_id = img_metadata.get('image_id')
@@ -1206,6 +1369,8 @@ class Indexer:
                 return False
             overall_success = True
             for pdf_path, pdf_metadata, pdf_id in pdf_parts:
+                # Tag each split part as a sub-doc of the original file (see Case A above).
+                self.stamp_subdoc_metadata(pdf_metadata, id if id else slugify(uri))
                 try:
                     part_success = self.index_file(pdf_path, uri, pdf_metadata, id=pdf_id, title_hint=title_hint)
                     if not part_success:
@@ -1354,6 +1519,7 @@ class Indexer:
                     base_doc_id = id if id else slugify(uri)
                     doc_id = f"{base_doc_id}_image_{idx}"
                     image_metadata.update(ex_metadata)  # Add extracted metadata
+                    self.stamp_subdoc_metadata(image_metadata, base_doc_id)
                     try:
                         # Pass only the single relevant image's bytes (not entire list)
                         img_id = image_metadata.get('image_id')

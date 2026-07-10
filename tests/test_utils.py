@@ -554,7 +554,7 @@ class TestUtils(unittest.TestCase):
         mock_root_logger = Mock()
         mock_root_logger.filters = []  # Iterable so the pdfminer filter check works
         mock_get_logger.return_value = mock_root_logger
-        
+
         with patch('logging.StreamHandler'):
             setup_logging()
         
