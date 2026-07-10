@@ -622,8 +622,8 @@ docker build \
 - `DOWNLOAD_DOCLING_MODELS=true` bakes docling's default layout model (heron), both alternate
   layout models selectable via `docling_config.layout_model` (heron_101, v2), TableFormer, and
   the CodeFormula model used by `do_formula_enrichment` — everything `docling_config` can select
-  — and sets `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1` in the resulting image so no HF network
-  call is attempted at runtime. Adds ~1.6GB.
+  — and sets `HF_HUB_OFFLINE=true`/`TRANSFORMERS_OFFLINE=true` in the resulting image so no HF
+  network call is attempted at runtime. Adds ~1.6GB.
 - `DOWNLOAD_EASYOCR_MODELS=true` bakes EasyOCR's detection and recognition models (all
   supported languages, not just the one configured via `easy_ocr_config.lang` — EasyOCR's own
   download helper doesn't support scoping to a subset). Adds ~2.6GB.

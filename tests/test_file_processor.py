@@ -293,5 +293,36 @@ class TestMarkdownNativeSupport(unittest.TestCase):
         self.assertIn(InputFormat.MD, converter.allowed_formats)
 
 
+class TestBakedArtifactsPath(unittest.TestCase):
+    """Pre-baked Docling model selection (DOWNLOAD_DOCLING_MODELS=true images).
+
+    When /opt/docling-models exists and is non-empty, the parser must point
+    PdfPipelineOptions.artifacts_path at it so no HuggingFace Hub fetch is
+    attempted at runtime. Missing or empty dir must fall back to None (lazy
+    download) — otherwise an air-gapped image silently fails offline."""
+
+    def test_baked_dir_present_returns_path(self):
+        from core.doc_parser import DoclingDocumentParser
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "layout"), "w") as f:
+                f.write("model")
+            with patch('core.doc_parser.DOCLING_ARTIFACTS_PATH', d):
+                result = DoclingDocumentParser._resolve_baked_artifacts_path()
+            self.assertIsNotNone(result)
+            self.assertEqual(str(result), d)
+
+    def test_missing_dir_returns_none(self):
+        from core.doc_parser import DoclingDocumentParser
+        missing = os.path.join(tempfile.gettempdir(), "no-such-docling-models-xyz")
+        with patch('core.doc_parser.DOCLING_ARTIFACTS_PATH', missing):
+            self.assertIsNone(DoclingDocumentParser._resolve_baked_artifacts_path())
+
+    def test_empty_dir_returns_none(self):
+        from core.doc_parser import DoclingDocumentParser
+        with tempfile.TemporaryDirectory() as d:
+            with patch('core.doc_parser.DOCLING_ARTIFACTS_PATH', d):
+                self.assertIsNone(DoclingDocumentParser._resolve_baked_artifacts_path())
+
+
 if __name__ == "__main__":
     unittest.main()

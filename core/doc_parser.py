@@ -914,6 +914,19 @@ class DoclingDocumentParser(DocumentParser):
         from pypdf import PdfReader
         return len(PdfReader(filename).pages)
 
+    @staticmethod
+    def _resolve_baked_artifacts_path() -> Optional[pathlib.Path]:
+        """Return the pre-baked Docling model dir if this image was built with
+        DOWNLOAD_DOCLING_MODELS=true, else None (fall back to HF Hub download).
+
+        A missing or empty dir must yield None so a non-baked image doesn't point
+        Docling at an empty path and break its lazy-download fallback.
+        """
+        artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
+        if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
+            return artifacts_path
+        return None
+
     def _get_or_create_converter(self, fallback_ocr: bool = False):
         """Build the DocumentConverter once and cache it for reuse across files.
 
@@ -996,10 +1009,10 @@ class DoclingDocumentParser(DocumentParser):
 
         # Use pre-baked model artifacts if this image was built with
         # DOWNLOAD_DOCLING_MODELS=true, instead of fetching from HuggingFace Hub.
-        artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
-        if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
-            pdf_opts.artifacts_path = artifacts_path
-            logger.info(f"Using pre-baked Docling model artifacts from {artifacts_path}")
+        baked_artifacts = self._resolve_baked_artifacts_path()
+        if baked_artifacts is not None:
+            pdf_opts.artifacts_path = baked_artifacts
+            logger.info(f"Using pre-baked Docling model artifacts from {baked_artifacts}")
 
         # Configure layout model if specified
         valid_layout_models = [k for k in layout_model_specs.keys() if k != 'LayoutOptions']
