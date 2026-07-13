@@ -47,7 +47,7 @@ from core.incremental import (
 )
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
-from core.document_builder import MAX_SECTION_CHARS
+from core.document_builder import MAX_SECTION_CHARS, MAX_PART_SIZE
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
@@ -1145,19 +1145,22 @@ class Indexer:
                         if self.verbose:
                             logger.info(f"Added binary data for image {image_id} with MIME type {mime_type}")
                     else:
-                        # No binary data found, add as regular text
-                        updated_document_parts.append({
-                            "text": text,
-                            "metadata": metadata
-                        })
+                        # No binary data found, add as regular text (split if oversized).
+                        for chunk in DocumentBuilder._split_text(text, MAX_PART_SIZE):
+                            updated_document_parts.append({
+                                "text": chunk,
+                                "metadata": metadata
+                            })
                         if self.verbose:
                             logger.warning(f"Binary data not found for image {image_id}")
                 else:
-                    # Regular text element
-                    updated_document_parts.append({
-                        "text": text,
-                        "metadata": metadata
-                    })
+                    # Regular text element — split to stay under the core part-size limit,
+                    # mirroring _build_core_document (this path bypasses build_document's split).
+                    for chunk in DocumentBuilder._split_text(text, MAX_PART_SIZE):
+                        updated_document_parts.append({
+                            "text": chunk,
+                            "metadata": metadata
+                        })
             
             # Update document structure if we found any images with binary data.
             # use_core_indexing was already forced True above (pre-build) whenever this

@@ -21,6 +21,7 @@ sys.modules.setdefault('cairosvg', MagicMock())
 
 from omegaconf import OmegaConf
 
+from core.document_builder import MAX_PART_SIZE
 from core.indexer import Indexer
 
 
@@ -122,6 +123,40 @@ class TestFix1IndexSegmentsForcesCore(unittest.TestCase):
         self.assertIn('document_parts', body)
         self.assertNotIn('sections', body)
         self.assertNotIn('title', body)
+
+    def test_oversized_text_part_is_split_in_core_image_doc(self):
+        # A large text element must be split to stay under the core part-size limit,
+        # just like _build_core_document does. The image-attach path used to overwrite
+        # the split parts with unsplit ones -> "Document part text is too large" 400.
+        ix = self._make_indexer()
+        posted = MagicMock()
+        posted.status_code = 201
+        ix.session.post.return_value = posted
+
+        image_id = "web_page_image_0"
+        ok = ix.index_segments(
+            doc_id="doc1",
+            texts=["a" * (MAX_PART_SIZE + 5000), "a picture of a cat"],
+            metadatas=[
+                {'element_type': 'text'},
+                {'element_type': 'image', 'image_id': image_id},
+            ],
+            doc_metadata={'url': 'https://example.test/p'},
+            doc_title="Page",
+            image_bytes=[(image_id, b"\x89PNG\r\n\x1a\n stub bytes")],
+        )
+
+        self.assertTrue(ok)
+        body = json.loads(ix.session.post.call_args.kwargs['data'])
+        self.assertEqual(body['type'], 'core')
+        # Every part must be within the core size limit.
+        for part in body['document_parts']:
+            self.assertLessEqual(len(part['text']), MAX_PART_SIZE)
+        # The big text was actually split into multiple parts.
+        self.assertGreater(len(body['document_parts']), 2)
+        # The image part still carries its image_id and the image is attached.
+        self.assertTrue(any(p.get('image_id') == image_id for p in body['document_parts']))
+        self.assertEqual(body['images'][0]['id'], image_id)
 
 
 class TestFix3WebRouting(unittest.TestCase):
