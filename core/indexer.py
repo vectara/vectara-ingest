@@ -862,7 +862,7 @@ class Indexer:
                         result = self.index_file(
                             temp_html_path, url, metadata, title_hint=res.get('title', ''),
                             extra_image_urls=res.get('images', []), prior_fingerprint=prior_fingerprint,
-                            content_hash_override=content_hash_from_text(text), focrce_local_processing=True
+                            content_hash_override=content_hash_from_text(text), force_local_processing=True
                         )
                         safe_remove_file(temp_html_path)
                         return result
