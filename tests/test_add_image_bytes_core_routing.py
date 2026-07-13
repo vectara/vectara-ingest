@@ -84,6 +84,7 @@ class TestFix1IndexSegmentsForcesCore(unittest.TestCase):
         ix.verbose = False
         ix.store_docs = False
         ix.reindex = False
+        ix.incremental = False
         ix.static_metadata = None
         ix.add_image_bytes = True
         # Instance flag deliberately False: prove the per-call decision alone flips
@@ -130,6 +131,7 @@ class TestFix3WebRouting(unittest.TestCase):
     def _make_indexer(self, res):
         ix = Indexer.__new__(Indexer)
         ix.cfg = _base_cfg({})
+        ix.incremental = False
         ix.add_image_bytes = True
         ix.summarize_images = True
         ix.process_locally = False
