@@ -47,10 +47,28 @@ from core.incremental import (
 )
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
+from core.document_builder import MAX_SECTION_CHARS
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
+
+
+def _document_has_oversized_part(document: Dict[str, Any]) -> bool:
+    """True if any structured section text or bundled table exceeds MAX_SECTION_CHARS.
+
+    split_oversized only changes the document when such a part exists, so this is the
+    precise condition under which retrying a 400 with split_oversized=True can help.
+    Other 400s (e.g. an unrecognized field) have no oversized part and must fail loudly
+    rather than be silently retried into a degraded, incomplete document.
+    """
+    for section in document.get('sections', []):
+        if len(section.get('text', '')) > MAX_SECTION_CHARS:
+            return True
+        for table in section.get('tables', []):
+            if len(json.dumps(table.get('data', {}))) > MAX_SECTION_CHARS:
+                return True
+    return False
 
 
 class Indexer:
@@ -1158,8 +1176,10 @@ class Indexer:
                                      prior_fingerprint=prior_fingerprint,
                                      content_hash_override=content_hash_override)
 
-        if not result and not use_core_indexing and self._last_response_status == 400:
-            logger.info(f"Document {doc_id} failed with 400, retrying with split_oversized=True")
+        if (not result and not use_core_indexing and self._last_response_status == 400
+                and _document_has_oversized_part(document)):
+            logger.info(f"Document {doc_id} failed with an oversized-part 400, "
+                        f"retrying with split_oversized=True")
             document_retry = document_builder.build_document(
                 doc_id=doc_id,
                 texts=texts,
