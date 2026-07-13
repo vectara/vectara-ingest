@@ -126,7 +126,7 @@ def generate(
         else:
             client = OpenAI(api_key=model_api_key)
         response = client.chat.completions.create(
-            model=model_config.get('model_name', 'gpt-4o'),
+            model=model_config.get('model_name', 'gpt-5.4-mini'),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -138,7 +138,7 @@ def generate(
     elif provider == 'anthropic':
         client = Anthropic(api_key=model_api_key)
         response = client.messages.create(
-            model=model_config.get('model_name', 'claude-3-7-sonnet-20250219'),
+            model=model_config.get('model_name', 'claude-5-sonnet'),
             system=system_prompt,
             messages=[
                 {
@@ -158,7 +158,7 @@ def generate(
         res = str(response.content[0].text)
     elif provider == 'vertex':
         _init_vertex_ai(cfg, model_config)
-        model_name = model_config.get('model_name', 'gemini-2.0-flash-exp')
+        model_name = model_config.get('model_name', 'gemini-2.5-flash')
         model = GenerativeModel(model_name)
 
         # Combine system and user prompts for Vertex AI
