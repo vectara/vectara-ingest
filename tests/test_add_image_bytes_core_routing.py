@@ -60,6 +60,22 @@ class TestFix2ChunkingDefault(unittest.TestCase):
         ix = Indexer(cfg, api_url="https://api.example.test", corpus_key="c", api_key="k")
         self.assertEqual(ix.docling_config['chunking_strategy'], 'hybrid')
 
+    def test_other_docling_keys_are_preserved(self):
+        # Defaulting chunking_strategy must not drop unrelated user-set docling keys.
+        cfg = _base_cfg({
+            'doc_parser': 'docling',
+            'add_image_bytes': True,
+            'docling_config': {'chunking_strategy': 'none', 'image_scale': 3,
+                               'do_formula_enrichment': True},
+        })
+        ix = Indexer(cfg, api_url="https://api.example.test", corpus_key="c", api_key="k")
+        self.assertEqual(ix.docling_config['chunking_strategy'], 'hierarchical')
+        self.assertEqual(ix.docling_config['image_scale'], 3)
+        self.assertTrue(ix.docling_config['do_formula_enrichment'])
+        # The shared cfg (read by the lazily-built FileProcessor) keeps them too.
+        self.assertEqual(cfg.doc_processing.docling_config.image_scale, 3)
+        self.assertTrue(cfg.doc_processing.docling_config.do_formula_enrichment)
+
     def test_no_change_without_add_image_bytes(self):
         cfg = _base_cfg({
             'doc_parser': 'docling',

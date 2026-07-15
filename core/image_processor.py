@@ -128,7 +128,7 @@ class ImageProcessor:
                 try:
                     image_binary = self._read_renderable_image_bytes(local_path, is_svg)
                 except Exception as e:
-                    logger.info(f"Failed to rasterize SVG image {image_url} from {url}: {e}, skipping")
+                    logger.info(f"Failed to read image {image_url} from {url}: {e}, skipping")
                     continue
                 image_id = f"web_{slugify(url)}_image_{inx}"
                 image_bytes.append((image_id, image_binary))

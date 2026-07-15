@@ -150,14 +150,16 @@ class Indexer:
         # needs no tokenizer model — safe for air-gapped deployments — and already the
         # DoclingDocumentParser default) so parts are well-sized. This also trips
         # _is_chunking_enabled() below, which forces use_core_indexing on. Only applied
-        # when chunking is off; an explicit user setting is never overridden.
+        # when chunking is off; an explicit chunking_strategy is never overridden, and
+        # unrelated docling keys (image_scale, layout_model, ...) are preserved.
         if (self.add_image_bytes and self.doc_parser == "docling"
                 and self.docling_config.get("chunking_strategy", "none") == "none"):
             self.docling_config = {
+                **self.docling_config,
                 "chunking_strategy": "hierarchical",
                 "chunk_size": self.docling_config.get("chunk_size", 1024),
             }
-            OmegaConf.update(cfg, "doc_processing.docling_config", self.docling_config, merge=False)
+            OmegaConf.update(cfg, "doc_processing.docling_config", self.docling_config, merge=True)
             logger.info(
                 "add_image_bytes is enabled: defaulting docling_config.chunking_strategy to "
                 "'hierarchical' so image-bearing documents are indexed via core with well-sized parts.")
@@ -1115,8 +1117,14 @@ class Indexer:
             updated_document_parts = []
             
             # Process each text/metadata pair to find images
-            for i, (text, metadata) in enumerate(zip(texts, metadatas)):
-                image_id = metadata.get('image_id') if metadata else None
+            for i, (raw_text, raw_metadata) in enumerate(zip(texts, metadatas)):
+                image_id = raw_metadata.get('image_id') if raw_metadata else None
+                # Mirror DocumentBuilder._build_core_document: normalize text and metadata
+                # (Unicode NFD + optional PII masking) so these rebuilt parts match every
+                # other core document instead of carrying raw/unmasked content.
+                text = self.normalize_text(raw_text)
+                metadata = ({k: self.normalize_value(v) for k, v in raw_metadata.items()}
+                            if raw_metadata else raw_metadata)
                 
                 if image_id:
                     # Find binary data for this image
