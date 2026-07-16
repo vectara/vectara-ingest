@@ -152,15 +152,12 @@ if [[ -n "${no_proxy}" ]]; then
   BUILD_ARGS="$BUILD_ARGS --build-arg NO_PROXY=\"${no_proxy}\""
 fi
 
-# Opt-in (env vars, default off): bake docling / EasyOCR models into the image for
+# Opt-in (env var, default off): bake docling + EasyOCR + NLTK data into the image for
 # air-gapped / on-prem use. When DOWNLOAD_DOCLING_MODELS=true, the Dockerfile also sets
 # HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE so no HuggingFace fetch is attempted at runtime.
-#   DOWNLOAD_DOCLING_MODELS=true DOWNLOAD_EASYOCR_MODELS=true bash run.sh <config> <profile>
+#   DOWNLOAD_DOCLING_MODELS=true bash run.sh <config> <profile>
 if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" ]]; then
   BUILD_ARGS="$BUILD_ARGS --build-arg DOWNLOAD_DOCLING_MODELS=true"
-fi
-if [[ "${DOWNLOAD_EASYOCR_MODELS}" == "true" ]]; then
-  BUILD_ARGS="$BUILD_ARGS --build-arg DOWNLOAD_EASYOCR_MODELS=true"
 fi
 
 
@@ -183,12 +180,12 @@ else
   echo "Building base image"
 fi
 
-# Pre-baked model images (DOWNLOAD_DOCLING_MODELS / DOWNLOAD_EASYOCR_MODELS) are tagged
-# 'latest.onprem' so they never overwrite the regular ':latest' image. This matches the
-# '.onprem' suffix the CI workflow publishes (.github/workflows/docker-image.yml).
-if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" || "${DOWNLOAD_EASYOCR_MODELS}" == "true" ]]; then
+# Pre-baked model images (DOWNLOAD_DOCLING_MODELS) are tagged 'latest.onprem' so they
+# never overwrite the regular ':latest' image. This matches the '.onprem' suffix the CI
+# workflow publishes (.github/workflows/docker-image.yml).
+if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" ]]; then
   image_tag="latest.onprem"
-  echo "Baking models into image: $tag:$image_tag (docling=${DOWNLOAD_DOCLING_MODELS:-false}, easyocr=${DOWNLOAD_EASYOCR_MODELS:-false})"
+  echo "Baking models into image: $tag:$image_tag (docling+easyocr+nltk)"
 else
   image_tag="latest"
 fi

@@ -131,7 +131,7 @@ jobs:
           df -h
 
       # Build and push on-prem/air-gapped version (pre-bakes Docling + EasyOCR
-      # model weights so ingest doesn't need HuggingFace/GitHub network access)
+      # model weights and NLTK data so ingest doesn't need HuggingFace/GitHub network access)
       - name: Build and push on-prem Docker image
         id: push_onprem
         uses: docker/build-push-action@v5
@@ -142,7 +142,6 @@ jobs:
           build-args: |
             INSTALL_EXTRA=false
             DOWNLOAD_DOCLING_MODELS=true
-            DOWNLOAD_EASYOCR_MODELS=true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}.onprem
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest.onprem

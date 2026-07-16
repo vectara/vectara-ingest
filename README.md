@@ -606,48 +606,56 @@ HF_ENDPOINT="http://localhost:9000"
 #### Building for on-prem / air-gapped deployments
 
 By default, `docling` (the PDF/DOCX/PPTX/HTML parser) fetches its layout-detection and
-table-structure (TableFormer) models from HuggingFace Hub the first time it's used, and the
-default OCR engine (EasyOCR) fetches its models from GitHub releases. Both fail in
-environments with no outbound network access to those hosts.
+table-structure (TableFormer) models from HuggingFace Hub the first time it's used, the
+default OCR engine (EasyOCR) fetches its models from GitHub releases, and docling fetches
+NLTK data from GitHub. All fail in environments with no outbound network access to those hosts.
 
-Two build-args pre-bake these models into the image at build time instead:
+A single build-arg pre-bakes all of these into the image at build time instead:
 
 ```bash
 docker build \
   --build-arg DOWNLOAD_DOCLING_MODELS=true \
-  --build-arg DOWNLOAD_EASYOCR_MODELS=true \
   -t vectara-ingest:latest.onprem .
 ```
 
-Or build and run in one step through `run.sh` by setting the same flags as environment
-variables (default off). `run.sh` forwards them to the build, tags the resulting image
-`latest.onprem` so it never overwrites your regular `:latest` image, and — when docling
-models are baked — sets `HF_ENDPOINT` to an unreachable host at runtime so any regression
-that still tries to reach the Hub fails loudly instead of silently:
+Or build and run in one step through `run.sh` by setting the same flag as an environment
+variable (default off). `run.sh` forwards it to the build, tags the resulting image
+`latest.onprem` so it never overwrites your regular `:latest` image, and sets `HF_ENDPOINT`
+to an unreachable host at runtime so any regression that still tries to reach the Hub fails
+loudly instead of silently:
 
 ```bash
-DOWNLOAD_DOCLING_MODELS=true DOWNLOAD_EASYOCR_MODELS=true \
-  bash run.sh <config-file> <secrets-profile>
+DOWNLOAD_DOCLING_MODELS=true bash run.sh <config-file> <secrets-profile>
 ```
 
-- `DOWNLOAD_DOCLING_MODELS=true` bakes docling's default layout model (heron), both alternate
-  layout models selectable via `docling_config.layout_model` (heron_101, v2), TableFormer, and
-  the CodeFormula model used by `do_formula_enrichment` — everything `docling_config` can select
-  — and sets `HF_HUB_OFFLINE=true`/`TRANSFORMERS_OFFLINE=true` in the resulting image so no HF
-  network call is attempted at runtime. Adds ~1.6GB.
-- `DOWNLOAD_EASYOCR_MODELS=true` bakes EasyOCR's detection and recognition models (all
-  supported languages, not just the one configured via `easy_ocr_config.lang` — EasyOCR's own
-  download helper doesn't support scoping to a subset). Adds ~2.6GB.
+`DOWNLOAD_DOCLING_MODELS=true` bakes:
 
-Measured on a `regular` (`INSTALL_EXTRA=false`) build: base image 4.04GB, on-prem image (both
-build-args enabled) 8.55GB — a ~4.5GB increase, mostly EasyOCR's all-language model bundle.
+- docling's default layout model (heron), both alternate layout models selectable via
+  `docling_config.layout_model` (heron_101, v2), TableFormer, and the CodeFormula model used
+  by `do_formula_enrichment` — everything `docling_config` can select — and sets
+  `HF_HUB_OFFLINE=true`/`TRANSFORMERS_OFFLINE=true` so no HF network call is attempted at runtime.
+- EasyOCR's `craft` detector plus recognizers for the scripts covering the world's most-used
+  languages. Recognizers are per-script, not per-language, and the runtime script is chosen by
+  `easy_ocr_config.lang` (default `fr`/`de`/`es`/`en` → Latin):
+  - gen2 (~15-20MB each): Latin (`en`/`fr`/`de`/`es`/`it`/`pt`/`nl`/… ), Simplified Chinese,
+    Japanese, Korean, Cyrillic (`ru`/`uk`/`bg`/… ).
+  - gen1 (~190MB each): Devanagari (`hi`), Arabic (`ar`/`ur`), Bengali (`bn`).
 
-Pre-built `latest.onprem` and `<version>.onprem` tags (both build-args enabled) are published to
-`ghcr.io` and Docker Hub alongside the regular (`latest`) and `.full` tags.
+  Selecting a script outside this set fails air-gapped (runtime downloads are force-disabled). To
+  add one, extend the recognizer lists in `docker/bin/download-docling-models.py`.
+- The NLTK data docling uses (`punkt_tab`, `averaged_perceptron_tagger_eng`). Without it, offline
+  runs log download errors and fall back to a degraded tokenizer path.
+
+On a `regular` (`INSTALL_EXTRA=false`) build the base image is 4.04GB; the docling models add
+~1.6GB, the EasyOCR bundle adds ~750MB (mostly the three ~190MB gen1 scripts), and NLTK data adds
+~15MB, for an on-prem image of ~6.4GB. (The previous all-language EasyOCR bundle made this ~8.5GB.)
+
+Pre-built `latest.onprem` and `<version>.onprem` tags are published to `ghcr.io` and Docker Hub
+alongside the regular (`latest`) and `.full` tags.
 
 Not covered: `ocr_engine: rapidocr` fetches its models from ModelScope over plain HTTPS,
 independent of `HF_HUB_OFFLINE`, and has no pre-bake support today. Air-gapped deployments
-should use `ocr_engine: easyocr` (the default) with `DOWNLOAD_EASYOCR_MODELS=true`.
+should use `ocr_engine: easyocr` (the default) with one of the baked scripts listed above.
 
 ### Local deployment
 

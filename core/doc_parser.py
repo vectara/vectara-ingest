@@ -40,8 +40,15 @@ from gmft.pdf_bindings import PyPDFium2Document
 from gmft.auto import TableDetector, AutoTableFormatter, AutoFormatConfig
 
 import nltk
-nltk.download('punkt_tab', quiet=True)
-nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+# Download only if not already present. nltk.download() always fetches its index over the
+# network, so calling it unconditionally makes every air-gapped run log a resolution error
+# even when the data is baked into the image. find() uses the local search path (no network).
+for _nltk_pkg, _nltk_path in (("punkt_tab", "tokenizers/punkt_tab"),
+                              ("averaged_perceptron_tagger_eng", "taggers/averaged_perceptron_tagger_eng")):
+    try:
+        nltk.data.find(_nltk_path)
+    except LookupError:
+        nltk.download(_nltk_pkg, quiet=True)
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
