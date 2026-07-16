@@ -138,7 +138,7 @@ def generate(
     elif provider == 'anthropic':
         client = Anthropic(api_key=model_api_key)
         response = client.messages.create(
-            model=model_config.get('model_name', 'claude-5-sonnet'),
+            model=model_config.get('model_name', 'claude-sonnet-5'),
             system=system_prompt,
             messages=[
                 {
@@ -152,7 +152,6 @@ def generate(
                     ]
                 }
             ],
-            temperature=0,
             max_tokens=max_tokens,
         )
         res = str(response.content[0].text)
@@ -247,9 +246,8 @@ def generate_image_summary(
             }
         ]
         response = client.messages.create(
-            model=model_config.get("model_name", "claude-3-7-sonnet-20250219"),
+            model=model_config.get("model_name", "claude-sonnet-5"),
             max_tokens=max_tokens,
-            temperature=0,
             messages=messages,
         )
         summary = str(response.content[0].text)
