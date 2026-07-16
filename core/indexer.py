@@ -47,10 +47,28 @@ from core.incremental import (
 )
 from core.web_extractor_base import create_web_extractor
 from core.file_processor import FileProcessor
+from core.document_builder import MAX_SECTION_CHARS, MAX_PART_SIZE
 
 # Suppress FutureWarning related to torch.load
 warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 warnings.filterwarnings("ignore", category=UserWarning, message="FP16 is not supported on CPU; using FP32 instead")
+
+
+def _document_has_oversized_part(document: Dict[str, Any]) -> bool:
+    """True if any structured section text or bundled table exceeds MAX_SECTION_CHARS.
+
+    split_oversized only changes the document when such a part exists, so this is the
+    precise condition under which retrying a 400 with split_oversized=True can help.
+    Other 400s (e.g. an unrecognized field) have no oversized part and must fail loudly
+    rather than be silently retried into a degraded, incomplete document.
+    """
+    for section in document.get('sections', []):
+        if len(section.get('text', '')) > MAX_SECTION_CHARS:
+            return True
+        for table in section.get('tables', []):
+            if len(json.dumps(table.get('data', {}))) > MAX_SECTION_CHARS:
+                return True
+    return False
 
 
 class Indexer:
@@ -123,7 +141,29 @@ class Indexer:
         self.extract_metadata = cfg.doc_processing.get("extract_metadata", [])
         self.contextual_chunking = cfg.doc_processing.get("contextual_chunking", False)
         self.image_context = cfg.doc_processing.get("image_context", {'num_previous_chunks': 1, 'num_next_chunks': 1})
-        
+
+        # add_image_bytes attaches binary image data, which only *core* documents
+        # support (the images/document_parts fields are core-only; the structured
+        # API rejects them). Core parts are indexed as-is with no server-side
+        # chunking, so without a parser chunker the whole document would become one
+        # oversized part. Default docling chunking to 'hierarchical' (structure-based,
+        # needs no tokenizer model — safe for air-gapped deployments — and already the
+        # DoclingDocumentParser default) so parts are well-sized. This also trips
+        # _is_chunking_enabled() below, which forces use_core_indexing on. Only applied
+        # when chunking is off; an explicit chunking_strategy is never overridden, and
+        # unrelated docling keys (image_scale, layout_model, ...) are preserved.
+        if (self.add_image_bytes and self.doc_parser == "docling"
+                and self.docling_config.get("chunking_strategy", "none") == "none"):
+            self.docling_config = {
+                **self.docling_config,
+                "chunking_strategy": "hierarchical",
+                "chunk_size": self.docling_config.get("chunk_size", 1024),
+            }
+            OmegaConf.update(cfg, "doc_processing.docling_config", self.docling_config, merge=True)
+            logger.info(
+                "add_image_bytes is enabled: defaulting docling_config.chunking_strategy to "
+                "'hierarchical' so image-bearing documents are indexed via core with well-sized parts.")
+
         # Auto-enable core indexing when chunking is detected
         if self._is_chunking_enabled():
             if not self.use_core_indexing:
@@ -811,8 +851,16 @@ class Indexer:
                 if text is None or len(text) < 3:
                     return False
 
-                # If process_locally is enabled, route web content through document parser
-                if self.process_locally:
+                # Route web content through the local document parser when configured,
+                # or when the page has images we must attach as binary data: the inline
+                # web path below always builds a *structured* document, but binary images
+                # require *core* (see add_image_bytes handling in index_segments). Routing
+                # through index_file parses the HTML with docling, so the page is chunked
+                # and the images are attached to a valid core document.
+                route_locally = self.process_locally or (
+                    self.add_image_bytes and self.summarize_images and res.get('images')
+                )
+                if route_locally:
                     temp_html_path = None
                     try:
                         # Save HTML to temporary file and process through doc parser
@@ -827,10 +875,14 @@ class Indexer:
                         # Process through index_file which uses the configured document parser.
                         # Docling misses images nested inside <p>/<li> tags — pass them
                         # via extra_image_urls so index_file can supplement with web images.
+                        # force_local_processing: the source URI (a web URL) has no file
+                        # extension, so index_file's should_process_locally() heuristic would
+                        # send the temp .html down the raw upload path (Case A), bypassing the
+                        # docling parse + image-bytes attachment we routed here for.
                         result = self.index_file(
                             temp_html_path, url, metadata, title_hint=res.get('title', ''),
                             extra_image_urls=res.get('images', []), prior_fingerprint=prior_fingerprint,
-                            content_hash_override=content_hash_from_text(text)
+                            content_hash_override=content_hash_from_text(text), force_local_processing=True
                         )
                         safe_remove_file(temp_html_path)
                         return result
@@ -1022,6 +1074,20 @@ class Indexer:
         if image_bytes_dict and self.verbose:
             logger.info(f"Document {doc_id} has {len(image_bytes_dict)} images with binary data available for later upload")
 
+        # Binary image data (the images/document_parts fields) is only valid on *core*
+        # documents; a structured document carrying it is rejected by the API
+        # ("Unrecognized field images", and the core-only 'title'/'sections' mismatch).
+        # If we will attach image bytes below, build the document as core from the start
+        # so its shape (document_parts, no top-level title/sections) matches the type.
+        if (self.add_image_bytes and image_bytes and metadatas and not use_core_indexing
+                and any(m and m.get('image_id')
+                        and self._find_image_binary_data(m['image_id'], image_bytes_dict)
+                        for m in metadatas)):
+            logger.info(
+                f"Document {doc_id} carries binary image data (add_image_bytes); "
+                f"indexing via core instead of structured.")
+            use_core_indexing = True
+
         from core.document_builder import DocumentBuilder
         # Normalize URLs in doc_metadata
         if doc_metadata and 'url' in doc_metadata:
@@ -1051,8 +1117,14 @@ class Indexer:
             updated_document_parts = []
             
             # Process each text/metadata pair to find images
-            for i, (text, metadata) in enumerate(zip(texts, metadatas)):
-                image_id = metadata.get('image_id') if metadata else None
+            for i, (raw_text, raw_metadata) in enumerate(zip(texts, metadatas)):
+                image_id = raw_metadata.get('image_id') if raw_metadata else None
+                # Mirror DocumentBuilder._build_core_document: normalize text and metadata
+                # (Unicode NFD + optional PII masking) so these rebuilt parts match every
+                # other core document instead of carrying raw/unmasked content.
+                text = self.normalize_text(raw_text)
+                metadata = ({k: self.normalize_value(v) for k, v in raw_metadata.items()}
+                            if raw_metadata else raw_metadata)
                 
                 if image_id:
                     # Find binary data for this image
@@ -1081,21 +1153,27 @@ class Indexer:
                         if self.verbose:
                             logger.info(f"Added binary data for image {image_id} with MIME type {mime_type}")
                     else:
-                        # No binary data found, add as regular text
-                        updated_document_parts.append({
-                            "text": text,
-                            "metadata": metadata
-                        })
+                        # No binary data found, add as regular text (split if oversized).
+                        for chunk in DocumentBuilder._split_text(text, MAX_PART_SIZE):
+                            updated_document_parts.append({
+                                "text": chunk,
+                                "metadata": metadata
+                            })
                         if self.verbose:
                             logger.warning(f"Binary data not found for image {image_id}")
                 else:
-                    # Regular text element
-                    updated_document_parts.append({
-                        "text": text,
-                        "metadata": metadata
-                    })
+                    # Regular text element — split to stay under the core part-size limit,
+                    # mirroring _build_core_document (this path bypasses build_document's split).
+                    for chunk in DocumentBuilder._split_text(text, MAX_PART_SIZE):
+                        updated_document_parts.append({
+                            "text": chunk,
+                            "metadata": metadata
+                        })
             
-            # Update document structure if we found any images with binary data
+            # Update document structure if we found any images with binary data.
+            # use_core_indexing was already forced True above (pre-build) whenever this
+            # is non-empty, so the document was built in core shape and these core-only
+            # fields are valid.
             if images_array:
                 document["images"] = images_array
                 document["document_parts"] = updated_document_parts
@@ -1109,8 +1187,10 @@ class Indexer:
                                      prior_fingerprint=prior_fingerprint,
                                      content_hash_override=content_hash_override)
 
-        if not result and not use_core_indexing and self._last_response_status == 400:
-            logger.info(f"Document {doc_id} failed with 400, retrying with split_oversized=True")
+        if (not result and not use_core_indexing and self._last_response_status == 400
+                and _document_has_oversized_part(document)):
+            logger.info(f"Document {doc_id} failed with an oversized-part 400, "
+                        f"retrying with split_oversized=True")
             document_retry = document_builder.build_document(
                 doc_id=doc_id,
                 texts=texts,
@@ -1130,6 +1210,7 @@ class Indexer:
 
     def index_file(self, filename: str, uri: str, metadata: Dict[str, Any], id: str = None, title_hint: str = None,
                    extra_image_urls: Optional[List[Dict[str, str]]] = None,
+                   force_local_processing: bool = False,
                    prior_fingerprint: Optional[str] = None,
                    content_hash_override: Optional[str] = None) -> bool:
         """
@@ -1145,6 +1226,11 @@ class Indexer:
                 summarize and append inline to the parent document. Used in the process_locally path
                 to include images that Docling may miss when they are nested inside <p>/<li> tags.
                 Only applied when inline_images=True and summarize_images=True.
+            force_local_processing (bool): Force the local parse path (Case B) regardless of the
+                per-file should_process_locally() heuristic. Callers use this when they already know
+                the file must be parsed locally — e.g. index_url routing a web page here to attach
+                binary image data, where the source URI has no file extension so the heuristic (which
+                keys off the URI) would otherwise send it down the raw file-upload path.
 
         Returns:
             bool: True if indexing was successful, False otherwise.
@@ -1181,7 +1267,8 @@ class Indexer:
         # (e.g. one image flips it True, then every later .txt/.md gets
         # wrongly routed to Case B and fails with "File format not allowed").
         process_locally = (
-            self.process_locally
+            force_local_processing
+            or self.process_locally
             or self.file_processor.should_process_locally(filename, uri)
         )
 
