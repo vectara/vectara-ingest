@@ -51,7 +51,11 @@ lxml[html_clean]==6.1.0
 html5lib==1.1
 unstructured[pdf]==0.18.26
 unstructured-inference>=1.0.5
-transformers[torch]>=4.54.1
+# >=4.56 required: earlier versions forward docling's dtype= kwarg straight into
+# the model constructor instead of consuming it, breaking CodeFormula/VLM loading
+# (Idefics3ForConditionalGeneration TypeError). Capped at <5 to avoid the 5.x jump
+# (huggingface-hub major bump) since 4.56 already fixes it.
+transformers[torch]>=4.56.0,<5
 safetensors[torch]>=0.6.2
 datasets==3.6.0
 torch>=2.7.1

@@ -351,6 +351,12 @@ doc_processing:
     layout_model: null                 # layout model: null (default heron), heron, heron_101, v2
     do_formula_enrichment: false       # enable formula enrichment for PDFs; default false (off enables MPS acceleration on Mac)
 
+  # Docling's layout and table-structure models are fetched from HuggingFace Hub on first
+  # use by default, which fails in air-gapped/on-prem environments with no HF access. See
+  # "Building for on-prem / air-gapped deployments" under Docker for pre-baked images. If you
+  # build with DOWNLOAD_DOCLING_MODELS=true but then pick a layout_model or do_formula_enrichment
+  # setting that wasn't baked in, ingestion will fail outright rather than fall back to a fetch.
+
   # whether to use core_indexing which maintains the chunks from unstructured or docling, or let vectara chunk further
   # NOTE: Automatically enabled when chunking_strategy is not 'none' in document parsers like Unstructured or Docling
   use_core_indexing: false
@@ -596,6 +602,60 @@ of the format.
 ```bash
 HF_ENDPOINT="http://localhost:9000"
 ```
+
+#### Building for on-prem / air-gapped deployments
+
+By default, `docling` (the PDF/DOCX/PPTX/HTML parser) fetches its layout-detection and
+table-structure (TableFormer) models from HuggingFace Hub the first time it's used, the
+default OCR engine (EasyOCR) fetches its models from GitHub releases, and docling fetches
+NLTK data from GitHub. All fail in environments with no outbound network access to those hosts.
+
+A single build-arg pre-bakes all of these into the image at build time instead:
+
+```bash
+docker build \
+  --build-arg DOWNLOAD_DOCLING_MODELS=true \
+  -t vectara-ingest:latest.onprem .
+```
+
+Or build and run in one step through `run.sh` by setting the same flag as an environment
+variable (default off). `run.sh` forwards it to the build, tags the resulting image
+`latest.onprem` so it never overwrites your regular `:latest` image, and sets `HF_ENDPOINT`
+to an unreachable host at runtime so any regression that still tries to reach the Hub fails
+loudly instead of silently:
+
+```bash
+DOWNLOAD_DOCLING_MODELS=true bash run.sh <config-file> <secrets-profile>
+```
+
+`DOWNLOAD_DOCLING_MODELS=true` bakes:
+
+- docling's default layout model (heron), both alternate layout models selectable via
+  `docling_config.layout_model` (heron_101, v2), TableFormer, and the CodeFormula model used
+  by `do_formula_enrichment` — everything `docling_config` can select — and sets
+  `HF_HUB_OFFLINE=true`/`TRANSFORMERS_OFFLINE=true` so no HF network call is attempted at runtime.
+- EasyOCR's `craft` detector plus recognizers for the scripts covering the world's most-used
+  languages. Recognizers are per-script, not per-language, and the runtime script is chosen by
+  `easy_ocr_config.lang` (default `fr`/`de`/`es`/`en` → Latin):
+  - gen2 (~15-20MB each): Latin (`en`/`fr`/`de`/`es`/`it`/`pt`/`nl`/… ), Simplified Chinese,
+    Japanese, Korean, Cyrillic (`ru`/`uk`/`bg`/… ).
+  - gen1 (~190MB each): Devanagari (`hi`), Arabic (`ar`/`ur`), Bengali (`bn`).
+
+  Selecting a script outside this set fails air-gapped (runtime downloads are force-disabled). To
+  add one, extend the recognizer lists in `docker/bin/download-docling-models.py`.
+- The NLTK data docling uses (`punkt_tab`, `averaged_perceptron_tagger_eng`). Without it, offline
+  runs log download errors and fall back to a degraded tokenizer path.
+
+On a `regular` (`INSTALL_EXTRA=false`) build the base image is 4.04GB; the docling models add
+~1.6GB, the EasyOCR bundle adds ~750MB (mostly the three ~190MB gen1 scripts), and NLTK data adds
+~15MB, for an on-prem image of ~6.4GB. (The previous all-language EasyOCR bundle made this ~8.5GB.)
+
+Pre-built `latest.onprem` and `<version>.onprem` tags are published to `ghcr.io` and Docker Hub
+alongside the regular (`latest`) and `.full` tags.
+
+Not covered: `ocr_engine: rapidocr` fetches its models from ModelScope over plain HTTPS,
+independent of `HF_HUB_OFFLINE`, and has no pre-bake support today. Air-gapped deployments
+should use `ocr_engine: easyocr` (the default) with one of the baked scripts listed above.
 
 ### Local deployment
 

@@ -1197,7 +1197,7 @@ tinycss2==1.4.0
     #   cssselect2
 tldextract==5.3.0
     # via scrapy
-tokenizers==0.21.1
+tokenizers==0.22.2
     # via transformers
 toml==0.10.2
     # via -r requirements.in
@@ -1251,7 +1251,7 @@ traitlets==5.14.3
     #   nbclient
     #   nbconvert
     #   nbformat
-transformers==4.55.0
+transformers==4.57.6
     # via
     #   -r requirements.in
     #   docling-core

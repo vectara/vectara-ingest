@@ -40,8 +40,15 @@ from gmft.pdf_bindings import PyPDFium2Document
 from gmft.auto import TableDetector, AutoTableFormatter, AutoFormatConfig
 
 import nltk
-nltk.download('punkt_tab', quiet=True)
-nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+# Download only if not already present. nltk.download() always fetches its index over the
+# network, so calling it unconditionally makes every air-gapped run log a resolution error
+# even when the data is baked into the image. find() uses the local search path (no network).
+for _nltk_pkg, _nltk_path in (("punkt_tab", "tokenizers/punkt_tab"),
+                              ("averaged_perceptron_tagger_eng", "taggers/averaged_perceptron_tagger_eng")):
+    try:
+        nltk.data.find(_nltk_path)
+    except LookupError:
+        nltk.download(_nltk_pkg, quiet=True)
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -792,6 +799,19 @@ class LlamaParseDocumentParser(DocumentParser):
             image_bytes=image_bytes
         )
 
+# Pre-baked Docling model cache (see docker/bin/download-docling-models.py). When
+# absent (default images), _get_or_create_converter() leaves artifacts_path unset
+# and Docling fetches models from HuggingFace Hub lazily, as it always has.
+#
+# Deliberately hardcoded rather than read from a DOCLING_ARTIFACTS_PATH env var:
+# docling's own pydantic-settings config (docling.datamodel.settings.AppSettings,
+# env_prefix="DOCLING_") already binds that exact env var name as a global
+# artifacts_path fallback checked by every pipeline (docling.pipeline.base_pipeline
+# .BasePipeline.__init__). Setting it would make docling require this folder to
+# exist even on images that never baked models in, breaking default image builds.
+DOCLING_ARTIFACTS_PATH = "/opt/docling-models"
+
+
 class DoclingDocumentParser(DocumentParser):
 
     def __init__(
@@ -901,6 +921,24 @@ class DoclingDocumentParser(DocumentParser):
         from pypdf import PdfReader
         return len(PdfReader(filename).pages)
 
+    @staticmethod
+    def _resolve_baked_artifacts_path() -> Optional[pathlib.Path]:
+        """Return the pre-baked Docling model dir if this image was built with
+        DOWNLOAD_DOCLING_MODELS=true, else None (fall back to HF Hub download).
+
+        A missing, empty, or unreadable dir must yield None so a non-baked image
+        doesn't point Docling at a bad path and break its lazy-download fallback.
+        An unreadable dir (EACCES) makes is_dir()/iterdir() raise, so treat any
+        OSError the same as "not baked" rather than crashing converter creation.
+        """
+        try:
+            artifacts_path = pathlib.Path(DOCLING_ARTIFACTS_PATH)
+            if artifacts_path.is_dir() and any(artifacts_path.iterdir()):
+                return artifacts_path
+        except OSError:
+            pass
+        return None
+
     def _get_or_create_converter(self, fallback_ocr: bool = False):
         """Build the DocumentConverter once and cache it for reuse across files.
 
@@ -980,6 +1018,13 @@ class DoclingDocumentParser(DocumentParser):
         pdf_opts.generate_picture_images = True
         pdf_opts.do_ocr = False
         pdf_opts.do_formula_enrichment = self.do_formula_enrichment
+
+        # Use pre-baked model artifacts if this image was built with
+        # DOWNLOAD_DOCLING_MODELS=true, instead of fetching from HuggingFace Hub.
+        baked_artifacts = self._resolve_baked_artifacts_path()
+        if baked_artifacts is not None:
+            pdf_opts.artifacts_path = baked_artifacts
+            logger.info(f"Using pre-baked Docling model artifacts from {baked_artifacts}")
 
         # Configure layout model if specified
         valid_layout_models = [k for k in layout_model_specs.keys() if k != 'LayoutOptions']
