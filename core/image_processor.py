@@ -36,6 +36,20 @@ class ImageProcessor:
             )
         return self.image_summarizer
     
+    @staticmethod
+    def _read_renderable_image_bytes(local_path: str, is_svg: bool) -> bytes:
+        """Return image bytes safe to store as image_data and render as <img>.
+
+        SVG is rasterized to PNG via cairosvg — raw SVG bytes get labeled image/png by
+        the MIME sniffer's default fallback and won't decode in the browser. Raster
+        images (PNG/JPEG/...) pass through unchanged.
+        """
+        if is_svg:
+            import cairosvg
+            return cairosvg.svg2png(url=local_path)
+        with open(local_path, 'rb') as fp:
+            return fp.read()
+
     def process_web_images(self, images: List[Dict[str, str]], url: str, ex_metadata: Dict[str, Any]) -> Tuple[List[Tuple[str, str, Dict[str, Any]]], List[Tuple[str, bytes]]]:
         """
         Process images from web pages
@@ -83,7 +97,8 @@ class ImageProcessor:
                     # download as before
                     response = requests.get(image_url, headers=get_headers(self.cfg), stream=True, timeout=30)
                     if response.status_code != 200:
-                        logger.info(f"Failed to retrieve image {image_url} from {url}, skipping")
+                        logger.info(f"Failed to retrieve image {image_url} from {url} "
+                                    f"(HTTP {response.status_code} {response.reason}), skipping")
                         continue
                     # write to a temp file with appropriate extension guessed from URL path or default to .png
                     url_path = urlparse(image_url).path
@@ -99,7 +114,8 @@ class ImageProcessor:
 
                 # Skip small raster images (avatars, icons) — consistent with DoclingParser
                 # SVGs are vector and don't have inherent pixel dimensions; skip the size check for them
-                if not image_summarizer._is_svg_file(local_path, image_url):
+                is_svg = image_summarizer._is_svg_file(local_path, image_url)
+                if not is_svg:
                     from PIL import Image as _PILImage
                     with _PILImage.open(local_path) as pil_img:
                         w, h = pil_img.size
@@ -107,9 +123,13 @@ class ImageProcessor:
                         logger.debug(f"Skipping small image ({w}x{h}px) from {image_url}")
                         continue
 
-                # Store binary data
-                with open(local_path, 'rb') as fp:
-                    image_binary = fp.read()
+                # Store binary data. SVG must be rasterized to PNG (see helper) — the corpus
+                # renders image_data as <img>, and raw SVG bytes labeled image/png don't decode.
+                try:
+                    image_binary = self._read_renderable_image_bytes(local_path, is_svg)
+                except Exception as e:
+                    logger.info(f"Failed to read image {image_url} from {url}: {e}, skipping")
+                    continue
                 image_id = f"web_{slugify(url)}_image_{inx}"
                 image_bytes.append((image_id, image_binary))
 

@@ -21,6 +21,23 @@ except ImportError:
 # Stores (project_id, location, credentials_file) tuple when initialized
 _vertex_ai_init_state = None
 
+# OpenAI model families requiring the newer Chat Completions parameters:
+# GPT-5 series and o-series reasoning models reject `max_tokens` (they need
+# `max_completion_tokens`) and reject a custom `temperature` (only default=1 allowed).
+_OPENAI_NEW_PARAM_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+
+def _openai_token_params(model_name: str, max_tokens: int) -> dict:
+    """Token/temperature kwargs for chat.completions.create, selected by model name.
+
+    - GPT-5 / o-series: {"max_completion_tokens": n}  (temperature omitted)
+    - all others:       {"max_tokens": n, "temperature": 0}
+    """
+    name = (model_name or "").lower()
+    if name.startswith(_OPENAI_NEW_PARAM_PREFIXES):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens, "temperature": 0}
+
 def get_api_key(provider: str, cfg: OmegaConf, model_type: str = None) -> str:
     """
     Get the API key for the specified provider.
@@ -125,14 +142,14 @@ def generate(
             client = OpenAI(api_key=model_api_key, base_url=model_config.get('base_url', None))
         else:
             client = OpenAI(api_key=model_api_key)
+        model_name = model_config.get('model_name', 'gpt-4o')
         response = client.chat.completions.create(
-            model=model_config.get('model_name', 'gpt-5.4-mini'),
+            model=model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0,
-            max_tokens=max_tokens,
+            **_openai_token_params(model_name, max_tokens),
         )
         res = str(response.choices[0].message.content)
     elif provider == 'anthropic':
@@ -213,11 +230,11 @@ def generate_image_summary(
             }
         ]
 
+        model_name = model_config.get('model_name', 'gpt-4o')
         response = client.chat.completions.create(
-            model=model_config.get('model_name', 'gpt-4o'),
+            model=model_name,
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=0,
+            **_openai_token_params(model_name, max_tokens),
         )
         summary = response.choices[0].message.content
         return summary
