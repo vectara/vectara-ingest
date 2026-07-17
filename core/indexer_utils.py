@@ -119,98 +119,19 @@ def create_upload_files_dict(filename: str, metadata: Dict[str, Any], parse_tabl
     return files, upload_filename, content_type
 
 
-def handle_file_upload_response(response, uri: str, reindex: bool, delete_doc_func, retry_upload_func=None) -> bool:
-    """
-    Handle file upload response with reindexing logic.
+def parse_conflict_doc_id(response_text: str) -> Optional[str]:
+    """Pull the document id out of a Vectara 409 conflict message
+    (`... for document id '<id>' ...`). Returns None if absent.
 
-    Args:
-        response: The HTTP response from the upload attempt
-        uri: The URI/identifier for logging
-        reindex: Whether to reindex if document exists
-        delete_doc_func: Function to delete existing document
-        retry_upload_func: Optional function to retry the upload after deletion
-
-    Returns:
-        bool: True if upload was successful (or successfully reindexed), False otherwise
-    """
-    if response.status_code == 201:
-        logger.info(f"REST upload for {uri} successful")
-        return True
-    elif response.status_code == 409:
-        if reindex:
-            match = re.search(r"document id '([^']+)'", response.text)
-            if match:
-                doc_id = match.group(1)
-                logger.info(f"Document {doc_id} already exists, deleting then reindexing")
-                if delete_doc_func(doc_id):
-                    if retry_upload_func:
-                        # Retry the upload after successful deletion
-                        retry_response = retry_upload_func()
-                        if retry_response.status_code == 201:
-                            logger.info(f"Successfully reindexed {uri}")
-                            return True
-                        else:
-                            logger.error(f"Failed to reindex {uri} with code {retry_response.status_code}: {retry_response.text}")
-                            return False
-                    else:
-                        # No retry function provided, caller will handle retry
-                        return True
-                else:
-                    logger.error(f"Failed to delete document {doc_id} for reindexing")
-                    return False
-            else:
-                logger.error(f"Failed to extract document id from error: {response.text}")
-                return False
-        else:
-            logger.info(f"Document {uri} already indexed, skipping")
-            return False
-    else:
-        logger.error(f"REST upload for {uri} failed with code {response.status_code}, text = {response.text}")
-        return False
-
-
-def handle_document_upload_response(response, doc_id: str, reindex: bool, delete_doc_func, retry_upload_func=None) -> bool:
-    """
-    Handle document upload response with reindexing logic for documents.
-
-    Args:
-        response: The HTTP response from the upload attempt
-        doc_id: The document ID
-        reindex: Whether to reindex if document exists
-        delete_doc_func: Function to delete existing document
-        retry_upload_func: Optional function to retry the upload after deletion
-
-    Returns:
-        bool: True if upload was successful (or successfully reindexed), False otherwise
-    """
-    if response.status_code == 201:
-        logger.debug(f"Successfully indexed document {doc_id}")
-        return True
-    elif response.status_code in [409, 412]:
-        if reindex:
-            logger.info(f"Document {doc_id} already exists, deleting then reindexing")
-            if delete_doc_func(doc_id):
-                if retry_upload_func:
-                    # Retry the upload after successful deletion
-                    retry_response = retry_upload_func()
-                    if retry_response.status_code == 201:
-                        logger.info(f"Successfully reindexed document {doc_id}")
-                        return True
-                    else:
-                        logger.error(f"Failed to reindex document {doc_id} with code {retry_response.status_code}: {retry_response.text}")
-                        return False
-                else:
-                    # No retry function provided, caller will handle retry
-                    return True
-            else:
-                logger.error(f"Failed to delete document {doc_id} for reindexing")
-                return False
-        else:
-            logger.info(f"Document {doc_id} already exists, skipping")
-            return False
-    else:
-        logger.error(f"REST upload failed for document {doc_id} with code {response.status_code}: {response.text}")
-        return False
+    Vectara stores upload_file ids verbatim, but the 409 names the EXISTING
+    doc's id, which is not always the one we just sent: when the same content
+    was previously indexed under a different id scheme (e.g. a folder crawl's
+    slugify(name)-<hash> vs a raw file id, or an id scheme that changed between
+    runs), Vectara's content-dedup makes the conflict reference that prior id.
+    A reindex delete must target the id the server reports here rather than the
+    one we uploaded with (deleting the latter 404s)."""
+    m = re.search(r"document id '([^']+)'", response_text)
+    return m.group(1) if m else None
 
 
 def safe_file_cleanup(file_path: str):

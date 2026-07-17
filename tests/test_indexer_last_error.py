@@ -120,13 +120,40 @@ class TestIndexFileLastError(unittest.TestCase):
         ix.incremental = True
         ix.reindex = False
         ix.delete_doc = MagicMock(return_value=True)
-        conflict = MagicMock(status_code=409)
+        conflict = MagicMock(status_code=409, text="")
         success = MagicMock(status_code=201)
         ix.session.request.side_effect = [conflict, success]
 
         ok = ix._index_file(self.path, uri="https://example.test/a.pdf", metadata={})
         self.assertTrue(ok)
         ix.delete_doc.assert_called_once()
+        self.assertEqual(ix.session.request.call_count, 2)
+
+    def test_reindex_409_deletes_id_from_conflict_message(self):
+        """The 409 body can name a doc id different from the one we sent — when the
+        same content was previously indexed under a different id scheme (e.g.
+        folder_crawler's slugify(name)-sha256[:12]) and Vectara's content-dedup
+        references that prior id. The reindex delete must target the id in the 409
+        body; deleting the id we sent hits a 404, the retry never runs, and the
+        changed doc is silently dropped."""
+        ix = _make_indexer()
+        ix.reindex = True
+        real_id = "services-consumption-guide-for-all-apps-docx-b65ceeeb0f03"
+        ix.delete_doc = MagicMock(return_value=True)
+        conflict = MagicMock(
+            status_code=409,
+            text=('{"messages":["Indexing doesn\'t support updating documents. '
+                  "The new request does not match the previous request for document "
+                  f"id '{real_id}'. Delete and re-add to update.\"]}}"),
+        )
+        success = MagicMock(status_code=201)
+        ix.session.request.side_effect = [conflict, success]
+
+        ok = ix._index_file(self.path, uri="https://example.test/a.pdf",
+                            metadata={}, id="1jgijyB3tLDu8C6H-gVPub9cGTTArGPnN")
+        self.assertTrue(ok)
+        # The delete must use the id from the conflict message, NOT the id we sent.
+        ix.delete_doc.assert_called_once_with(real_id)
         self.assertEqual(ix.session.request.call_count, 2)
 
 

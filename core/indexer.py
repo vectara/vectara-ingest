@@ -40,7 +40,8 @@ from core.image_processor import ImageProcessor
 from core.indexer_utils import (
     get_chunking_config, extract_last_modified, create_upload_files_dict,
     safe_file_cleanup, prepare_file_metadata, store_file,
-    normalize_url_for_metadata, auth_redirect_reason, md5_hex
+    normalize_url_for_metadata, auth_redirect_reason, md5_hex,
+    parse_conflict_doc_id
 )
 from core.incremental import (
     compute_fingerprint, config_signature, content_hash_from_text, source_tag_for,
@@ -552,8 +553,12 @@ class Indexer:
                 if self.verbose:
                     logger.info(f"File {uri} already exists. Deleting and re-indexing...")
 
-                # Extract doc_id from the original filename or ID
-                doc_id = id if id else os.path.basename(filename)
+                # The 409 names the EXISTING doc's id, which is not always the id we
+                # just sent: when the same content was indexed under a different id
+                # scheme in a prior run (e.g. a folder crawl's slugify(name)-<hash>),
+                # Vectara's content-dedup references that prior id. Delete the id the
+                # server reports; fall back to ours when it carries none (e.g. 412).
+                doc_id = parse_conflict_doc_id(response.text) or (id if id else os.path.basename(filename))
 
                 # Delete the existing document
                 if self.delete_doc(doc_id):

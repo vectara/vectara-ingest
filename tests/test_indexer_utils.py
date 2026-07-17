@@ -1,6 +1,21 @@
 import unittest
 
-from core.indexer_utils import auth_redirect_reason, is_auth_host, normalize_url_for_metadata
+from core.indexer_utils import (
+    auth_redirect_reason, is_auth_host, normalize_url_for_metadata,
+    parse_conflict_doc_id,
+)
+
+
+class TestParseConflictDocId(unittest.TestCase):
+    def test_extracts_id_from_conflict_message(self):
+        text = ('{"messages":["Indexing doesn\'t support updating documents. '
+                "The new request does not match the previous request for document "
+                "id 'my-doc-b65ceeeb0f03'. Delete and re-add to update.\"]}")
+        self.assertEqual(parse_conflict_doc_id(text), "my-doc-b65ceeeb0f03")
+
+    def test_returns_none_when_absent(self):
+        self.assertIsNone(parse_conflict_doc_id("some unrelated 412 error"))
+        self.assertIsNone(parse_conflict_doc_id(""))
 
 
 class TestAuthRedirectReason(unittest.TestCase):
