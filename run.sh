@@ -3,6 +3,8 @@
 # args[1] = config file
 # args[2] = secrets profile
 # example: sh run.sh <config>news-bbc.yaml dev
+# Optional: SECRETS_FILE env var points at an alternate secrets.toml
+# (default: ./secrets.toml). e.g. SECRETS_FILE=/path/to/secrets.toml sh run.sh ...
 
 # Error handling with consistent exit codes
 readonly ERR_MISSING_ARGS=1
@@ -32,8 +34,10 @@ if [[ ! -f "$1" ]]; then
   exit "$ERR_INVALID_CONFIG"
 fi
 
-if [[ ! -f secrets.toml ]]; then
-  echo "Error: secrets.toml file does not exist, please create one following the README instructions" >&2
+SECRETS_FILE="${SECRETS_FILE:-secrets.toml}"
+[[ "$SECRETS_FILE" = /* ]] || SECRETS_FILE="$(pwd)/$SECRETS_FILE"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+  echo "Error: secrets file '$SECRETS_FILE' does not exist, please create one following the README instructions" >&2
   exit "$ERR_MISSING_SECRETS"
 fi
 
@@ -236,7 +240,7 @@ docker container inspect "${CONTAINER_NAME}" &>/dev/null && docker rm -f "${CONT
 DOCKER_RUN_ARGS=()
 DOCKER_RUN_ARGS+=(-v "${ABSOLUTE_CONFIG_PATH}:/home/vectara/env/${CONFIG_NAME}:ro")
 
-DOCKER_RUN_ARGS+=(-v "$(pwd)/secrets.toml:/home/vectara/env/secrets.toml:ro")
+DOCKER_RUN_ARGS+=(-v "${SECRETS_FILE}:/home/vectara/env/secrets.toml:ro")
 
 if [[ -f ca.pem ]]; then
   DOCKER_RUN_ARGS+=(-v "$(pwd)/ca.pem:/home/vectara/env/ca.pem:ro")
