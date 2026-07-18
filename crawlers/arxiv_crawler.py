@@ -99,8 +99,9 @@ class ArxivCrawler(Crawler):
 
         # filter by publication year
         papers = []
+        client = arxiv.Client()
         try:
-            for result in search.results():
+            for result in client.results(search):
                 date = result.published.date()
                 if date.year < year:
                     continue
