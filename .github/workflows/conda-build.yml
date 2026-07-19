@@ -41,7 +41,9 @@ jobs:
       - name: Install conda-verify and conda-build
         shell: bash -l {0}
         run: |
-          conda install -y conda-build conda-verify
+          # conda-build must be in base: conda only discovers subcommand plugins there
+          conda install -y -n base conda-build
+          conda install -y conda-verify
       
       - name: Lint recipe with conda-verify
         shell: bash -l {0}
@@ -92,7 +94,9 @@ jobs:
       - name: Install conda-build and anaconda-client
         shell: bash -l {0}
         run: |
-          conda install -y conda-build anaconda-client
+          # conda-build must be in base: conda only discovers subcommand plugins there
+          conda install -y -n base conda-build
+          conda install -y anaconda-client
       
       - name: Pre-build cleanup
         uses: ./.github/actions/conda-cleanup
