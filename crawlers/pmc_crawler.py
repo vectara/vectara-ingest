@@ -110,11 +110,13 @@ class PmcCrawler(Crawler):
 
             self.crawled_pmc_ids.add(pmc_id)
             logger.info(f"Indexing paper {pmc_id} with publication date {pub_date} and title '{title}'")
-            pdf_url = f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{pmc_id}/pdf/"
+            # PMC serves a JS interstitial at /pdf/ that yields no content for
+            # non-browser clients, so index the article HTML page instead.
+            article_url = f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{pmc_id}/"
 
-            succeeded = self.indexer.index_url(pdf_url, metadata={'url': pdf_url, 'source': 'pmc', 'title': title, "publicationDate": pub_date})
+            succeeded = self.indexer.index_url(article_url, metadata={'url': article_url, 'source': 'pmc', 'title': title, "publicationDate": pub_date})
             if not succeeded:
-                logger.warning(f"Failed to index paper {pmc_id} ({pdf_url})")
+                logger.warning(f"Failed to index paper {pmc_id} ({article_url})")
 
     def _get_xml_dict(self) -> Any:
         days_back = 1

@@ -1042,7 +1042,7 @@ regex==2026.7.19
     #   nltk
     #   tiktoken
     #   transformers
-requests==2.34.2
+requests==2.33.1
     # via
     #   -r requirements.in
     #   arxiv
