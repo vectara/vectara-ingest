@@ -116,6 +116,9 @@ class ArxivCrawler(Crawler):
                     'published': str(date)
                 })
         except Exception as e:
+            if not papers:
+                logger.error(f"arxiv query failed before returning any results: {e}", exc_info=True)
+                raise
             logger.warning(f"Exception {e}, we have {len(papers)} papers already, so will continue with indexing")
 
         if len(papers) == 0:
