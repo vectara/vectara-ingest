@@ -31,7 +31,7 @@ pytesseract==0.3.13
 xmltodict==0.13.0
 nbconvert==7.17.0
 nbformat==5.10.4
-arxiv==1.4.7
+arxiv==4.0.0
 goose3==3.1.19
 sqlalchemy==2.0.14
 pymysql==1.1.1
@@ -64,7 +64,7 @@ datasets==3.6.0
 torch>=2.7.1
 torchvision>=0.22.0
 pydub==0.25.1
-pytube==15.0.0
+pytubefix==10.10.1
 youtube-transcript-api==0.6.2
 sec-downloader==0.12.2
 openpyxl==3.1.5

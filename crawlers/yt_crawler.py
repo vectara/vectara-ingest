@@ -3,7 +3,7 @@ logger = logging.getLogger(__name__)
 from core.crawler import Crawler
 import os
 
-from pytube import Playlist, YouTube
+from pytubefix import Playlist, YouTube
 from pydub import AudioSegment
 
 from youtube_transcript_api import YouTubeTranscriptApi

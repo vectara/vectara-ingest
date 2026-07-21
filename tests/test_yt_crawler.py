@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 # yt_crawler imports several heavy/optional media deps; stub them all.
-for mod in ["cairosvg", "whisper", "pdf2image", "pytube", "pydub",
+for mod in ["cairosvg", "whisper", "pdf2image", "pytubefix", "pydub",
             "youtube_transcript_api"]:
     sys.modules.setdefault(mod, MagicMock())
 
