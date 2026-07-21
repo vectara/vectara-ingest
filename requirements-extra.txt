@@ -126,6 +126,7 @@ filelock==3.18.0
     #   huggingface-hub
     #   tldextract
     #   torch
+    #   transformers
 filetype==1.2.0
     # via
     #   -c requirements.txt
@@ -176,7 +177,7 @@ h11==0.16.0
     #   httpcore
 h5py==3.12.1
     # via -r requirements-extra.in
-hf-xet==1.5.2 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.5.2 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via
     #   -c requirements.txt
     #   huggingface-hub
@@ -191,10 +192,9 @@ httpcore==1.0.9
 httpx==0.28.1
     # via
     #   -c requirements.txt
-    #   huggingface-hub
     #   unstructured-client
     #   weasel
-huggingface-hub==1.13.0
+huggingface-hub==0.36.2
     # via
     #   -c requirements.txt
     #   accelerate
@@ -590,10 +590,12 @@ requests==2.34.2
     # via
     #   -c requirements.txt
     #   google-api-core
+    #   huggingface-hub
     #   requests-file
     #   requests-toolbelt
     #   spacy
     #   tldextract
+    #   transformers
     #   unstructured
 requests-file==2.1.0
     # via
@@ -703,7 +705,7 @@ tqdm==4.67.1
     #   spacy
     #   transformers
     #   unstructured
-transformers==5.8.1
+transformers==4.57.6
     # via
     #   -c requirements.txt
     #   unstructured-inference
@@ -714,9 +716,7 @@ triton==3.3.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
 typer==0.15.4
     # via
     #   -c requirements.txt
-    #   huggingface-hub
     #   spacy
-    #   transformers
     #   weasel
 typing-extensions==4.16.0
     # via

@@ -51,10 +51,14 @@ lxml[html_clean]==6.1.0
 html5lib==1.1
 unstructured[pdf]==0.18.26
 unstructured-inference>=1.0.5
-# >=5.5 required for CVE-2026-4372 / CVE-2026-5241 (RCE via malicious model
-# config.json; 4.x is unpatched). Earlier constraint history: >=4.56 fixed
-# docling's dtype= kwarg forwarding (Idefics3 TypeError).
-transformers[torch]>=5.5.0,<6
+# Capped at <5: transformers 5.x strict config validation rejects the
+# microsoft/table-transformer checkpoints gmft loads ("dilation": null fails
+# bool validation in from_pretrained), which breaks enable_gmft table
+# extraction entirely. NOTE: this reopens CVE-2026-4372 / CVE-2026-5241
+# (high, RCE via malicious model config.json; only patched in 5.3/5.5) —
+# re-raise the floor once gmft works with transformers 5.x.
+# >=4.56 required: fixes docling's dtype= kwarg forwarding (Idefics3 TypeError).
+transformers[torch]>=4.56.0,<5
 safetensors[torch]>=0.6.2
 datasets==3.6.0
 torch>=2.7.1
@@ -76,7 +80,7 @@ easyocr>=1.7.0
 llama-parse==0.6.68
 llama-cloud-services==0.6.68
 llama-index-core==0.14.2
-gmft==0.4.2
+gmft==0.4.3
 pypdf>=6.13.3
 furl==2.1.3
 office365-rest-python-client==2.6.2
