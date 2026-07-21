@@ -16,6 +16,7 @@ aiohttp==3.13.3
     #   fsspec
     #   llama-index-core
     #   mwapi
+    #   pytubefix
 aiosignal==1.4.0
     # via aiohttp
 aiosqlite==0.21.0
@@ -32,7 +33,7 @@ anyio==4.9.0
     #   google-genai
     #   httpx
     #   openai
-arxiv==1.4.7
+arxiv==4.0.0
     # via -r requirements.in
 asn1crypto==1.5.1
     # via scramp
@@ -214,9 +215,7 @@ fastdatamask==0.0.6
 fastjsonschema==2.21.1
     # via nbformat
 feedparser==6.0.11
-    # via
-    #   -r requirements.in
-    #   arxiv
+    # via -r requirements.in
 filelock==3.18.0
     # via
     #   datasets
@@ -465,6 +464,7 @@ llvmlite==0.47.0
 lxml==6.1.0
     # via
     #   -r requirements.in
+    #   arxiv
     #   docling-slim
     #   goose3
     #   justext
@@ -566,6 +566,8 @@ nltk==3.9.4
     #   -r requirements.in
     #   llama-index-core
     #   unstructured
+nodejs-wheel-binaries==24.16.0
+    # via pytubefix
 notion-client==2.2.1
     # via -r requirements.in
 numba==0.65.1
@@ -987,7 +989,7 @@ python-pptx==1.0.2
     #   docling-slim
 python-slugify==8.0.1
     # via -r requirements.in
-pytube==15.0.0
+pytubefix==10.10.1
     # via -r requirements.in
 pytz==2025.2
     # via
@@ -1036,6 +1038,7 @@ regex==2024.11.6
 requests==2.32.3
     # via
     #   -r requirements.in
+    #   arxiv
     #   boxsdk
     #   datasets
     #   docling-slim
