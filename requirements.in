@@ -1,4 +1,4 @@
-requests==2.32.3
+requests>=2.32.4
 requests-ntlm==1.3.0
 certifi>=2024.8.30
 click==8.1.8
@@ -51,10 +51,13 @@ lxml[html_clean]==6.1.0
 html5lib==1.1
 unstructured[pdf]==0.18.26
 unstructured-inference>=1.0.5
-# >=4.56 required: earlier versions forward docling's dtype= kwarg straight into
-# the model constructor instead of consuming it, breaking CodeFormula/VLM loading
-# (Idefics3ForConditionalGeneration TypeError). Capped at <5 to avoid the 5.x jump
-# (huggingface-hub major bump) since 4.56 already fixes it.
+# Capped at <5: transformers 5.x strict config validation rejects the
+# microsoft/table-transformer checkpoints gmft loads ("dilation": null fails
+# bool validation in from_pretrained), which breaks enable_gmft table
+# extraction entirely. NOTE: this reopens CVE-2026-4372 / CVE-2026-5241
+# (high, RCE via malicious model config.json; only patched in 5.3/5.5) —
+# re-raise the floor once gmft works with transformers 5.x.
+# >=4.56 required: fixes docling's dtype= kwarg forwarding (Idefics3 TypeError).
 transformers[torch]>=4.56.0,<5
 safetensors[torch]>=0.6.2
 datasets==3.6.0
@@ -71,14 +74,14 @@ matplotlib==3.8.4
 cryptography==48.0.1
 python-pptx==1.0.2
 python-docx==1.1.2
-Pillow==12.2.0
+Pillow>=12.3.0
 docling==2.94.0
 easyocr>=1.7.0
 llama-parse==0.6.68
 llama-cloud-services==0.6.68
 llama-index-core==0.14.2
-gmft==0.4.2
-pypdf >= 3.0.0
+gmft==0.4.3
+pypdf>=6.13.3
 furl==2.1.3
 office365-rest-python-client==2.6.2
 cairosvg==2.9.0
@@ -86,16 +89,16 @@ scrapy==2.16.0
 typer==0.15.4
 boxsdk[jwt]==3.10.0
 google-cloud-aiplatform==1.133.0
-nltk>=3.9.4
-aiohttp>=3.13.3
+nltk>=3.10.0
+aiohttp>=3.14.1
 pdfminer.six>=20251230
 protobuf>=5.29.6
 urllib3>=2.7.0
 python-multipart>=0.0.30
 pyasn1>=0.6.3
-pyjwt>=2.12.0
+pyjwt>=2.13.0
 pyopenssl>=26.0.0
-onnx>=1.21.0
+onnx>=1.22.0
 tornado>=6.5.6
 jaraco-context>=6.1.0
 wheel>=0.46.2
@@ -106,3 +109,9 @@ banks>=2.4.2
 docling-core>=2.74.1
 twisted>=26.4.0
 msgpack>=1.2.1
+# More transitive CVE floors: mistune/bleach via nbconvert; soupsieve via
+# beautifulsoup4; pi-heif via unstructured.
+mistune>=3.3.0
+bleach>=6.4.0
+soupsieve>=2.8.4
+pi-heif>=1.3.0

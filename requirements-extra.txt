@@ -79,7 +79,7 @@ contourpy==1.3.2
     #   -c requirements.txt
     #   -r requirements-extra.in
     #   matplotlib
-cryptography==46.0.7
+cryptography==48.0.1
     # via
     #   -c requirements.txt
     #   google-auth
@@ -100,6 +100,10 @@ dataclasses-json==0.6.7
     # via
     #   -c requirements.txt
     #   unstructured
+defusedxml==0.7.1
+    # via
+    #   -c requirements.txt
+    #   nltk
 deprecated==1.2.18
     # via
     #   -c requirements.txt
@@ -173,7 +177,7 @@ h11==0.16.0
     #   httpcore
 h5py==3.12.1
     # via -r requirements-extra.in
-hf-xet==1.1.3 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.5.2 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via
     #   -c requirements.txt
     #   huggingface-hub
@@ -190,7 +194,7 @@ httpx==0.28.1
     #   -c requirements.txt
     #   unstructured-client
     #   weasel
-huggingface-hub==0.34.4
+huggingface-hub==0.36.2
     # via
     #   -c requirements.txt
     #   accelerate
@@ -285,7 +289,7 @@ networkx==3.5
     #   -c requirements.txt
     #   torch
     #   unstructured
-nltk==3.9.4
+nltk==3.10.0
     # via
     #   -c requirements.txt
     #   -r requirements-extra.in
@@ -382,7 +386,7 @@ omegaconf==2.3.0
     # via
     #   -c requirements.txt
     #   effdet
-onnx==1.21.0
+onnx==1.22.0
     # via
     #   -c requirements.txt
     #   unstructured
@@ -430,7 +434,7 @@ pdfminer-six==20260107
     #   unstructured-inference
 phonenumbers==8.13.55
     # via presidio-analyzer
-pi-heif==0.22.0
+pi-heif==1.4.0
     # via
     #   -c requirements.txt
     #   unstructured
@@ -439,7 +443,7 @@ pikepdf==9.8.1
     #   -c requirements.txt
     #   -r requirements-extra.in
     #   unstructured
-pillow==12.2.0
+pillow==12.3.0
     # via
     #   -c requirements.txt
     #   matplotlib
@@ -516,7 +520,7 @@ pyparsing==3.2.3
     # via
     #   -c requirements.txt
     #   matplotlib
-pypdf==5.6.0
+pypdf==6.14.2
     # via
     #   -c requirements.txt
     #   unstructured
@@ -546,7 +550,7 @@ python-magic==0.4.27
     # via
     #   -c requirements.txt
     #   unstructured
-python-multipart==0.0.27
+python-multipart==0.0.32
     # via
     #   -c requirements.txt
     #   unstructured-inference
@@ -576,13 +580,13 @@ rapidfuzz==3.13.0
     #   -c requirements.txt
     #   unstructured
     #   unstructured-inference
-regex==2024.11.6
+regex==2026.7.19
     # via
     #   -c requirements.txt
     #   nltk
     #   presidio-analyzer
     #   transformers
-requests==2.32.3
+requests==2.34.2
     # via
     #   -c requirements.txt
     #   google-api-core
@@ -642,7 +646,7 @@ sniffio==1.3.1
     # via
     #   -c requirements.txt
     #   anyio
-soupsieve==2.7
+soupsieve==2.9
     # via
     #   -c requirements.txt
     #   beautifulsoup4
@@ -675,7 +679,7 @@ tldextract==5.3.0
     # via
     #   -c requirements.txt
     #   presidio-analyzer
-tokenizers==0.21.1
+tokenizers==0.22.2
     # via
     #   -c requirements.txt
     #   transformers
@@ -701,7 +705,7 @@ tqdm==4.67.1
     #   spacy
     #   transformers
     #   unstructured
-transformers==4.55.0
+transformers==4.57.6
     # via
     #   -c requirements.txt
     #   unstructured-inference
@@ -714,7 +718,7 @@ typer==0.15.4
     #   -c requirements.txt
     #   spacy
     #   weasel
-typing-extensions==4.14.0
+typing-extensions==4.16.0
     # via
     #   -c requirements.txt
     #   anyio
