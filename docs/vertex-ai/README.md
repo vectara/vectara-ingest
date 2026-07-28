@@ -29,7 +29,7 @@ Vertex AI integration enables AI-powered table and image summarization during do
 
 ```yaml
 doc_processing:
-  summarize_tables: true
+  parse_tables: true      # extracts AND summarizes tables
   summarize_images: true
 
 table_model_config:

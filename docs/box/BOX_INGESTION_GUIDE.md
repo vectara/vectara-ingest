@@ -43,8 +43,7 @@ vectara:
   output_dir: /tmp/box_inspection     # Where failed files go
 
 doc_processing:
-  parse_tables: true                  # Extract tables from PDFs
-  summarize_tables: false             # Skip AI table summarization
+  parse_tables: true                  # Extract and summarize tables from PDFs
   summarize_images: false             # Skip AI image summarization
 
 box_crawler:

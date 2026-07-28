@@ -112,10 +112,12 @@ vectara:
 crawling:
   crawler_type: folder
 
+doc_processing:
+  parse_tables: true      # extracts AND summarizes tables
+  summarize_images: true
+
 folder_crawler:
   path: /path/to/documents
-  summarize_tables: true
-  summarize_images: true
 ```
 
 ### Example 2: Mix OpenAI and Vertex AI
@@ -143,10 +145,12 @@ vectara:
     model_name: gemini-1.5-flash-002
     location: us-central1
 
+doc_processing:
+  parse_tables: true      # extracts AND summarizes tables
+  summarize_images: true
+
 folder_crawler:
   path: /path/to/documents
-  summarize_tables: true
-  summarize_images: true
 ```
 
 ### Example 3: High-Quality Processing for Complex Documents
@@ -170,10 +174,12 @@ vectara:
     model_name: gemini-1.5-pro-002
     location: us-central1
 
+doc_processing:
+  parse_tables: true      # extracts AND summarizes tables
+  summarize_images: true
+
 folder_crawler:
   path: /path/to/technical_docs
-  summarize_tables: true
-  summarize_images: true
 ```
 
 ### Example 4: Budget-Friendly with Experimental Model

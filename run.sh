@@ -107,8 +107,12 @@ get_custom_crawler_path() {
   echo "$(realpath "$custom_crawler")"
 }
 
-# Get custom crawler path (empty if not specified)
-CUSTOM_CRAWLER_PATH=$(get_custom_crawler_path)
+# Get custom crawler path (empty if not specified).
+# `|| exit $?` is required: get_custom_crawler_path runs in a command
+# substitution, so its `exit` only ends the subshell. Without this the script
+# continued past a missing/misnamed crawler_file and launched the container with
+# the BUILT-IN crawler instead — a silently wrong ingest that exited 0.
+CUSTOM_CRAWLER_PATH=$(get_custom_crawler_path) || exit $?
 
 # Validate crawler exists (either custom or built-in)
 if [[ -z "$CUSTOM_CRAWLER_PATH" ]]; then
@@ -165,20 +169,26 @@ if [[ "${DOWNLOAD_DOCLING_MODELS}" == "true" ]]; then
 fi
 
 
-# Read config values for extra features
-sum_tables=$(read_yaml_nested "data.get('doc_processing', {}).get('summarize_tables', 'false').lower()")
-sum_images=$(read_yaml_nested "data.get('doc_processing', {}).get('summarize_images', 'false').lower()")
-mask_pii=$(read_yaml_nested "data.get('vectara', {}).get('mask_pii', 'false').lower()")
+# Read config values for extra features.
+# str(...) before .lower() is required: YAML parses `true` as a bool, and
+# bool has no .lower(), so read_yaml_nested swallowed the AttributeError and
+# returned "" — meaning `mask_pii: true` silently built the BASE image without
+# presidio, and masking no-opped while the PII got indexed. Only a quoted
+# "true" used to work.
+sum_images=$(read_yaml_nested "str(data.get('doc_processing', {}).get('summarize_images', 'false')).lower()")
+mask_pii=$(read_yaml_nested "str(data.get('vectara', {}).get('mask_pii', 'false')).lower()")
 output_dir=$(read_yaml_nested "data.get('vectara', {}).get('output_dir', 'vectara_ingest_output')")
 
-# Determine if extra features are needed
+# Determine if extra features are needed.
+# Not keyed on summarize_tables: no code reads that key (parse_tables is the
+# real switch), and table summarization needs nothing from requirements-extra.
 needs_extra_features() {
-  [[ "$sum_tables" == "true" || "$sum_images" == "true" || "$mask_pii" == "true" ]]
+  [[ "$sum_images" == "true" || "$mask_pii" == "true" ]]
 }
 
 if needs_extra_features; then
   tag="vectara-ingest-full"
-  echo "Building with extra features (summarize_tables=$sum_tables, summarize_images=$sum_images, mask_pii=$mask_pii)"
+  echo "Building with extra features (summarize_images=$sum_images, mask_pii=$mask_pii)"
 else
   tag="vectara-ingest"
   echo "Building base image"
