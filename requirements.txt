@@ -465,7 +465,7 @@ llama-parse==0.6.68
     # via -r requirements.in
 llvmlite==0.47.0
     # via numba
-lxml==6.1.0
+lxml==6.1.1
     # via
     #   -r requirements.in
     #   arxiv
@@ -479,7 +479,7 @@ lxml==6.1.0
     #   python-pptx
     #   scrapy
     #   unstructured
-lxml-html-clean==0.4.2
+lxml-html-clean==0.4.5
     # via lxml
 markdown==3.8.2
     # via -r requirements.in

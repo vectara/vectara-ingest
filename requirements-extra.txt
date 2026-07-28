@@ -231,7 +231,7 @@ langdetect==1.0.9
     # via
     #   -c requirements.txt
     #   unstructured
-lxml==6.1.0
+lxml==6.1.1
     # via
     #   -c requirements.txt
     #   pikepdf

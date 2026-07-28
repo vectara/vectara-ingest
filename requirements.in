@@ -49,7 +49,7 @@ openai==1.99.6
 openai-whisper==20250625
 anthropic==0.62.0
 slack-sdk==3.33.5
-lxml[html_clean]==6.1.0
+lxml[html_clean]==6.1.1
 html5lib==1.1
 unstructured[pdf]==0.18.26
 unstructured-inference>=1.0.5
