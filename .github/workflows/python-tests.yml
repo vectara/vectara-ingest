@@ -2,6 +2,11 @@ name: Run Python Unit Tests
 
 on:
   pull_request: # Triggers on pull requests to any branch by default when 'branches' is omitted
+  # Also run on main. Without this the suite only ever ran pre-merge, so a merged
+  # PR could leave main red and nobody would see it until the next PR opened —
+  # which is exactly how the stale PMC URL assertion went unnoticed.
+  push:
+    branches: [main]
 
 jobs:
   test:

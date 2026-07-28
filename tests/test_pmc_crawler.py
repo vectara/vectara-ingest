@@ -37,9 +37,11 @@ def make_crawler():
 
 class TestPmcPaperIndexing(unittest.TestCase):
 
-    def test_pdf_url_uses_current_pmc_domain(self):
+    def test_article_url_uses_current_pmc_domain(self):
         # Regression: www.ncbi.nlm.nih.gov/pmc/... now 301s to
         # pmc.ncbi.nlm.nih.gov; the crawler must use the current domain.
+        # The path is the article HTML page, not /pdf/ — PMC serves a JS
+        # interstitial there that yields no content (see pmc_crawler.py).
         crawler = make_crawler()
         with patch("crawlers.pmc_crawler.get_top_n_papers",
                    return_value=["123"]):
@@ -48,7 +50,7 @@ class TestPmcPaperIndexing(unittest.TestCase):
         crawler.indexer.index_url.assert_called_once()
         indexed_url = crawler.indexer.index_url.call_args.args[0]
         self.assertEqual(
-            indexed_url, "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/pdf/")
+            indexed_url, "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/")
 
     def test_index_url_failure_is_logged(self):
         # Regression: index_url's return value was discarded, so per-paper
