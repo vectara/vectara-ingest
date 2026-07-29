@@ -44,7 +44,8 @@ requirements:
     - conda-forge::libgl  # [linux]
     
     # System dependencies with conda-forge channel specified
-    - conda-forge::chromium
+    # No chromium here: Playwright downloads and launches its own browser
+    # (see core/web_content_extractor.py), and conda-forge has no chromium package.
     - conda-forge::poppler
     - conda-forge::tesseract
     - conda-forge::libjpeg-turbo

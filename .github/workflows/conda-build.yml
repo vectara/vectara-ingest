@@ -193,9 +193,10 @@ jobs:
           # Install build dependencies
           yum install -y git wget make gcc
 
-          # Core dependencies
+          # Core dependencies (no ffmpeg: not in the CentOS Stream 9 repos, and the
+          # package already gets it from conda-forge)
           yum install -y alsa-lib gtk3 libX11-xcb libXcomposite libXcursor libXdamage \
-            libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs ffmpeg
+            libXext libXi libXrandr libXtst mesa-libgbm pango cups-libs
 
           # Fonts
           yum install -y liberation-fonts dejavu-sans-fonts
