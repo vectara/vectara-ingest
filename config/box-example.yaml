@@ -19,9 +19,8 @@ doc_processing:
   process_locally: true
 
   # Table handling
-  parse_tables: true           # Extract tables from PDFs
+  parse_tables: true           # Extract and summarize tables (summarization needs model_config)
   enable_gmft: false           # Disable GMFT to avoid OpenAI costs
-  summarize_tables: false      # Set to true to enable AI summarization (requires model config)
 
   # Image handling
   summarize_images: false      # Set to true to enable AI summarization (requires model config)
