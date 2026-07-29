@@ -51,7 +51,10 @@ jobs:
       - name: Run conda build in dry-run mode
         shell: bash -l {0}
         run: |
-          conda build --check conda
+          # Use the conda-build executable, not `conda build`: the `conda` shell
+          # function always runs the base env's binary, which can't see the
+          # conda-build plugin installed in the activated env.
+          conda-build --check conda
 
   build-and-publish:
     name: Build and Publish on ${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }}
@@ -108,7 +111,7 @@ jobs:
           # Verify Python version before building
           python --version
           # Use conda-build with Git versioning
-          conda build --channel conda-forge conda --output-folder ./conda-bld
+          conda-build --channel conda-forge conda --output-folder ./conda-bld
           
       - name: Post-build cleanup
         uses: ./.github/actions/conda-cleanup
@@ -247,7 +250,7 @@ jobs:
           # Verify Python version before building
           python --version
           # Use conda-build with Git versioning
-          conda build --channel conda-forge conda --output-folder ./conda-bld
+          conda-build --channel conda-forge conda --output-folder ./conda-bld
           
       - name: Post-build cleanup
         run: |
