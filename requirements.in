@@ -65,6 +65,13 @@ datasets==3.6.0
 # download.pytorch.org; a floor here lets the lock float to a newer torch,
 # which the following `pip install -r requirements.txt` would pull as GPU
 # wheels and undo the CPU-only image.
+#
+# When regenerating the lock: pip-compile resolves torch against PyPI, which
+# serves the CUDA build, and writes ~14 nvidia-*-cu12 pins into
+# requirements.txt as direct requirements. They are ~2 GB, they defeat the
+# CPU-only install in both the Dockerfile and conda/build.sh, and they are
+# only ever "via torch" -- delete them after compiling. conda/build.sh fails
+# the build if any survive.
 torch==2.7.1
 torchvision==0.22.1
 pydub==0.25.1
