@@ -24,3 +24,13 @@ if [ "$(uname)" = "Linux" ]; then
 fi
 
 "${PYTHON}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .
+
+# The CPU install above only holds if nothing re-resolved torch on the way
+# through the project's own dependencies. Assert it here: a silent fallback to
+# the CUDA wheels adds ~2.8 GB and is otherwise not visible until the upload
+# fails, an hour later.
+if "${PYTHON}" -m pip list --format=freeze | grep -q '^nvidia-'; then
+  echo "ERROR: CUDA wheels present after install -- CPU torch was overridden:" >&2
+  "${PYTHON}" -m pip list --format=freeze | grep '^nvidia-' >&2
+  exit 1
+fi
