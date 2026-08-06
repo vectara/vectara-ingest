@@ -6,6 +6,7 @@
 :: and win-64 shipped ~0.9 MB packages instead of ~600 MB ones.
 set PIP_NO_INDEX=
 set PIP_NO_DEPENDENCIES=
+set PIP_IGNORE_INSTALLED=
 
 :: Windows torch wheels on PyPI are already CPU-only, so no separate index.
 "%PYTHON%" -m pip install --no-cache-dir --index-url https://pypi.org/simple .

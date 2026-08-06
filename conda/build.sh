@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# conda-build sets these to stop pip from reaching the network. This recipe
-# deliberately vendors its Python dependencies from PyPI, so clear them.
-unset PIP_NO_INDEX PIP_NO_DEPENDENCIES
+# conda-build sets these to stop pip from reaching the network and to force a
+# clean install. This recipe deliberately vendors its Python dependencies from
+# PyPI, so clear them. PIP_IGNORE_INSTALLED matters as much as the other two:
+# left set, pip ignores the CPU torch installed below and re-resolves
+# torch==2.7.1 from PyPI, which is the CUDA build.
+unset PIP_NO_INDEX PIP_NO_DEPENDENCIES PIP_IGNORE_INSTALLED
 
 # PyPI's linux torch wheel is the CUDA build: ~820 MB of torch plus ~2 GB of
 # nvidia-* wheels, all of which ends up inside the package. Install the CPU
@@ -29,8 +32,14 @@ fi
 # through the project's own dependencies. Assert it here: a silent fallback to
 # the CUDA wheels adds ~2.8 GB and is otherwise not visible until the upload
 # fails, an hour later.
-if "${PYTHON}" -m pip list --format=freeze | grep -q '^nvidia-'; then
+# Read the list fully before filtering: `pip list | grep -q` makes grep exit on
+# the first match, pip then dies flushing to a closed pipe (exit 120), and with
+# `pipefail` the whole test reads false -- skipping the guard in exactly the
+# case it exists to catch.
+installed=$("${PYTHON}" -m pip list --format=freeze)
+cuda_wheels=$(printf '%s\n' "$installed" | grep '^nvidia-' || true)
+if [ -n "$cuda_wheels" ]; then
   echo "ERROR: CUDA wheels present after install -- CPU torch was overridden:" >&2
-  "${PYTHON}" -m pip list --format=freeze | grep '^nvidia-' >&2
+  printf '%s\n' "$cuda_wheels" >&2
   exit 1
 fi
