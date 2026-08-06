@@ -13,17 +13,9 @@ build:
   skip_compile_pyc:
     - "*.py"
   binary_relocation: False
-  script: |
-    echo "--- PIP Environment Variables Before Changes ---"
-    echo "Attempting to unset PIP_NO_INDEX and PIP_NO_DEPENDENCIES..."
-    unset PIP_NO_INDEX
-    unset PIP_NO_DEPENDENCIES
-    echo "--- PIP Environment Variables After Changes ---"
-
-
-    echo "--- Starting pip install of local package and its Python dependencies ---"
-    "{{ PYTHON }}" -m pip install --no-cache-dir --index-url https://pypi.org/simple .
-    echo "--- Pip install command finished. ---"
+  # Build steps live in build.sh (unix) and bld.bat (Windows). They can't share
+  # one `script:` block: it runs under cmd.exe on Windows, where `unset` does
+  # not exist.
   entry_points:
     - vectara-ingest = ingest:app
 
