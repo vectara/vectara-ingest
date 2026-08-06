@@ -9,4 +9,4 @@ set PIP_NO_DEPENDENCIES=
 
 :: Windows torch wheels on PyPI are already CPU-only, so no separate index.
 "%PYTHON%" -m pip install --no-cache-dir --index-url https://pypi.org/simple .
-if errorlevel 1 exit 1
+if errorlevel 1 exit /b 1
