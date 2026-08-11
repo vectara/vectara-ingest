@@ -439,6 +439,18 @@ class TestUtils(unittest.TestCase):
         # Check that adapters are mounted
         self.assertIn('http://', session.adapters)
         self.assertIn('https://', session.adapters)
+
+    def test_retry_policy_covers_idempotent_methods(self):
+        """DELETE/PUT must be retryable: the post-crawl remove_old_content
+        cleanup issues DELETEs on a session whose pooled keep-alive
+        connections may have gone stale during a long crawl. urllib3 only
+        retries read errors (e.g. RemoteDisconnected) for methods in
+        allowed_methods; excluding DELETE made a single stale connection
+        abort the entire ingest run."""
+        session = create_session_with_retries()
+        retry = session.get_adapter('https://api.vectara.io').max_retries
+        for method in ('GET', 'POST', 'PUT', 'DELETE'):
+            self.assertIn(method, retry.allowed_methods)
     
     @patch('core.utils.logger')
     def test_configure_session_for_ssl_disable(self, mock_logger):
