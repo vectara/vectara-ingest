@@ -15,6 +15,8 @@ import urllib.parse
 import tempfile
 import os
 
+import requests
+
 from slugify import slugify
 
 from omegaconf import OmegaConf
@@ -377,9 +379,13 @@ class Indexer:
         }
 
         encoded_doc_id = urllib.parse.quote(doc_id, safe='')
-        response = self.session.delete(
-            f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
-            headers=post_headers)
+        try:
+            response = self.session.delete(
+                f"{self.api_url}/v2/corpora/{self.corpus_key}/documents/{encoded_doc_id}",
+                headers=post_headers)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Delete request failed for doc_id = {doc_id}: {e}")
+            return False
 
         if response.status_code != 204:
             logger.error(
