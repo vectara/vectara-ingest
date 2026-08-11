@@ -51,6 +51,17 @@ RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
         python3 -m spacy download en_core_web_lg; \
     fi
     
+# ray vendors a private aiohttp for its runtime-env agent under
+# ray/_private/runtime_env/agent/thirdparty_files; scanners flag that copy
+# separately from the site-packages one. Same grep-from-lock pattern as the
+# torch pins above so it can never go stale on a lock bump.
+RUN AGENT_DIR=/usr/local/lib/python3.12/site-packages/ray/_private/runtime_env/agent/thirdparty_files \
+    && AIOHTTP_PIN="$(grep -E '^aiohttp==' requirements.txt)" \
+    && test -n "$AIOHTTP_PIN" \
+    && pip install --no-cache-dir --no-deps --upgrade --target "$AGENT_DIR" "$AIOHTTP_PIN" \
+    && find "$AGENT_DIR" -maxdepth 1 -name 'aiohttp-*.dist-info' \
+         ! -name "aiohttp-${AIOHTTP_PIN#aiohttp==}.dist-info" -exec rm -rf '{}' +
+
 # Clean up unnecessary files
 RUN find /usr/local -type d \( -name test -o -name tests \) -exec rm -rf '{}' + \
     && find /usr/local -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -rf '{}' + \
