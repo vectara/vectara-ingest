@@ -62,6 +62,19 @@ warnings.filterwarnings(
 )
 
 
+def is_svg_source(src_loc: str) -> bool:
+    """True if an <img> src points at SVG, which Pillow cannot decode.
+
+    Docling only skips SVGs via src.endswith('.svg'), so data: URIs and URLs with a
+    query string or fragment fall through to Image.open and raise
+    UnidentifiedImageError, warning once per icon on every crawled page.
+    """
+    low = src_loc.lower()
+    if low.startswith("data:image/svg+xml"):
+        return True
+    return urlparse(low).path.endswith(".svg")
+
+
 def extract_document_title(filename: str) -> str:
     """
     Extract title from document metadata using appropriate libraries.
@@ -992,6 +1005,11 @@ class DoclingDocumentParser(DocumentParser):
                 return super()._resolve_relative_path(loc)
 
             def _load_image_data(self, src_loc: str) -> Optional[bytes]:
+                # Skipped before any fetch: Pillow has no SVG decoder, and Docling's
+                # own guard only matches a literal .svg suffix.
+                if is_svg_source(src_loc):
+                    logger.debug(f"Skipping SVG image source: {src_loc[:80]}")
+                    return None
                 logger.debug(f"_load_image_data: src_loc={src_loc!r}")
                 if HTMLDocumentBackend._is_remote_url(src_loc):
                     try:

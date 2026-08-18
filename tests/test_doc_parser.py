@@ -413,5 +413,42 @@ class TestMarkdownPartition(unittest.TestCase):
             os.remove(md)
 
 
+class TestSvgSourceDetection(unittest.TestCase):
+    """Pillow has no SVG decoder. Docling only skips SVGs via src.endswith('.svg'),
+    so data: URIs and query-suffixed URLs reach Image.open and raise
+    UnidentifiedImageError, warning once per icon on every crawled page."""
+
+    def _is_svg(self, src):
+        from core.doc_parser import is_svg_source
+        return is_svg_source(src)
+
+    def test_data_uri_base64(self):
+        self.assertTrue(self._is_svg('data:image/svg+xml;base64,PHN2ZyB4bWxucz0i'))
+
+    def test_data_uri_plain(self):
+        self.assertTrue(self._is_svg('data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2016%2016%22%3E'))
+
+    def test_uppercase_mime(self):
+        self.assertTrue(self._is_svg('DATA:IMAGE/SVG+XML;base64,PHN2ZyB4bWxucz0i'))
+
+    def test_url_with_query(self):
+        self.assertTrue(self._is_svg('https://example.com/logo.svg?v=2'))
+
+    def test_url_with_fragment(self):
+        self.assertTrue(self._is_svg('https://example.com/icons.svg#twitter'))
+
+    def test_plain_svg_path(self):
+        self.assertTrue(self._is_svg('/assets/logo.SVG'))
+
+    def test_png_data_uri(self):
+        self.assertFalse(self._is_svg('data:image/png;base64,iVBORw0KGgo='))
+
+    def test_remote_png(self):
+        self.assertFalse(self._is_svg('https://example.com/a.png'))
+
+    def test_svg_substring_in_path_is_not_svg(self):
+        self.assertFalse(self._is_svg('https://example.com/svg-icons/logo.png'))
+
+
 if __name__ == '__main__':
     unittest.main()
