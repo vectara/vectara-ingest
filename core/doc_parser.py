@@ -1008,7 +1008,9 @@ class DoclingDocumentParser(DocumentParser):
                 # Skipped before any fetch: Pillow has no SVG decoder, and Docling's
                 # own guard only matches a literal .svg suffix.
                 if is_svg_source(src_loc):
-                    logger.debug(f"Skipping SVG image source: {src_loc[:80]}")
+                    # A data: URI's base64 payload is noise in a log; keep just the scheme.
+                    shown = src_loc.split(",", 1)[0] if src_loc.lower().startswith("data:") else src_loc[:80]
+                    logger.debug(f"Skipping SVG image source: {shown}")
                     return None
                 logger.debug(f"_load_image_data: src_loc={src_loc!r}")
                 if HTMLDocumentBackend._is_remote_url(src_loc):
