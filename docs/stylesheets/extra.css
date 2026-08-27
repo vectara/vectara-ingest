@@ -1,0 +1,34 @@
+/* ============================================
+   VECTARA INGEST DOCUMENTATION STYLES
+   Modular CSS System for Consistent Design
+   ============================================ */
+
+/* Import Base Styles */
+@import url('components/base.css');
+
+/* Import Home Page */
+@import url('components/home.css');
+
+/* Import Getting Started Pages */
+@import url('components/getting-started.css');
+@import url('components/installation.css');
+@import url('components/secrets.css');
+
+/* Import Crawler Pages */
+@import url('components/crawlers.css');
+@import url('components/architecture.css');
+
+/* Import Modular Crawler Styles */
+@import url('components/crawlers/base.css');
+@import url('components/crawlers/cards.css');
+@import url('components/crawlers/examples.css');
+@import url('components/crawlers/best-practices.css');
+@import url('components/crawlers/troubleshooting.css');
+@import url('components/crawlers/knowledge-base.css');
+
+/* Import Generic Components (Website Crawler & Reusable) */
+@import url('components/cards.css');
+@import url('components/lists.css');
+@import url('components/tables.css');
+@import url('components/info-boxes.css');
+@import url('components/navigation.css');

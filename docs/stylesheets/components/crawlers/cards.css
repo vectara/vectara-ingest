@@ -1,0 +1,466 @@
+/* ============================================
+
+   CRAWLERS - GENERIC CARDS
+
+   Generic card components used across all
+   crawler documentation (info cards, extraction
+   cards, quick start cards, etc.)
+
+   ============================================ */
+
+
+/* ============================================
+   CRAWLER INFO CARDS
+   ============================================ */
+
+/* Grid container for info cards */
+.crawler-info-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.375rem;
+    margin: 0.75rem 0;
+}
+
+@media (max-width: 1200px) {
+    .crawler-info-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .crawler-info-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual info card */
+.crawler-info-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+    transition: var(--transition-smooth);
+}
+
+.crawler-info-card:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-md-color-scheme="slate"] .crawler-info-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+[data-md-color-scheme="slate"] .crawler-info-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Info card header with icon */
+.crawler-info-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+}
+
+.crawler-info-header strong {
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+/* Info card content */
+.crawler-info-card p {
+    font-size: 0.65rem;
+    line-height: 1.3;
+    margin: 0;
+    color: var(--vectara-text-muted);
+}
+
+.crawler-info-card code {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+}
+
+/* Icon styling */
+.crawler-info-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: rgba(63, 81, 181, 0.1);
+    border-radius: 0.3rem;
+    flex-shrink: 0;
+}
+
+.crawler-info-icon svg {
+    width: 18px;
+    height: 18px;
+    color: var(--vectara-primary);
+}
+
+[data-md-color-scheme="slate"] .crawler-info-icon {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+
+/* ============================================
+   CONTENT EXTRACTION CARDS
+   ============================================ */
+
+/* Grid container */
+.content-extraction-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+@media (max-width: 768px) {
+    .content-extraction-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual extraction card */
+.extraction-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    transition: var(--transition-smooth);
+}
+
+.extraction-card:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-md-color-scheme="slate"] .extraction-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.extraction-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--md-default-fg-color);
+}
+
+.extraction-card p {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    margin: 0 0 0.75rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.extraction-card ul {
+    margin: 0.5rem 0 0 0;
+    padding-left: 0;
+    list-style: disc;
+    margin-left: 1.25rem;
+}
+
+.extraction-card li {
+    font-size: 0.7rem;
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+    padding-left: 0;
+    color: var(--vectara-text-muted);
+}
+
+.extraction-card code {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(63, 81, 181, 0.08);
+    border-radius: 0.25rem;
+}
+
+.extraction-card strong {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+}
+
+.extraction-card pre {
+    margin: 0.5rem 0;
+    background: var(--md-code-bg-color);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+}
+
+.extraction-card .highlight {
+    margin: 0.5rem 0;
+}
+
+
+/* ============================================
+   QUICK START CARD
+   ============================================ */
+
+.quick-start-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-left: 4px solid var(--vectara-primary);
+    border-radius: 0.375rem;
+    padding: 1.25rem;
+    margin: 1.5rem 0;
+}
+
+[data-md-color-scheme="slate"] .quick-start-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.quick-start-card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--vectara-primary);
+}
+
+.quick-start-card p {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    margin: 0 0 0.75rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.quick-start-card pre {
+    margin: 0.75rem 0;
+}
+
+.quick-start-card .highlight {
+    margin: 0.75rem 0;
+}
+
+
+/* ============================================
+   USE CASE CARDS
+   ============================================ */
+
+.usecase-grid-clean {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+}
+
+.usecase-card-clean {
+    padding: 0.625rem;
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    background: var(--vectara-card-bg);
+}
+
+.usecase-card-clean h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+    color: var(--md-default-fg-color);
+}
+
+.usecase-card-clean p {
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    margin: 0;
+    color: var(--vectara-text-muted);
+}
+
+
+/* ============================================
+   PERFORMANCE OPTIMIZATION CARDS
+   ============================================ */
+
+.perf-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    transition: var(--transition-smooth);
+}
+
+.perf-card:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-md-color-scheme="slate"] .perf-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.perf-option {
+    background: rgba(var(--md-default-fg-color--rgb, 0, 0, 0), 0.02);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+}
+
+[data-md-color-scheme="slate"] .perf-option {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.perf-option p {
+    font-size: 0.75rem;
+    margin: 0 0 0.5rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.perf-option strong {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+}
+
+.perf-preferred {
+    color: #16a34a !important;
+}
+
+.perf-slower {
+    color: #ea580c !important;
+}
+
+.perf-card ul {
+    margin: 0.75rem 0 0 0;
+    padding-left: 1.25rem;
+    list-style: disc;
+}
+
+.perf-card li {
+    font-size: 0.7rem;
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+    color: var(--vectara-text-muted);
+}
+
+.perf-card code {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(63, 81, 181, 0.08);
+    border-radius: 0.25rem;
+}
+
+.perf-card pre {
+    margin: 0.5rem 0 0 0;
+}
+
+.perf-option pre {
+    margin: 0;
+}
+
+.perf-card .highlight {
+    margin: 0.5rem 0 0 0;
+}
+
+.perf-option .highlight {
+    margin: 0;
+}
+
+
+/* ============================================
+   REPORT CARDS
+   ============================================ */
+
+.report-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    transition: var(--transition-smooth);
+}
+
+.report-card:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-md-color-scheme="slate"] .report-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.report-card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--md-default-fg-color);
+}
+
+.report-card p {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    margin: 0 0 0.5rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.report-card strong {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+}
+
+.report-card ul,
+.report-card ol {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+}
+
+.report-card li {
+    font-size: 0.7rem;
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+    color: var(--vectara-text-muted);
+}
+
+.report-card code {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(63, 81, 181, 0.08);
+    border-radius: 0.25rem;
+}
+
+.report-card pre {
+    margin: 0.5rem 0;
+}
+
+.report-card .highlight {
+    margin: 0.5rem 0;
+}
+
+
+/* ============================================
+   WARNING BOXES IN CARDS
+   ============================================ */
+
+.warning-box-perf {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin: 1rem 0 0 0;
+    border-radius: 0.375rem;
+    background: rgba(234, 179, 8, 0.08);
+    border-left: 4px solid #eab308;
+}
+
+[data-md-color-scheme="slate"] .warning-box-perf {
+    background: rgba(234, 179, 8, 0.12);
+}
+
+.warning-box-perf svg {
+    color: #eab308;
+    stroke: #eab308;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
+.warning-box-perf p {
+    font-size: 0.7rem;
+    line-height: 1.4;
+    margin: 0;
+    color: var(--vectara-text-muted);
+}
+
+.warning-box-perf strong {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+}

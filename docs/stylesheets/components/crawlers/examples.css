@@ -1,0 +1,101 @@
+/* ============================================
+
+   CRAWLERS - EXAMPLE CARDS
+
+   Example card styles used for configuration
+   examples and real-world use case demos
+
+   ============================================ */
+
+
+/* ============================================
+   GENERIC EXAMPLE CARDS
+   ============================================ */
+
+.example-card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+[data-md-color-scheme="slate"] .example-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.example-card p {
+    font-size: 0.7rem;
+    line-height: 1.4;
+    margin: 0.75rem 0 0.5rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.example-card strong {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+}
+
+.example-card pre {
+    margin: 0.75rem 0;
+}
+
+.example-card .highlight {
+    margin: 0.75rem 0;
+}
+
+.example-card code {
+    font-size: 0.68rem;
+}
+
+
+/* ============================================
+   EXAMPLE REFERENCES
+   ============================================ */
+
+.example-references {
+    background: rgba(63, 81, 181, 0.05);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin: 1.5rem 0;
+}
+
+[data-md-color-scheme="slate"] .example-references {
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.example-references h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--md-default-fg-color);
+}
+
+.example-references p {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    margin: 0 0 0.5rem 0;
+    color: var(--vectara-text-muted);
+}
+
+.example-references ul {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+}
+
+.example-references li {
+    font-size: 0.7rem;
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+    color: var(--vectara-text-muted);
+}
+
+.example-references a {
+    color: var(--vectara-primary);
+    text-decoration: none;
+}
+
+.example-references a:hover {
+    text-decoration: underline;
+}
