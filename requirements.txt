@@ -567,7 +567,7 @@ networkx==3.5
     #   torch
 ninja==1.13.0
     # via easyocr
-nltk==3.10.0
+nltk==3.10.3
     # via
     #   -r requirements.in
     #   llama-index-core
