@@ -96,7 +96,7 @@ pypdf>=6.13.3
 furl==2.1.3
 office365-rest-python-client==2.6.2
 cairosvg==2.9.0
-scrapy==2.16.0
+scrapy==2.17.0
 typer==0.21.1
 boxsdk[jwt]==3.10.0
 google-cloud-aiplatform==1.133.0
