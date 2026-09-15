@@ -7,17 +7,17 @@ click>=8.4.2
 authlib==1.6.11
 feedparser==6.0.11
 pyyaml>=6.0
-beautifulsoup4==4.12.3
+beautifulsoup4==4.15.0
 google-auth>=2.47.0
 google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.1.0
 google-api-python-client>=2.82.0
-psutil==6.1.0
+psutil==7.2.2
 omegaconf==2.3.0
 python-box==7.3.0
 python-dotenv==1.0.1
 python-slugify==8.0.1
-markdown==3.8.2
+markdown==3.10.3
 notion-client==2.2.1
 biopython==1.84
 boto3>=1.42.0
@@ -51,8 +51,13 @@ anthropic==0.62.0
 slack-sdk==3.33.5
 lxml[html_clean]==6.1.1
 html5lib==1.1
-unstructured[pdf]==0.18.26
-unstructured-inference>=1.0.5
+# 0.24.1: CVE-2026-71428 (critical, SSRF via partition*(url=)). unstructured
+# 0.24 needs unstructured-inference>=1.6.12, which needs torch>=2.10.
+unstructured[pdf]==0.24.1
+unstructured-inference>=1.6.13
+# unstructured-inference and rapidocr only need >=4.13.0.90; without a cap the
+# lock jumps to OpenCV 5, a major release nothing here has been tested against.
+opencv-python>=4.13.0.90,<5
 # >=5.5 required: CVE-2026-4372 / CVE-2026-5241 (high, RCE via malicious model
 # config.json). The previous <5 cap existed because transformers 5.x strict
 # config validation rejects the microsoft/table-transformer checkpoints gmft
@@ -72,8 +77,8 @@ datasets==3.6.0
 # CPU-only install in both the Dockerfile and conda/build.sh, and they are
 # only ever "via torch" -- delete them after compiling. conda/build.sh fails
 # the build if any survive.
-torch==2.7.1
-torchvision==0.22.1
+torch==2.10.0
+torchvision==0.25.0
 pydub==0.25.1
 pytubefix==10.10.1
 youtube-transcript-api==0.6.2
@@ -81,10 +86,10 @@ sec-downloader==0.12.2
 openpyxl==3.1.5
 python-calamine==0.6.2
 tweepy==4.14.0
-matplotlib==3.8.4
+matplotlib==3.10.9
 cryptography==50.0.0
 python-pptx==1.0.2
-python-docx==1.1.2
+python-docx==1.2.0
 Pillow>=12.3.0
 docling==2.94.0
 easyocr>=1.7.0
