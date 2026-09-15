@@ -1628,6 +1628,7 @@ class UnstructuredDocumentParser(DocumentParser):
             partition_kwargs.update({
                 "chunking_strategy": self.chunking_strategy,
                 "max_characters": self.chunk_size,
+                "isolate_table": False,
             })
         
         # Configure image and table extraction for PDFs
@@ -1717,10 +1718,15 @@ class UnstructuredDocumentParser(DocumentParser):
             # partitioning the document a second time (pure efficiency; identical output).
             # The chunkers iterate raw_elements once and never mutate it, so it stays
             # intact for the raw table/image extraction below (no defensive copy needed).
+            # isolate_table=False keeps unstructured's pre-0.22 behaviour of merging a
+            # table into the surrounding text chunk. Since 0.22 the chunkers put each
+            # table in its own chunk by default, and the loop below skips standalone
+            # Table chunks (tables are indexed from raw elements, and only when
+            # parse_tables is on), so table text would silently drop out of the index.
             if self.chunking_strategy == "by_title":
-                chunked_elements = chunk_by_title(raw_elements, max_characters=self.chunk_size)
+                chunked_elements = chunk_by_title(raw_elements, max_characters=self.chunk_size, isolate_table=False)
             elif self.chunking_strategy == "basic":
-                chunked_elements = chunk_elements(raw_elements, max_characters=self.chunk_size)
+                chunked_elements = chunk_elements(raw_elements, max_characters=self.chunk_size, isolate_table=False)
             else:
                 # Unknown strategy: fall back to unstructured's built-in chunking pass
                 chunked_elements = self._get_elements(filename, override_chunking=False)
