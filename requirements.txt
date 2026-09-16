@@ -198,15 +198,25 @@ distro==1.9.0
     #   anthropic
     #   google-genai
     #   openai
+doclang==0.7.3 ; sys_platform == 'darwin'
+    # via docling-core
 docling==2.94.0
     # via -r requirements.in
-docling-core==2.84.0
+docling-core==2.84.0 ; sys_platform != 'darwin'
     # via
     #   -r requirements.in
     #   docling-ibm-models
     #   docling-parse
     #   docling-slim
-docling-ibm-models==3.13.3
+docling-core==2.96.0 ; sys_platform == 'darwin'
+    # via
+    #   -r requirements.in
+    #   docling-ibm-models
+    #   docling-parse
+    #   docling-slim
+docling-ibm-models==3.13.2 ; sys_platform == 'darwin'
+    # via docling-slim
+docling-ibm-models==3.13.3 ; sys_platform != 'darwin'
     # via docling-slim
 docling-parse==5.5.0
     # via docling-slim
@@ -484,6 +494,7 @@ lxml==6.1.1
     # via
     #   -r requirements.in
     #   arxiv
+    #   doclang
     #   docling-slim
     #   goose3
     #   justext
@@ -822,8 +833,10 @@ propcache==0.3.1
     # via
     #   aiohttp
     #   yarl
-protego==0.4.0
-    # via scrapy
+protego==0.6.2
+    # via
+    #   -r requirements.in
+    #   scrapy
 proto-plus==1.26.1
     # via
     #   google-api-core
@@ -853,8 +866,10 @@ psutil==7.2.2
     #   unstructured
 pyahocorasick==2.1.0
     # via goose3
-pyarrow==20.0.0
-    # via datasets
+pyarrow==25.0.1
+    # via
+    #   -r requirements.in
+    #   datasets
 pyasn1==0.6.4
     # via
     #   -r requirements.in
@@ -1221,7 +1236,7 @@ tokenizers==0.22.2
     # via transformers
 toml==0.10.2
     # via -r requirements.in
-torch==2.10.0
+torch==2.13.0
     # via
     #   -r requirements.in
     #   accelerate
@@ -1235,7 +1250,7 @@ torch==2.10.0
     #   torchvision
     #   transformers
     #   unstructured-inference
-torchvision==0.25.0
+torchvision==0.28.0
     # via
     #   -r requirements.in
     #   docling-ibm-models
@@ -1243,7 +1258,7 @@ torchvision==0.25.0
     #   easyocr
     #   gmft
     #   timm
-tornado==6.5.7
+tornado==6.5.10
     # via
     #   -r requirements.in
     #   jupyter-client
@@ -1271,7 +1286,7 @@ traitlets==5.14.3
     #   nbclient
     #   nbconvert
     #   nbformat
-transformers==5.8.1
+transformers==5.12.1
     # via
     #   -r requirements.in
     #   docling-core
@@ -1288,7 +1303,7 @@ tree-sitter-python==0.25.0
     # via docling-core
 tree-sitter-typescript==0.23.2
     # via docling-core
-triton==3.6.0 ; (platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'linux2'
+triton==3.7.1 ; (python_full_version < '3.15' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'linux2'
     # via
     #   openai-whisper
     #   torch
@@ -1301,6 +1316,7 @@ twisted==26.4.0
 typer==0.21.1
     # via
     #   -r requirements.in
+    #   doclang
     #   docling-core
     #   docling-slim
     #   spacy

@@ -620,7 +620,7 @@ tokenizers==0.22.2 ; python_full_version == '3.12.*' or sys_platform != 'win32'
     # via
     #   -c requirements.txt
     #   transformers
-torch==2.10.0
+torch==2.13.0
     # via
     #   -c requirements.txt
     #   accelerate
@@ -628,7 +628,7 @@ torch==2.10.0
     #   timm
     #   torchvision
     #   unstructured-inference
-torchvision==0.25.0
+torchvision==0.28.0
     # via
     #   -c requirements.txt
     #   -r requirements-extra.in
@@ -642,11 +642,11 @@ tqdm==4.70.1
     #   spacy
     #   transformers
     #   unstructured
-transformers==5.8.1 ; python_full_version == '3.12.*' or sys_platform != 'win32'
+transformers==5.12.1 ; python_full_version == '3.12.*' or sys_platform != 'win32'
     # via
     #   -c requirements.txt
     #   unstructured-inference
-triton==3.6.0 ; (platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'linux2'
+triton==3.7.1 ; (python_full_version < '3.15' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'linux2'
     # via
     #   -c requirements.txt
     #   openai-whisper
