@@ -166,6 +166,7 @@ defusedxml==0.7.1
     #   nbconvert
     #   nltk
     #   scrapy
+    #   youtube-transcript-api
 deprecated==1.2.18
     # via
     #   banks
@@ -343,6 +344,7 @@ httpcore==1.0.9
     #   synapseclient
 httplib2==0.32.0
     # via
+    #   -r requirements.in
     #   google-api-python-client
     #   google-auth-httplib2
 httpx==0.28.1
@@ -960,7 +962,7 @@ python-pptx==1.0.2
     #   docling-slim
 python-slugify==8.0.1
     # via -r requirements.in
-pytubefix==10.10.1
+pytubefix==11.1.0
     # via -r requirements.in
 pytz==2025.2
     # via
@@ -1361,7 +1363,7 @@ xxhash==3.5.0
     # via datasets
 yarl==1.20.0
     # via aiohttp
-youtube-transcript-api==0.6.2
+youtube-transcript-api==1.2.4
     # via -r requirements.in
 zipp==3.22.0
     # via importlib-metadata

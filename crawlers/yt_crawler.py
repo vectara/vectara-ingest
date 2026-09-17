@@ -6,8 +6,10 @@ import os
 from pytubefix import Playlist, YouTube
 from pydub import AudioSegment
 
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled
+# youtube-transcript-api >=1.0: the errors moved to the package root, the API is
+# an instance (not thread-safe -- one per crawl), and `fetch()` replaces the
+# removed `get_transcript()` classmethod.
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
 import whisper
 
@@ -105,6 +107,7 @@ class YtCrawler(Crawler):
 
         download_path = "./downloads"
         model = None
+        transcript_api = YouTubeTranscriptApi()
 
         # Index the main playlist information
         main_doc = {
@@ -127,7 +130,7 @@ class YtCrawler(Crawler):
             yt = YouTube(video.watch_url)
             title = video_title(video)
             try:
-                transcript = YouTubeTranscriptApi.get_transcript(video.video_id, languages=['en'])
+                transcript = transcript_api.fetch(video.video_id, languages=['en']).to_raw_data()
                 subtitles = [
                     {
                         'start': segment['start'],
@@ -141,7 +144,13 @@ class YtCrawler(Crawler):
             except TranscriptsDisabled:
                 logger.info(f"Transcribing captions for video {title} with Whisper model of size {whisper_model} (this may take a while)")
                 try:
-                    stream = yt.streams.get_highest_resolution()
+                    # Audio only: this path converts the download to mp3 for
+                    # Whisper right below, so the video track is wasted
+                    # bandwidth. It is also the only thing that works on
+                    # pytubefix >=11, whose default VISION_OS client serves
+                    # adaptive streams -- get_highest_resolution() wants a
+                    # progressive one and returns None there.
+                    stream = yt.streams.get_audio_only()
                     stream.download(download_path)
                 except Exception as e:
                     logger.info(f"Can't download video {title} with id {video.video_id}, e={e}")
