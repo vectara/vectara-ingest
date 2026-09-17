@@ -369,6 +369,39 @@ class TestChunkingSinglePartition(unittest.TestCase):
         texts = " ".join(str(c) for c, _ in doc.content_stream)
         self.assertIn("lorem ipsum", texts)
 
+    def _raw_elements_with_table(self):
+        from unstructured.documents.elements import NarrativeText, Table, Title
+        elements = [
+            Title(text="Back Up the Data Aggregator"),
+            NarrativeText(text="Supported versions are listed below."),
+            Table(text="Product Version Data Aggregator 25.4.4 Network Observability 24.3.1"),
+            NarrativeText(text="Stop the data aggregator service before copying the files."),
+        ]
+        for e in elements:
+            e.metadata.page_number = 1
+        return elements
+
+    def _assert_table_text_survives_chunking(self, strategy):
+        raw = self._raw_elements_with_table()
+        parser = self._make_parser(strategy)
+
+        with patch.object(parser, '_get_elements', return_value=raw), \
+             patch('core.doc_parser.extract_document_title', return_value='T'):
+            doc = parser.parse("test.docx")
+
+        texts = " ".join(str(c) for c, _ in doc.get_texts())
+        # parse() skips standalone Table chunks (tables go through the structured
+        # table path, which is off by default), so table text only reaches the index
+        # when the chunker merges the table into the surrounding text chunk.
+        self.assertIn("Network Observability 24.3.1", texts)
+        self.assertIn("Stop the data aggregator service", texts)
+
+    def test_by_title_keeps_table_text_in_chunks(self):
+        self._assert_table_text_survives_chunking("by_title")
+
+    def test_basic_keeps_table_text_in_chunks(self):
+        self._assert_table_text_survives_chunking("basic")
+
     def test_unknown_strategy_falls_back_to_second_partition(self):
         raw = self._fake_raw_elements()
         parser = self._make_parser("some_future_strategy")

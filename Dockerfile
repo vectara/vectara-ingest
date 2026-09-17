@@ -45,6 +45,13 @@ RUN TORCH_PINS="$(grep -E '^(torch|torchvision)==' requirements.txt)" \
            exit 1; \
        fi
 
+# unstructured (>=0.24) tokenizes with spaCy's en_core_web_sm and, when the model
+# is missing, downloads it from GitHub on first use -- which fails in offline and
+# egress-restricted deployments. Bake it in for every variant; the version must
+# match the URL unstructured hardcodes in unstructured/nlp/tokenize.py.
+RUN uv pip install --no-cache-dir "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" \
+    && python3 -c "import spacy; spacy.load('en_core_web_sm')"
+
 ARG INSTALL_EXTRA=false
 RUN if [ "$INSTALL_EXTRA" = "true" ]; then \
         uv pip install --no-cache-dir -r requirements-extra.txt && \
