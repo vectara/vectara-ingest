@@ -81,6 +81,20 @@ def merge_subtitles(subtitles, threshold=0.5, max_duration=30.0):
     merged_subtitles.append(current_subtitle)
     return merged_subtitles
 
+def video_title(video) -> str:
+    """Title of a pytubefix video, falling back to its id.
+
+    `title` is fetched over the network on first access and raises when the
+    video is unavailable or YouTube flags the request as a bot. The error
+    handlers below log it, so an unguarded access raises *inside* `except` and
+    takes down the whole crawl instead of skipping one video.
+    """
+    try:
+        return video.title
+    except Exception as e:
+        logger.info(f"Can't read title of video {video.video_id}, e={e}")
+        return video.video_id
+
 class YtCrawler(Crawler):
 
     def crawl(self) -> None:
@@ -102,7 +116,7 @@ class YtCrawler(Crawler):
         try:
             main_doc['sections'].append({'text': playlist.description})
         except Exception as e:
-            logger.warning(f"Can't index description of playlist {playlist.title}, skipping (error: {e})")
+            logger.warning(f"Can't index description of playlist {playlist_url}, skipping (error: {e})")
 
         self.indexer.index_document(main_doc)
 
@@ -111,6 +125,7 @@ class YtCrawler(Crawler):
         logger.info(f"indexing content of {num_videos} (out of {len(playlist.videos)}) videos from playlist {playlist_url}")
         for video in videos_list:
             yt = YouTube(video.watch_url)
+            title = video_title(video)
             try:
                 transcript = YouTubeTranscriptApi.get_transcript(video.video_id, languages=['en'])
                 subtitles = [
@@ -121,15 +136,15 @@ class YtCrawler(Crawler):
                     }
                     for segment in transcript
                 ]
-                logger.info(f"Downloaded subtitles for video {video.title}, total duration is {sum([st['end'] - st['start'] for st in subtitles]):.2f} seconds")
+                logger.info(f"Downloaded subtitles for video {title}, total duration is {sum([st['end'] - st['start'] for st in subtitles]):.2f} seconds")
 
             except TranscriptsDisabled:
-                logger.info(f"Transcribing captions for video {video.title} with Whisper model of size {whisper_model} (this may take a while)")
+                logger.info(f"Transcribing captions for video {title} with Whisper model of size {whisper_model} (this may take a while)")
                 try:
                     stream = yt.streams.get_highest_resolution()
                     stream.download(download_path)
                 except Exception as e:
-                    logger.info(f"Can't download video {video.title} with id {video.video_id}, e={e}")
+                    logger.info(f"Can't download video {title} with id {video.video_id}, e={e}")
                     continue
 
                 audio_filename = os.path.join(download_path, "audio_file.mp3")
@@ -143,7 +158,7 @@ class YtCrawler(Crawler):
                 subtitles = result['segments']
 
             except Exception as e:
-                logger.info(f"Can't process video {video.title} with id {video.video_id}, e={e}")
+                logger.info(f"Can't process video {title} with id {video.video_id}, e={e}")
                 continue
 
             # Merge subtitles if required
@@ -157,7 +172,7 @@ class YtCrawler(Crawler):
             # Restore puncutation
             subtitles_doc = {
                 'id': video.video_id,
-                'title': video.title,
+                'title': title,
                 'metadata': {'url': video.watch_url},
                 'sections': [
                     {
@@ -172,4 +187,4 @@ class YtCrawler(Crawler):
             }
             # Index into Vectara
             self.indexer.index_document(subtitles_doc)
-            logger.info(f"Indexed {len(subtitles)} subtitles for video {video.title}")
+            logger.info(f"Indexed {len(subtitles)} subtitles for video {title}")
