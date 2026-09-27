@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 sys.modules['cairosvg'] = MagicMock()
 
 from docling_core.types.doc import (  # noqa: E402
-    BoundingBox, DocItemLabel, DoclingDocument, ImageRef, ProvenanceItem, Size,
+    BoundingBox, DocItemLabel, DoclingDocument, GroupLabel, ImageRef, ProvenanceItem, Size,
 )
 from omegaconf import OmegaConf  # noqa: E402
 from PIL import Image  # noqa: E402
@@ -75,6 +75,18 @@ class TestPictureTextIsIndexed(unittest.TestCase):
                 # line may share page 1's chunk; it must still be indexed.
                 all_text = "\n".join(text for text, _ in parsed.get_texts())
                 self.assertIn("SUGGESTED MATING CONNECTORS", all_text)
+
+    def test_text_docling_also_placed_outside_the_picture_is_indexed_once(self):
+        # A picture overlapping a form region: Docling adds the same text
+        # clusters as children of both, and the form's copy is already indexed.
+        doc = make_doc()
+        form = doc.add_group(label=GroupLabel.FORM_AREA)
+        doc.add_text(label=DocItemLabel.TEXT, text="1.375", parent=form, prov=_prov(1, "1.375"))
+        for strategy in ('none', 'hierarchical', 'hybrid'):
+            with self.subTest(strategy=strategy):
+                parsed = parse(make_parser(strategy), doc)
+                self.assertEqual(page_text(parsed, 1).count("1.375"), 1)
+                self.assertIn("(DIMENSION A)", page_text(parsed, 1))
 
     def test_picture_text_is_given_to_the_image_summarizer(self):
         parser = make_parser('hybrid', summarize_images=True)
