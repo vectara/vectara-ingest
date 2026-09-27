@@ -81,7 +81,7 @@ class TestParallelImageSummarization(unittest.TestCase):
         """Even with varying response times, result order matches input order."""
         parser = self._make_parser(workers=4)
 
-        def slow_summarize(path, url, prev, nxt, image_bytes=None):
+        def slow_summarize(path, url, prev, nxt, image_bytes=None, image_text=None):
             # Simulate varying latencies
             idx = [b'img0', b'img1', b'img2'].index(image_bytes)
             delays = [0.05, 0.01, 0.03]  # img1 finishes first
@@ -134,7 +134,7 @@ class TestParallelImageSummarization(unittest.TestCase):
 
         call_order = []
 
-        def track_call(path, url, prev, nxt, image_bytes=None):
+        def track_call(path, url, prev, nxt, image_bytes=None, image_text=None):
             call_order.append(image_bytes)
             return f"summary for {image_bytes}"
 
@@ -244,7 +244,7 @@ class TestParallelActualConcurrency(unittest.TestCase):
         """With 4 workers and 4 tasks each taking 0.1s, parallel should be ~0.1s not ~0.4s."""
         parser = self._make_parser(workers=4)
 
-        def slow_summarize(path, url, prev, nxt, image_bytes=None):
+        def slow_summarize(path, url, prev, nxt, image_bytes=None, image_text=None):
             time.sleep(0.1)
             return "summary"
 
