@@ -88,6 +88,17 @@ class TestPictureTextIsIndexed(unittest.TestCase):
                 self.assertEqual(page_text(parsed, 1).count("1.375"), 1)
                 self.assertIn("(DIMENSION A)", page_text(parsed, 1))
 
+    def test_label_repeated_elsewhere_on_the_page_is_kept_in_the_picture(self):
+        # An overlap copy shares the picture child's bbox; a label that merely
+        # repeats elsewhere on the page (e.g. in the title block) does not.
+        doc = make_doc()
+        doc.add_text(label=DocItemLabel.TEXT, text="1.375", prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=100, t=100, r=150, b=110), charspan=(0, 5)))
+        for strategy in ('none', 'hierarchical', 'hybrid'):
+            with self.subTest(strategy=strategy):
+                parsed = parse(make_parser(strategy), doc)
+                self.assertEqual(page_text(parsed, 1).count("1.375"), 2)
+
     def test_picture_caption_is_indexed_once_and_not_given_as_image_text(self):
         # Docling makes a caption a child of its picture, and iterate_items()
         # already yields it as a text item of its own.

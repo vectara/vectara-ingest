@@ -1245,9 +1245,11 @@ class DoclingDocumentParser(DocumentParser):
     @staticmethod
     def _duplicate_picture_refs(doc) -> set:
         """Text items inside a picture that Docling also placed outside it, e.g. under
-        an overlapping form region. The default traversal already indexes those."""
+        an overlapping form region. The default traversal already indexes those.
+        Both copies come from the same layout cluster, so they share page and bbox."""
         def key(item):
-            return (item.prov[0].page_no if item.prov else 0, item.text)
+            prov = item.prov[0] if item.prov else None
+            return (prov.page_no, prov.bbox.as_tuple(), item.text) if prov else (0, None, item.text)
         outside = {item.self_ref: key(item) for item, _ in doc.iterate_items()
                    if getattr(item, 'text', None)}
         indexed = set(outside.values())
