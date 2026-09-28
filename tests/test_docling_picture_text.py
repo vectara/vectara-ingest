@@ -88,6 +88,24 @@ class TestPictureTextIsIndexed(unittest.TestCase):
                 self.assertEqual(page_text(parsed, 1).count("1.375"), 1)
                 self.assertIn("(DIMENSION A)", page_text(parsed, 1))
 
+    def test_picture_caption_is_indexed_once_and_not_given_as_image_text(self):
+        # Docling makes a caption a child of its picture, and iterate_items()
+        # already yields it as a text item of its own.
+        doc = make_doc()
+        picture = doc.pictures[0]
+        caption = doc.add_text(label=DocItemLabel.CAPTION, text="Figure 1: Connector drawing",
+                               parent=picture, prov=_prov(1, "Figure 1: Connector drawing"))
+        picture.captions.append(caption.get_ref())
+        for strategy in ('none', 'hierarchical', 'hybrid'):
+            with self.subTest(strategy=strategy):
+                parser = make_parser(strategy, summarize_images=True)
+                parser.image_summarizer = MagicMock()
+                parser.image_summarizer.summarize_image.return_value = "A drawing sheet."
+                parsed = parse(parser, doc)
+                self.assertEqual(page_text(parsed, 1).count("Figure 1: Connector drawing"), 1)
+                kwargs = parser.image_summarizer.summarize_image.call_args.kwargs
+                self.assertEqual(kwargs['image_text'], "\n".join(PICTURE_TEXT))
+
     def test_picture_text_is_given_to_the_image_summarizer(self):
         parser = make_parser('hybrid', summarize_images=True)
         parser.image_summarizer = MagicMock()

@@ -1257,10 +1257,12 @@ class DoclingDocumentParser(DocumentParser):
 
     @staticmethod
     def _picture_text(doc, picture, duplicates) -> str:
-        """The text Docling nested inside a picture, in reading order."""
+        """The text Docling nested inside a picture, in reading order. Captions are
+        children of the picture too, but the default traversal already yields them."""
+        excluded = duplicates | {c.cref for c in picture.captions}
         return "\n".join(
             child.text for child, _ in doc.iterate_items(root=picture, traverse_pictures=True)
-            if getattr(child, 'text', None) and child.self_ref not in duplicates
+            if getattr(child, 'text', None) and child.self_ref not in excluded
         )
 
     def _apply_chunking(self, doc, positioned_elements, HybridChunker, HierarchicalChunker):
