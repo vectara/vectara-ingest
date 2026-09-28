@@ -128,11 +128,15 @@ class ImageSummarizer():
             image_url: str,
             previous_text: Optional[str] = None,
             next_text: Optional[str] = None,
-            image_bytes: Optional[bytes] = None
+            image_bytes: Optional[bytes] = None,
+            image_text: Optional[str] = None
     ) -> Optional[str]:
         """
         Summarize the image at the given path or from raw bytes.
         When image_bytes is provided, base64-encodes in memory (skips disk read).
+        image_text is text the parser found inside the image (the PDF text layer
+        or OCR under a picture); the model is told to read labels and values
+        from it rather than from pixels alone.
         Returns a descriptive paragraph or None if summarization fails.
         """
         if image_bytes is not None:
@@ -173,6 +177,12 @@ class ImageSummarizer():
             prompt += f"\nText before image: '{previous_text}'"
         if next_text:
             prompt += f"\nText after image: '{next_text}'"
+        if image_text:
+            prompt += (
+                "\nThe text below was extracted from inside the image. "
+                "Use it to read the labels, numbers and values shown in the image correctly:"
+                f"\n'''\n{image_text}\n'''"
+            )
 
         try:
             return generate_image_summary(

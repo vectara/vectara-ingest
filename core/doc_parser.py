@@ -287,7 +287,8 @@ class DocumentParser():
                     task['source_url'],
                     task.get('previous_text'),
                     task.get('next_text'),
-                    image_bytes=task.get('image_bytes')
+                    image_bytes=task.get('image_bytes'),
+                    image_text=task.get('image_text')
                 )
             except Exception as e:
                 logger.error(f"Image summarization failed: {e}")
@@ -1150,6 +1151,7 @@ class DoclingDocumentParser(DocumentParser):
         positioned_elements = []
         image_tasks = []
         image_counter = image_counter_start
+        duplicates = self._duplicate_picture_refs(doc)
 
         # First pass: collect all items for context extraction
         all_items = []
@@ -1189,7 +1191,17 @@ class DoclingDocumentParser(DocumentParser):
                 }
                 positioned_elements.append((position, item.text, metadata))
 
-            elif hasattr(item, 'get_image') and self.summarize_images:
+            elif hasattr(item, 'get_image'):
+                # Docling nests the text cells it finds inside a picture under the
+                # PictureItem (a CAD drawing or schematic page is often classified as
+                # one picture), and iterate_items() does not descend into pictures.
+                # Index that text, and hand it to the image summarizer.
+                image_text = self._picture_text(doc, item, duplicates)
+                if image_text:
+                    positioned_elements.append((position, image_text, {'element_type': 'text', 'page': page_no}))
+                if not self.summarize_images:
+                    continue
+
                 previous_text, next_text = extract_image_context(
                     items_list, idx,
                     num_previous=self.image_context['num_previous_chunks'],
@@ -1217,7 +1229,7 @@ class DoclingDocumentParser(DocumentParser):
                     image_tasks.append({
                         'image_path': '', 'source_url': source_url,
                         'previous_text': previous_text, 'next_text': next_text,
-                        'image_bytes': image_binary,
+                        'image_bytes': image_binary, 'image_text': image_text,
                         'image_id': image_id, 'position': position, 'page_no': page_no,
                     })
                 else:
@@ -1230,11 +1242,55 @@ class DoclingDocumentParser(DocumentParser):
 
         return positioned_elements, image_tasks, tables, image_counter
 
+    @staticmethod
+    def _duplicate_picture_refs(doc) -> set:
+        """Text items inside a picture that Docling also placed outside it, e.g. under
+        an overlapping form region. The default traversal already indexes those.
+        Both copies come from the same layout cluster, so they share page and bbox."""
+        def key(item):
+            prov = item.prov[0] if item.prov else None
+            return (prov.page_no, prov.bbox.as_tuple(), item.text) if prov else (0, None, item.text)
+        outside = {item.self_ref: key(item) for item, _ in doc.iterate_items()
+                   if getattr(item, 'text', None)}
+        indexed = set(outside.values())
+        return {item.self_ref for item, _ in doc.iterate_items(traverse_pictures=True)
+                if getattr(item, 'text', None) and item.self_ref not in outside
+                and key(item) in indexed}
+
+    @staticmethod
+    def _picture_text(doc, picture, duplicates) -> str:
+        """The text Docling nested inside a picture, in reading order. Captions are
+        children of the picture too, but the default traversal already yields them."""
+        excluded = duplicates | {c.cref for c in picture.captions}
+        return "\n".join(
+            child.text for child, _ in doc.iterate_items(root=picture, traverse_pictures=True)
+            if getattr(child, 'text', None) and child.self_ref not in excluded
+        )
+
     def _apply_chunking(self, doc, positioned_elements, HybridChunker, HierarchicalChunker):
         """Apply chunking to text elements using the Docling doc object."""
+        from docling_core.transforms.chunker.hierarchical_chunker import (
+            ChunkingDocSerializer, ChunkingSerializerProvider,
+        )
+
+        duplicates = self._duplicate_picture_refs(doc)
+
+        class PictureTextDocSerializer(ChunkingDocSerializer):
+            def get_excluded_refs(self, **kwargs):
+                return super().get_excluded_refs(**kwargs) | duplicates
+
+        class PictureTextSerializerProvider(ChunkingSerializerProvider):
+            """The default chunking serializer, but also serializing the text inside
+            pictures (the chunkers skip picture children by default)."""
+            def get_serializer(self, doc):
+                serializer = PictureTextDocSerializer(doc=doc)
+                serializer.params = serializer.params.merge_with_patch({'traverse_pictures': True})
+                return serializer
+
+        provider = PictureTextSerializerProvider()
         chunker = (
-            HybridChunker(max_tokens=self.chunk_size)
-            if self.chunking_strategy == 'hybrid' else HierarchicalChunker()
+            HybridChunker(max_tokens=self.chunk_size, serializer_provider=provider)
+            if self.chunking_strategy == 'hybrid' else HierarchicalChunker(serializer_provider=provider)
         )
 
         non_text_elements = [(pos, content, meta) for pos, content, meta in positioned_elements
