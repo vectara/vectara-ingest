@@ -1001,7 +1001,7 @@ python-pptx==1.0.2
     #   docling-slim
 python-slugify==8.0.1
     # via -r requirements.in
-pytubefix==10.10.1
+pytubefix==11.1.0
     # via -r requirements.in
 pytz==2025.2
     # via
@@ -1433,7 +1433,7 @@ xxhash==3.5.0
     # via datasets
 yarl==1.20.0
     # via aiohttp
-youtube-transcript-api==0.6.2
+youtube-transcript-api==1.2.4
     # via -r requirements.in
 zope-interface==7.2
     # via

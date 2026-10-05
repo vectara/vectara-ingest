@@ -83,8 +83,8 @@ pyarrow>=23.0.1
 torch==2.13.0
 torchvision==0.28.0
 pydub==0.25.1
-pytubefix==10.10.1
-youtube-transcript-api==0.6.2
+pytubefix==11.1.0
+youtube-transcript-api==1.2.4
 sec-downloader==0.12.2
 openpyxl==3.1.5
 python-calamine==0.6.2
