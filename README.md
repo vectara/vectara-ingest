@@ -351,6 +351,11 @@ doc_processing:
     layout_model: null                 # layout model: null (default heron), heron, heron_101, v2
     do_formula_enrichment: false       # enable formula enrichment for PDFs; default false (off enables MPS acceleration on Mac)
 
+  # Docling can classify a region, or a whole page, as a picture and nest the text it finds
+  # there under the picture: CAD drawings and schematics often come out as one picture per
+  # sheet. That text is indexed as text on the picture's page, and with summarize_images on it
+  # is also given to the vision model, so the summary reads labels and values from it.
+
   # Docling's layout and table-structure models are fetched from HuggingFace Hub on first
   # use by default, which fails in air-gapped/on-prem environments with no HF access. See
   # "Building for on-prem / air-gapped deployments" under Docker for pre-baked images. If you
