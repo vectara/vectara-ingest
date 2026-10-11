@@ -34,3 +34,32 @@ wolken_crawler:
     - environment
     - resolution
     - additionalInfo
+
+  # Corpus routing mode. Use "single_corpus" to index all articles into vectara.corpus_key.
+  # Use "multi_corpus" with corpus_mappings to route articles by product metadata.
+  mode: single_corpus
+
+  # Product fields to inspect when routing by corpus_mappings. Dot paths are supported.
+  product_fields:
+    - productname
+    - products
+    - product
+    - articleOtherInfo.productname
+    - articleOtherInfo.products
+
+  # Metadata key used to store extracted products.
+  metadata_product_key: product
+
+  # Optional multi-corpus product routing. Each key is a target Vectara corpus key; each value
+  # is the list of Wolken product names that should route to that corpus.
+  # corpus_mappings:
+  #   vmware-cloud-foundation-wolken-kb:
+  #     - VMware Cloud Foundation
+  #   tanzu-wolken-kb:
+  #     - Tanzu
+
+  # Optional ACL/entitlement extraction. Dot paths are searched in article summary/details and
+  # articleOtherInfo/articleOtherInfoVO. Results are stored in entitlements_metadata_key.
+  acl_fields: []
+  entitlements_metadata_key: entitlements
+  default_entitlements: []

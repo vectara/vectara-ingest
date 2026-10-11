@@ -10,7 +10,8 @@ The Wolken KB crawler uses the [public Wolken Knowledge Base REST API](https://d
 2. Fetches all KB categories
 3. For each category, fetches all articles (with pagination)
 4. For each article, fetches the full details (introduction, cause, resolution, etc.)
-5. Indexes each article as a structured document in Vectara
+5. Extracts configured product and ACL/entitlement metadata
+6. Indexes each article as a structured document in one or more Vectara corpora
 
 ## Prerequisites
 
@@ -88,26 +89,50 @@ WOLKEN_REFRESH_TOKEN = "your-refresh-token"
 
 All keys prefixed with `WOLKEN_` are automatically mapped to the `wolken_crawler` config section with the prefix stripped and lowercased. For example, `WOLKEN_API_ENDPOINT` becomes `wolken_crawler.api_endpoint`.
 
-When using `secrets.toml`, you can leave the credential fields empty in the YAML config:
+When using `secrets.toml`, you can leave the credential fields empty in the YAML config.
+
+### 3. Optional: configure ACL/entitlement metadata
+
+The crawler can extract ACL values from configurable Wolken fields. Dot paths are supported and are evaluated against article summary data, article detail data, and nested `articleOtherInfo` / `articleOtherInfoVO` objects.
 
 ```yaml
 wolken_crawler:
-  api_endpoint: ""
-  domain: ""
-  client_id: ""
-  service_account: ""
-  auth_code: ""
-  refresh_token: ""
-  batch_size: 100
-  content_fields:
-    - introduction
-    - cause
-    - environment
-    - resolution
-    - additionalInfo
+  acl_fields:
+    - entitlements
+    - accessGroups
+    - articleOtherInfo.visibilityGroups
+  entitlements_metadata_key: entitlements
+  default_entitlements:
+    - public
 ```
 
-### 3. Run the crawler
+If no ACL values are present, the crawler still writes the configured entitlement metadata key with an empty list (or `default_entitlements` if set) so downstream filters have a stable schema.
+
+### 4. Optional: configure product-to-corpus routing
+
+By default, all articles are indexed into `vectara.corpus_key` (`single_corpus` mode). For dev or customer deployments that require corpus mapping, enable `multi_corpus` and define exact product-name mappings:
+
+```yaml
+vectara:
+  corpus_key: wolken-kb-default
+
+wolken_crawler:
+  mode: multi_corpus
+  product_fields:
+    - productname
+    - products
+    - articleOtherInfo.productname
+  metadata_product_key: product
+  corpus_mappings:
+    vmware-cloud-foundation-wolken-kb:
+      - VMware Cloud Foundation
+    tanzu-wolken-kb:
+      - Tanzu
+```
+
+An article is indexed into every mapped corpus whose product list matches. If no mapping matches, the article falls back to `vectara.corpus_key` and a warning is logged.
+
+### 5. Run the crawler
 
 **Using Docker:**
 
@@ -120,6 +145,8 @@ wolken_crawler:
 ```bash
 python ingest.py --config-file config/wolken-kb.yaml --profile default
 ```
+
+For an initial dev load, set `reindex: true` if you want to replace existing documents; otherwise leave `reindex: false` to skip documents tracked as already indexed.
 
 ## Configuration Options
 
@@ -134,6 +161,13 @@ python ingest.py --config-file config/wolken-kb.yaml --profile default
 | `batch_size` | integer | 100 | Number of items per API page |
 | `kb_source_id` | integer | none | Filter categories by KB source ID |
 | `content_fields` | list | see below | Fields to extract from article details |
+| `mode` | string | `single_corpus` | `single_corpus` or `multi_corpus` |
+| `product_fields` | list | see config | Wolken fields used for product extraction/routing |
+| `metadata_product_key` | string | `product` | Metadata key for extracted products |
+| `corpus_mappings` | map | `{}` | Target corpus key to product-name list mapping |
+| `acl_fields` | list | `[]` | Wolken fields used for ACL/entitlement extraction |
+| `entitlements_metadata_key` | string | `entitlements` | Metadata key for extracted ACL values |
+| `default_entitlements` | list | `[]` | Entitlements to apply to every article |
 
 ### Content Fields
 
@@ -171,6 +205,9 @@ Each article is indexed as a Vectara document with:
   - `validation_status_id`: Validation status
   - `published_date`: Publication date
   - `url`: Article URL (if available)
+  - `product` (configurable): Extracted product names, when present
+  - `entitlements` (configurable): Extracted ACL/entitlement values
+  - `target_corpus`: Target corpus key when `mode: multi_corpus`
 
 ## Resume Support
 
