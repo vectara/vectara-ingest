@@ -27,7 +27,7 @@ anthropic==0.62.0
     # via -r requirements.in
 antlr4-python3-runtime==4.9.3
     # via omegaconf
-anyio==4.9.0
+anyio==4.14.2
     # via
     #   anthropic
     #   google-genai
