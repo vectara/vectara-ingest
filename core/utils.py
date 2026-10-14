@@ -250,26 +250,26 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
     for element in soup.find_all(['script', 'style']):
         element.decompose()
 
-    # remove any HTML items with the specified IDs
-    ids_to_remove = html_processing.get('ids_to_remove', [])
-    for id in ids_to_remove:
-        for element in soup.find_all(id=id):
-            element.decompose()
-
-    # remove any HTML tags in the list
-    tags_to_remove = html_processing.get('tags_to_remove', [])
-    for tag in tags_to_remove:
-        for element in soup.find_all(tag):
-            element.decompose()
-
-    # remove any elements with these classes
-    classes_to_remove = html_processing.get('classes_to_remove', [])
-    for class_name in classes_to_remove:
-        for element in soup.find_all(class_=class_name):
-            element.decompose()
+    remove_html_elements(soup, html_processing)
 
     text = soup.get_text(' ', strip=True).replace('\n', ' ')
     return text
+
+
+def remove_html_elements(soup: BeautifulSoup, html_processing: dict) -> None:
+    """Remove the elements listed in html_processing (ids_to_remove, classes_to_remove,
+    tags_to_remove) from soup in place."""
+    if not html_processing:
+        return
+    for id_val in html_processing.get('ids_to_remove', []):
+        for element in soup.find_all(id=id_val):
+            element.decompose()
+    for class_name in html_processing.get('classes_to_remove', []):
+        for element in soup.find_all(class_=class_name):
+            element.decompose()
+    for tag in html_processing.get('tags_to_remove', []):
+        for element in soup.find_all(tag):
+            element.decompose()
 
 def safe_remove_file(file_path: str):
     """

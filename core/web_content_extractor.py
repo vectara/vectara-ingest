@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from omegaconf import OmegaConf
-from core.utils import get_headers
+from core.utils import get_headers, remove_html_elements
 from core.web_extractor_base import WebExtractorBase
 
 logger = logging.getLogger(__name__)
@@ -409,9 +409,12 @@ class WebContentExtractor(WebExtractorBase):
                 static_resp.raise_for_status()
                 if 'text/html' in static_resp.headers.get('content-type', '').lower():
                     soup = BeautifulSoup(static_resp.text, 'html.parser')
+                    # Same removals as the browser path, before html is captured, so
+                    # remove_boilerplate (which re-extracts from res['html']) sees them.
+                    remove_html_elements(soup, html_processing)
                     static_text = soup.get_text(separator=' ', strip=True)
                     if len(static_text.strip()) > 500:
-                        result['html'] = static_resp.text
+                        result['html'] = str(soup)
                         result['url'] = static_resp.url
                         result['title'] = soup.title.string if soup.title else ''
                         result['text'] = static_text

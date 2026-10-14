@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from omegaconf import OmegaConf
 
 from core.web_extractor_base import WebExtractorBase
-from core.utils import get_headers
+from core.utils import get_headers, remove_html_elements
 
 logger = logging.getLogger(__name__)
 
@@ -99,16 +99,7 @@ class ScrapyContentExtractor(WebExtractorBase):
             result['title'] = title_tag.text.strip() if title_tag else ''
 
             # Apply HTML processing rules
-            if html_processing:
-                for id_val in html_processing.get('ids_to_remove', []):
-                    for element in soup.find_all(id=id_val):
-                        element.decompose()
-                for class_name in html_processing.get('classes_to_remove', []):
-                    for element in soup.find_all(class_=class_name):
-                        element.decompose()
-                for tag in html_processing.get('tags_to_remove', []):
-                    for element in soup.find_all(tag):
-                        element.decompose()
+            remove_html_elements(soup, html_processing)
 
             # Capture processed HTML before script/style removal so downstream
             # consumers (remove_boilerplate, metadata_extractor, etc.) see the
