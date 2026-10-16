@@ -245,10 +245,30 @@ class Indexer:
 
         return self.cfg.doc_processing.get("model_config", {})
     
+    @staticmethod
+    def _model_available(model_cfg, cfg) -> bool:
+        """
+        True when a model can be called for this model_config entry.
+
+        Vertex AI authenticates with a service account / ADC (`credentials_file`,
+        `project_id`), not an API key: get_api_key() deliberately returns None for it,
+        so "no key" must not be read as "no model" or every Vertex deployment silently
+        loses table summaries, contextual chunking and metadata extraction.
+        """
+        model_cfg = model_cfg or {}
+        provider = model_cfg.get('provider', None)
+        if provider == 'vertex':
+            return True
+        return get_api_key(provider, cfg) is not None
+
     def _validate_model_dependencies(self):
         """Validate model dependencies and disable features if needed"""
         text_api_key = get_api_key(self.model_config.get('text', {}).get('provider', None), self.cfg)
         vision_api_key = get_api_key(self.model_config.get('vision', {}).get('provider', None), self.cfg)
+        if self._model_available(self.model_config.get('text', {}), self.cfg):
+            text_api_key = text_api_key or 'vertex'
+        if self._model_available(self.model_config.get('vision', {}), self.cfg):
+            vision_api_key = vision_api_key or 'vertex'
 
         if self.parse_tables and text_api_key is None and self.process_locally:
             self.parse_tables = False
