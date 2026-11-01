@@ -274,7 +274,10 @@ class PageCrawlWorker(object):
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
         try:
-            time.sleep(self._rate_call("acquire"))
+            wait = self._rate_call("acquire")
+            if wait is None:
+                return self.RESULT_RATE_LIMITED
+            time.sleep(wait)
             with self.rate_limiter:
                 succeeded = self.indexer.index_url(
                     url, metadata=metadata, html_processing=self.html_processing,
@@ -294,10 +297,13 @@ class PageCrawlWorker(object):
             return self.RESULT_RATE_LIMITED
         # An "unchanged" skip returns True (success) but should be counted separately
         # from a freshly indexed page so the corpus is not needlessly churned.
+        if self.indexer.last_throttled:
+            self._rate_call("report_429", self.indexer.last_retry_after)
+        elif succeeded:
+            self._rate_call("report_ok")
         if self.indexer.was_skipped():
             return self.RESULT_SKIPPED
         if succeeded:
-            self._rate_call("report_ok")
             return self.RESULT_INDEXED
         if getattr(self.indexer, "last_skip_reason", None):
             return self.RESULT_AUTH_REQUIRED
@@ -305,6 +311,7 @@ class PageCrawlWorker(object):
 
 class WebsiteCrawler(Crawler):
     RATE_LIMIT_RETRY_PASSES = 2
+    _rate_pause_left = 0  # seconds of the site's last pause still to run when a pass ended
 
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
@@ -413,6 +420,8 @@ class WebsiteCrawler(Crawler):
         
         # 2. Discover all URLs using the chosen method
         all_urls = self._discover_urls()
+        if self.indexer.discovery_rate_limited:
+            self._crawl_interrupted = True
 
         # 3. Filter and prepare the final URL list
         urls_to_crawl = self._filter_and_prepare_urls(all_urls)
@@ -707,11 +716,13 @@ class WebsiteCrawler(Crawler):
             urls, self.rate_limited_urls = self.rate_limited_urls, []
             if not urls:
                 return
-            wait = retry_wait * attempt
+            wait = max(retry_wait * attempt, self._rate_pause_left)
             logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
                         f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
             time.sleep(wait)
             self._dispatch_to_single_process(urls, 1, source, prior_fingerprints, sitemap_lastmods)
+        if self.rate_limited_urls:
+            self._crawl_interrupted = True
         if self.tracker:
             for url in self.rate_limited_urls:
                 self.tracker.track_failed(url, url=url)
@@ -781,6 +792,7 @@ class WebsiteCrawler(Crawler):
                 for url, result in zip(batch, results):
                     self._track_result(url, result)
                 logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
+            self._rate_pause_left = ray.get(rate_controller.pause_remaining.remote())
             # Cleanup Ray workers
             for a in actors:
                 ray.get(a.cleanup.remote())
@@ -803,12 +815,13 @@ class WebsiteCrawler(Crawler):
                     logger.warning(f"Failed to stop Playwright: {e}")
         self.indexer.web_extractor = None
 
+        rate_controller = AdaptiveRateController(num_per_second)
         crawl_worker = PageCrawlWorker(
             self.cfg,
             num_per_second,
             prior_fingerprints,
             sitemap_lastmods,
-            AdaptiveRateController(num_per_second)
+            rate_controller
         )
         crawl_worker.setup()
         for inx, url in enumerate(urls):
@@ -817,6 +830,7 @@ class WebsiteCrawler(Crawler):
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
             result = crawl_worker.process(url, source=source)
             self._track_result(url, result)
+        self._rate_pause_left = rate_controller.pause_remaining()
         # Cleanup worker
         crawl_worker.cleanup()
 

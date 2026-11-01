@@ -255,14 +255,15 @@ class WebContentExtractor(WebExtractorBase):
         results = page.evaluate(removal_script)
         logger.debug("html_processing removal results: %s", results)
     
+    @staticmethod
+    def _text_removal_selectors(remove_code: bool) -> List[str]:
+        """Elements left out of the extracted text on both the static and browser paths."""
+        selectors = ['header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement']
+        return selectors + ['code', 'pre'] if remove_code else selectors
+
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
-        # Build selectors to remove as a second pass for common boilerplate
-        remove_selectors = [
-            'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
-        ]
-        if remove_code:
-            remove_selectors.extend(['code', 'pre'])
+        remove_selectors = self._text_removal_selectors(remove_code)
 
         return page.evaluate(f"""() => {{
             // Remove common boilerplate elements
@@ -414,16 +415,23 @@ class WebContentExtractor(WebExtractorBase):
                 static_resp.raise_for_status()
                 if 'text/html' in static_resp.headers.get('content-type', '').lower():
                     soup = BeautifulSoup(static_resp.text, 'html.parser')
-                    # Same removals as the browser path, before html is captured, so
-                    # remove_boilerplate (which re-extracts from res['html']) sees them.
+                    # Same order as the browser path: title, then the configured removals
+                    # before html is captured, so remove_boilerplate (which re-extracts from
+                    # res['html']) sees them, then the text-only removals.
+                    title = soup.title.string if soup.title else ''
                     remove_html_elements(soup, html_processing)
+                    html = str(soup)
+                    links = [a['href'] for a in soup.find_all('a', href=True)]
+                    for element in soup.select(', '.join(self._text_removal_selectors(remove_code))):
+                        element.decompose()
                     static_text = soup.get_text(separator=' ', strip=True)
-                    if len(static_text.strip()) > 500:
-                        result['html'] = str(soup)
+                    # Tables are only extracted from the browser DOM.
+                    if len(static_text.strip()) > 500 and not extract_tables:
+                        result['html'] = html
                         result['url'] = static_resp.url
-                        result['title'] = soup.title.string if soup.title else ''
+                        result['title'] = title
                         result['text'] = static_text
-                        result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                        result['links'] = links
                         # Extract images with same filtering as the browser path
                         from urllib.parse import urljoin
                         for img_tag in soup.find_all('img'):
@@ -450,6 +458,7 @@ class WebContentExtractor(WebExtractorBase):
                 result['status_code'] = e.response.status_code
                 result['retry_after'] = e.response.headers.get('Retry-After')
                 if result['status_code'] == 429:
+                    result['throttled'] = True
                     logger.warning(f"Static pre-fetch for {url} returned HTTP 429, using browser "
                                    f"(Retry-After: {result['retry_after']})")
                 else:
@@ -502,7 +511,16 @@ class WebContentExtractor(WebExtractorBase):
             logger.debug(f"Starting browser navigation to {url} (timeout={nav_timeout}ms)")
             response = page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
             result['status_code'] = response.status if response else None
-            result['retry_after'] = response.headers.get('retry-after') if response else None
+            if response:
+                result['retry_after'] = response.headers.get('retry-after') or result['retry_after']
+            if result['status_code'] == 429:
+                return result
+            if result.get('throttled') and response and response.ok:
+                # Requests are refused but the browser isn't, so more static fetches can only
+                # add 429s. Each one would pause the crawl for a page the browser can fetch.
+                logger.warning(f"Static fetch refused for {url} but the browser wasn't: "
+                               f"using the browser only from here on")
+                self.skip_static_prefetch = True
             logger.debug(f"Navigation complete for {url}, starting post-load processing")
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)
@@ -578,7 +596,8 @@ class WebContentExtractor(WebExtractorBase):
             if 'application/pdf' in ct:
                 resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
                 return {"type": "pdf", "url": resp.url, "content": resp.content,
-                        "headers": dict(resp.headers)}
+                        "headers": dict(resp.headers), "status_code": resp.status_code,
+                        "retry_after": resp.headers.get('Retry-After')}
         except Exception as e:
             logger.debug(f"HEAD request failed for {url}, falling back to browser: {e}")
 

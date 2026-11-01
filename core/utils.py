@@ -618,21 +618,28 @@ class AdaptiveRateController:
 
     Starts at `max_rate`. An HTTP 429 halves the rate and pauses every worker, and
     successes raise it back slowly. All workers see a burst of 429s at once, so only
-    the first one in a pause changes the rate.
+    the first one in a pause changes the rate. After MAX_FAILED_PAUSES pauses in a row
+    with no success between them, acquire() returns None: without that, a site that
+    refuses everything costs one pause per page.
     """
     MIN_RATE = 0.5
     RECOVERY_STEP = 0.1  # pages per second gained per successful page
     DEFAULT_PAUSE = 30   # seconds, when Retry-After is missing or an HTTP date
+    MIN_PAUSE = 5        # seconds, so Retry-After: 0 still groups a burst into one pause
     MAX_PAUSE = 300      # seconds, so one bad header can't stall the crawl
+    MAX_FAILED_PAUSES = 10
 
     def __init__(self, max_rate: float):
         self.max_rate = max_rate
         self.rate = max_rate
         self._next_slot = 0.0
         self._paused_until = 0.0
+        self._failed_pauses = 0
 
-    def acquire(self) -> float:
-        """Reserve the next slot and return the seconds to wait for it."""
+    def acquire(self) -> Optional[float]:
+        """Reserve the next slot and return the seconds to wait for it, or None to stop fetching."""
+        if self._failed_pauses >= self.MAX_FAILED_PAUSES:
+            return None
         now = time.monotonic()
         start = max(now, self._next_slot, self._paused_until)
         self._next_slot = start + 1 / self.rate
@@ -641,17 +648,25 @@ class AdaptiveRateController:
     def report_429(self, retry_after: Optional[str] = None):
         now = time.monotonic()
         try:
-            pause = min(int(retry_after), self.MAX_PAUSE)
+            pause = max(min(int(retry_after), self.MAX_PAUSE), self.MIN_PAUSE)
         except (TypeError, ValueError):
             pause = self.DEFAULT_PAUSE
         if now >= self._paused_until:
             self.rate = max(self.rate / 2, self.MIN_RATE)
+            self._failed_pauses += 1
             logger.warning(f"HTTP 429: pausing crawl for {pause}s, rate now {self.rate:.1f} pages/s")
+            if self._failed_pauses == self.MAX_FAILED_PAUSES:
+                logger.warning(f"HTTP 429: no page succeeded across {self._failed_pauses} pauses, "
+                               f"not fetching the remaining pages in this pass")
         self._paused_until = max(self._paused_until, now + pause)
 
     def report_ok(self):
+        self._failed_pauses = 0
         if time.monotonic() >= self._paused_until:
             self.rate = min(self.rate + self.RECOVERY_STEP, self.max_rate)
+
+    def pause_remaining(self) -> float:
+        return max(self._paused_until - time.monotonic(), 0)
 
 # =============================================================================
 # DATA PROCESSING UTILITIES

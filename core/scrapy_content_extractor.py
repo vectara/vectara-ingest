@@ -85,6 +85,8 @@ class ScrapyContentExtractor(WebExtractorBase):
         try:
             # Make the request
             response = self.session.get(url, timeout=self.timeout)
+            result['status_code'] = response.status_code
+            result['retry_after'] = response.headers.get('Retry-After')
             response.raise_for_status()
             
             # Store response data
@@ -238,7 +240,9 @@ class ScrapyContentExtractor(WebExtractorBase):
                     "type": "pdf",
                     "url": str(get_response.url),
                     "content": pdf_bytes,
-                    "headers": dict(get_response.headers)
+                    "headers": dict(get_response.headers),
+                    "status_code": get_response.status_code,
+                    "retry_after": get_response.headers.get('Retry-After'),
                 }
             
             # Otherwise it's HTML

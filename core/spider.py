@@ -24,7 +24,6 @@ from core.utils import img_extensions, audio_extensions, video_extensions, doc_e
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def _url_is_relative(url: str) -> bool:
@@ -69,6 +68,12 @@ def recursive_crawl(url: str, depth: int,
                 f"Skipping discovery from {url}: {auth_reason} ({res.get('url')}). "
                 f"Configure website_crawler.google_auth / saml_auth to crawl it."
             )
+            return visited
+        # The links on a 429 page aren't the site's, and the real ones are unknown, so the
+        # discovered set is incomplete: the flag stops old content being removed on this run.
+        if res.get('status_code') == 429:
+            logger.warning(f"Discovery from {url} got HTTP 429: pages linked only from it are not crawled")
+            indexer.discovery_rate_limited = True
             return visited
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 

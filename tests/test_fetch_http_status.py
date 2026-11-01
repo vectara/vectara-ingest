@@ -7,6 +7,7 @@ document, replacing the good copy in the corpus while the run logged success.
 
 import importlib.machinery
 import logging
+import re
 import sys
 import unittest
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ sys.modules.setdefault("playwright.sync_api", MagicMock())
 from omegaconf import OmegaConf  # noqa: E402
 
 from core.indexer import Indexer  # noqa: E402
+from core.spider import recursive_crawl  # noqa: E402
 from core.utils import AdaptiveRateController  # noqa: E402
 from crawlers.website_crawler import PageCrawlWorker, WebsiteCrawler  # noqa: E402
 
@@ -45,7 +47,8 @@ def _make_extractor(goto_status=200, goto_error=None):
     page = extractor.browser.new_context.return_value.new_page.return_value
     page.goto.side_effect = goto_error
     page.goto.return_value = None if goto_status is None else SimpleNamespace(
-        status=goto_status, headers={"retry-after": "30"} if goto_status == 429 else {}
+        status=goto_status, ok=goto_status < 400,
+        headers={"retry-after": "30"} if goto_status == 429 else {},
     )
     page.title.return_value = "Title"
     page.url = URL
@@ -91,7 +94,8 @@ class TestExtractorReportsStatus(unittest.TestCase):
             _make_extractor(goto_status=200), static_status=429, headers={"Retry-After": "60"}
         )
         self.assertEqual(result["status_code"], 200)
-        self.assertIsNone(result["retry_after"])
+        self.assertTrue(result["throttled"])
+        self.assertEqual(result["retry_after"], "60")
 
     def test_static_429_kept_when_browser_also_fails(self):
         extractor = _make_extractor(goto_error=RuntimeError("browser gone"))
@@ -113,6 +117,143 @@ class TestExtractorReportsStatus(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertIn("429", output)
         self.assertIn("Retry-After: 60", output)
+
+    def test_browser_429_keeps_static_retry_after_when_it_sends_none(self):
+        extractor = _make_extractor(goto_status=429)
+        goto = extractor.browser.new_context.return_value.new_page.return_value.goto
+        goto.return_value = SimpleNamespace(status=429, ok=False, headers={})
+        result = _fetch(extractor, static_status=429, headers={"Retry-After": "120"})
+        self.assertEqual(result["retry_after"], "120")
+
+    def test_browser_429_returns_without_waiting_for_the_page(self):
+        extractor = _make_extractor(goto_status=429)
+        result = _fetch(extractor)
+        extractor._scroll_to_bottom.assert_not_called()
+        self.assertEqual(result["text"], "")
+
+    def test_static_429_then_browser_success_stops_static_fetches(self):
+        extractor = _make_extractor(goto_status=200)
+        _fetch(extractor, static_status=429)
+        self.assertTrue(extractor.skip_static_prefetch)
+
+    def test_static_429_then_browser_429_keeps_static_fetches(self):
+        extractor = _make_extractor(goto_status=429)
+        _fetch(extractor, static_status=429)
+        self.assertFalse(extractor.skip_static_prefetch)
+
+
+class TestStaticPathMatchesBrowser(unittest.TestCase):
+    """The same page must index the same way on the static and browser paths."""
+
+    FILLER = "Body text long enough for the static path to keep the page. " * 15
+
+    def _fetch(self, html, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response.headers["content-type"] = "text/html"
+        response._content = html.encode()
+        extractor = _make_extractor(goto_status=200)
+        with patch("core.web_content_extractor.requests.get", return_value=response), \
+                patch("core.web_content_extractor.PlaywrightTimeoutError", TimeoutError):
+            result = extractor.fetch_page_contents(URL, **kwargs)
+        page = extractor.browser.new_context.return_value.new_page.return_value
+        return result, page
+
+    def _html(self, extra=""):
+        return f"<html><head><title>Real title</title></head><body>{extra}<p>{self.FILLER}</p></body></html>"
+
+    def test_remove_code_applies(self):
+        result, _ = self._fetch(self._html("<pre>codeblock</pre><code>inline</code>"), remove_code=True)
+        self.assertNotIn("codeblock", result["text"])
+        self.assertNotIn("inline", result["text"])
+
+    def test_code_kept_by_default(self):
+        result, _ = self._fetch(self._html("<pre>codeblock</pre>"))
+        self.assertIn("codeblock", result["text"])
+
+    def test_boilerplate_is_not_in_text_but_stays_in_html_and_links(self):
+        result, _ = self._fetch(self._html(
+            '<header><nav><a href="/next">Menu</a></nav></header><footer>Copyright</footer>'))
+        self.assertNotIn("Menu", result["text"])
+        self.assertNotIn("Copyright", result["text"])
+        self.assertIn("Copyright", result["html"])
+        self.assertEqual(result["links"], ["/next"])
+
+    def test_title_survives_removing_the_head(self):
+        result, _ = self._fetch(self._html(), html_processing={"tags_to_remove": ["head"]})
+        self.assertEqual(result["title"], "Real title")
+
+    def test_boilerplate_does_not_count_towards_the_static_minimum(self):
+        _, page = self._fetch(f"<html><body><nav>{self.FILLER}</nav><div id='app'></div></body></html>")
+        page.goto.assert_called_once()
+
+    def test_table_extraction_uses_the_browser(self):
+        _, page = self._fetch(self._html("<table><tr><td>x</td></tr></table>"), extract_tables=True)
+        page.goto.assert_called_once()
+
+
+class TestScrapyExtractorReportsStatus(unittest.TestCase):
+
+    def _fetch(self, status, headers=None):
+        from core.scrapy_content_extractor import ScrapyContentExtractor
+
+        extractor = ScrapyContentExtractor.__new__(ScrapyContentExtractor)
+        extractor.timeout = 5
+        extractor.session = MagicMock()
+        response = _http_error(status, headers)
+        response._content = b"<html><head><title>t</title></head><body>x</body></html>"
+        response.url = URL
+        extractor.session.get.return_value = response
+        return extractor.fetch_page_contents(URL)
+
+    def test_429_is_reported(self):
+        result = self._fetch(429, {"Retry-After": "60"})
+        self.assertEqual(result["status_code"], 429)
+        self.assertEqual(result["retry_after"], "60")
+
+    def test_success_is_reported(self):
+        self.assertEqual(self._fetch(200)["status_code"], 200)
+
+
+class TestInlinePdf429(unittest.TestCase):
+
+    def test_get_status_is_returned_with_the_pdf(self):
+        extractor = _make_extractor()
+        head = _http_error(200, {"content-type": "application/pdf"})
+        get = _http_error(429, {"Retry-After": "60"})
+        errors = {"playwright._impl": MagicMock(), "playwright._impl._errors": MagicMock()}
+        with patch.dict(sys.modules, errors), \
+                patch("core.web_content_extractor.requests.head", return_value=head), \
+                patch("core.web_content_extractor.requests.get", return_value=get):
+            result = extractor.check_download_or_pdf(URL)
+        self.assertEqual(result["status_code"], 429)
+        self.assertEqual(result["retry_after"], "60")
+
+
+class TestDiscovery429(unittest.TestCase):
+
+    def test_429_is_flagged_and_its_links_are_not_followed(self):
+        section = "https://docs.example.com/guide/"
+        indexer = MagicMock()
+        indexer.fetch_page_contents.return_value = {
+            "url": section, "links": ["https://docs.example.com/error-page-link"],
+            "status_code": 429,
+        }
+        visited = recursive_crawl(section, 2, [re.compile(".*")], [], indexer)
+        self.assertEqual(visited, {section})
+        self.assertIs(indexer.discovery_rate_limited, True)
+
+    def test_crawl_is_marked_interrupted(self):
+        crawler = WebsiteCrawler.__new__(WebsiteCrawler)
+        crawler._crawl_interrupted = False
+        crawler.indexer = MagicMock(discovery_rate_limited=True)
+        crawler._configure_indexer_session = MagicMock()
+        crawler._discover_urls = MagicMock(return_value=[URL])
+        crawler._filter_and_prepare_urls = MagicMock(return_value=[URL])
+        crawler._dispatch_crawl_jobs = MagicMock()
+        crawler._remove_old_content_if_needed = MagicMock()
+        crawler.crawl()
+        self.assertTrue(crawler._crawl_interrupted)
 
 
 class TestIndexerSkipsErrorPages(unittest.TestCase):
@@ -143,6 +284,8 @@ class TestIndexerSkipsErrorPages(unittest.TestCase):
             "retry_after": retry_after,
         })
         ix.index_segments = MagicMock(return_value=True)
+        ix.index_file = MagicMock(return_value=True)
+        ix.session = MagicMock()
         return ix
 
     def test_429_is_not_indexed(self):
@@ -166,6 +309,37 @@ class TestIndexerSkipsErrorPages(unittest.TestCase):
         ix.fetch_page_contents.return_value["status_code"] = 200
         ix.index_url(URL, metadata={"url": URL})
         self.assertEqual(ix.last_fetch_status, 200)
+
+    def test_static_429_rescued_by_the_browser_is_indexed_and_flagged(self):
+        ix = self._make_indexer(200, retry_after="60")
+        ix.fetch_page_contents.return_value["throttled"] = True
+        self.assertTrue(ix.index_url(URL, metadata={"url": URL}))
+        self.assertTrue(ix.last_throttled)
+        self.assertEqual(ix.last_retry_after, "60")
+
+    def test_429_on_a_download_url_is_reported(self):
+        ix = self._make_indexer(200)
+        ix.url_triggers_download.return_value = True
+        ix.session.get.return_value = _http_error(429, {"Retry-After": "60"})
+        self.assertFalse(ix.index_url(URL, metadata={"url": URL}))
+        self.assertEqual(ix.last_fetch_status, 429)
+        self.assertEqual(ix.last_retry_after, "60")
+
+    def test_429_on_a_markdown_file_is_reported_not_raised(self):
+        ix = self._make_indexer(200)
+        ix.session.get.return_value = _http_error(429, {"Retry-After": "60"})
+        self.assertFalse(ix.index_url("https://docs.example.com/a.md", metadata={"url": URL}))
+        self.assertEqual(ix.last_fetch_status, 429)
+
+    def test_429_on_an_inline_pdf_is_not_indexed(self):
+        ix = self._make_indexer(200)
+        ix.check_download_or_pdf.return_value = {
+            "type": "pdf", "url": URL, "content": b"Too many requests",
+            "status_code": 429, "retry_after": "60",
+        }
+        self.assertFalse(ix.index_url(URL, metadata={"url": URL}))
+        ix.index_file.assert_not_called()
+        self.assertEqual(ix.last_fetch_status, 429)
 
 
 class FakeClock:
@@ -209,7 +383,7 @@ class TestAdaptiveRateController(unittest.TestCase):
     def test_rate_has_a_floor(self):
         for _ in range(20):
             self.controller.report_429("1")
-            self.clock.now += 2
+            self.clock.now += 6
         self.assertEqual(self.controller.rate, AdaptiveRateController.MIN_RATE)
 
     def test_missing_or_http_date_retry_after_uses_default_pause(self):
@@ -225,7 +399,7 @@ class TestAdaptiveRateController(unittest.TestCase):
 
     def test_success_recovers_rate_up_to_the_maximum(self):
         self.controller.report_429("1")
-        self.clock.now += 2
+        self.clock.now += 6
         for _ in range(1000):
             self.controller.report_ok()
         self.assertEqual(self.controller.rate, 8)
@@ -234,6 +408,43 @@ class TestAdaptiveRateController(unittest.TestCase):
         self.controller.report_429("60")
         self.controller.report_ok()
         self.assertEqual(self.controller.rate, 4)
+
+    def test_retry_after_zero_or_negative_still_pauses_and_halves_once(self):
+        for value in ("0", "-5"):
+            with self.subTest(value=value):
+                controller = AdaptiveRateController(max_rate=8)
+                for _ in range(8):
+                    controller.report_429(value)
+                self.assertEqual(controller.rate, 4)
+                self.assertEqual(controller.acquire(), AdaptiveRateController.MIN_PAUSE)
+
+    def _fail_pauses(self, count):
+        for _ in range(count):
+            self.controller.report_429("60")
+            self.clock.now += 61
+
+    def test_gives_up_after_consecutive_pauses_without_a_success(self):
+        self._fail_pauses(AdaptiveRateController.MAX_FAILED_PAUSES - 1)
+        self.assertIsNotNone(self.controller.acquire())
+        self._fail_pauses(1)
+        self.assertIsNone(self.controller.acquire())
+
+    def test_one_burst_does_not_give_up(self):
+        for _ in range(500):
+            self.controller.report_429("60")
+        self.assertIsNotNone(self.controller.acquire())
+
+    def test_success_resets_the_give_up_count(self):
+        self._fail_pauses(AdaptiveRateController.MAX_FAILED_PAUSES - 1)
+        self.controller.report_ok()
+        self._fail_pauses(AdaptiveRateController.MAX_FAILED_PAUSES - 1)
+        self.assertIsNotNone(self.controller.acquire())
+
+    def test_pause_remaining(self):
+        self.assertEqual(self.controller.pause_remaining(), 0)
+        self.controller.report_429("60")
+        self.clock.now += 20
+        self.assertEqual(self.controller.pause_remaining(), 40)
 
 
 class TestPageCrawlWorkerRateControl(unittest.TestCase):
@@ -246,6 +457,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker.indexer.last_skip_reason = None
         worker.indexer.last_fetch_status = status
         worker.indexer.last_retry_after = retry_after
+        worker.indexer.last_throttled = False
         worker.sitemap_lastmods = {}
         worker.prior_fingerprints = {}
         worker.html_processing = {}
@@ -281,6 +493,25 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker = self._worker(True, 200)
         worker.rate_controller = None
         self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_INDEXED)
+
+    def test_unchanged_page_recovers_the_rate(self):
+        worker = self._worker(True, 200)
+        worker.indexer.was_skipped.return_value = True
+        self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_SKIPPED)
+        worker.rate_controller.report_ok.assert_called_once_with()
+
+    def test_page_is_not_fetched_once_the_controller_gives_up(self):
+        worker = self._worker(True, 200)
+        worker.rate_controller.acquire.return_value = None
+        self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_RATE_LIMITED)
+        worker.indexer.index_url.assert_not_called()
+
+    def test_static_429_rescued_by_the_browser_slows_the_crawl(self):
+        worker = self._worker(True, 200, "60")
+        worker.indexer.last_throttled = True
+        self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_INDEXED)
+        worker.rate_controller.report_429.assert_called_once_with("60")
+        worker.rate_controller.report_ok.assert_not_called()
 
 
 class TestRateLimitRetryPass(unittest.TestCase):
@@ -341,6 +572,20 @@ class TestRateLimitRetryPass(unittest.TestCase):
             crawler._retry_rate_limited("web", {}, {})
         sleep.assert_not_called()
         crawler._dispatch_to_single_process.assert_not_called()
+
+    def test_retry_waits_out_the_pause_the_site_asked_for(self):
+        crawler = self._crawler([URL])
+        crawler._rate_pause_left = 250
+        with patch("crawlers.website_crawler.time.sleep") as sleep:
+            crawler._retry_rate_limited("web", {}, {})
+        sleep.assert_called_once_with(250)
+
+    def test_pages_still_limited_block_old_content_removal(self):
+        crawler = self._crawler([URL], still_limited=[(URL,), (URL,)])
+        crawler._crawl_interrupted = False
+        with patch("crawlers.website_crawler.time.sleep"):
+            crawler._retry_rate_limited("web", {}, {})
+        self.assertTrue(crawler._crawl_interrupted)
 
     def test_summary_warns_with_counts_and_settings_to_change(self):
         crawler = WebsiteCrawler.__new__(WebsiteCrawler)

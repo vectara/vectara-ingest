@@ -110,6 +110,9 @@ class Indexer:
         self.last_skip_reason: Optional[str] = None
         self.last_fetch_status: Optional[int] = None
         self.last_retry_after: Optional[str] = None
+        # The static fetch got a 429 but the browser got the page: index it, and slow down.
+        self.last_throttled = False
+        self.discovery_rate_limited = False
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.scrape_method = scrape_method  # Store scrape_method for web extractor
 
@@ -295,6 +298,17 @@ class Indexer:
         if self.store_docs:
             dest_path = f"{self.store_docs_folder}/{orig_filename}"
             shutil.copyfile(filename, dest_path)
+
+    def _skip_if_429(self, status: Optional[int], retry_after: Optional[str], url: str) -> bool:
+        """Record the fetch result. A 429 body is not the document: indexing it would replace
+        the good copy in the corpus with the error text."""
+        self.last_fetch_status = status
+        self.last_retry_after = retry_after
+        if status != 429:
+            return False
+        logger.warning(f"Skipping {url}: fetch returned HTTP 429")
+        self.last_error = "fetch returned HTTP 429"
+        return True
 
     def url_triggers_download(self, url: str) -> bool:
         self._init_processors()
@@ -757,6 +771,7 @@ class Indexer:
         self.last_skip_reason = None
         self.last_fetch_status = None
         self.last_retry_after = None
+        self.last_throttled = False
         if html_processing is None:
             html_processing = {}
         st = time.time()
@@ -772,6 +787,8 @@ class Indexer:
             file_path = os.path.join("/tmp/" + url_file_path)
 
             response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
+            if self._skip_if_429(response.status_code, response.headers.get('Retry-After'), url):
+                return False
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -787,6 +804,8 @@ class Indexer:
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
         if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
             response = self.session.get(url, timeout=self.timeout)
+            if self._skip_if_429(response.status_code, response.headers.get('Retry-After'), url):
+                return False
             response.raise_for_status()
             dl_content = response.content.decode('utf-8')
             if url.lower().endswith('md'):
@@ -824,6 +843,8 @@ class Indexer:
                     return result
                     
                 elif result["type"] == "pdf":
+                    if self._skip_if_429(result.get("status_code"), result.get("retry_after"), url):
+                        return False
                     # Handle inline PDF
                     final_url = result["url"]
                     parsed = urllib.parse.urlparse(final_url)
@@ -859,14 +880,9 @@ class Indexer:
                     )
                     self.last_skip_reason = auth_reason
                     return False
-                # A 429 page is not the document: indexing it would replace the good
-                # copy in the corpus with the error text.
-                self.last_fetch_status = res.get('status_code')
-                self.last_retry_after = res.get('retry_after')
-                if self.last_fetch_status == 429:
-                    logger.warning(f"Skipping {url}: fetch returned HTTP 429")
-                    self.last_error = "fetch returned HTTP 429"
+                if self._skip_if_429(res.get('status_code'), res.get('retry_after'), url):
                     return False
+                self.last_throttled = bool(res.get('throttled'))
                 html = res['html']
                 text = res['text']
                 doc_title = res['title']
