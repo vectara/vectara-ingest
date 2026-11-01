@@ -616,6 +616,12 @@ of the format.
 HF_ENDPOINT="http://localhost:9000"
 ```
 
+`LOGGER_<NAME>_LEVEL` sets the log level of one logger. In `<NAME>`, `_` stands for `.` and `__` stands for a literal underscore:
+
+```bash
+LOGGER_CORE_WEB__CONTENT__EXTRACTOR_LEVEL=DEBUG   # core.web_content_extractor
+```
+
 #### Building for on-prem / air-gapped deployments
 
 By default, `docling` (the PDF/DOCX/PPTX/HTML parser) fetches its layout-detection and

@@ -140,8 +140,8 @@ def setup_logging(level='INFO'):
     
     # Only add handler if none exists to prevent duplicates
     if not root.handlers:
+        # No level on the handler: it would drop what a LOGGER_<NAME>_LEVEL override lets through.
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(log_level)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         root.addHandler(handler)
@@ -157,7 +157,9 @@ def setup_logging(level='INFO'):
     for env_key, log_level_str in os.environ.items():
         match = LOGGER_ENV_PATTERN.match(env_key)
         if match:
-            logger_name = match.group(1).lower().replace('_', '.')
+            # "_" separates logger name parts; "__" is a literal underscore, so
+            # LOGGER_CORE_WEB__CONTENT__EXTRACTOR_LEVEL targets core.web_content_extractor.
+            logger_name = match.group(1).lower().replace('__', '\0').replace('_', '.').replace('\0', '_')
             level_name = log_level_str.upper()
             level = getattr(logging, level_name, None)
             if level:
