@@ -380,6 +380,7 @@ class WebContentExtractor(WebExtractorBase):
             dict with 'text', 'html', 'title', 'url', 'links', 'images', 'tables', and
             'status_code': the HTTP error from the static fetch, or the browser's status.
             None when the static fetch succeeded or no status is known.
+            'retry_after': the Retry-After header that came with that status, if any.
         """
         if html_processing is None:
             html_processing = {}
@@ -392,7 +393,8 @@ class WebContentExtractor(WebExtractorBase):
             'links': [],
             'images': [],
             'tables': [],
-            'status_code': None
+            'status_code': None,
+            'retry_after': None
         }
 
         # Static pre-fetch: try requests.get() first. SSR pages (forums, documentation
@@ -446,9 +448,10 @@ class WebContentExtractor(WebExtractorBase):
                     logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
             except requests.HTTPError as e:
                 result['status_code'] = e.response.status_code
+                result['retry_after'] = e.response.headers.get('Retry-After')
                 if result['status_code'] == 429:
                     logger.warning(f"Static pre-fetch for {url} returned HTTP 429, using browser "
-                                   f"(Retry-After: {e.response.headers.get('Retry-After')})")
+                                   f"(Retry-After: {result['retry_after']})")
                 else:
                     logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
             except Exception as e:
@@ -499,6 +502,7 @@ class WebContentExtractor(WebExtractorBase):
             logger.debug(f"Starting browser navigation to {url} (timeout={nav_timeout}ms)")
             response = page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
             result['status_code'] = response.status if response else None
+            result['retry_after'] = response.headers.get('retry-after') if response else None
             logger.debug(f"Navigation complete for {url}, starting post-load processing")
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)

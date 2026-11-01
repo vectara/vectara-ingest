@@ -111,6 +111,7 @@ The website crawler indexes the content of a given web site. It supports two mod
 
 Other parameters:
 - `num_per_second` is the maximum number of calls per second for each worker when crawling the website, to allow rate-limiting. With `ray_workers`, each worker has its own limit, so the crawl as a whole can send up to `ray_workers` × `num_per_second` calls per second. Defaults to 10.
+- `rate_limit_retry_wait`: seconds to wait before retrying pages that got an HTTP 429. Defaults to 60. When a site returns 429, the crawler halves its rate, pauses all workers (for `Retry-After` seconds, or 30 if the site sends none, up to 300) and raises the rate slowly as pages succeed. A page that gets a 429 is not indexed, so any existing copy stays in the corpus. After the crawl, those pages are retried one at a time in up to two passes, with the second waiting twice as long. Pages still getting a 429 count as failed, and the run ends with a warning giving the count.
 - `pos_regex` defines one or more (optional) regex patterns for URL inclusion. URLs must match at least one positive pattern to be crawled. If the list is empty, all URLs are matched.
   - **Important**: Patterns use Python's `.match()` method, which matches from the **beginning** of the string
   - Examples:

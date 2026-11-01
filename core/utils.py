@@ -12,7 +12,7 @@ import time
 import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
-from typing import List, Set, Any, Dict
+from typing import List, Set, Any, Dict, Optional
 from urllib.parse import urlparse, ParseResult, unquote
 
 # Third-party imports
@@ -611,6 +611,47 @@ class RateLimiter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         # No need to do anything on exit with this implementation
         pass
+
+
+class AdaptiveRateController:
+    """Pages-per-second budget shared by all workers of a crawl (a Ray actor under Ray).
+
+    Starts at `max_rate`. An HTTP 429 halves the rate and pauses every worker, and
+    successes raise it back slowly. All workers see a burst of 429s at once, so only
+    the first one in a pause changes the rate.
+    """
+    MIN_RATE = 0.5
+    RECOVERY_STEP = 0.1  # pages per second gained per successful page
+    DEFAULT_PAUSE = 30   # seconds, when Retry-After is missing or an HTTP date
+    MAX_PAUSE = 300      # seconds, so one bad header can't stall the crawl
+
+    def __init__(self, max_rate: float):
+        self.max_rate = max_rate
+        self.rate = max_rate
+        self._next_slot = 0.0
+        self._paused_until = 0.0
+
+    def acquire(self) -> float:
+        """Reserve the next slot and return the seconds to wait for it."""
+        now = time.monotonic()
+        start = max(now, self._next_slot, self._paused_until)
+        self._next_slot = start + 1 / self.rate
+        return start - now
+
+    def report_429(self, retry_after: Optional[str] = None):
+        now = time.monotonic()
+        try:
+            pause = min(int(retry_after), self.MAX_PAUSE)
+        except (TypeError, ValueError):
+            pause = self.DEFAULT_PAUSE
+        if now >= self._paused_until:
+            self.rate = max(self.rate / 2, self.MIN_RATE)
+            logger.warning(f"HTTP 429: pausing crawl for {pause}s, rate now {self.rate:.1f} pages/s")
+        self._paused_until = max(self._paused_until, now + pause)
+
+    def report_ok(self):
+        if time.monotonic() >= self._paused_until:
+            self.rate = min(self.rate + self.RECOVERY_STEP, self.max_rate)
 
 # =============================================================================
 # DATA PROCESSING UTILITIES
