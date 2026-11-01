@@ -246,6 +246,7 @@ class PageCrawlWorker(object):
     RESULT_FAILED = 1
     RESULT_AUTH_REQUIRED = 2
     RESULT_SKIPPED = 3
+    RESULT_RATE_LIMITED = 4
 
     def process(self, url: str, source: str):
         if not self.indexer:
@@ -284,9 +285,13 @@ class PageCrawlWorker(object):
             return self.RESULT_INDEXED
         if getattr(self.indexer, "last_skip_reason", None):
             return self.RESULT_AUTH_REQUIRED
+        if self.indexer.last_fetch_status == 429:
+            return self.RESULT_RATE_LIMITED
         return self.RESULT_FAILED
 
 class WebsiteCrawler(Crawler):
+    rate_limited_count = 0
+
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
         self.saml_session = None
@@ -677,9 +682,20 @@ class WebsiteCrawler(Crawler):
         else:
             self._dispatch_to_single_process(urls, num_per_second, source,
                                              prior_fingerprints, sitemap_lastmods)
+        self._warn_if_rate_limited(len(urls))
+
+    def _warn_if_rate_limited(self, total: int):
+        """Report rate limiting once at the end of the run, where it can't be missed."""
+        if self.rate_limited_count:
+            logger.warning(
+                f"{self.rate_limited_count} of {total} pages returned HTTP 429 and were not "
+                f"indexed. The site is rate-limiting this crawl; lower ray_workers or num_per_second."
+            )
 
     def _track_result(self, url: str, result: int):
         """Record a worker outcome to the crawl tracker (no-op if tracking disabled)."""
+        if result == PageCrawlWorker.RESULT_RATE_LIMITED:
+            self.rate_limited_count += 1
         if not self.tracker:
             return
         if result == PageCrawlWorker.RESULT_INDEXED:

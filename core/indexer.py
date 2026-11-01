@@ -108,6 +108,7 @@ class Indexer:
         # sign-in form, this holds the reason string. Reset on every
         # index_url call so callers can read it after a False return.
         self.last_skip_reason: Optional[str] = None
+        self.last_fetch_status: Optional[int] = None
         self.x_source = f'vectara-ingest-{self.cfg.crawling.crawler_type}'
         self.scrape_method = scrape_method  # Store scrape_method for web extractor
 
@@ -753,6 +754,7 @@ class Indexer:
         """
         succeeded = False
         self.last_skip_reason = None
+        self.last_fetch_status = None
         if html_processing is None:
             html_processing = {}
         st = time.time()
@@ -854,6 +856,13 @@ class Indexer:
                         f"(or grant access to the configured account) to crawl it."
                     )
                     self.last_skip_reason = auth_reason
+                    return False
+                # An HTTP error page is not the document: indexing it would replace
+                # the good copy in the corpus with the error text.
+                self.last_fetch_status = res.get('status_code')
+                if self.last_fetch_status and self.last_fetch_status >= 400:
+                    logger.warning(f"Skipping {url}: fetch returned HTTP {self.last_fetch_status}")
+                    self.last_error = f"fetch returned HTTP {self.last_fetch_status}"
                     return False
                 html = res['html']
                 text = res['text']

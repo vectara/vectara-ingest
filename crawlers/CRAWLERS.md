@@ -110,7 +110,7 @@ The website crawler indexes the content of a given web site. It supports two mod
 2. `crawl`: in this mode for each url specified in `urls`, the crawler starts there and crawls the website recursively, following links no more than `max_depth`. If you'd like to crawl only the URLs specified in the `urls` list (without any further hops) use `max_depth=0`.
 
 Other parameters:
-- `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
+- `num_per_second` is the maximum number of calls per second for each worker when crawling the website, to allow rate-limiting. With `ray_workers`, each worker has its own limit, so the crawl as a whole can send up to `ray_workers` × `num_per_second` calls per second. Defaults to 10.
 - `pos_regex` defines one or more (optional) regex patterns for URL inclusion. URLs must match at least one positive pattern to be crawled. If the list is empty, all URLs are matched.
   - **Important**: Patterns use Python's `.match()` method, which matches from the **beginning** of the string
   - Examples:
@@ -378,7 +378,7 @@ It has the following parameters:
 - `docs_system` is a text string specifying the document system crawled, and is added to the metadata under "source"
 - `max_depth` is the BFS depth limit when `crawl_method: scrapy`. Default: `3`. **Not honored by the internal crawler**, which traverses unbounded.
 - `ray_workers` if it exists defines the number of ray workers to use for parallel processing. ray_workers=0 means dont use Ray. ray_workers=-1 means use all cores available.
-- `num_per_second` specifies the number of call per second when crawling the website, to allow rate-limiting. Defaults to 10.
+- `num_per_second` is the maximum number of calls per second for each worker when crawling the website, to allow rate-limiting. With `ray_workers`, each worker has its own limit, so the crawl as a whole can send up to `ray_workers` × `num_per_second` calls per second. Defaults to 10.
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
 - `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus. 
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`

@@ -377,7 +377,9 @@ class WebContentExtractor(WebExtractorBase):
         Fetch content from URL with timeout, including Shadow DOM content.
         
         Returns:
-            dict with 'text', 'html', 'title', 'url', 'links', 'images', 'tables'
+            dict with 'text', 'html', 'title', 'url', 'links', 'images', 'tables', and
+            'status_code': the HTTP error from the static fetch, or the browser's status.
+            None when the static fetch succeeded or no status is known.
         """
         if html_processing is None:
             html_processing = {}
@@ -389,7 +391,8 @@ class WebContentExtractor(WebExtractorBase):
             'url': url,
             'links': [],
             'images': [],
-            'tables': []
+            'tables': [],
+            'status_code': None
         }
 
         # Static pre-fetch: try requests.get() first. SSR pages (forums, documentation
@@ -441,6 +444,13 @@ class WebContentExtractor(WebExtractorBase):
                                     f"tables = {len(result['tables'])}, links = {len(result['links'])}")
                         return result
                     logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
+            except requests.HTTPError as e:
+                result['status_code'] = e.response.status_code
+                if result['status_code'] == 429:
+                    logger.warning(f"Static pre-fetch for {url} returned HTTP 429, using browser "
+                                   f"(Retry-After: {e.response.headers.get('Retry-After')})")
+                else:
+                    logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
             except Exception as e:
                 logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
 
@@ -487,7 +497,8 @@ class WebContentExtractor(WebExtractorBase):
                 page.on('console', lambda msg: logger.info(f"playwright debug: {msg.text}"))
             
             logger.debug(f"Starting browser navigation to {url} (timeout={nav_timeout}ms)")
-            page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+            response = page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+            result['status_code'] = response.status if response else None
             logger.debug(f"Navigation complete for {url}, starting post-load processing")
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)
