@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 class WebContentExtractor(WebExtractorBase):
     """Handles web content extraction using Playwright"""
+    STATIC_REFUSALS_BEFORE_BROWSER_ONLY = 3
+
     
     def __init__(self, cfg: OmegaConf, timeout: int = 90, post_load_timeout: int = 5, browser=None):
         super().__init__(cfg, timeout, post_load_timeout)
@@ -31,6 +33,7 @@ class WebContentExtractor(WebExtractorBase):
         # redirects to the IdP sign-in page, returns >500 chars, and
         # short-circuits the authenticated browser path.
         self.skip_static_prefetch = False
+        self.static_refusals = 0  # static 429s in a row that the browser got past
 
         if browser is None:
             self._setup_browser()
@@ -255,15 +258,14 @@ class WebContentExtractor(WebExtractorBase):
         results = page.evaluate(removal_script)
         logger.debug("html_processing removal results: %s", results)
     
-    @staticmethod
-    def _text_removal_selectors(remove_code: bool) -> List[str]:
-        """Elements left out of the extracted text on both the static and browser paths."""
-        selectors = ['header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement']
-        return selectors + ['code', 'pre'] if remove_code else selectors
-
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
-        remove_selectors = self._text_removal_selectors(remove_code)
+        # Build selectors to remove as a second pass for common boilerplate
+        remove_selectors = [
+            'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
+        ]
+        if remove_code:
+            remove_selectors.extend(['code', 'pre'])
 
         return page.evaluate(f"""() => {{
             // Remove common boilerplate elements
@@ -408,30 +410,31 @@ class WebContentExtractor(WebExtractorBase):
         # entirely — unauthenticated requests.get follows redirects to the IdP
         # sign-in page, which passes the 500-char threshold and would otherwise
         # prevent the authenticated Playwright context from ever running.
-        if not self.skip_static_prefetch:
+        # Tables only come from the browser DOM, so a static fetch would be wasted.
+        if not self.skip_static_prefetch and not extract_tables:
             try:
                 from bs4 import BeautifulSoup
                 static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
                 static_resp.raise_for_status()
+                self.static_refusals = 0
                 if 'text/html' in static_resp.headers.get('content-type', '').lower():
                     soup = BeautifulSoup(static_resp.text, 'html.parser')
-                    # Same order as the browser path: title, then the configured removals
-                    # before html is captured, so remove_boilerplate (which re-extracts from
-                    # res['html']) sees them, then the text-only removals.
+                    # Same order as the browser path: title, then the removals before html is
+                    # captured, so remove_boilerplate (which re-extracts from res['html']) sees
+                    # them. remove_code only affects the text, and is left out of the minimum.
                     title = soup.title.string if soup.title else ''
                     remove_html_elements(soup, html_processing)
-                    html = str(soup)
-                    links = [a['href'] for a in soup.find_all('a', href=True)]
-                    for element in soup.select(', '.join(self._text_removal_selectors(remove_code))):
-                        element.decompose()
                     static_text = soup.get_text(separator=' ', strip=True)
-                    # Tables are only extracted from the browser DOM.
-                    if len(static_text.strip()) > 500 and not extract_tables:
-                        result['html'] = html
+                    if len(static_text.strip()) > 500:
+                        result['html'] = str(soup)
                         result['url'] = static_resp.url
                         result['title'] = title
+                        result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                        if remove_code:
+                            for element in soup(['code', 'pre']):
+                                element.decompose()
+                            static_text = soup.get_text(separator=' ', strip=True)
                         result['text'] = static_text
-                        result['links'] = links
                         # Extract images with same filtering as the browser path
                         from urllib.parse import urljoin
                         for img_tag in soup.find_all('img'):
@@ -516,11 +519,13 @@ class WebContentExtractor(WebExtractorBase):
             if result['status_code'] == 429:
                 return result
             if result.get('throttled') and response and response.ok:
-                # Requests are refused but the browser isn't, so more static fetches can only
-                # add 429s. Each one would pause the crawl for a page the browser can fetch.
-                logger.warning(f"Static fetch refused for {url} but the browser wasn't: "
-                               f"using the browser only from here on")
-                self.skip_static_prefetch = True
+                # Requests keep being refused but the browser isn't, so more static fetches
+                # only add 429s, each pausing the crawl for a page the browser can fetch.
+                self.static_refusals += 1
+                if self.static_refusals >= self.STATIC_REFUSALS_BEFORE_BROWSER_ONLY:
+                    logger.warning(f"Static fetch refused {self.static_refusals} times in a row "
+                                   f"but the browser wasn't: using the browser only from here on")
+                    self.skip_static_prefetch = True
             logger.debug(f"Navigation complete for {url}, starting post-load processing")
             page.wait_for_timeout(self.post_load_timeout * 1000)
             self._scroll_to_bottom(page)

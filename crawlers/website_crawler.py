@@ -3,13 +3,13 @@ import requests
 import logging
 import psutil
 import os
-import time
 
 from core.crawler import Crawler
 from core.crawl_tracker import CrawlShutdownException
 from core.utils import (
     clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, AdaptiveRateController,
-    setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint
+    setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint,
+    interruptible_sleep
 )
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
@@ -251,6 +251,9 @@ class PageCrawlWorker(object):
     RESULT_SKIPPED = 3
     RESULT_RATE_LIMITED = 4
 
+    # Single process only. Under Ray, the dispatcher polls for shutdown and kills the actors.
+    shutdown_check = None
+
     def _rate_call(self, method: str, *args):
         if self.rate_controller is None:
             return 0
@@ -273,11 +276,11 @@ class PageCrawlWorker(object):
         prior_fingerprint = self.prior_fingerprints.get(nu)
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
+        wait = self._rate_call("acquire")
+        if wait is None:
+            return self.RESULT_RATE_LIMITED
+        interruptible_sleep(wait, self.shutdown_check)
         try:
-            wait = self._rate_call("acquire")
-            if wait is None:
-                return self.RESULT_RATE_LIMITED
-            time.sleep(wait)
             with self.rate_limiter:
                 succeeded = self.indexer.index_url(
                     url, metadata=metadata, html_processing=self.html_processing,
@@ -299,7 +302,7 @@ class PageCrawlWorker(object):
         # from a freshly indexed page so the corpus is not needlessly churned.
         if self.indexer.last_throttled:
             self._rate_call("report_429", self.indexer.last_retry_after)
-        elif succeeded:
+        if succeeded:
             self._rate_call("report_ok")
         if self.indexer.was_skipped():
             return self.RESULT_SKIPPED
@@ -534,11 +537,22 @@ class WebsiteCrawler(Crawler):
             cookies=scrapy_cookies
         )
 
+    def _flag_refused_sitemaps(self):
+        """Mark discovery incomplete if a sitemap fetch gets a 429. The sitemap functions skip
+        a sitemap that fails, so a response hook is what can see it."""
+        def flag_429(response, **_):
+            if response.status_code == 429:
+                logger.warning(f"Sitemap fetch {response.url} got HTTP 429: its pages are not crawled")
+                self.indexer.discovery_rate_limited = True
+        self.indexer.session.hooks["response"].append(flag_429)
+
     def _discover_urls_with_internal_crawler(self, base_urls: list, max_depth: int, keep_query_params: bool) -> list:
         """Discover URLs using internal Vectara-ingest crawler."""
         logger.info("Using internal Vectara-ingest method to crawl the website")
         all_urls = []
         pages_source = self.cfg.website_crawler.get("pages_source", "crawl")
+        if pages_source == "sitemap":
+            self._flag_refused_sitemaps()
         
         for homepage in base_urls:
             urls = []
@@ -568,7 +582,9 @@ class WebsiteCrawler(Crawler):
                 urls_set = recursive_crawl(
                     homepage, max_depth,
                     pos_patterns=self.pos_patterns, neg_patterns=self.neg_patterns,
-                    indexer=self.indexer, visited=set(), verbose=self.indexer.verbose
+                    indexer=self.indexer, visited=set(), verbose=self.indexer.verbose,
+                    rate_controller=AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1)),
+                    sleep=lambda seconds: interruptible_sleep(seconds, self.check_shutdown)
                 )
                 urls = clean_urls(urls_set, keep_query_params)
             else:
@@ -719,7 +735,7 @@ class WebsiteCrawler(Crawler):
             wait = max(retry_wait * attempt, self._rate_pause_left)
             logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
                         f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
-            time.sleep(wait)
+            interruptible_sleep(wait, self.check_shutdown)
             self._dispatch_to_single_process(urls, 1, source, prior_fingerprints, sitemap_lastmods)
         if self.rate_limited_urls:
             self._crawl_interrupted = True
@@ -751,6 +767,19 @@ class WebsiteCrawler(Crawler):
             self.tracker.track_auth_required(url, url=url)
         else:
             self.tracker.track_failed(url, url=url)
+
+    def _collect_results(self, pool, batch: list, source: str) -> list:
+        """Run a batch on the pool, checking for shutdown while waiting: a pause can hold a
+        batch for minutes, longer than `docker stop` allows."""
+        for url in batch:
+            pool.submit(lambda a, u: a.process.remote(u, source=source), url)
+        results = []
+        while pool.has_next():
+            try:
+                results.append(pool.get_next(timeout=1))
+            except TimeoutError:
+                self.check_shutdown()
+        return results
 
     def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str,
                                  prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
@@ -788,7 +817,7 @@ class WebsiteCrawler(Crawler):
             for batch_start in range(0, len(urls), batch_size):
                 self.check_shutdown()
                 batch = urls[batch_start:batch_start + batch_size]
-                results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                results = self._collect_results(pool, batch, source)
                 for url, result in zip(batch, results):
                     self._track_result(url, result)
                 logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
@@ -824,6 +853,7 @@ class WebsiteCrawler(Crawler):
             rate_controller
         )
         crawl_worker.setup()
+        crawl_worker.shutdown_check = self.check_shutdown
         for inx, url in enumerate(urls):
             self.check_shutdown()
             if inx % 100 == 0:

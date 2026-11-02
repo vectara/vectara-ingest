@@ -29,7 +29,7 @@ import whisper
 from core.summary import get_attributes_from_text
 from core.models import get_api_key
 from core.utils import (
-    html_to_text, detect_language, create_session_with_retries,
+    html_to_text, detect_language, create_session_with_retries, leave_429_to_caller,
     safe_remove_file, url_to_filename,
     get_file_path_from_url, configure_session_for_ssl, get_docker_or_local_path,
     get_headers, normalize_text, normalize_value, IMG_EXTENSIONS, release_memory
@@ -786,8 +786,10 @@ class Indexer:
                 return False
             file_path = os.path.join("/tmp/" + url_file_path)
 
+            leave_429_to_caller(self.session, url)
             response = self.session.get(url, headers=get_headers(self.cfg), stream=True)
             if self._skip_if_429(response.status_code, response.headers.get('Retry-After'), url):
+                response.close()
                 return False
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
@@ -803,6 +805,7 @@ class Indexer:
 
         # If MD or IPYNB file, then we don't need playwright - can just download content directly and convert to text
         if url.lower().endswith(".md") or url.lower().endswith(".ipynb"):
+            leave_429_to_caller(self.session, url)
             response = self.session.get(url, timeout=self.timeout)
             if self._skip_if_429(response.status_code, response.headers.get('Retry-After'), url):
                 return False

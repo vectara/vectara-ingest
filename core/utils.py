@@ -12,8 +12,8 @@ import time
 import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
-from typing import List, Set, Any, Dict, Optional
-from urllib.parse import urlparse, ParseResult, unquote
+from typing import Callable, List, Set, Any, Dict, Optional
+from urllib.parse import urlparse, urlsplit, ParseResult, unquote
 
 # Third-party imports
 import magic
@@ -314,18 +314,30 @@ class LoggingAdapter(HTTPAdapter):
 def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
-    retry_strategy = Retry(
-        total=retries,
-        status_forcelist=DEFAULT_RETRY_STATUS_CODES,
-        backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
-        raise_on_status=False,
-        respect_retry_after_header=True,
-        allowed_methods=DEFAULT_RETRY_METHODS,
-    )
-    logging_adapter = LoggingAdapter(max_retries=retry_strategy)
+    logging_adapter = _retrying_adapter(retries, DEFAULT_RETRY_STATUS_CODES, respect_retry_after=True)
     session.mount('http://', logging_adapter)
     session.mount('https://', logging_adapter)
     return session
+
+def _retrying_adapter(retries: int, status_codes: list, respect_retry_after: bool) -> "LoggingAdapter":
+    return LoggingAdapter(max_retries=Retry(
+        total=retries,
+        status_forcelist=status_codes,
+        backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
+        raise_on_status=False,
+        respect_retry_after_header=respect_retry_after,
+        allowed_methods=DEFAULT_RETRY_METHODS,
+    ))
+
+def leave_429_to_caller(session: requests.Session, url: str) -> None:
+    """Stop `session` retrying 429s from url's host, so the crawl's rate controller hears about
+    them at once. Other hosts, such as the Vectara API, keep their retries. Retry-After has to
+    be off too: urllib3 retries a 429 carrying it even when 429 isn't in status_forcelist."""
+    parts = urlsplit(url)
+    prefix = f"{parts.scheme}://{parts.netloc}/"
+    if prefix not in session.adapters:
+        status_codes = [code for code in DEFAULT_RETRY_STATUS_CODES if code != 429]
+        session.mount(prefix, _retrying_adapter(DEFAULT_RETRY_ATTEMPTS, status_codes, respect_retry_after=False))
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
     """
@@ -611,6 +623,17 @@ class RateLimiter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         # No need to do anything on exit with this implementation
         pass
+
+
+def interruptible_sleep(seconds: float, check: Optional[Callable[[], None]] = None) -> None:
+    """Sleep in steps of a second at most, calling `check`, which raises to stop, after each.
+    A signal handler only sets a flag, and a plain sleep would outlast `docker stop`'s grace."""
+    while seconds > 0:
+        step = min(seconds, 1)
+        time.sleep(step)
+        seconds -= step
+        if check:
+            check()
 
 
 class AdaptiveRateController:

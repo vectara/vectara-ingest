@@ -291,6 +291,7 @@ class TestInternalCrawlerDiscovery(unittest.TestCase):
         fake_indexer.verbose = False
 
         fake_self = SimpleNamespace(
+            _flag_refused_sitemaps=lambda: None,
             cfg=_google_auth_cfg(pages_source="sitemap"),
             indexer=fake_indexer,
             saml_session=MagicMock(name="saml_session"),
@@ -353,7 +354,8 @@ class TestRayShutdownOnFailure(unittest.TestCase):
         fake_self = self._fake_self()
         with patch("crawlers.website_crawler.ray") as mock_ray:
             # The actor pool blows up mid-crawl (e.g. a worker task error).
-            mock_ray.util.ActorPool.return_value.map.side_effect = RuntimeError("worker died")
+            mock_ray.util.ActorPool.return_value.has_next.return_value = True
+            mock_ray.util.ActorPool.return_value.get_next.side_effect = RuntimeError("worker died")
             with self.assertRaises(RuntimeError):
                 WebsiteCrawler._dispatch_to_ray_workers(
                     fake_self, ["https://example.com/a"], ray_workers=2,
@@ -363,7 +365,7 @@ class TestRayShutdownOnFailure(unittest.TestCase):
     def test_ray_shutdown_called_on_happy_path(self):
         fake_self = self._fake_self()
         with patch("crawlers.website_crawler.ray") as mock_ray:
-            mock_ray.util.ActorPool.return_value.map.return_value = []
+            mock_ray.util.ActorPool.return_value.has_next.return_value = False
             WebsiteCrawler._dispatch_to_ray_workers(
                 fake_self, ["https://example.com/a"], ray_workers=2,
                 num_per_second=1, source="website")
