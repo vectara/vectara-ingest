@@ -13,7 +13,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import requests
 
@@ -480,16 +480,29 @@ class FakeClock:
 class TestSession429Retries(unittest.TestCase):
     """urllib3 must hand a crawled site's 429 straight back, and keep retrying the API's."""
 
+    SITEMAP = (b'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+               b'<url><loc>https://docs.example.com/a</loc></url></urlset>')
+
     def setUp(self):
         hits = self.hits = []
+        self.refusals = refusals = [10**6]  # 429s to send before serving the page
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 hits.append(self.path)
-                self.send_response(429)
-                self.send_header("Retry-After", "1")
-                self.send_header("Content-Length", "0")
+                if refusals[0] > 0:
+                    refusals[0] -= 1
+                    self.send_response(429)
+                    self.send_header("Retry-After", "0")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                body = (b"Sitemap: https://docs.example.com/sitemap.xml\n" if self.path == "/robots.txt"
+                        else TestSession429Retries.SITEMAP)
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
+                self.wfile.write(body)
 
             def log_message(self, format, *args):  # pylint: disable=redefined-builtin
                 pass
@@ -513,22 +526,44 @@ class TestSession429Retries(unittest.TestCase):
         self.assertIn(429, adapter.max_retries.status_forcelist)
         self.assertTrue(adapter.max_retries.respect_retry_after_header)
 
-    def test_sitemaps_on_different_hosts_do_not_retry_429(self):
+    def test_other_retries_are_kept_for_the_crawled_host(self):
+        session = create_session_with_retries()
+        leave_429_to_caller(session, self.url)
+        retry = session.get_adapter(self.url).max_retries
+        self.assertFalse(retry.is_retry("GET", 429, has_retry_after=True))
+        self.assertTrue(retry.respect_retry_after_header)
+        self.assertTrue(retry.is_retry("GET", 413, has_retry_after=True))
+        self.assertIn(503, retry.status_forcelist)
+        self.assertEqual(retry.increment("GET", self.url).total, retry.total - 1)
+        self.assertFalse(retry.increment("GET", self.url).is_retry("GET", 429, has_retry_after=True))
+
+    def test_session_without_retries_gets_none(self):
+        session = requests.Session()
+        leave_429_to_caller(session, self.url)
+        self.assertEqual(session.get_adapter(self.url).max_retries.total, 0)
+
+    def test_sitemap_fetch_retries_429(self):
         from core.spider import _download
 
-        session = create_session_with_retries()
-        for url in (self.url, self.url.replace("127.0.0.1", "localhost")):
-            with self.assertRaises(requests.HTTPError):
-                _download(url, session=session)
+        self.refusals[0] = 1
+        self.assertEqual(_download(self.url, session=create_session_with_retries()), self.SITEMAP)
         self.assertEqual(len(self.hits), 2)
-        self.assertIn(429, session.get_adapter("https://api.vectara.io/").max_retries.status_forcelist)
 
-    def test_robots_discovery_does_not_retry_429(self):
+    def test_robots_fetch_retries_429(self):
         from core.spider import _robots_directives
 
-        session = create_session_with_retries()
-        self.assertEqual(_robots_directives(self.url, session=session), [])
-        self.assertEqual(len(self.hits), 1)
+        self.refusals[0] = 1
+        root = self.url.rsplit("/", 1)[0]
+        self.assertEqual(_robots_directives(root, session=create_session_with_retries()),
+                         ["https://docs.example.com/sitemap.xml"])
+
+    def test_index_url_keeps_429_retries_for_other_crawlers(self):
+        ix = TestIndexerSkipsErrorPages()._make_indexer(200)
+        ix.session = create_session_with_retries()
+        ix.session.get = MagicMock(return_value=_http_error(429))
+        md_url = "https://docs.example.com/a.md"
+        ix.index_url(md_url, metadata={"url": md_url})
+        self.assertIn(429, ix.session.get_adapter(md_url).max_retries.status_forcelist)
 
 
 class TestAdaptiveRateController(unittest.TestCase):
@@ -559,6 +594,18 @@ class TestAdaptiveRateController(unittest.TestCase):
         self.controller.report_429("60")
         self.clock.now += 61
         self.controller.report_429("60")
+        self.assertEqual(self.controller.rate, 2)
+
+    def test_429_sent_before_the_pause_began_does_not_halve_again(self):
+        sent_at = self.clock.now
+        self.clock.now += 30  # slow browser loads: still in flight when the 429s start
+        self.controller.report_429("0", sent_at=sent_at)
+        self.clock.now += AdaptiveRateController.MIN_PAUSE + 1
+        for _ in range(7):
+            self.controller.report_429("0", sent_at=sent_at)
+        self.assertEqual(self.controller.rate, 4)
+        self.assertEqual(self.controller.pause_remaining(), 0)
+        self.controller.report_429("0", sent_at=self.clock.now)
         self.assertEqual(self.controller.rate, 2)
 
     def test_rate_has_a_floor(self):
@@ -647,6 +694,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
     def _worker(self, succeeded, status, retry_after=None):
         worker = PageCrawlWorker.__new__(PageCrawlWorker)
         worker.indexer = MagicMock()
+        worker.indexer.session = requests.Session()
         worker.indexer.index_url.return_value = succeeded
         worker.indexer.was_skipped.return_value = False
         worker.indexer.last_skip_reason = None
@@ -665,7 +713,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
     def test_429_is_rate_limited_and_reported_with_retry_after(self):
         worker = self._worker(False, 429, "60")
         self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_RATE_LIMITED)
-        worker.rate_controller.report_429.assert_called_once_with("60")
+        worker.rate_controller.report_429.assert_called_once_with("60", ANY)
         worker.rate_controller.report_ok.assert_not_called()
 
     def test_other_errors_are_failed_and_not_reported(self):
@@ -684,6 +732,19 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         with patch("core.utils.time.sleep") as sleep:
             worker.process(URL, source="web")
         self.assertEqual(sum(c.args[0] for c in sleep.call_args_list), 7)
+
+    def test_worker_leaves_429s_from_its_pages_to_the_controller(self):
+        worker = self._worker(True, 200)
+        worker.indexer.session = create_session_with_retries()
+        worker.process(URL, source="web")
+        self.assertNotIn(429, worker.indexer.session.get_adapter(URL).max_retries.status_forcelist)
+
+    def test_worker_without_a_controller_keeps_429_retries(self):
+        worker = self._worker(True, 200)
+        worker.rate_controller = None
+        worker.indexer.session = create_session_with_retries()
+        worker.process(URL, source="web")
+        self.assertIn(429, worker.indexer.session.get_adapter(URL).max_retries.status_forcelist)
 
     def test_worker_without_a_controller_still_runs(self):
         worker = self._worker(True, 200)
@@ -756,7 +817,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker = self._worker(True, 200, "60")
         worker.indexer.last_throttled = True
         self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_INDEXED)
-        worker.rate_controller.report_429.assert_called_once_with("60")
+        worker.rate_controller.report_429.assert_called_once_with("60", ANY)
 
     def test_rescued_pages_do_not_count_towards_giving_up(self):
         controller = AdaptiveRateController(max_rate=8)

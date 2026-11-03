@@ -22,10 +22,7 @@ from scrapy.spiders.sitemap import iterloc
 from core.crawl_tracker import CrawlShutdownException
 from core.indexer import Indexer
 from core.indexer_utils import auth_redirect_reason, is_auth_host
-from core.utils import (
-    img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions,
-    url_matches_patterns, leave_429_to_caller,
-)
+from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -415,7 +412,6 @@ def _download(url: str, session=None) -> bytes:
     }
     """GET *url* and transparently gunzip if needed."""
     if session:
-        leave_429_to_caller(session, url)
         resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
     else:
         resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
@@ -476,7 +472,6 @@ def _robots_directives(site_root: str, session=None) -> list[str]:
     robots_url = urljoin(site_root, "/robots.txt")
     try:
         if session:
-            leave_429_to_caller(session, robots_url)
             txt = session.get(robots_url, timeout=10).text
         else:
             txt = requests.get(robots_url, timeout=10).text

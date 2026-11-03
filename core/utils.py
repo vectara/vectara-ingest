@@ -314,30 +314,36 @@ class LoggingAdapter(HTTPAdapter):
 def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
-    logging_adapter = _retrying_adapter(retries, DEFAULT_RETRY_STATUS_CODES, respect_retry_after=True)
+    retry_strategy = Retry(
+        total=retries,
+        status_forcelist=DEFAULT_RETRY_STATUS_CODES,
+        backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
+        raise_on_status=False,
+        respect_retry_after_header=True,
+        allowed_methods=DEFAULT_RETRY_METHODS,
+    )
+    logging_adapter = LoggingAdapter(max_retries=retry_strategy)
     session.mount('http://', logging_adapter)
     session.mount('https://', logging_adapter)
     return session
 
-def _retrying_adapter(retries: int, status_codes: list, respect_retry_after: bool) -> "LoggingAdapter":
-    return LoggingAdapter(max_retries=Retry(
-        total=retries,
-        status_forcelist=status_codes,
-        backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
-        raise_on_status=False,
-        respect_retry_after_header=respect_retry_after,
-        allowed_methods=DEFAULT_RETRY_METHODS,
-    ))
+class _Retry429ToCaller(Retry):
+    """urllib3 retries a 429 carrying Retry-After even when 429 isn't in status_forcelist."""
+    RETRY_AFTER_STATUS_CODES = Retry.RETRY_AFTER_STATUS_CODES - {429}
+
 
 def leave_429_to_caller(session: requests.Session, url: str) -> None:
     """Stop `session` retrying 429s from url's host, so the crawl's rate controller hears about
-    them at once. Other hosts, such as the Vectara API, keep their retries. Retry-After has to
-    be off too: urllib3 retries a 429 carrying it even when 429 isn't in status_forcelist."""
+    them at once. Everything else the session retries for that host is kept, and other hosts,
+    such as the Vectara API, are untouched."""
     parts = urlsplit(url)
     prefix = f"{parts.scheme}://{parts.netloc}/"
-    if prefix not in session.adapters:
-        status_codes = [code for code in DEFAULT_RETRY_STATUS_CODES if code != 429]
-        session.mount(prefix, _retrying_adapter(DEFAULT_RETRY_ATTEMPTS, status_codes, respect_retry_after=False))
+    if prefix in session.adapters:
+        return
+    adapter = session.get_adapter(url)
+    retry = adapter.max_retries
+    params = {**vars(retry), "status_forcelist": set(retry.status_forcelist or ()) - {429}}
+    session.mount(prefix, type(adapter)(max_retries=_Retry429ToCaller(**params)))
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
     """
@@ -657,6 +663,7 @@ class AdaptiveRateController:
         self.rate = max_rate
         self._next_slot = 0.0
         self._paused_until = 0.0
+        self._pause_started = 0.0
         self._failed_pauses = 0
 
     def acquire(self) -> Optional[float]:
@@ -668,13 +675,19 @@ class AdaptiveRateController:
         self._next_slot = start + 1 / self.rate
         return start - now
 
-    def report_429(self, retry_after: Optional[str] = None):
+    def report_429(self, retry_after: Optional[str] = None, sent_at: Optional[float] = None):
+        """`sent_at` is the time.monotonic() at which the refused request was sent. A request
+        sent before the last pause began belongs to the burst that pause already handled: slow
+        browser loads can return after a short pause has ended."""
         now = time.monotonic()
+        if sent_at is not None and sent_at < self._pause_started:
+            return
         try:
             pause = max(min(int(retry_after), self.MAX_PAUSE), self.MIN_PAUSE)
         except (TypeError, ValueError):
             pause = self.DEFAULT_PAUSE
         if now >= self._paused_until:
+            self._pause_started = now
             self.rate = max(self.rate / 2, self.MIN_RATE)
             self._failed_pauses += 1
             logger.warning(f"HTTP 429: pausing crawl for {pause}s, rate now {self.rate:.1f} pages/s")

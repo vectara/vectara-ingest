@@ -3,13 +3,14 @@ import requests
 import logging
 import psutil
 import os
+import time
 
 from core.crawler import Crawler
 from core.crawl_tracker import CrawlShutdownException
 from core.utils import (
     clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, AdaptiveRateController,
     setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint,
-    interruptible_sleep
+    interruptible_sleep, leave_429_to_caller
 )
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
@@ -290,6 +291,9 @@ class PageCrawlWorker(object):
                     if wait == 0:
                         break
                     interruptible_sleep(wait, self.shutdown_check)
+                if self.rate_controller is not None:
+                    leave_429_to_caller(self.indexer.session, url)
+                sent_at = time.monotonic()
                 succeeded = self.indexer.index_url(
                     url, metadata=metadata, html_processing=self.html_processing,
                     prior_fingerprint=prior_fingerprint)
@@ -306,12 +310,12 @@ class PageCrawlWorker(object):
             )
             return self.RESULT_FAILED
         if self.indexer.last_fetch_status == 429:
-            self._rate_call("report_429", self.indexer.last_retry_after)
+            self._rate_call("report_429", self.indexer.last_retry_after, sent_at)
             return self.RESULT_RATE_LIMITED
         # An "unchanged" skip returns True (success) but should be counted separately
         # from a freshly indexed page so the corpus is not needlessly churned.
         if self.indexer.last_throttled:
-            self._rate_call("report_429", self.indexer.last_retry_after)
+            self._rate_call("report_429", self.indexer.last_retry_after, sent_at)
         if succeeded:
             self._rate_call("report_ok")
         if self.indexer.was_skipped():
