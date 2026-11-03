@@ -277,6 +277,7 @@ class PageCrawlWorker(object):
         prior_fingerprint = self.prior_fingerprints.get(nu)
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
+        booked_at = time.monotonic()
         wait = self._rate_call("acquire")
         if wait is None:
             return self.RESULT_RATE_LIMITED
@@ -285,11 +286,12 @@ class PageCrawlWorker(object):
             with self.rate_limiter:
                 # A shared pause may have changed during either limiter's wait.
                 while True:
-                    wait = self._rate_call("recheck")
+                    wait = self._rate_call("recheck", booked_at)
                     if wait is None:
                         return self.RESULT_RATE_LIMITED
                     if wait == 0:
                         break
+                    booked_at = time.monotonic()  # recheck booked a new slot
                     interruptible_sleep(wait, self.shutdown_check)
                 if self.rate_controller is not None:
                     leave_429_to_caller(self.indexer.session, url)
@@ -749,7 +751,7 @@ class WebsiteCrawler(Crawler):
         for attempt in range(1, self.RATE_LIMIT_RETRY_PASSES + 1):
             urls, self.rate_limited_urls = self.rate_limited_urls, []
             if not urls:
-                return
+                break
             wait = max(retry_wait * attempt, self._rate_pause_left)
             logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
                         f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")

@@ -690,6 +690,22 @@ class TestAdaptiveRateController(unittest.TestCase):
         self.clock.now += 60.25
         self.assertEqual(self.controller.recheck(), 0)
 
+    def test_slot_booked_before_a_pause_is_rescheduled_after_it(self):
+        booked_at = self.clock.now
+        self.controller.rate = 1
+        waits = [self.controller.acquire() for _ in range(8)]  # slots 0..7s ahead
+        self.clock.now += 0.5
+        self.controller.report_429("5")  # pause until +5.5s, rate 0.5
+        self.clock.now = booked_at + waits[-1]
+        self.assertGreater(self.controller.recheck(booked_at), 0)
+
+    def test_slot_booked_after_the_pause_began_is_kept(self):
+        self.controller.report_429("5")
+        self.clock.now += 6
+        booked_at = self.clock.now
+        self.controller.acquire()
+        self.assertEqual(self.controller.recheck(booked_at), 0)
+
     def test_recheck_stops_even_when_the_final_pause_has_expired(self):
         self._fail_pauses(AdaptiveRateController.MAX_FAILED_PAUSES)
         self.assertEqual(self.controller.pause_remaining(), 0)
@@ -940,6 +956,12 @@ class TestRateLimitRetryPass(unittest.TestCase):
         crawler._new_single_process_worker.assert_called_once_with(1, {}, {})
         crawler._new_single_process_worker.return_value.cleanup.assert_called_once_with()
         self.assertEqual(len(self.controllers), 2)
+
+    def test_retry_worker_is_cleaned_up_when_the_first_pass_recovers_everything(self):
+        crawler = self._crawler([URL])
+        with patch("core.utils.time.sleep"):
+            crawler._retry_rate_limited("web", {}, {})
+        crawler._new_single_process_worker.return_value.cleanup.assert_called_once_with()
 
     def test_pages_still_limited_block_old_content_removal(self):
         crawler = self._crawler([URL], still_limited=[(URL,), (URL,)])
