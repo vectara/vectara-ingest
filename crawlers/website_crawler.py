@@ -745,6 +745,7 @@ class WebsiteCrawler(Crawler):
     def _retry_rate_limited(self, source: str, prior_fingerprints: dict, sitemap_lastmods: dict):
         """Retry pages that got a 429, one at a time and after a growing wait."""
         retry_wait = self.cfg.website_crawler.get("rate_limit_retry_wait", 60)
+        worker = None
         for attempt in range(1, self.RATE_LIMIT_RETRY_PASSES + 1):
             urls, self.rate_limited_urls = self.rate_limited_urls, []
             if not urls:
@@ -753,7 +754,12 @@ class WebsiteCrawler(Crawler):
             logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
                         f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
             interruptible_sleep(wait, self.check_shutdown)
-            self._dispatch_to_single_process(urls, 1, source, prior_fingerprints, sitemap_lastmods)
+            # One worker for all passes: no new login, browser or Indexer per pass, and it
+            # keeps what it learned, such as using only the browser on this site.
+            worker = worker or self._new_single_process_worker(1, prior_fingerprints, sitemap_lastmods)
+            self._crawl_with_worker(worker, urls, 1, source)
+        if worker:
+            worker.cleanup()
         if self.rate_limited_urls:
             self._crawl_interrupted = True
         if self.tracker:
@@ -850,6 +856,12 @@ class WebsiteCrawler(Crawler):
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str,
                                     prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Process URLs sequentially in a single process."""
+        crawl_worker = self._new_single_process_worker(num_per_second, prior_fingerprints, sitemap_lastmods)
+        self._crawl_with_worker(crawl_worker, urls, num_per_second, source)
+        crawl_worker.cleanup()
+
+    def _new_single_process_worker(self, num_per_second: int, prior_fingerprints: dict = None,
+                                   sitemap_lastmods: dict = None) -> PageCrawlWorker:
         # Stop Playwright from URL discovery to close its asyncio event loop
         # This allows worker to create fresh Playwright instance without conflicts
         if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
@@ -861,16 +873,19 @@ class WebsiteCrawler(Crawler):
                     logger.warning(f"Failed to stop Playwright: {e}")
         self.indexer.web_extractor = None
 
-        rate_controller = AdaptiveRateController(num_per_second)
         crawl_worker = PageCrawlWorker(
             self.cfg,
             num_per_second,
             prior_fingerprints,
-            sitemap_lastmods,
-            rate_controller
+            sitemap_lastmods
         )
         crawl_worker.setup()
         crawl_worker.shutdown_check = self.check_shutdown
+        return crawl_worker
+
+    def _crawl_with_worker(self, crawl_worker: PageCrawlWorker, urls: list, num_per_second: int, source: str):
+        rate_controller = AdaptiveRateController(num_per_second)
+        crawl_worker.rate_controller = rate_controller
         for inx, url in enumerate(urls):
             self.check_shutdown()
             if inx % 100 == 0:
@@ -878,8 +893,6 @@ class WebsiteCrawler(Crawler):
             result = crawl_worker.process(url, source=source)
             self._track_result(url, result)
         self._rate_pause_left = rate_controller.pause_remaining()
-        # Cleanup worker
-        crawl_worker.cleanup()
 
     def _remove_old_content_if_needed(self, crawled_urls: list):
         """

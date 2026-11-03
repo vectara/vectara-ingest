@@ -137,6 +137,13 @@ class TestExtractorReportsStatus(unittest.TestCase):
         extractor._scroll_to_bottom.assert_not_called()
         self.assertEqual(result["text"], "")
 
+    def test_browser_429_counts_as_a_working_browser(self):
+        extractor = _make_extractor(goto_status=429)
+        extractor.consecutive_failures = 2
+        _fetch(extractor)
+        self.assertEqual(extractor.consecutive_failures, 0)
+        self.assertEqual(extractor.browser_use_count, 1)
+
     def test_one_static_429_keeps_static_fetches(self):
         extractor = _make_extractor(goto_status=200)
         _fetch(extractor, static_status=429)
@@ -857,16 +864,20 @@ class TestRateLimitRetryPass(unittest.TestCase):
         crawler.shutdown_requested = False
         crawler.rate_limited_urls = list(urls)
         passes = iter(still_limited)
+        worker = MagicMock()
+        self.controllers = []  # one per pass
+        self.limited = ()
 
-        def dispatch(urls, num_per_second, source, prior_fingerprints, sitemap_lastmods):
-            self.assertEqual(num_per_second, 1)
-            limited = next(passes, ())
-            for url in urls:
-                result = (PageCrawlWorker.RESULT_RATE_LIMITED if url in limited
-                          else PageCrawlWorker.RESULT_INDEXED)
-                crawler._track_result(url, result)
+        def process(url, source):
+            if not self.controllers or self.controllers[-1] is not worker.rate_controller:
+                self.assertEqual(worker.rate_controller.max_rate, 1)
+                self.controllers.append(worker.rate_controller)
+                self.limited = next(passes, ())
+            return (PageCrawlWorker.RESULT_RATE_LIMITED if url in self.limited
+                    else PageCrawlWorker.RESULT_INDEXED)
 
-        crawler._dispatch_to_single_process = MagicMock(side_effect=dispatch)
+        worker.process.side_effect = process
+        crawler._new_single_process_worker = MagicMock(return_value=worker)
         return crawler
 
     def test_rate_limited_page_is_deferred_not_failed(self):
@@ -905,7 +916,7 @@ class TestRateLimitRetryPass(unittest.TestCase):
         with patch("core.utils.time.sleep") as sleep:
             crawler._retry_rate_limited("web", {}, {})
         sleep.assert_not_called()
-        crawler._dispatch_to_single_process.assert_not_called()
+        crawler._new_single_process_worker.assert_not_called()
 
     def test_retry_waits_out_the_pause_the_site_asked_for(self):
         crawler = self._crawler([URL])
@@ -920,7 +931,15 @@ class TestRateLimitRetryPass(unittest.TestCase):
         with patch("core.utils.time.sleep") as sleep, self.assertRaises(CrawlShutdownException):
             crawler._retry_rate_limited("web", {}, {})
         sleep.assert_called_once()
-        crawler._dispatch_to_single_process.assert_not_called()
+        crawler._new_single_process_worker.assert_not_called()
+
+    def test_retry_passes_share_one_worker_with_a_fresh_controller_each(self):
+        crawler = self._crawler([URL], still_limited=[(URL,)])
+        with patch("core.utils.time.sleep"):
+            crawler._retry_rate_limited("web", {}, {})
+        crawler._new_single_process_worker.assert_called_once_with(1, {}, {})
+        crawler._new_single_process_worker.return_value.cleanup.assert_called_once_with()
+        self.assertEqual(len(self.controllers), 2)
 
     def test_pages_still_limited_block_old_content_removal(self):
         crawler = self._crawler([URL], still_limited=[(URL,), (URL,)])

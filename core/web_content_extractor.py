@@ -516,36 +516,36 @@ class WebContentExtractor(WebExtractorBase):
             result['status_code'] = response.status if response else None
             if response:
                 result['retry_after'] = response.headers.get('retry-after') or result['retry_after']
-            if result['status_code'] == 429:
-                return result
-            if result.get('throttled') and response and response.ok:
-                # Requests keep being refused but the browser isn't, so more static fetches
-                # only add 429s, each pausing the crawl for a page the browser can fetch.
-                self.static_refusals += 1
-                if self.static_refusals >= self.STATIC_REFUSALS_BEFORE_BROWSER_ONLY:
-                    logger.warning(f"Static fetch refused {self.static_refusals} times in a row "
-                                   f"but the browser wasn't: using the browser only from here on")
-                    self.skip_static_prefetch = True
-            logger.debug(f"Navigation complete for {url}, starting post-load processing")
-            page.wait_for_timeout(self.post_load_timeout * 1000)
-            self._scroll_to_bottom(page)
+            # A 429 page isn't worth waiting for or reading.
+            if result['status_code'] != 429:
+                if result.get('throttled') and response and response.ok:
+                    # Requests keep being refused but the browser isn't, so more static fetches
+                    # only add 429s, each pausing the crawl for a page the browser can fetch.
+                    self.static_refusals += 1
+                    if self.static_refusals >= self.STATIC_REFUSALS_BEFORE_BROWSER_ONLY:
+                        logger.warning(f"Static fetch refused {self.static_refusals} times in a row "
+                                       f"but the browser wasn't: using the browser only from here on")
+                        self.skip_static_prefetch = True
+                logger.debug(f"Navigation complete for {url}, starting post-load processing")
+                page.wait_for_timeout(self.post_load_timeout * 1000)
+                self._scroll_to_bottom(page)
 
-            result['title'] = page.title()
-            result['url'] = page.url
+                result['title'] = page.title()
+                result['url'] = page.url
 
-            # Remove specified elements BEFORE capturing HTML snapshot
-            self._remove_elements(page, html_processing)
-            result['html'] = page.content()
+                # Remove specified elements BEFORE capturing HTML snapshot
+                self._remove_elements(page, html_processing)
+                result['html'] = page.content()
 
-            # Extract content
-            result['text'] = self._extract_text_content(page, remove_code)
-            result['links'] = self._extract_links(page)
+                # Extract content
+                result['text'] = self._extract_text_content(page, remove_code)
+                result['links'] = self._extract_links(page)
 
-            if extract_tables:
-                result['tables'] = self._extract_tables(page)
+                if extract_tables:
+                    result['tables'] = self._extract_tables(page)
 
-            if extract_images:
-                result['images'] = self._extract_images(page)
+                if extract_images:
+                    result['images'] = self._extract_images(page)
 
         except PlaywrightTimeoutError:
             logger.info(f"Page loading timed out for {url} after {nav_timeout}ms")
@@ -574,7 +574,7 @@ class WebContentExtractor(WebExtractorBase):
             self._reset_browser_if_needed()
 
         # If browser also failed, log it — static pre-fetch already ran above.
-        if not result['html']:
+        if not result['html'] and result['status_code'] != 429:
             logger.warning(f"Both static and browser fetch failed for {url}")
 
         logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
