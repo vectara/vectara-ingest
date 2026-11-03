@@ -22,7 +22,10 @@ from scrapy.spiders.sitemap import iterloc
 from core.crawl_tracker import CrawlShutdownException
 from core.indexer import Indexer
 from core.indexer_utils import auth_redirect_reason, is_auth_host
-from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
+from core.utils import (
+    img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions,
+    url_matches_patterns, leave_429_to_caller,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -86,6 +89,8 @@ def recursive_crawl(url: str, depth: int,
                 rate_controller.report_429(res.get('retry_after'))
             return visited
         if rate_controller:
+            if res.get('throttled'):
+                rate_controller.report_429(res.get('retry_after'))
             rate_controller.report_ok()
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
@@ -410,6 +415,7 @@ def _download(url: str, session=None) -> bytes:
     }
     """GET *url* and transparently gunzip if needed."""
     if session:
+        leave_429_to_caller(session, url)
         resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
     else:
         resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
@@ -470,6 +476,7 @@ def _robots_directives(site_root: str, session=None) -> list[str]:
     robots_url = urljoin(site_root, "/robots.txt")
     try:
         if session:
+            leave_429_to_caller(session, robots_url)
             txt = session.get(robots_url, timeout=10).text
         else:
             txt = requests.get(robots_url, timeout=10).text

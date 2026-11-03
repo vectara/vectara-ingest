@@ -282,6 +282,14 @@ class PageCrawlWorker(object):
         interruptible_sleep(wait, self.shutdown_check)
         try:
             with self.rate_limiter:
+                # A shared pause may have changed during either limiter's wait.
+                while True:
+                    wait = self._rate_call("recheck")
+                    if wait is None:
+                        return self.RESULT_RATE_LIMITED
+                    if wait == 0:
+                        break
+                    interruptible_sleep(wait, self.shutdown_check)
                 succeeded = self.indexer.index_url(
                     url, metadata=metadata, html_processing=self.html_processing,
                     prior_fingerprint=prior_fingerprint)
@@ -289,6 +297,8 @@ class PageCrawlWorker(object):
                 logging.info(f"[Worker {os.getpid()}] Indexing failed for {url}")
             else:
                 logging.info(f"[Worker {os.getpid()}] Indexing {url} was successful")
+        except CrawlShutdownException:
+            raise
         except Exception as e:
             import traceback
             logging.error(
@@ -579,13 +589,16 @@ class WebsiteCrawler(Crawler):
                         if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
                     ]
             elif pages_source == "crawl":
+                rate_controller = AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1))
                 urls_set = recursive_crawl(
                     homepage, max_depth,
                     pos_patterns=self.pos_patterns, neg_patterns=self.neg_patterns,
                     indexer=self.indexer, visited=set(), verbose=self.indexer.verbose,
-                    rate_controller=AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1)),
+                    rate_controller=rate_controller,
                     sleep=lambda seconds: interruptible_sleep(seconds, self.check_shutdown)
                 )
+                # Honor the last page's cooldown before the next homepage or indexing.
+                interruptible_sleep(rate_controller.pause_remaining(), self.check_shutdown)
                 urls = clean_urls(urls_set, keep_query_params)
             else:
                 logger.info(f"Unknown pages_source: {pages_source}")

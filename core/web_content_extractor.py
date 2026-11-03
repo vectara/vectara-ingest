@@ -659,7 +659,9 @@ class WebContentExtractor(WebExtractorBase):
                                 "type": "pdf",
                                 "url": response.url,
                                 "content": pdf_bytes,
-                                "headers": dict(response.headers)
+                                "headers": dict(response.headers),
+                                "status_code": response.status,
+                                "retry_after": response.headers.get("retry-after"),
                             }
                         else:
                             # Close resources before returning

@@ -242,6 +242,22 @@ class TestScrapyExtractorReportsStatus(unittest.TestCase):
 
 class TestInlinePdf429(unittest.TestCase):
 
+    def test_browser_fallback_pdf_reports_status(self):
+        extractor = _make_extractor(goto_status=429)
+        page = extractor.browser.new_context.return_value.new_page.return_value
+        page.expect_download.return_value.__enter__.side_effect = TimeoutError("no download")
+        page.goto.return_value = SimpleNamespace(
+            status=429, url=URL, headers={"content-type": "application/pdf", "retry-after": "60"},
+            body=lambda: b"refused",
+        )
+        errors = SimpleNamespace(TargetClosedError=type("TargetClosedError", (Exception,), {}),
+                                 Error=type("PlaywrightError", (Exception,), {}))
+        with patch.dict(sys.modules, {"playwright._impl": MagicMock(), "playwright._impl._errors": errors}), \
+                patch("core.web_content_extractor.requests.head", side_effect=requests.ConnectionError):
+            result = extractor.check_download_or_pdf(URL)
+        self.assertEqual(result["status_code"], 429)
+        self.assertEqual(result["retry_after"], "60")
+
     def test_get_status_is_returned_with_the_pdf(self):
         extractor = _make_extractor()
         head = _http_error(200, {"content-type": "application/pdf"})
@@ -293,6 +309,39 @@ class TestDiscovery429(unittest.TestCase):
         controller.acquire.return_value = 7
         _, sleep = self._crawl_with_controller(controller, [429])
         sleep.assert_called_once_with(7)
+
+    def test_static_429_rescued_by_browser_slows_discovery(self):
+        controller = MagicMock()
+        controller.acquire.return_value = 0
+        indexer = MagicMock()
+        indexer.fetch_page_contents.return_value = {
+            "url": URL, "links": [], "status_code": 200, "throttled": True, "retry_after": "60",
+        }
+        recursive_crawl(URL + "/page", 1, [re.compile(".*")], [], indexer,
+                        rate_controller=controller, sleep=MagicMock())
+        self.assertEqual([c[0] for c in controller.method_calls], ["acquire", "report_429", "report_ok"])
+        controller.report_429.assert_called_once_with("60")
+
+    def test_discovery_waits_out_cooldown_before_next_homepage_or_indexing(self):
+        crawler = WebsiteCrawler.__new__(WebsiteCrawler)
+        crawler.cfg = OmegaConf.create({"website_crawler": {"pages_source": "crawl"}})
+        crawler.indexer = MagicMock(verbose=False)
+        crawler.pos_patterns = [re.compile(".*")]
+        crawler.neg_patterns = []
+        crawler.check_shutdown = MagicMock()
+        clock = FakeClock()
+        fetched = []
+
+        def fetch(url):
+            fetched.append(clock.now)
+            return {"url": url, "links": [], "status_code": 429, "retry_after": "60"}
+
+        crawler.indexer.fetch_page_contents.side_effect = fetch
+        with patch("core.utils.time.monotonic", clock), \
+                patch("core.utils.time.sleep", lambda seconds: setattr(clock, "now", clock.now + seconds)):
+            crawler._discover_urls_with_internal_crawler([URL + "/first", URL + "/other"], 1, False)
+        self.assertEqual(fetched, [1000, 1060])
+        self.assertEqual(clock.now, 1120)
 
     def test_nothing_is_fetched_once_the_controller_gives_up(self):
         controller = MagicMock()
@@ -464,6 +513,23 @@ class TestSession429Retries(unittest.TestCase):
         self.assertIn(429, adapter.max_retries.status_forcelist)
         self.assertTrue(adapter.max_retries.respect_retry_after_header)
 
+    def test_sitemaps_on_different_hosts_do_not_retry_429(self):
+        from core.spider import _download
+
+        session = create_session_with_retries()
+        for url in (self.url, self.url.replace("127.0.0.1", "localhost")):
+            with self.assertRaises(requests.HTTPError):
+                _download(url, session=session)
+        self.assertEqual(len(self.hits), 2)
+        self.assertIn(429, session.get_adapter("https://api.vectara.io/").max_retries.status_forcelist)
+
+    def test_robots_discovery_does_not_retry_429(self):
+        from core.spider import _robots_directives
+
+        session = create_session_with_retries()
+        self.assertEqual(_robots_directives(self.url, session=session), [])
+        self.assertEqual(len(self.hits), 1)
+
 
 class TestAdaptiveRateController(unittest.TestCase):
 
@@ -561,6 +627,20 @@ class TestAdaptiveRateController(unittest.TestCase):
         self.clock.now += 20
         self.assertEqual(self.controller.pause_remaining(), 40)
 
+    def test_rescheduled_workers_keep_the_reduced_rate_spacing(self):
+        self.controller.acquire()
+        self.controller.acquire()
+        self.controller.report_429("60")
+        self.assertEqual(self.controller.recheck(), 60)
+        self.assertEqual(self.controller.recheck(), 60.25)
+        self.clock.now += 60.25
+        self.assertEqual(self.controller.recheck(), 0)
+
+    def test_recheck_stops_even_when_the_final_pause_has_expired(self):
+        self._fail_pauses(AdaptiveRateController.MAX_FAILED_PAUSES)
+        self.assertEqual(self.controller.pause_remaining(), 0)
+        self.assertIsNone(self.controller.recheck())
+
 
 class TestPageCrawlWorkerRateControl(unittest.TestCase):
 
@@ -579,6 +659,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker.rate_limiter = MagicMock()
         worker.rate_controller = MagicMock()
         worker.rate_controller.acquire.return_value = 0
+        worker.rate_controller.recheck.return_value = 0
         return worker
 
     def test_429_is_rate_limited_and_reported_with_retry_after(self):
@@ -608,6 +689,56 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker = self._worker(True, 200)
         worker.rate_controller = None
         self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_INDEXED)
+
+    def test_worker_rechecks_pauses_imposed_and_extended_while_waiting(self):
+        for extend in (False, True):
+            with self.subTest(extend=extend):
+                clock = FakeClock()
+                controller = AdaptiveRateController(max_rate=2)
+                worker = self._worker(True, 200)
+                worker.rate_controller = controller
+                pauses = []
+
+                def sleep(seconds):
+                    clock.now += seconds
+                    if not pauses or (extend and len(pauses) == 1 and clock.now >= 1030):
+                        controller.report_429("60")
+                        pauses.append(clock.now + 60)
+
+                def index_url(*args, **kwargs):
+                    self.assertGreaterEqual(clock.now, pauses[-1])
+                    return True
+
+                worker.indexer.index_url.side_effect = index_url
+                with patch("core.utils.time.monotonic", clock), patch("core.utils.time.sleep", sleep):
+                    controller.acquire()  # Another worker reserved the first slot.
+                    result = worker.process(URL, source="web")
+                self.assertEqual(result, PageCrawlWorker.RESULT_INDEXED)
+                self.assertEqual(len(pauses), 2 if extend else 1)
+                worker.indexer.index_url.assert_called_once()
+
+    def test_worker_rechecks_pause_after_the_per_worker_limiter(self):
+        clock = FakeClock()
+        controller = AdaptiveRateController(max_rate=2)
+        worker = self._worker(True, 200)
+        worker.rate_controller = controller
+        worker.rate_limiter.__enter__.side_effect = lambda: controller.report_429("60")
+
+        def index_url(*args, **kwargs):
+            self.assertEqual(controller.pause_remaining(), 0)
+            return True
+
+        worker.indexer.index_url.side_effect = index_url
+        with patch("core.utils.time.monotonic", clock), \
+                patch("core.utils.time.sleep", lambda seconds: setattr(clock, "now", clock.now + seconds)):
+            self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_INDEXED)
+        worker.indexer.index_url.assert_called_once()
+
+    def test_waiting_worker_stops_when_the_controller_gives_up(self):
+        worker = self._worker(True, 200)
+        worker.rate_controller.recheck.return_value = None
+        self.assertEqual(worker.process(URL, source="web"), PageCrawlWorker.RESULT_RATE_LIMITED)
+        worker.indexer.index_url.assert_not_called()
 
     def test_unchanged_page_recovers_the_rate(self):
         worker = self._worker(True, 200)
@@ -641,6 +772,14 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
     def test_a_shutdown_during_a_wait_stops_the_worker(self):
         worker = self._worker(True, 200)
         worker.rate_controller.acquire.return_value = 3
+        worker.shutdown_check = MagicMock(side_effect=CrawlShutdownException)
+        with patch("core.utils.time.sleep"), self.assertRaises(CrawlShutdownException):
+            worker.process(URL, source="web")
+        worker.indexer.index_url.assert_not_called()
+
+    def test_a_shutdown_during_a_rescheduled_wait_stops_the_worker(self):
+        worker = self._worker(True, 200)
+        worker.rate_controller.recheck.return_value = 3
         worker.shutdown_check = MagicMock(side_effect=CrawlShutdownException)
         with patch("core.utils.time.sleep"), self.assertRaises(CrawlShutdownException):
             worker.process(URL, source="web")

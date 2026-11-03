@@ -683,6 +683,18 @@ class AdaptiveRateController:
                                f"not fetching the remaining pages in this pass")
         self._paused_until = max(self._paused_until, now + pause)
 
+    def recheck(self) -> Optional[float]:
+        """Validate a reserved slot before fetching; reschedule if a pause overtook it.
+
+        Reserving again keeps waiting workers spaced at the reduced rate rather than
+        releasing all of them together when the cooldown expires.
+        """
+        if self._failed_pauses >= self.MAX_FAILED_PAUSES:
+            return None
+        if self.pause_remaining() > 0:
+            return self.acquire()
+        return 0
+
     def report_ok(self):
         self._failed_pauses = 0
         if time.monotonic() >= self._paused_until:
