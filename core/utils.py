@@ -62,7 +62,10 @@ DOC_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".pdf", ".ps", ".txt", ".md"
 # Dataframe extensions: CSV and Excel files (handled separately with DataframeParser)
 DATAFRAME_EXTENSIONS = [".csv", ".xls", ".xlsx"]
 ARCHIVE_EXTENSIONS = [".zip", ".gz", ".tar", ".bz2", ".7z", ".rar"]
-BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + DOC_EXTENSIONS
+# DOC_EXTENSIONS without web pages: the URLs the website and docs crawlers index as files,
+# without reading their links. .html/.htm are documents only as attachments.
+WEB_FILE_EXTENSIONS = [ext for ext in DOC_EXTENSIONS if ext not in (".html", ".htm")]
+BINARY_EXTENSIONS = ARCHIVE_EXTENSIONS + IMG_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + WEB_FILE_EXTENSIONS
 
 # HTTP configurations
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
