@@ -227,6 +227,13 @@ class TestStaticPathMatchesBrowser(unittest.TestCase):
         result, _ = self._fetch(self._html("<table><tr><td>x</td></tr></table>"))
         self.assertEqual(result["tables"], [])
 
+    def test_remove_code_leaves_code_out_of_tables(self):
+        """The browser removes code before extracting tables, so the static path must too."""
+        table = "<table><tr><td>cell</td><td><pre>codeblock</pre></td></tr></table>"
+        result, _ = self._fetch(self._html(table), extract_tables=True, remove_code=True)
+        self.assertEqual(result["tables"], ["<table><tr><td>cell</td><td></td></tr></table>"])
+        self.assertIn("codeblock", result["html"])
+
     def test_removed_elements_leave_their_tables_out(self):
         html = self._html('<div class="ad"><table><tr><td>ad</td></tr></table></div>')
         result, _ = self._fetch(html, extract_tables=True, html_processing={"classes_to_remove": ["ad"]})

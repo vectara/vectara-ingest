@@ -420,7 +420,8 @@ class WebContentExtractor(WebExtractorBase):
                     soup = BeautifulSoup(static_resp.text, 'html.parser')
                     # Same order as the browser path: title, then the removals before html is
                     # captured, so remove_boilerplate (which re-extracts from res['html']) sees
-                    # them. remove_code only affects the text, and is left out of the minimum.
+                    # them. remove_code applies after the html snapshot, to the text and the
+                    # tables, and is left out of the minimum.
                     title = soup.title.string if soup.title else ''
                     remove_html_elements(soup, html_processing)
                     static_text = soup.get_text(separator=' ', strip=True)
@@ -429,13 +430,13 @@ class WebContentExtractor(WebExtractorBase):
                         result['url'] = static_resp.url
                         result['title'] = title
                         result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
-                        if extract_tables:
-                            # outerHTML of each table, as _extract_tables returns from the browser
-                            result['tables'] = [str(t) for t in soup.find_all('table')]
                         if remove_code:
                             for element in soup(['code', 'pre']):
                                 element.decompose()
                             static_text = soup.get_text(separator=' ', strip=True)
+                        if extract_tables:
+                            # outerHTML of each table, as _extract_tables returns from the browser
+                            result['tables'] = [str(t) for t in soup.find_all('table')]
                         result['text'] = static_text
                         # Extract images with same filtering as the browser path
                         from urllib.parse import urljoin
