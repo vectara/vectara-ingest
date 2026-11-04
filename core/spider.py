@@ -20,7 +20,8 @@ from scrapy.spiders.sitemap import iterloc
 
 from core.indexer import Indexer
 from core.indexer_utils import auth_redirect_reason, is_auth_host
-from core.utils import img_extensions, audio_extensions, video_extensions, doc_extensions, archive_extensions, url_matches_patterns
+from core.utils import (img_extensions, audio_extensions, video_extensions, archive_extensions, url_matches_patterns,
+                        WEB_FILE_EXTENSIONS)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def recursive_crawl(url: str, depth: int,
     visited.add(url)
 
     # for document files (like PPT, DOCX, etc) we don't extract links from the URL, but the link itself is included. 
-    if any([current_path_lower.endswith(ext) for ext in doc_extensions]):
+    if any([current_path_lower.endswith(ext) for ext in WEB_FILE_EXTENSIONS]):
         return visited
 
     # if we reached the maximum depth, stop and return the visited URLs
@@ -93,7 +94,7 @@ def recursive_crawl(url: str, depth: int,
     return set(visited)
 
 DISALLOWED_REDIRECT_EXTENSIONS = tuple(
-    ext.lower() for ext in (doc_extensions + archive_extensions + img_extensions)
+    ext.lower() for ext in (WEB_FILE_EXTENSIONS + archive_extensions + img_extensions)
 )
 class FilterRedirectsByTypeMiddleware(RedirectMiddleware):
 
@@ -187,7 +188,7 @@ class LinkSpider(scrapy.Spider):
         parsed_url = urlparse(url)
         path_lower = parsed_url.path.lower()
 
-        if any([path_lower.endswith(ext) for ext in (doc_extensions + archive_extensions + img_extensions + audio_extensions + video_extensions)]):
+        if any([path_lower.endswith(ext) for ext in (WEB_FILE_EXTENSIONS + archive_extensions + img_extensions + audio_extensions + video_extensions)]):
             return False
 
         if parsed_url.scheme.lower() not in ['http', 'https']:
@@ -227,7 +228,7 @@ class LinkSpider(scrapy.Spider):
             return
         
         # For document files, yield the URL but do not attempt to extract links.
-        if any([response_path_lower.endswith(ext) for ext in doc_extensions]):
+        if any([response_path_lower.endswith(ext) for ext in WEB_FILE_EXTENSIONS]):
             extract_links = False
             
         # 1) If this URL itself is valid, yield it
