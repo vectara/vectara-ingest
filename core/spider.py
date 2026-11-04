@@ -88,7 +88,9 @@ def recursive_crawl(url: str, depth: int,
         if rate_controller:
             if res.get('throttled'):
                 rate_controller.report_429(res.get('retry_after'))
-            rate_controller.report_ok()
+            # A failed fetch (no html, or an error page) is no sign the site has stopped refusing.
+            if res.get('html') and (res.get('status_code') or 200) < 400:
+                rate_controller.report_ok()
         new_urls = [urljoin(url, u) if _url_is_relative(u) else u for u in res['links']]  # convert all new URLs to absolute URLs
         new_urls = [u for u in new_urls 
                     if      u not in visited and u.startswith('http') and 

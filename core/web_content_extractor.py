@@ -410,8 +410,7 @@ class WebContentExtractor(WebExtractorBase):
         # entirely — unauthenticated requests.get follows redirects to the IdP
         # sign-in page, which passes the 500-char threshold and would otherwise
         # prevent the authenticated Playwright context from ever running.
-        # Tables only come from the browser DOM, so a static fetch would be wasted.
-        if not self.skip_static_prefetch and not extract_tables:
+        if not self.skip_static_prefetch:
             try:
                 from bs4 import BeautifulSoup
                 static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
@@ -430,6 +429,9 @@ class WebContentExtractor(WebExtractorBase):
                         result['url'] = static_resp.url
                         result['title'] = title
                         result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                        if extract_tables:
+                            # outerHTML of each table, as _extract_tables returns from the browser
+                            result['tables'] = [str(t) for t in soup.find_all('table')]
                         if remove_code:
                             for element in soup(['code', 'pre']):
                                 element.decompose()

@@ -216,12 +216,21 @@ class TestStaticPathMatchesBrowser(unittest.TestCase):
         result, _ = self._fetch(self._html(), html_processing={"tags_to_remove": ["head"]})
         self.assertEqual(result["title"], "Real title")
 
-    def test_table_extraction_skips_the_static_fetch(self):
-        extractor = _make_extractor(goto_status=200)
-        with patch("core.web_content_extractor.requests.get") as get, \
-                patch("core.web_content_extractor.PlaywrightTimeoutError", TimeoutError):
-            extractor.fetch_page_contents(URL, extract_tables=True)
-        get.assert_not_called()
+    def test_static_page_serves_tables_in_the_browser_format(self):
+        """Tables are each table's outerHTML, as `_extract_tables` returns from the browser."""
+        table = "<table><tr><td>x</td></tr></table>"
+        result, page = self._fetch(self._html(table), extract_tables=True)
+        page.goto.assert_not_called()
+        self.assertEqual(result["tables"], [table])
+
+    def test_tables_are_not_extracted_unless_requested(self):
+        result, _ = self._fetch(self._html("<table><tr><td>x</td></tr></table>"))
+        self.assertEqual(result["tables"], [])
+
+    def test_removed_elements_leave_their_tables_out(self):
+        html = self._html('<div class="ad"><table><tr><td>ad</td></tr></table></div>')
+        result, _ = self._fetch(html, extract_tables=True, html_processing={"classes_to_remove": ["ad"]})
+        self.assertEqual(result["tables"], [])
 
 
 class TestScrapyExtractorReportsStatus(unittest.TestCase):
@@ -291,12 +300,13 @@ class TestDiscovery429(unittest.TestCase):
         self.assertEqual(visited, {section})
         self.assertIs(indexer.discovery_rate_limited, True)
 
-    def _crawl_with_controller(self, controller, statuses):
+    def _crawl_with_controller(self, controller, statuses, html="<p>page</p>"):
         section = "https://docs.example.com/guide/"
         indexer = MagicMock()
         indexer.discovery_rate_limited = False
         indexer.fetch_page_contents.side_effect = [
-            {"url": section, "links": [f"{section}{status}/"], "status_code": status, "retry_after": "60"}
+            {"url": section, "links": [f"{section}{status}/"], "status_code": status, "retry_after": "60",
+             "html": html}
             for status in statuses
         ]
         sleep = MagicMock()
@@ -311,6 +321,13 @@ class TestDiscovery429(unittest.TestCase):
         controller.report_429.assert_called_once_with("60")
         controller.report_ok.assert_called_once_with()
 
+    def test_failed_fetches_do_not_count_as_success(self):
+        for statuses, html in (([503], "<p>Service Unavailable</p>"), ([None], "")):
+            controller = MagicMock()
+            controller.acquire.return_value = 0
+            self._crawl_with_controller(controller, statuses, html=html)
+            controller.report_ok.assert_not_called()
+
     def test_fetches_wait_for_the_controller(self):
         controller = MagicMock()
         controller.acquire.return_value = 7
@@ -323,6 +340,7 @@ class TestDiscovery429(unittest.TestCase):
         indexer = MagicMock()
         indexer.fetch_page_contents.return_value = {
             "url": URL, "links": [], "status_code": 200, "throttled": True, "retry_after": "60",
+            "html": "<p>page</p>",
         }
         recursive_crawl(URL + "/page", 1, [re.compile(".*")], [], indexer,
                         rate_controller=controller, sleep=MagicMock())
@@ -371,11 +389,35 @@ class TestDiscovery429(unittest.TestCase):
         crawler.indexer = MagicMock(discovery_rate_limited=False)
         session = requests.Session()
         crawler.indexer.session = session
-        crawler._flag_refused_sitemaps()
-        session.hooks["response"][0](_http_error(200))
-        self.assertIs(crawler.indexer.discovery_rate_limited, False)
-        session.hooks["response"][0](_http_error(429))
-        self.assertIs(crawler.indexer.discovery_rate_limited, True)
+        crawler.cfg = OmegaConf.create({"website_crawler": {"pages_source": "sitemap"}})
+        with crawler._flag_refused_sitemaps():
+            session.hooks["response"][0](_http_error(200))
+            self.assertIs(crawler.indexer.discovery_rate_limited, False)
+            session.hooks["response"][0](_http_error(429))
+            self.assertIs(crawler.indexer.discovery_rate_limited, True)
+
+    def test_sitemap_hook_is_removed_after_discovery(self):
+        """Vectara API calls share the session, so a 429 after discovery isn't a sitemap's."""
+        crawler = WebsiteCrawler.__new__(WebsiteCrawler)
+        crawler.indexer = MagicMock(discovery_rate_limited=False)
+        crawler.indexer.session = requests.Session()
+        crawler.cfg = OmegaConf.create({"website_crawler": {"urls": [URL], "pages_source": "sitemap"}})
+        hooks_during = []
+        crawler._discover_urls_with_internal_crawler = MagicMock(
+            side_effect=lambda *_: hooks_during.append(len(crawler.indexer.session.hooks["response"])) or [])
+        crawler._discover_urls()
+        self.assertEqual(hooks_during, [1])
+        self.assertEqual(crawler.indexer.session.hooks["response"], [])
+
+    def test_sitemap_hook_is_removed_when_discovery_fails(self):
+        crawler = WebsiteCrawler.__new__(WebsiteCrawler)
+        crawler.indexer = MagicMock(discovery_rate_limited=False)
+        crawler.indexer.session = requests.Session()
+        crawler.cfg = OmegaConf.create({"website_crawler": {"urls": [URL], "pages_source": "sitemap"}})
+        crawler._discover_urls_with_internal_crawler = MagicMock(side_effect=CrawlShutdownException)
+        with self.assertRaises(CrawlShutdownException):
+            crawler._discover_urls()
+        self.assertEqual(crawler.indexer.session.hooks["response"], [])
 
     def test_crawl_is_marked_interrupted(self):
         crawler = WebsiteCrawler.__new__(WebsiteCrawler)

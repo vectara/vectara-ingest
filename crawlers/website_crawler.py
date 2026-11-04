@@ -4,6 +4,7 @@ import logging
 import psutil
 import os
 import time
+from contextlib import contextmanager
 
 from core.crawler import Crawler
 from core.crawl_tracker import CrawlShutdownException
@@ -528,7 +529,7 @@ class WebsiteCrawler(Crawler):
         # Execute crawling based on method
         if crawl_method == "scrapy":
             return self._discover_urls_with_scrapy(base_urls, max_depth, scrapy_cookies)
-        else:
+        with self._flag_refused_sitemaps():
             return self._discover_urls_with_internal_crawler(base_urls, max_depth, keep_query_params)
 
     def _discover_urls_with_scrapy(self, base_urls: list, max_depth: int, scrapy_cookies: list) -> list:
@@ -553,23 +554,32 @@ class WebsiteCrawler(Crawler):
             cookies=scrapy_cookies
         )
 
+    @contextmanager
     def _flag_refused_sitemaps(self):
         """Mark discovery incomplete if a sitemap fetch gets a 429. The sitemap functions skip
-        a sitemap that fails, so a response hook is what can see it."""
+        a sitemap that fails, so a response hook is what can see it. The hook is removed on exit
+        because the session is also used for the Vectara API."""
+        if self.cfg.website_crawler.get("pages_source", "crawl") != "sitemap":
+            yield
+            return
+
         def flag_429(response, **_):
             if response.status_code == 429:
                 logger.warning(f"Sitemap fetch {response.url} got HTTP 429: its pages are not crawled")
                 self.indexer.discovery_rate_limited = True
-        self.indexer.session.hooks["response"].append(flag_429)
+        hooks = self.indexer.session.hooks["response"]
+        hooks.append(flag_429)
+        try:
+            yield
+        finally:
+            hooks.remove(flag_429)
 
     def _discover_urls_with_internal_crawler(self, base_urls: list, max_depth: int, keep_query_params: bool) -> list:
         """Discover URLs using internal Vectara-ingest crawler."""
         logger.info("Using internal Vectara-ingest method to crawl the website")
         all_urls = []
         pages_source = self.cfg.website_crawler.get("pages_source", "crawl")
-        if pages_source == "sitemap":
-            self._flag_refused_sitemaps()
-        
+
         for homepage in base_urls:
             urls = []
             
