@@ -8,6 +8,9 @@ from omegaconf import OmegaConf
 from core.utils import get_headers, remove_html_elements
 from core.web_extractor_base import WebExtractorBase
 
+# Removed before text and tables are extracted, on the browser and static paths
+BOILERPLATE_SELECTORS = ['header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement']
+
 logger = logging.getLogger(__name__)
 
 
@@ -261,9 +264,7 @@ class WebContentExtractor(WebExtractorBase):
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
         # Build selectors to remove as a second pass for common boilerplate
-        remove_selectors = [
-            'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
-        ]
+        remove_selectors = list(BOILERPLATE_SELECTORS)
         if remove_code:
             remove_selectors.extend(['code', 'pre'])
 
@@ -436,7 +437,10 @@ class WebContentExtractor(WebExtractorBase):
                             static_text = soup.get_text(separator=' ', strip=True)
                         if extract_tables:
                             # outerHTML of each table, as _extract_tables returns from the browser
-                            result['tables'] = [str(t) for t in soup.find_all('table')]
+                            # after _extract_text_content has removed the boilerplate
+                            boilerplate = {id(el) for el in soup.select(', '.join(BOILERPLATE_SELECTORS))}
+                            result['tables'] = [str(t) for t in soup.find_all('table')
+                                                if not any(id(el) in boilerplate for el in (t, *t.parents))]
                         result['text'] = static_text
                         # Extract images with same filtering as the browser path
                         from urllib.parse import urljoin

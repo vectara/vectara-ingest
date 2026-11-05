@@ -78,6 +78,7 @@ DEFAULT_RETRY_ATTEMPTS = 5
 DEFAULT_RETRY_STATUS_CODES = [429, 430, 443, 500, 502, 503, 504]
 DEFAULT_RETRY_BACKOFF_FACTOR = 1
 DEFAULT_RETRY_METHODS = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]
+MAX_RETRY_AFTER = 300  # seconds, so one bad header can't stall the crawl
 
 # MIME types
 AMBIGUOUS_MIME_TYPES = ['text/html', 'application/xml', 'text/xml', 'application/xhtml+xml']
@@ -311,10 +312,17 @@ class LoggingAdapter(HTTPAdapter):
         logger.debug(log_message)
         return response
 
+class _CappedRetry(Retry):
+    """urllib3 sleeps for the full Retry-After, and an hour-long one per retry would stall a crawl."""
+    def get_retry_after(self, response):
+        retry_after = super().get_retry_after(response)
+        return None if retry_after is None else min(retry_after, MAX_RETRY_AFTER)
+
+
 def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
-    retry_strategy = Retry(
+    retry_strategy = _CappedRetry(
         total=retries,
         status_forcelist=DEFAULT_RETRY_STATUS_CODES,
         backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
@@ -327,7 +335,7 @@ def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> reques
     session.mount('https://', logging_adapter)
     return session
 
-class _Retry429ToCaller(Retry):
+class _Retry429ToCaller(_CappedRetry):
     """urllib3 retries a 429 carrying Retry-After even when 429 isn't in status_forcelist."""
     RETRY_AFTER_STATUS_CODES = Retry.RETRY_AFTER_STATUS_CODES - {429}
 
@@ -650,12 +658,16 @@ class AdaptiveRateController:
     the first one in a pause changes the rate. After MAX_FAILED_PAUSES pauses in a row
     with no success between them, acquire() returns None: without that, a site that
     refuses everything costs one pause per page.
+
+    Workers pass time.monotonic() values (`booked_at`, `sent_at`) that are compared with the
+    controller's own. That relies on one clock for the whole machine, true on Linux and
+    macOS with the local ray.init the crawlers use, but not across Ray nodes.
     """
     MIN_RATE = 0.5
     RECOVERY_STEP = 0.1  # pages per second gained per successful page
     DEFAULT_PAUSE = 30   # seconds, when Retry-After is missing or an HTTP date
     MIN_PAUSE = 5        # seconds, so Retry-After: 0 still groups a burst into one pause
-    MAX_PAUSE = 300      # seconds, so one bad header can't stall the crawl
+    MAX_PAUSE = MAX_RETRY_AFTER
     MAX_FAILED_PAUSES = 10
 
     def __init__(self, max_rate: float):

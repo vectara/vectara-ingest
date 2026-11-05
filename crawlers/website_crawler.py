@@ -579,6 +579,9 @@ class WebsiteCrawler(Crawler):
         logger.info("Using internal Vectara-ingest method to crawl the website")
         all_urls = []
         pages_source = self.cfg.website_crawler.get("pages_source", "crawl")
+        # One controller for all homepages, like indexing: a fresh one per homepage would
+        # reset the reduced rate and the give-up count.
+        rate_controller = AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1))
 
         for homepage in base_urls:
             urls = []
@@ -605,7 +608,6 @@ class WebsiteCrawler(Crawler):
                         if url.startswith('http') and url_matches_patterns(url, self.pos_patterns, self.neg_patterns)
                     ]
             elif pages_source == "crawl":
-                rate_controller = AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1))
                 urls_set = recursive_crawl(
                     homepage, max_depth,
                     pos_patterns=self.pos_patterns, neg_patterns=self.neg_patterns,
@@ -758,20 +760,22 @@ class WebsiteCrawler(Crawler):
         """Retry pages that got a 429, one at a time and after a growing wait."""
         retry_wait = self.cfg.website_crawler.get("rate_limit_retry_wait", 60)
         worker = None
-        for attempt in range(1, self.RATE_LIMIT_RETRY_PASSES + 1):
-            urls, self.rate_limited_urls = self.rate_limited_urls, []
-            if not urls:
-                break
-            wait = max(retry_wait * attempt, self._rate_pause_left)
-            logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
-                        f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
-            interruptible_sleep(wait, self.check_shutdown)
-            # One worker for all passes: no new login, browser or Indexer per pass, and it
-            # keeps what it learned, such as using only the browser on this site.
-            worker = worker or self._new_single_process_worker(1, prior_fingerprints, sitemap_lastmods)
-            self._crawl_with_worker(worker, urls, 1, source)
-        if worker:
-            worker.cleanup()
+        try:
+            for attempt in range(1, self.RATE_LIMIT_RETRY_PASSES + 1):
+                urls, self.rate_limited_urls = self.rate_limited_urls, []
+                if not urls:
+                    break
+                wait = max(retry_wait * attempt, self._rate_pause_left)
+                logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
+                            f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
+                interruptible_sleep(wait, self.check_shutdown)
+                # One worker for all passes: no new login, browser or Indexer per pass, and it
+                # keeps what it learned, such as using only the browser on this site.
+                worker = worker or self._new_single_process_worker(1, prior_fingerprints, sitemap_lastmods)
+                self._crawl_with_worker(worker, urls, 1, source)
+        finally:
+            if worker:
+                worker.cleanup()
         if self.rate_limited_urls:
             self._crawl_interrupted = True
         if self.tracker:

@@ -234,6 +234,18 @@ class TestStaticPathMatchesBrowser(unittest.TestCase):
         self.assertEqual(result["tables"], ["<table><tr><td>cell</td><td></td></tr></table>"])
         self.assertIn("codeblock", result["html"])
 
+    def test_boilerplate_tables_are_left_out_as_on_the_browser_path(self):
+        """The browser removes header/footer/nav/aside/... before `_extract_tables` runs."""
+        table = "<table><tr><td>x</td></tr></table>"
+        boilerplate = "".join(f"<{tag}><table><tr><td>{tag}</td></tr></table></{tag}>"
+                              for tag in ("header", "footer", "nav", "aside"))
+        boilerplate += '<div class="sidebar"><table><tr><td>side</td></tr></table></div>'
+        boilerplate += '<table class="advertisement"><tr><td>ad</td></tr></table>'
+        boilerplate += "<footer>" + table + "</footer>"  # same markup as the kept table
+        result, _ = self._fetch(self._html(boilerplate + table), extract_tables=True)
+        self.assertEqual(result["tables"], [table])
+        self.assertIn("footer", result["text"])
+
     def test_removed_elements_leave_their_tables_out(self):
         html = self._html('<div class="ad"><table><tr><td>ad</td></tr></table></div>')
         result, _ = self._fetch(html, extract_tables=True, html_processing={"classes_to_remove": ["ad"]})
@@ -374,6 +386,20 @@ class TestDiscovery429(unittest.TestCase):
             crawler._discover_urls_with_internal_crawler([URL + "/first", URL + "/other"], 1, False)
         self.assertEqual(fetched, [1000, 1060])
         self.assertEqual(clock.now, 1120)
+
+    def test_homepages_share_one_discovery_controller(self):
+        """A fresh controller per homepage would reset the reduced rate and the give-up count."""
+        crawler = WebsiteCrawler.__new__(WebsiteCrawler)
+        crawler.cfg = OmegaConf.create({"website_crawler": {"pages_source": "crawl"}})
+        crawler.indexer = MagicMock(verbose=False)
+        crawler.pos_patterns = [re.compile(".*")]
+        crawler.neg_patterns = []
+        crawler.check_shutdown = MagicMock()
+        with patch("crawlers.website_crawler.recursive_crawl", return_value=set()) as crawl:
+            crawler._discover_urls_with_internal_crawler([URL + "/first", URL + "/other"], 1, False)
+        controllers = [c.kwargs["rate_controller"] for c in crawl.call_args_list]
+        self.assertEqual(len(controllers), 2)
+        self.assertIs(controllers[0], controllers[1])
 
     def test_nothing_is_fetched_once_the_controller_gives_up(self):
         controller = MagicMock()
@@ -542,6 +568,7 @@ class TestSession429Retries(unittest.TestCase):
     def setUp(self):
         hits = self.hits = []
         self.refusals = refusals = [10**6]  # 429s to send before serving the page
+        self.retry_after = retry_after = ["0"]
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -549,7 +576,7 @@ class TestSession429Retries(unittest.TestCase):
                 if refusals[0] > 0:
                     refusals[0] -= 1
                     self.send_response(429)
-                    self.send_header("Retry-After", "0")
+                    self.send_header("Retry-After", retry_after[0])
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
@@ -604,6 +631,23 @@ class TestSession429Retries(unittest.TestCase):
         self.refusals[0] = 1
         self.assertEqual(_download(self.url, session=create_session_with_retries()), self.SITEMAP)
         self.assertEqual(len(self.hits), 2)
+
+    def test_sitemap_retry_waits_at_most_max_pause(self):
+        """urllib3 sleeps for the full Retry-After; an hour per retry would stall discovery."""
+        from core.spider import _download
+
+        self.refusals[0] = 1
+        self.retry_after[0] = "3600"
+        with patch("urllib3.util.retry.time.sleep") as sleep:
+            self.assertEqual(_download(self.url, session=create_session_with_retries()), self.SITEMAP)
+        sleep.assert_called_once_with(AdaptiveRateController.MAX_PAUSE)
+
+    def test_short_retry_after_is_kept(self):
+        self.refusals[0] = 1
+        self.retry_after[0] = "2"
+        with patch("urllib3.util.retry.time.sleep") as sleep:
+            create_session_with_retries().get(self.url)
+        sleep.assert_called_once_with(2)
 
     def test_robots_fetch_retries_429(self):
         from core.spider import _robots_directives
@@ -1011,6 +1055,14 @@ class TestRateLimitRetryPass(unittest.TestCase):
         with patch("core.utils.time.sleep"):
             crawler._retry_rate_limited("web", {}, {})
         crawler._new_single_process_worker.return_value.cleanup.assert_called_once_with()
+
+    def test_retry_worker_is_cleaned_up_on_shutdown(self):
+        crawler = self._crawler([URL])
+        worker = crawler._new_single_process_worker.return_value
+        worker.process.side_effect = CrawlShutdownException
+        with patch("core.utils.time.sleep"), self.assertRaises(CrawlShutdownException):
+            crawler._retry_rate_limited("web", {}, {})
+        worker.cleanup.assert_called_once_with()
 
     def test_pages_still_limited_block_old_content_removal(self):
         crawler = self._crawler([URL], still_limited=[(URL,), (URL,)])
