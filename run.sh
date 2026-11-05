@@ -159,6 +159,9 @@ fi
 if [[ -n "${no_proxy}" ]]; then
   BUILD_ARGS="$BUILD_ARGS --build-arg NO_PROXY=\"${no_proxy}\""
 fi
+if [[ -n "${UV_CONCURRENT_DOWNLOADS}" ]]; then
+  BUILD_ARGS="$BUILD_ARGS --build-arg UV_CONCURRENT_DOWNLOADS=\"${UV_CONCURRENT_DOWNLOADS}\""
+fi
 
 # Opt-in (env var, default off): bake docling + EasyOCR + NLTK data into the image for
 # air-gapped / on-prem use. When DOWNLOAD_DOCLING_MODELS=true, the Dockerfile also sets

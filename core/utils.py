@@ -12,8 +12,8 @@ import time
 import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
-from typing import List, Set, Any, Dict
-from urllib.parse import urlparse, ParseResult, unquote
+from typing import Callable, List, Set, Any, Dict, Optional
+from urllib.parse import urlparse, urlsplit, ParseResult, unquote
 
 # Third-party imports
 import magic
@@ -78,6 +78,7 @@ DEFAULT_RETRY_ATTEMPTS = 5
 DEFAULT_RETRY_STATUS_CODES = [429, 430, 443, 500, 502, 503, 504]
 DEFAULT_RETRY_BACKOFF_FACTOR = 1
 DEFAULT_RETRY_METHODS = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]
+MAX_RETRY_AFTER = 300  # seconds, so one bad header can't stall the crawl
 
 # MIME types
 AMBIGUOUS_MIME_TYPES = ['text/html', 'application/xml', 'text/xml', 'application/xhtml+xml']
@@ -140,8 +141,8 @@ def setup_logging(level='INFO'):
     
     # Only add handler if none exists to prevent duplicates
     if not root.handlers:
+        # No level on the handler: it would drop what a LOGGER_<NAME>_LEVEL override lets through.
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(log_level)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         root.addHandler(handler)
@@ -157,7 +158,9 @@ def setup_logging(level='INFO'):
     for env_key, log_level_str in os.environ.items():
         match = LOGGER_ENV_PATTERN.match(env_key)
         if match:
-            logger_name = match.group(1).lower().replace('_', '.')
+            # "_" separates logger name parts; "__" is a literal underscore, so
+            # LOGGER_CORE_WEB__CONTENT__EXTRACTOR_LEVEL targets core.web_content_extractor.
+            logger_name = match.group(1).lower().replace('__', '\0').replace('_', '.').replace('\0', '_')
             level_name = log_level_str.upper()
             level = getattr(logging, level_name, None)
             if level:
@@ -250,26 +253,26 @@ def html_to_text(html: str, remove_code: bool = False, html_processing: dict = {
     for element in soup.find_all(['script', 'style']):
         element.decompose()
 
-    # remove any HTML items with the specified IDs
-    ids_to_remove = html_processing.get('ids_to_remove', [])
-    for id in ids_to_remove:
-        for element in soup.find_all(id=id):
-            element.decompose()
-
-    # remove any HTML tags in the list
-    tags_to_remove = html_processing.get('tags_to_remove', [])
-    for tag in tags_to_remove:
-        for element in soup.find_all(tag):
-            element.decompose()
-
-    # remove any elements with these classes
-    classes_to_remove = html_processing.get('classes_to_remove', [])
-    for class_name in classes_to_remove:
-        for element in soup.find_all(class_=class_name):
-            element.decompose()
+    remove_html_elements(soup, html_processing)
 
     text = soup.get_text(' ', strip=True).replace('\n', ' ')
     return text
+
+
+def remove_html_elements(soup: BeautifulSoup, html_processing: dict) -> None:
+    """Remove the elements listed in html_processing (ids_to_remove, classes_to_remove,
+    tags_to_remove) from soup in place."""
+    if not html_processing:
+        return
+    for id_val in html_processing.get('ids_to_remove', []):
+        for element in soup.find_all(id=id_val):
+            element.decompose()
+    for class_name in html_processing.get('classes_to_remove', []):
+        for element in soup.find_all(class_=class_name):
+            element.decompose()
+    for tag in html_processing.get('tags_to_remove', []):
+        for element in soup.find_all(tag):
+            element.decompose()
 
 def safe_remove_file(file_path: str):
     """
@@ -309,10 +312,17 @@ class LoggingAdapter(HTTPAdapter):
         logger.debug(log_message)
         return response
 
+class _CappedRetry(Retry):
+    """urllib3 sleeps for the full Retry-After, and an hour-long one per retry would stall a crawl."""
+    def get_retry_after(self, response):
+        retry_after = super().get_retry_after(response)
+        return None if retry_after is None else min(retry_after, MAX_RETRY_AFTER)
+
+
 def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> requests.Session:
     """Create a requests session with retries."""
     session = requests.Session()
-    retry_strategy = Retry(
+    retry_strategy = _CappedRetry(
         total=retries,
         status_forcelist=DEFAULT_RETRY_STATUS_CODES,
         backoff_factor=DEFAULT_RETRY_BACKOFF_FACTOR,
@@ -324,6 +334,24 @@ def create_session_with_retries(retries: int = DEFAULT_RETRY_ATTEMPTS) -> reques
     session.mount('http://', logging_adapter)
     session.mount('https://', logging_adapter)
     return session
+
+class _Retry429ToCaller(_CappedRetry):
+    """urllib3 retries a 429 carrying Retry-After even when 429 isn't in status_forcelist."""
+    RETRY_AFTER_STATUS_CODES = Retry.RETRY_AFTER_STATUS_CODES - {429}
+
+
+def leave_429_to_caller(session: requests.Session, url: str) -> None:
+    """Stop `session` retrying 429s from url's host, so the crawl's rate controller hears about
+    them at once. Everything else the session retries for that host is kept, and other hosts,
+    such as the Vectara API, are untouched."""
+    parts = urlsplit(url)
+    prefix = f"{parts.scheme}://{parts.netloc}/"
+    if prefix in session.adapters:
+        return
+    adapter = session.get_adapter(url)
+    retry = adapter.max_retries
+    params = {**vars(retry), "status_forcelist": set(retry.status_forcelist or ()) - {429}}
+    session.mount(prefix, type(adapter)(max_retries=_Retry429ToCaller(**params)))
 
 def configure_session_for_ssl(session: requests.Session, config: DictConfig) -> None:
     """
@@ -609,6 +637,98 @@ class RateLimiter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         # No need to do anything on exit with this implementation
         pass
+
+
+def interruptible_sleep(seconds: float, check: Optional[Callable[[], None]] = None) -> None:
+    """Sleep in steps of a second at most, calling `check`, which raises to stop, after each.
+    A signal handler only sets a flag, and a plain sleep would outlast `docker stop`'s grace."""
+    while seconds > 0:
+        step = min(seconds, 1)
+        time.sleep(step)
+        seconds -= step
+        if check:
+            check()
+
+
+class AdaptiveRateController:
+    """Pages-per-second budget shared by all workers of a crawl (a Ray actor under Ray).
+
+    Starts at `max_rate`. An HTTP 429 halves the rate and pauses every worker, and
+    successes raise it back slowly. All workers see a burst of 429s at once, so only
+    the first one in a pause changes the rate. After MAX_FAILED_PAUSES pauses in a row
+    with no success between them, acquire() returns None: without that, a site that
+    refuses everything costs one pause per page.
+
+    Workers pass time.monotonic() values (`booked_at`, `sent_at`) that are compared with the
+    controller's own. That relies on one clock for the whole machine, true on Linux and
+    macOS with the local ray.init the crawlers use, but not across Ray nodes.
+    """
+    MIN_RATE = 0.5
+    RECOVERY_STEP = 0.1  # pages per second gained per successful page
+    DEFAULT_PAUSE = 30   # seconds, when Retry-After is missing or an HTTP date
+    MIN_PAUSE = 5        # seconds, so Retry-After: 0 still groups a burst into one pause
+    MAX_PAUSE = MAX_RETRY_AFTER
+    MAX_FAILED_PAUSES = 10
+
+    def __init__(self, max_rate: float):
+        self.max_rate = max_rate
+        self.rate = max_rate
+        self._next_slot = 0.0
+        self._paused_until = 0.0
+        self._pause_started = 0.0
+        self._failed_pauses = 0
+
+    def acquire(self) -> Optional[float]:
+        """Reserve the next slot and return the seconds to wait for it, or None to stop fetching."""
+        if self._failed_pauses >= self.MAX_FAILED_PAUSES:
+            return None
+        now = time.monotonic()
+        start = max(now, self._next_slot, self._paused_until)
+        self._next_slot = start + 1 / self.rate
+        return start - now
+
+    def report_429(self, retry_after: Optional[str] = None, sent_at: Optional[float] = None):
+        """`sent_at` is the time.monotonic() at which the refused request was sent. A request
+        sent before the last pause began belongs to the burst that pause already handled: slow
+        browser loads can return after a short pause has ended."""
+        now = time.monotonic()
+        if sent_at is not None and sent_at < self._pause_started:
+            return
+        try:
+            pause = max(min(int(retry_after), self.MAX_PAUSE), self.MIN_PAUSE)
+        except (TypeError, ValueError):
+            pause = self.DEFAULT_PAUSE
+        if now >= self._paused_until:
+            self._pause_started = now
+            self.rate = max(self.rate / 2, self.MIN_RATE)
+            self._failed_pauses += 1
+            logger.warning(f"HTTP 429: pausing crawl for {pause}s, rate now {self.rate:.1f} pages/s")
+            if self._failed_pauses == self.MAX_FAILED_PAUSES:
+                logger.warning(f"HTTP 429: no page succeeded across {self._failed_pauses} pauses, "
+                               f"not fetching the remaining pages in this pass")
+        self._paused_until = max(self._paused_until, now + pause)
+
+    def recheck(self, booked_at: Optional[float] = None) -> Optional[float]:
+        """Validate a reserved slot before fetching; reschedule if a pause overtook it.
+
+        Reserving again keeps waiting workers spaced at the reduced rate rather than
+        releasing all of them together when the cooldown expires. `booked_at` is the
+        time.monotonic() at which the slot was reserved: a slot booked before the last pause
+        began was spaced at the old rate, so it is rebooked even when that pause has ended.
+        """
+        if self._failed_pauses >= self.MAX_FAILED_PAUSES:
+            return None
+        if self.pause_remaining() > 0 or (booked_at is not None and booked_at < self._pause_started):
+            return self.acquire()
+        return 0
+
+    def report_ok(self):
+        self._failed_pauses = 0
+        if time.monotonic() >= self._paused_until:
+            self.rate = min(self.rate + self.RECOVERY_STEP, self.max_rate)
+
+    def pause_remaining(self) -> float:
+        return max(self._paused_until - time.monotonic(), 0)
 
 # =============================================================================
 # DATA PROCESSING UTILITIES

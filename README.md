@@ -599,6 +599,14 @@ The project is designed to be used within a Docker container, so that a crawl jo
 
 If the `http_proxy`, `https_proxy`, or `no_proxy` environment variables exist, they will be used during the docker build step.
 
+#### Limiting parallel downloads during the build
+
+The build installs Python packages with `uv`, which downloads up to 50 packages in parallel. If the build fails with connection errors such as `stream closed because of a broken pipe` (common behind NATs, proxies, or cloud dev workspaces), set `UV_CONCURRENT_DOWNLOADS` to a lower value. `run.sh` passes it to the docker build:
+
+```bash
+UV_CONCURRENT_DOWNLOADS=4 bash run.sh config/my-config.yaml default
+```
+
 #### Additional environment variables
 
 Additional environment variables can be injected into the docker container using the `.run-env` file. Below is an example
@@ -606,6 +614,12 @@ of the format.
 
 ```bash
 HF_ENDPOINT="http://localhost:9000"
+```
+
+`LOGGER_<NAME>_LEVEL` sets the log level of one logger. In `<NAME>`, `_` stands for `.` and `__` stands for a literal underscore:
+
+```bash
+LOGGER_CORE_WEB__CONTENT__EXTRACTOR_LEVEL=DEBUG   # core.web_content_extractor
 ```
 
 #### Building for on-prem / air-gapped deployments

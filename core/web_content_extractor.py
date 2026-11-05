@@ -5,14 +5,19 @@ from typing import Dict, List, Optional
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from omegaconf import OmegaConf
-from core.utils import get_headers
+from core.utils import get_headers, remove_html_elements
 from core.web_extractor_base import WebExtractorBase
+
+# Removed before text and tables are extracted, on the browser and static paths
+BOILERPLATE_SELECTORS = ['header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement']
 
 logger = logging.getLogger(__name__)
 
 
 class WebContentExtractor(WebExtractorBase):
     """Handles web content extraction using Playwright"""
+    STATIC_REFUSALS_BEFORE_BROWSER_ONLY = 3
+
     
     def __init__(self, cfg: OmegaConf, timeout: int = 90, post_load_timeout: int = 5, browser=None):
         super().__init__(cfg, timeout, post_load_timeout)
@@ -31,6 +36,7 @@ class WebContentExtractor(WebExtractorBase):
         # redirects to the IdP sign-in page, returns >500 chars, and
         # short-circuits the authenticated browser path.
         self.skip_static_prefetch = False
+        self.static_refusals = 0  # static 429s in a row that the browser got past
 
         if browser is None:
             self._setup_browser()
@@ -258,9 +264,7 @@ class WebContentExtractor(WebExtractorBase):
     def _extract_text_content(self, page, remove_code: bool = False) -> str:
         """Extract text content from page"""
         # Build selectors to remove as a second pass for common boilerplate
-        remove_selectors = [
-            'header', 'footer', 'nav', 'aside', '.sidebar', '#comments', '.advertisement'
-        ]
+        remove_selectors = list(BOILERPLATE_SELECTORS)
         if remove_code:
             remove_selectors.extend(['code', 'pre'])
 
@@ -377,7 +381,10 @@ class WebContentExtractor(WebExtractorBase):
         Fetch content from URL with timeout, including Shadow DOM content.
         
         Returns:
-            dict with 'text', 'html', 'title', 'url', 'links', 'images', 'tables'
+            dict with 'text', 'html', 'title', 'url', 'links', 'images', 'tables', and
+            'status_code': the HTTP error from the static fetch, or the browser's status.
+            None when the static fetch succeeded or no status is known.
+            'retry_after': the Retry-After header that came with that status, if any.
         """
         if html_processing is None:
             html_processing = {}
@@ -389,7 +396,9 @@ class WebContentExtractor(WebExtractorBase):
             'url': url,
             'links': [],
             'images': [],
-            'tables': []
+            'tables': [],
+            'status_code': None,
+            'retry_after': None
         }
 
         # Static pre-fetch: try requests.get() first. SSR pages (forums, documentation
@@ -407,15 +416,32 @@ class WebContentExtractor(WebExtractorBase):
                 from bs4 import BeautifulSoup
                 static_resp = requests.get(url, headers=get_headers(self.cfg), timeout=30, allow_redirects=True)
                 static_resp.raise_for_status()
+                self.static_refusals = 0
                 if 'text/html' in static_resp.headers.get('content-type', '').lower():
                     soup = BeautifulSoup(static_resp.text, 'html.parser')
+                    # Same order as the browser path: title, then the removals before html is
+                    # captured, so remove_boilerplate (which re-extracts from res['html']) sees
+                    # them. remove_code applies after the html snapshot, to the text and the
+                    # tables, and is left out of the minimum.
+                    title = soup.title.string if soup.title else ''
+                    remove_html_elements(soup, html_processing)
                     static_text = soup.get_text(separator=' ', strip=True)
                     if len(static_text.strip()) > 500:
-                        result['html'] = static_resp.text
+                        result['html'] = str(soup)
                         result['url'] = static_resp.url
-                        result['title'] = soup.title.string if soup.title else ''
-                        result['text'] = static_text
+                        result['title'] = title
                         result['links'] = [a['href'] for a in soup.find_all('a', href=True)]
+                        if remove_code:
+                            for element in soup(['code', 'pre']):
+                                element.decompose()
+                            static_text = soup.get_text(separator=' ', strip=True)
+                        if extract_tables:
+                            # outerHTML of each table, as _extract_tables returns from the browser
+                            # after _extract_text_content has removed the boilerplate
+                            boilerplate = {id(el) for el in soup.select(', '.join(BOILERPLATE_SELECTORS))}
+                            result['tables'] = [str(t) for t in soup.find_all('table')
+                                                if not any(id(el) in boilerplate for el in (t, *t.parents))]
+                        result['text'] = static_text
                         # Extract images with same filtering as the browser path
                         from urllib.parse import urljoin
                         for img_tag in soup.find_all('img'):
@@ -438,6 +464,15 @@ class WebContentExtractor(WebExtractorBase):
                                     f"tables = {len(result['tables'])}, links = {len(result['links'])}")
                         return result
                     logger.debug(f"Static fetch for {url} too sparse ({len(static_text)} chars), falling back to browser")
+            except requests.HTTPError as e:
+                result['status_code'] = e.response.status_code
+                result['retry_after'] = e.response.headers.get('Retry-After')
+                if result['status_code'] == 429:
+                    result['throttled'] = True
+                    logger.warning(f"Static pre-fetch for {url} returned HTTP 429, using browser "
+                                   f"(Retry-After: {result['retry_after']})")
+                else:
+                    logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
             except Exception as e:
                 logger.debug(f"Static pre-fetch failed for {url}, using browser: {e}")
 
@@ -484,27 +519,40 @@ class WebContentExtractor(WebExtractorBase):
                 page.on('console', lambda msg: logger.info(f"playwright debug: {msg.text}"))
             
             logger.debug(f"Starting browser navigation to {url} (timeout={nav_timeout}ms)")
-            page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
-            logger.debug(f"Navigation complete for {url}, starting post-load processing")
-            page.wait_for_timeout(self.post_load_timeout * 1000)
-            self._scroll_to_bottom(page)
+            response = page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+            result['status_code'] = response.status if response else None
+            if response:
+                result['retry_after'] = response.headers.get('retry-after') or result['retry_after']
+            # A 429 page isn't worth waiting for or reading.
+            if result['status_code'] != 429:
+                if result.get('throttled') and response and response.ok:
+                    # Requests keep being refused but the browser isn't, so more static fetches
+                    # only add 429s, each pausing the crawl for a page the browser can fetch.
+                    self.static_refusals += 1
+                    if self.static_refusals >= self.STATIC_REFUSALS_BEFORE_BROWSER_ONLY:
+                        logger.warning(f"Static fetch refused {self.static_refusals} times in a row "
+                                       f"but the browser wasn't: using the browser only from here on")
+                        self.skip_static_prefetch = True
+                logger.debug(f"Navigation complete for {url}, starting post-load processing")
+                page.wait_for_timeout(self.post_load_timeout * 1000)
+                self._scroll_to_bottom(page)
 
-            result['title'] = page.title()
-            result['url'] = page.url
+                result['title'] = page.title()
+                result['url'] = page.url
 
-            # Remove specified elements BEFORE capturing HTML snapshot
-            self._remove_elements(page, html_processing)
-            result['html'] = page.content()
+                # Remove specified elements BEFORE capturing HTML snapshot
+                self._remove_elements(page, html_processing)
+                result['html'] = page.content()
 
-            # Extract content
-            result['text'] = self._extract_text_content(page, remove_code)
-            result['links'] = self._extract_links(page)
+                # Extract content
+                result['text'] = self._extract_text_content(page, remove_code)
+                result['links'] = self._extract_links(page)
 
-            if extract_tables:
-                result['tables'] = self._extract_tables(page)
+                if extract_tables:
+                    result['tables'] = self._extract_tables(page)
 
-            if extract_images:
-                result['images'] = self._extract_images(page)
+                if extract_images:
+                    result['images'] = self._extract_images(page)
 
         except PlaywrightTimeoutError:
             logger.info(f"Page loading timed out for {url} after {nav_timeout}ms")
@@ -533,7 +581,7 @@ class WebContentExtractor(WebExtractorBase):
             self._reset_browser_if_needed()
 
         # If browser also failed, log it — static pre-fetch already ran above.
-        if not result['html']:
+        if not result['html'] and result['status_code'] != 429:
             logger.warning(f"Both static and browser fetch failed for {url}")
 
         logger.info(f"For crawled page {url}: images = {len(result['images'])}, "
@@ -560,7 +608,8 @@ class WebContentExtractor(WebExtractorBase):
             if 'application/pdf' in ct:
                 resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
                 return {"type": "pdf", "url": resp.url, "content": resp.content,
-                        "headers": dict(resp.headers)}
+                        "headers": dict(resp.headers), "status_code": resp.status_code,
+                        "retry_after": resp.headers.get('Retry-After')}
         except Exception as e:
             logger.debug(f"HEAD request failed for {url}, falling back to browser: {e}")
 
@@ -617,7 +666,9 @@ class WebContentExtractor(WebExtractorBase):
                                 "type": "pdf",
                                 "url": response.url,
                                 "content": pdf_bytes,
-                                "headers": dict(response.headers)
+                                "headers": dict(response.headers),
+                                "status_code": response.status,
+                                "retry_after": response.headers.get("retry-after"),
                             }
                         else:
                             # Close resources before returning

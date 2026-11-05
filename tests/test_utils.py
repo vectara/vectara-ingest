@@ -556,7 +556,7 @@ class TestUtils(unittest.TestCase):
         setup_logging()
 
         mock_root_logger.setLevel.assert_called_once()
-        mock_handler_instance.setLevel.assert_called_once()
+        mock_handler_instance.setLevel.assert_not_called()
         mock_root_logger.addHandler.assert_called_once()
     
     @patch('logging.getLogger')
