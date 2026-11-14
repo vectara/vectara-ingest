@@ -52,8 +52,19 @@ class DocumentBuilder:
             Document dictionary ready for indexing
         """
         if ''.join(texts).strip() == '':
-            logger.info(f"Document {doc_id} has no content")
-            return None
+            # A document whose only content is tables (payroll calendars, rate tables, matrices)
+            # arrives with no text when the parser hands tables over separately. Index the table
+            # summaries as its text instead of dropping the whole document.
+            table_texts = self._table_texts(tables)
+            if table_texts:
+                logger.info(f"Document {doc_id} has no text but {len(table_texts)} table(s); "
+                            "indexing the table summaries as its text")
+                texts = table_texts
+                titles = [doc_title or ""] * len(texts)
+                metadatas = [{"element_type": "table_summary"} for _ in texts]
+            else:
+                logger.info(f"Document {doc_id} has no content")
+                return None
 
         # Normalize inputs
         if titles is None:
@@ -86,6 +97,26 @@ class DocumentBuilder:
 
         return document
     
+    @staticmethod
+    def _table_texts(tables: Optional[Sequence[Dict[str, Any]]]) -> List[str]:
+        """One text per table: its summary, or the header and rows as pipe-separated lines."""
+        out = []
+        for table in tables or []:
+            summary = (table.get('summary') or '').strip()
+            if summary:
+                out.append(summary)
+                continue
+            headers = table.get('headers') or []
+            if headers and isinstance(headers[0], list):
+                headers = headers[0]
+            lines = [" | ".join(str(h) for h in headers)] if headers else []
+            for row in (table.get('rows') or [])[:200]:
+                lines.append(" | ".join("" if c is None else str(c) for c in row))
+            text = "\n".join(lines).strip()
+            if text:
+                out.append(text)
+        return out
+
     def _normalize_value(self, value):
         """Normalize value using the provided normalize function"""
         if isinstance(value, str):

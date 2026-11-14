@@ -1523,7 +1523,8 @@ class DoclingDocumentParser(DocumentParser):
         if (self.fallback_ocr
                 and not self.do_ocr
                 and filename.lower().endswith('.pdf')
-                and not result.content_stream):
+                and not result.content_stream
+                and not result.tables):  # a tables-only page is not a scanned page
             logger.info(f"No content elements found in {filename}, retrying with OCR fallback")
             ocr_converter = self._get_or_create_converter(fallback_ocr=True)
             result = self._parse_with_converter(filename, source_url, ocr_converter)
