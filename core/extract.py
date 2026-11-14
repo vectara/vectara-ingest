@@ -21,6 +21,8 @@ language_stopwords_Goose = {
     'ko': StopWordsKorean  # Use Korean stopwords
         }
 
+# langdetect code -> justext stoplist name. Languages not listed use justext's
+# language-independent mode (see get_content_with_justext).
 language_stopwords_JusText = {
     'en': 'English',
     'fr': 'French',
@@ -32,23 +34,18 @@ language_stopwords_JusText = {
     'bg': 'Bulgarian',  # Use Bulgarian stopwords
     'sv': 'Swedish',  # Use Swedish stopwords
     'lv': 'Latvian',  # Use Latvian stopwords
-    'sr': 'Serbian',  # Use Serbian stopwords
     'sq': 'Albanian',  # Use Albanian stopwords
     'es': 'Spanish',  # Use Spanish stopwords
-    'ka': 'Georgian',  # Use Georgian stopwords
     'de': 'German',  # Use German stopwords
     'el': 'Greek',  # Use Greek stopwords
-    'ga': 'Irish',  # Use Irish stopwords
     'vi': 'Vietnamese',  # Use Vietnamese stopwords
     'hu': 'Hungarian',  # Use Hungarian stopwords
     'pt': 'Portuguese',  # Use Portuguese stopwords
     'pl': 'Polish',  # Use Polish stopwords
     'it': 'Italian',  # Use Italian stopwords
-    'la': 'Latin',  # Use Latin stopwords
     'tr': 'Turkish',  # Use Turkish stopwords
     'id': 'Indonesian',  # Use Indonesian stopwords
     'hr': 'Croatian',  # Use Croatian stopwords
-    'be': 'Belarusian',  # Use Belarusian stopwords
     'ru': 'Russian',  # Use Russian stopwords
     'et': 'Estonian',  # Use Estonian stopwords
     'uk': 'Ukrainian',  # Use Ukrainian stopwords
@@ -58,12 +55,24 @@ language_stopwords_JusText = {
     'sk': 'Slovak',  # Use Slovak stopwords
     'fi': 'Finnish',  # Use Finnish stopwords
     'da': 'Danish',  # Use Danish stopwords
-    'ms': 'Malay',  # Use Malay stopwords
     'ca': 'Catalan',  # Use Catalan stopwords
-    'eo': 'Esperanto',  # Use Esperanto stopwords
-    'nb': 'Norwegian_Bokmal',  # Use Norwegian_Bokmal stopwords
     'he': "Hebrew",
-    'nn': 'Norwegian_Nynorsk'  # Use Norwegian_Nynorsk stopwords
+    'nl': 'Dutch',
+    'no': 'Norwegian_Bokmal',
+    'lt': 'Lithuanian',
+    'sl': 'Slovenian',
+    'mk': 'Macedonian',
+    'af': 'Afrikaans',
+    'cy': 'Welsh',
+    'sw': 'Swahili',
+    'tl': 'Tagalog',
+    'bn': 'Bengali',
+    'ta': 'Tamil',
+    'te': 'Telugu',
+    'kn': 'Kannada',
+    'mr': 'Marathi',
+    'gu': 'Gujarati',
+    'ne': 'Nepali',
     # Add more languages and their stopwords keywords here
 }
 

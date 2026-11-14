@@ -10,6 +10,7 @@ Japanese also crashed justext (no Japanese stoplist) and French used the English
 import importlib.machinery
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 # Heavy native deps that the import chain touches.
@@ -76,6 +77,21 @@ class TestStoplists(unittest.TestCase):
                    if name not in available}
         self.assertEqual(missing, {})
 
+    def test_map_uses_the_codes_langdetect_returns(self):
+        import langdetect
+        profiles = Path(langdetect.__file__).parent / "profiles"
+        codes = {p.name for p in profiles.iterdir()}
+        self.assertEqual(set(language_stopwords_JusText) - codes, set())
+        # langdetect codes with no matching justext stoplist; these use the
+        # language-independent mode. pa: justext's Western_Panjabi is Shahmukhi script,
+        # langdetect's pa is Gurmukhi.
+        self.assertEqual(codes - set(language_stopwords_JusText),
+                         {"ja", "pa", "so", "th", "zh-cn", "zh-tw"})
+
+    def test_dutch_and_norwegian_use_their_stoplists(self):
+        self.assertEqual(language_stopwords_JusText["nl"], "Dutch")
+        self.assertEqual(language_stopwords_JusText["no"], "Norwegian_Bokmal")
+
     def test_each_language_keeps_content_and_drops_boilerplate(self):
         for lang, token in TOKENS.items():
             with self.subTest(lang=lang):
@@ -89,6 +105,15 @@ class TestStoplists(unittest.TestCase):
         # A language with no mapped stoplist must use justext's language-independent mode.
         text, _ = get_article_content(_page("de"), _url("de"), "xx")
         self.assertIn("Deutravin", text)
+
+
+class TestDetectLanguage(unittest.TestCase):
+
+    def test_detection_is_deterministic(self):
+        # Ambiguous text: unseeded langdetect returns different languages across calls.
+        from core.utils import detect_language
+        text = "Ons opslagplatform beschermt uw bestanden op alle locaties en in alle clouds."
+        self.assertEqual(len({detect_language(text) for _ in range(30)}), 1)
 
 
 class TestPerPageLanguage(unittest.TestCase):

@@ -86,6 +86,10 @@ class TestUrlMetadata(unittest.TestCase):
         w = PageCrawlWorker(cfg, num_per_second=100)
         self.assertEqual(w.url_metadata, [])
 
+    def test_empty_url_metadata_key(self):
+        cfg = OmegaConf.create({"vectara": {}, "website_crawler": {"url_metadata": None}})
+        self.assertEqual(PageCrawlWorker(cfg, num_per_second=100).url_metadata, [])
+
     def test_invalid_pattern_fails_at_construction(self):
         with self.assertRaises(re.error):
             _worker([{"pattern": "(", "metadata": {"lang": "de"}}])

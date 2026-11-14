@@ -132,7 +132,7 @@ Other parameters:
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
 - `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
-- `url_metadata`: an (optional) list of rules that add metadata to pages by URL. Each rule has a `pattern` (a regex, matched with `.match()` like `pos_regex`) and a `metadata` dict. For each page, the first rule whose pattern matches is applied and later rules are ignored, so put specific patterns before general ones. Pages that match no rule get no extra metadata. A rule cannot override `source` or `url`. To filter on a metadata field in queries, it must be defined as a filter attribute on the corpus. Example, tagging each language section of one site:
+- `url_metadata`: an (optional) list of rules that add metadata to pages by URL. Each rule has a `pattern` (a regex, matched with `.match()` like `pos_regex`) and a `metadata` dict. For each page, the first rule whose pattern matches is applied and later rules are ignored, so put specific patterns before general ones. Pages that match no rule get no extra metadata. A rule cannot override `source` or `url`. With `incremental`, changing `url_metadata` re-indexes every page so the new rules apply. To filter on a metadata field in queries, it must be defined as a filter attribute on the corpus. Example, tagging each language section of one site:
   ```yaml
   website_crawler:
     urls: [https://example.com/]

@@ -158,7 +158,7 @@ class PageCrawlWorker(object):
             (re.compile(rule['pattern']),
              OmegaConf.to_container(rule['metadata']) if OmegaConf.is_config(rule['metadata'])
              else dict(rule['metadata']))
-            for rule in website_crawler_cfg.get('url_metadata', [])
+            for rule in website_crawler_cfg.get('url_metadata') or []
         ]
 
     def setup(self):

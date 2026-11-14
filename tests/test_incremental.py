@@ -84,6 +84,28 @@ class TestConfigSignature(unittest.TestCase):
         b = config_signature(self._cfg({"doc_parser": "docling"}, {"corpus_key": "k2"}))
         self.assertEqual(a, b)
 
+    def test_url_metadata_change_changes_signature(self):
+        # A sitemap-lastmod skip happens before the page is fetched, so a rule change
+        # only reaches already-indexed pages if it changes the signature.
+        from omegaconf import OmegaConf
+
+        def sig(website_crawler):
+            return config_signature(OmegaConf.create(
+                {"doc_processing": {}, "vectara": {}, "website_crawler": website_crawler}))
+        de = [{"pattern": "^https://x/de/", "metadata": {"lang": "de"}}]
+        fr = [{"pattern": "^https://x/de/", "metadata": {"lang": "fr"}}]
+        self.assertNotEqual(sig({"url_metadata": de}), sig({"url_metadata": fr}))
+        self.assertNotEqual(sig({}), sig({"url_metadata": de}))
+
+    def test_unset_url_metadata_keeps_existing_signatures(self):
+        # Corpora indexed before url_metadata existed must not all re-index on upgrade.
+        base = config_signature(self._cfg({"doc_parser": "docling"}))
+        from omegaconf import OmegaConf
+        for wc in ({}, {"url_metadata": None}, {"url_metadata": []}, {"urls": ["https://x"]}):
+            cfg = OmegaConf.create({"doc_processing": {"doc_parser": "docling"},
+                                    "vectara": {}, "website_crawler": wc})
+            self.assertEqual(config_signature(cfg), base, wc)
+
     def test_model_change_changes_signature(self):
         # Swapping the summarization/vision model changes generated summaries, contextual
         # chunks and extracted metadata, so it must invalidate the skip decision.
