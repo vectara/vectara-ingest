@@ -600,7 +600,7 @@ nh3==0.3.7
     # via unstructured
 ninja==1.13.0
     # via easyocr
-nltk==3.10.3
+nltk==3.10.4
     # via
     #   -r requirements.in
     #   llama-index-core
