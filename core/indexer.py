@@ -98,7 +98,6 @@ class Indexer:
         self.remove_boilerplate = cfg.vectara.get("remove_boilerplate", False)
         self.post_load_timeout = cfg.vectara.get("post_load_timeout", 5)
         self.timeout = cfg.vectara.get("timeout", 90)
-        self.detected_language: Optional[str] = None
         self._last_response_status: Optional[int] = None
         # Diagnostic: most recent failure reason from index_file(). Reset at the
         # start of every index_file() call. Callers can read this after a False
@@ -957,11 +956,6 @@ class Indexer:
                     except Exception as e:
                         logger.warning(f"Failed to execute metadata extractor for {url}: {e}")
 
-                # Detect language if needed
-                if self.detected_language is None:
-                    self.detected_language = detect_language(text)
-                    logger.info(f"The detected language is {self.detected_language}")
-
                 if len(self.extract_metadata) > 0:
                     ex_metadata = get_attributes_from_text(
                         self.cfg,
@@ -980,10 +974,12 @@ class Indexer:
                 #
                 if self.remove_boilerplate:
                     url = res['url']
+                    # Per page: the extractors' stoplists must match this page's language.
+                    language = detect_language(text)
                     if self.verbose:
-                        logger.info(
-                            f"Removing boilerplate from content of {url}, and extracting important text only")
-                    text, doc_title = get_article_content(html, url, self.detected_language, self.remove_code)
+                        logger.info(f"Removing boilerplate from content of {url} "
+                                    f"(language: {language}), and extracting important text only")
+                    text, doc_title = get_article_content(html, url, language, self.remove_code)
                 # else: use text already extracted from res['text'] - don't re-extract!
 
                 parts = [text]

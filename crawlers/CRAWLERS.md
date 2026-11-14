@@ -10,6 +10,8 @@
 
 If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in `Indexer.index_url` to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. 
 
+Both libraries decide what is boilerplate by counting stopwords, so the language of each page is detected and its stoplist is used. Languages without a JusText stoplist (for example Japanese) use JusText's language-independent mode, which only keeps paragraphs longer than 200 characters. On sites with short paragraphs in such a language, `remove_boilerplate` can drop real content; use `html_processing` to remove navigation and footers instead.
+
 `vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
 
 Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.

@@ -477,7 +477,6 @@ class TestIndexerSkipsErrorPages(unittest.TestCase):
         ix.remove_boilerplate = False
         ix.parse_tables = False
         ix.remove_code = False
-        ix.detected_language = "en"
         ix.extract_metadata = []
         ix.timeout = 90
         ix.last_skip_reason = None

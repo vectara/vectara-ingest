@@ -22,20 +22,20 @@ language_stopwords_Goose = {
         }
 
 language_stopwords_JusText = {
-    'en': None,  # English stopwords are the default
+    'en': 'English',
+    'fr': 'French',
     'ar': 'Arabic',  # Use Arabic stopwords
     'ko': 'Korean' , # Use Korean stopwords
     'ur': 'Urdu' ,  # Use urdu stopwords
     'hi': 'Hindi' ,  # Use Hindi stopwords
     'fa': 'Persian',  # Use Persian stopwords
-    'ja': 'Japanese',  # Use Japanese stopwords
     'bg': 'Bulgarian',  # Use Bulgarian stopwords
     'sv': 'Swedish',  # Use Swedish stopwords
     'lv': 'Latvian',  # Use Latvian stopwords
     'sr': 'Serbian',  # Use Serbian stopwords
     'sq': 'Albanian',  # Use Albanian stopwords
     'es': 'Spanish',  # Use Spanish stopwords
-    'ka': 'Gerogian',  # Use Georgian stopwords
+    'ka': 'Georgian',  # Use Georgian stopwords
     'de': 'German',  # Use German stopwords
     'el': 'Greek',  # Use Greek stopwords
     'ga': 'Irish',  # Use Irish stopwords
@@ -51,10 +51,10 @@ language_stopwords_JusText = {
     'be': 'Belarusian',  # Use Belarusian stopwords
     'ru': 'Russian',  # Use Russian stopwords
     'et': 'Estonian',  # Use Estonian stopwords
-    'uk': 'Ukranian',  # Use Ukranian stopwords
+    'uk': 'Ukrainian',  # Use Ukrainian stopwords
     'ro': 'Romanian',  # Use Romanian stowords
     'cs': 'Czech',  # Use Czech stopwords
-    'ml': 'Malyalam',  # Use Malyalam stopwords
+    'ml': 'Malayalam',  # Use Malayalam stopwords
     'sk': 'Slovak',  # Use Slovak stopwords
     'fi': 'Finnish',  # Use Finnish stopwords
     'da': 'Danish',  # Use Danish stopwords
@@ -70,12 +70,13 @@ language_stopwords_JusText = {
 
 
 def get_content_with_justext(html_content: str, detected_language: str) -> Tuple[str, str]:
-    if detected_language == 'en':
-        paragraphs = justext.justext(html_content, justext.get_stoplist("English"))
+    stoplist_name = language_stopwords_JusText.get(detected_language)
+    if stoplist_name:
+        paragraphs = justext.justext(html_content, justext.get_stoplist(stoplist_name))
     else:
-        stopwords_keyword = language_stopwords_JusText.get(detected_language, 'English')
-        # Extract paragraphs using the selected stoplist
-        paragraphs = justext.justext(html_content, justext.get_stoplist(stopwords_keyword))
+        # No stoplist for this language (e.g. Japanese): justext's language-independent
+        # mode. Another language's stoplist would mark every paragraph as boilerplate.
+        paragraphs = justext.justext(html_content, frozenset(), stopwords_low=0, stopwords_high=0)
 
     text = '\n'.join([p.text for p in paragraphs if not p.is_boilerplate])
     soup = BeautifulSoup(html_content, 'html.parser')
