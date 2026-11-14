@@ -3,12 +3,15 @@ import requests
 import logging
 import psutil
 import os
+import time
+from contextlib import contextmanager
 
 from core.crawler import Crawler
 from core.crawl_tracker import CrawlShutdownException
 from core.utils import (
-    clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, 
-    setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint
+    clean_urls, archive_extensions, img_extensions, get_file_extension, RateLimiter, AdaptiveRateController,
+    setup_logging, get_docker_or_local_path, url_matches_patterns, normalize_vectara_endpoint,
+    interruptible_sleep, leave_429_to_caller
 )
 from core.indexer import Indexer
 from core.indexer_utils import normalize_url_for_metadata
@@ -130,9 +133,11 @@ def _apply_auth_to_indexer(
 
 class PageCrawlWorker(object):
     def __init__(self, cfg: dict, num_per_second: int, prior_fingerprints: dict = None,
-                 sitemap_lastmods: dict = None):
+                 sitemap_lastmods: dict = None, rate_controller=None):
         self.cfg = cfg
         self.rate_limiter = RateLimiter(num_per_second)
+        # AdaptiveRateController shared across workers: a Ray actor handle under Ray.
+        self.rate_controller = rate_controller
         self.indexer = None
         self.session = None
         # {normalized_url: fingerprint} from the prior corpus state. Lets index_url skip an
@@ -246,6 +251,18 @@ class PageCrawlWorker(object):
     RESULT_FAILED = 1
     RESULT_AUTH_REQUIRED = 2
     RESULT_SKIPPED = 3
+    RESULT_RATE_LIMITED = 4
+
+    # Single process only. Under Ray, the dispatcher polls for shutdown and kills the actors.
+    shutdown_check = None
+
+    def _rate_call(self, method: str, *args):
+        if self.rate_controller is None:
+            return 0
+        call = getattr(self.rate_controller, method)
+        if isinstance(self.rate_controller, ray.actor.ActorHandle):
+            return ray.get(call.remote(*args))
+        return call(*args)
 
     def process(self, url: str, source: str):
         if not self.indexer:
@@ -261,8 +278,25 @@ class PageCrawlWorker(object):
         prior_fingerprint = self.prior_fingerprints.get(nu)
         logging.info(f"[Worker {os.getpid()}] Crawling and indexing {url}")
         succeeded = False
+        booked_at = time.monotonic()
+        wait = self._rate_call("acquire")
+        if wait is None:
+            return self.RESULT_RATE_LIMITED
+        interruptible_sleep(wait, self.shutdown_check)
         try:
             with self.rate_limiter:
+                # A shared pause may have changed during either limiter's wait.
+                while True:
+                    wait = self._rate_call("recheck", booked_at)
+                    if wait is None:
+                        return self.RESULT_RATE_LIMITED
+                    if wait == 0:
+                        break
+                    booked_at = time.monotonic()  # recheck booked a new slot
+                    interruptible_sleep(wait, self.shutdown_check)
+                if self.rate_controller is not None:
+                    leave_429_to_caller(self.indexer.session, url)
+                sent_at = time.monotonic()
                 succeeded = self.indexer.index_url(
                     url, metadata=metadata, html_processing=self.html_processing,
                     prior_fingerprint=prior_fingerprint)
@@ -270,14 +304,23 @@ class PageCrawlWorker(object):
                 logging.info(f"[Worker {os.getpid()}] Indexing failed for {url}")
             else:
                 logging.info(f"[Worker {os.getpid()}] Indexing {url} was successful")
+        except CrawlShutdownException:
+            raise
         except Exception as e:
             import traceback
             logging.error(
                 f"[Worker {os.getpid()}] Error while indexing {url}: {e}, traceback={traceback.format_exc()}"
             )
             return self.RESULT_FAILED
+        if self.indexer.last_fetch_status == 429:
+            self._rate_call("report_429", self.indexer.last_retry_after, sent_at)
+            return self.RESULT_RATE_LIMITED
         # An "unchanged" skip returns True (success) but should be counted separately
         # from a freshly indexed page so the corpus is not needlessly churned.
+        if self.indexer.last_throttled:
+            self._rate_call("report_429", self.indexer.last_retry_after, sent_at)
+        if succeeded:
+            self._rate_call("report_ok")
         if self.indexer.was_skipped():
             return self.RESULT_SKIPPED
         if succeeded:
@@ -287,9 +330,13 @@ class PageCrawlWorker(object):
         return self.RESULT_FAILED
 
 class WebsiteCrawler(Crawler):
+    RATE_LIMIT_RETRY_PASSES = 2
+    _rate_pause_left = 0  # seconds of the site's last pause still to run when a pass ended
+
     def __init__(self, cfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
         self.saml_session = None
+        self.rate_limited_urls = []
         self.google_cookies = None
         self.google_storage_state_path = None
         # Incremental reindexing state (see core/incremental.py).
@@ -393,6 +440,8 @@ class WebsiteCrawler(Crawler):
         
         # 2. Discover all URLs using the chosen method
         all_urls = self._discover_urls()
+        if self.indexer.discovery_rate_limited:
+            self._crawl_interrupted = True
 
         # 3. Filter and prepare the final URL list
         urls_to_crawl = self._filter_and_prepare_urls(all_urls)
@@ -480,7 +529,7 @@ class WebsiteCrawler(Crawler):
         # Execute crawling based on method
         if crawl_method == "scrapy":
             return self._discover_urls_with_scrapy(base_urls, max_depth, scrapy_cookies)
-        else:
+        with self._flag_refused_sitemaps():
             return self._discover_urls_with_internal_crawler(base_urls, max_depth, keep_query_params)
 
     def _discover_urls_with_scrapy(self, base_urls: list, max_depth: int, scrapy_cookies: list) -> list:
@@ -505,12 +554,35 @@ class WebsiteCrawler(Crawler):
             cookies=scrapy_cookies
         )
 
+    @contextmanager
+    def _flag_refused_sitemaps(self):
+        """Mark discovery incomplete if a sitemap fetch gets a 429. The sitemap functions skip
+        a sitemap that fails, so a response hook is what can see it. The hook is removed on exit
+        because the session is also used for the Vectara API."""
+        if self.cfg.website_crawler.get("pages_source", "crawl") != "sitemap":
+            yield
+            return
+
+        def flag_429(response, **_):
+            if response.status_code == 429:
+                logger.warning(f"Sitemap fetch {response.url} got HTTP 429: its pages are not crawled")
+                self.indexer.discovery_rate_limited = True
+        hooks = self.indexer.session.hooks["response"]
+        hooks.append(flag_429)
+        try:
+            yield
+        finally:
+            hooks.remove(flag_429)
+
     def _discover_urls_with_internal_crawler(self, base_urls: list, max_depth: int, keep_query_params: bool) -> list:
         """Discover URLs using internal Vectara-ingest crawler."""
         logger.info("Using internal Vectara-ingest method to crawl the website")
         all_urls = []
         pages_source = self.cfg.website_crawler.get("pages_source", "crawl")
-        
+        # One controller for all homepages, like indexing: a fresh one per homepage would
+        # reset the reduced rate and the give-up count.
+        rate_controller = AdaptiveRateController(max(self.cfg.website_crawler.get("num_per_second", 10), 1))
+
         for homepage in base_urls:
             urls = []
             
@@ -539,8 +611,12 @@ class WebsiteCrawler(Crawler):
                 urls_set = recursive_crawl(
                     homepage, max_depth,
                     pos_patterns=self.pos_patterns, neg_patterns=self.neg_patterns,
-                    indexer=self.indexer, visited=set(), verbose=self.indexer.verbose
+                    indexer=self.indexer, visited=set(), verbose=self.indexer.verbose,
+                    rate_controller=rate_controller,
+                    sleep=lambda seconds: interruptible_sleep(seconds, self.check_shutdown)
                 )
+                # Honor the last page's cooldown before the next homepage or indexing.
+                interruptible_sleep(rate_controller.pause_remaining(), self.check_shutdown)
                 urls = clean_urls(urls_set, keep_query_params)
             else:
                 logger.info(f"Unknown pages_source: {pages_source}")
@@ -677,9 +753,49 @@ class WebsiteCrawler(Crawler):
         else:
             self._dispatch_to_single_process(urls, num_per_second, source,
                                              prior_fingerprints, sitemap_lastmods)
+        self._retry_rate_limited(source, prior_fingerprints, sitemap_lastmods)
+        self._warn_if_rate_limited(len(urls))
+
+    def _retry_rate_limited(self, source: str, prior_fingerprints: dict, sitemap_lastmods: dict):
+        """Retry pages that got a 429, one at a time and after a growing wait."""
+        retry_wait = self.cfg.website_crawler.get("rate_limit_retry_wait", 60)
+        worker = None
+        try:
+            for attempt in range(1, self.RATE_LIMIT_RETRY_PASSES + 1):
+                urls, self.rate_limited_urls = self.rate_limited_urls, []
+                if not urls:
+                    break
+                wait = max(retry_wait * attempt, self._rate_pause_left)
+                logger.info(f"Retrying {len(urls)} rate-limited pages in {wait}s "
+                            f"(pass {attempt} of {self.RATE_LIMIT_RETRY_PASSES})")
+                interruptible_sleep(wait, self.check_shutdown)
+                # One worker for all passes: no new login, browser or Indexer per pass, and it
+                # keeps what it learned, such as using only the browser on this site.
+                worker = worker or self._new_single_process_worker(1, prior_fingerprints, sitemap_lastmods)
+                self._crawl_with_worker(worker, urls, 1, source)
+        finally:
+            if worker:
+                worker.cleanup()
+        if self.rate_limited_urls:
+            self._crawl_interrupted = True
+        if self.tracker:
+            for url in self.rate_limited_urls:
+                self.tracker.track_failed(url, url=url)
+
+    def _warn_if_rate_limited(self, total: int):
+        """Report rate limiting once at the end of the run, where it can't be missed."""
+        if self.rate_limited_urls:
+            logger.warning(
+                f"{len(self.rate_limited_urls)} of {total} pages returned HTTP 429 and were not "
+                f"indexed. The site is rate-limiting this crawl; lower ray_workers or num_per_second."
+            )
 
     def _track_result(self, url: str, result: int):
         """Record a worker outcome to the crawl tracker (no-op if tracking disabled)."""
+        # Recorded by _retry_rate_limited, once the retries have settled the outcome.
+        if result == PageCrawlWorker.RESULT_RATE_LIMITED:
+            self.rate_limited_urls.append(url)
+            return
         if not self.tracker:
             return
         if result == PageCrawlWorker.RESULT_INDEXED:
@@ -690,6 +806,19 @@ class WebsiteCrawler(Crawler):
             self.tracker.track_auth_required(url, url=url)
         else:
             self.tracker.track_failed(url, url=url)
+
+    def _collect_results(self, pool, batch: list, source: str) -> list:
+        """Run a batch on the pool, checking for shutdown while waiting: a pause can hold a
+        batch for minutes, longer than `docker stop` allows."""
+        for url in batch:
+            pool.submit(lambda a, u: a.process.remote(u, source=source), url)
+        results = []
+        while pool.has_next():
+            try:
+                results.append(pool.get_next(timeout=1))
+            except TimeoutError:
+                self.check_shutdown()
+        return results
 
     def _dispatch_to_ray_workers(self, urls: list, ray_workers: int, num_per_second: int, source: str,
                                  prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
@@ -711,13 +840,15 @@ class WebsiteCrawler(Crawler):
             # duplicated per actor). Ray dereferences the ObjectRef into the dict in each actor.
             pf_ref = ray.put(prior_fingerprints or {})
             lm_ref = ray.put(sitemap_lastmods or {})
+            rate_controller = ray.remote(AdaptiveRateController).remote(ray_workers * num_per_second)
 
             # Create workers with serializable config
             actors = [ray.remote(PageCrawlWorker).remote(
                 self.cfg,
                 num_per_second,
                 pf_ref,
-                lm_ref
+                lm_ref,
+                rate_controller
             ) for _ in range(ray_workers)]
             ray.get([a.setup.remote() for a in actors])
             pool = ray.util.ActorPool(actors)
@@ -725,10 +856,11 @@ class WebsiteCrawler(Crawler):
             for batch_start in range(0, len(urls), batch_size):
                 self.check_shutdown()
                 batch = urls[batch_start:batch_start + batch_size]
-                results = list(pool.map(lambda a, u: a.process.remote(u, source=source), batch))
+                results = self._collect_results(pool, batch, source)
                 for url, result in zip(batch, results):
                     self._track_result(url, result)
                 logger.info(f"Processed {min(batch_start + batch_size, len(urls))}/{len(urls)} URLs")
+            self._rate_pause_left = ray.get(rate_controller.pause_remaining.remote())
             # Cleanup Ray workers
             for a in actors:
                 ray.get(a.cleanup.remote())
@@ -740,6 +872,12 @@ class WebsiteCrawler(Crawler):
     def _dispatch_to_single_process(self, urls: list, num_per_second: int, source: str,
                                     prior_fingerprints: dict = None, sitemap_lastmods: dict = None):
         """Process URLs sequentially in a single process."""
+        crawl_worker = self._new_single_process_worker(num_per_second, prior_fingerprints, sitemap_lastmods)
+        self._crawl_with_worker(crawl_worker, urls, num_per_second, source)
+        crawl_worker.cleanup()
+
+    def _new_single_process_worker(self, num_per_second: int, prior_fingerprints: dict = None,
+                                   sitemap_lastmods: dict = None) -> PageCrawlWorker:
         # Stop Playwright from URL discovery to close its asyncio event loop
         # This allows worker to create fresh Playwright instance without conflicts
         if hasattr(self.indexer, 'web_extractor') and self.indexer.web_extractor:
@@ -758,14 +896,19 @@ class WebsiteCrawler(Crawler):
             sitemap_lastmods
         )
         crawl_worker.setup()
+        crawl_worker.shutdown_check = self.check_shutdown
+        return crawl_worker
+
+    def _crawl_with_worker(self, crawl_worker: PageCrawlWorker, urls: list, num_per_second: int, source: str):
+        rate_controller = AdaptiveRateController(num_per_second)
+        crawl_worker.rate_controller = rate_controller
         for inx, url in enumerate(urls):
             self.check_shutdown()
             if inx % 100 == 0:
                 logger.info(f"Crawling URL number {inx+1} out of {len(urls)}")
             result = crawl_worker.process(url, source=source)
             self._track_result(url, result)
-        # Cleanup worker
-        crawl_worker.cleanup()
+        self._rate_pause_left = rate_controller.pause_remaining()
 
     def _remove_old_content_if_needed(self, crawled_urls: list):
         """

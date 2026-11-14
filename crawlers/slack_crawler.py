@@ -409,7 +409,6 @@ class SlackMsgIndexer(object):
         self.indexer = indexer
         self.slack_crawler = slack_crawler
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
 
     def setup(self):
         self.indexer.setup()

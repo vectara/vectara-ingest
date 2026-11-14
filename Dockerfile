@@ -4,6 +4,9 @@ FROM python:3.12-slim AS builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
+# Optional cap on uv's parallel downloads (uv defaults to 50). Lower it on networks
+# that drop many concurrent connections: UV_CONCURRENT_DOWNLOADS=4 bash run.sh ...
+ARG UV_CONCURRENT_DOWNLOADS
 
 ENV http_proxy=$HTTP_PROXY
 ENV https_proxy=$HTTPS_PROXY
