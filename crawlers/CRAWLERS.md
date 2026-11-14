@@ -10,6 +10,8 @@
 
 If `remove_boilerplate` is enabled, `vectara-ingest` uses [Goose3](https://pypi.org/project/goose3/) and [JusText](https://pypi.org/project/jusText/) in `Indexer.index_url` to enhance text extraction from HTML content, ensuring relevant material is gathered while excluding ads and irrelevant content. 
 
+Both libraries decide what is boilerplate by counting stopwords, so the language of each page is detected and its stoplist is used. Languages without a JusText stoplist (for example Japanese) use JusText's language-independent mode, which only keeps paragraphs longer than 200 characters. On sites with short paragraphs in such a language, `remove_boilerplate` can drop real content; use `html_processing` to remove navigation and footers instead.
+
 `vectara-ingest` supports crawling and indexing web content in 42 languages currently. To determine the language of a given webpage, we utilize the [langdetect](https://pypi.org/project/langdetect/) package, and adjust the use of Goose3 and JusText accordingly.
 
 Let's go through some of the main crawlers to explain how they work and how to customize them to your needs. This will also provide good background to creating (and contributing) new types of crawlers.
@@ -101,6 +103,7 @@ website_crawler:
     keep_query_params: false
     crawl_report: false
     remove_old_content: false
+    url_metadata: []
     ray_workers: 0
 ...
 ```
@@ -129,6 +132,18 @@ Other parameters:
 - `crawl_report`: if true, creates a file under ~/tmp/mount called `urls_indexed.txt` that lists all URLs crawled
 - `remove_old_content`: if true, removes any URL that currently exists in the corpus but is NOT in this crawl. CAUTION: this removes data from your corpus.
 If `crawl_report` is true then the list of URLs associated with the removed documents is listed in `urls_removed.txt`
+- `url_metadata`: an (optional) list of rules that add metadata to pages by URL. Each rule has a `pattern` (a regex, matched with `.match()` like `pos_regex`) and a `metadata` dict. For each page, the first rule whose pattern matches is applied and later rules are ignored, so put specific patterns before general ones. Pages that match no rule get no extra metadata. A rule cannot override `source` or `url`. With `incremental`, changing `url_metadata` re-indexes every page so the new rules apply. To filter on a metadata field in queries, it must be defined as a filter attribute on the corpus. Example, tagging each language section of one site:
+  ```yaml
+  website_crawler:
+    urls: [https://example.com/]
+    url_metadata:
+      - pattern: "^https://example\\.com/de/"
+        metadata: {lang: de}
+      - pattern: "^https://example\\.com/ja/"
+        metadata: {lang: ja}
+      - pattern: ".*"
+        metadata: {lang: en}
+  ```
 
 The `html_processing` configuration defines a set of special instructions that can be used to ignore some content when extracting text from HTML:
 - `ids_to_remove` defines an (optional) list of HTML IDs that are ignored when extracting text from the page.

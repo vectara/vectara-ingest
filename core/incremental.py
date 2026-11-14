@@ -180,13 +180,17 @@ def config_signature(cfg: Any) -> str:
     vectara = {k: v_cfg.get(k) for k in _CONFIG_SIG_VECTARA_KEYS if k in v_cfg}
     # OmegaConf containers must be resolved to plain Python before JSON serialization.
     # _canonical_json's default=str is the backstop if resolution is unavailable.
+    sig = {"doc_processing": doc_processing, "vectara": vectara}
+    # Only when set, so signatures of runs without url_metadata are unchanged.
+    url_metadata = (cfg.get("website_crawler", {}) or {}).get("url_metadata")
+    if url_metadata:
+        sig["url_metadata"] = url_metadata
     try:
         from omegaconf import OmegaConf
-        doc_processing = OmegaConf.to_container(OmegaConf.create(doc_processing), resolve=True)
-        vectara = OmegaConf.to_container(OmegaConf.create(vectara), resolve=True)
+        sig = OmegaConf.to_container(OmegaConf.create(sig), resolve=True)
     except Exception:
         pass
-    return md5_hex(_canonical_json({"doc_processing": doc_processing, "vectara": vectara}))
+    return md5_hex(_canonical_json(sig))
 
 
 def build_manifest(indexer: Any, key: str = "url", source: Optional[str] = None) -> Dict[str, ManifestEntry]:

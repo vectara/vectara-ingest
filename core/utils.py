@@ -20,7 +20,7 @@ import magic
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from langdetect import detect
+from langdetect import detect, DetectorFactory
 from omegaconf import DictConfig, OmegaConf
 from requests.adapters import HTTPAdapter
 from requests.models import Response, PreparedRequest
@@ -28,6 +28,9 @@ from slugify import slugify
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+# langdetect is non-deterministic on short or ambiguous text unless seeded (per its docs).
+DetectorFactory.seed = 0
 
 # =============================================================================
 # MEMORY MANAGEMENT
