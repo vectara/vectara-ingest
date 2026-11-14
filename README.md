@@ -293,6 +293,13 @@ doc_processing:
   # See [here](docs/TABLE_SUMMARY.md) for some examples of how table summary works.
   parse_tables: false
 
+  # Index the document title as the first text part of chunked (core) documents.
+  # Structured documents carry their title in the `title` field, which is searchable; chunked
+  # documents keep it in metadata only, so a query for a document's name (e.g. a Box or Drive
+  # file name) does not match it. With this on, the crawler's metadata `title` (falling back
+  # to the parser's title) is added as a part with metadata {"element_type": "title"}.
+  title_in_text: false
+
   # use GMFT to parse tables from PDF
   enable_gmft: true
 

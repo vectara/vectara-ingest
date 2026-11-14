@@ -45,6 +45,7 @@ vectara:
 doc_processing:
   parse_tables: true                  # Extract and summarize tables from PDFs
   summarize_images: false             # Skip AI image summarization
+  title_in_text: true                 # Make the Box file name searchable (first text part)
 
 box_crawler:
   skip_indexing: false                # Enable Vectara ingestion

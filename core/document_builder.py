@@ -74,7 +74,10 @@ class DocumentBuilder:
         tables_array = self._build_tables_array(tables) if tables else []
 
         if use_core_indexing:
-            document = self._build_core_document(document, texts, metadatas, doc_title, tables_array)
+            document = self._build_core_document(
+                document, texts, metadatas, doc_title, tables_array,
+                title_part=self._title_part_text(doc_title, doc_metadata),
+            )
         else:
             document = self._build_structured_document(
                 document, texts, titles, metadatas, doc_title, tables_array,
@@ -86,6 +89,28 @@ class DocumentBuilder:
 
         return document
     
+    def _title_in_text_enabled(self) -> bool:
+        """doc_processing.title_in_text: add the document title as the first text part of core documents."""
+        try:
+            return bool(self.cfg.doc_processing.get("title_in_text", False))
+        except Exception:
+            return False
+
+    def _title_part_text(self, doc_title: str, doc_metadata: Dict[str, Any]) -> str:
+        """
+        Title to index as text when title_in_text is on, or "" when off / no title.
+
+        A structured document carries its title in the "title" field, which Vectara indexes.
+        A core document (chunked ingestion) has no title field, so the title ends up in
+        metadata only and a query for the document's name finds nothing. The crawler's
+        metadata title (e.g. the Box/Drive file name) is preferred over the parser's title,
+        which for PDFs is often the embedded "PowerPoint Presentation"-style property.
+        """
+        if not self._title_in_text_enabled():
+            return ""
+        title = (doc_metadata or {}).get("title") or doc_title or ""
+        return title.strip() if isinstance(title, str) else ""
+
     def _normalize_value(self, value):
         """Normalize value using the provided normalize function"""
         if isinstance(value, str):
@@ -138,10 +163,15 @@ class DocumentBuilder:
         texts: List[str],
         metadatas: List[Dict[str, Any]],
         doc_title: str,
-        tables_array: List[Dict[str, Any]]
+        tables_array: List[Dict[str, Any]],
+        title_part: str = ""
     ) -> Dict[str, Any]:
         """Build document for core indexing"""
         document["document_parts"] = []
+        if title_part:
+            document["document_parts"].append(
+                {"text": self.normalize_text(title_part), "metadata": {"element_type": "title"}}
+            )
         for text, md in zip(texts, metadatas):
             for chunk in self._split_text(text, MAX_PART_SIZE):
                 document["document_parts"].append(
