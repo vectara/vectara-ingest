@@ -820,6 +820,7 @@ class TestPageCrawlWorkerRateControl(unittest.TestCase):
         worker.sitemap_lastmods = {}
         worker.prior_fingerprints = {}
         worker.html_processing = {}
+        worker.url_metadata = []
         worker.rate_limiter = MagicMock()
         worker.rate_controller = MagicMock()
         worker.rate_controller.acquire.return_value = 0

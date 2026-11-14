@@ -21,6 +21,7 @@ from crawlers.auth.saml_manager import SAMLAuthManager
 from crawlers.auth.google_manager import GoogleAuthManager
 
 import ray
+from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,13 @@ class PageCrawlWorker(object):
         self.saml_config = website_crawler_cfg.get('saml_auth')
         self.google_config = website_crawler_cfg.get('google_auth')
         self.scrape_method = website_crawler_cfg.get('scrape_method', 'playwright')
+        # [(compiled pattern, metadata)]; the first rule whose pattern matches a URL wins.
+        self.url_metadata = [
+            (re.compile(rule['pattern']),
+             OmegaConf.to_container(rule['metadata']) if OmegaConf.is_config(rule['metadata'])
+             else dict(rule['metadata']))
+            for rule in website_crawler_cfg.get('url_metadata', [])
+        ]
 
     def setup(self):
         """
@@ -270,7 +278,8 @@ class PageCrawlWorker(object):
             return self.RESULT_FAILED
 
         nu = normalize_url_for_metadata(url)
-        metadata = {"source": source, "url": url}
+        rule_md = next((md for pattern, md in self.url_metadata if pattern.match(url)), {})
+        metadata = {**rule_md, "source": source, "url": url}
         # Record the sitemap lastmod (if any) so next run's Layer-1 compares like-for-like.
         sm_lastmod = self.sitemap_lastmods.get(nu)
         if sm_lastmod:
