@@ -1,0 +1,122 @@
+/* ============================================
+   LISTS - Checkmark Lists, Compact Lists
+   ============================================ */
+
+/* Checkmark/Use Case List */
+.list-check {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0.75rem 0;
+    padding: 0;
+    list-style: none;
+}
+
+.list-check-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.list-check-item .check-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+}
+
+.check-icon {
+    color: var(--vectara-primary);
+    stroke: var(--vectara-primary);
+    flex-shrink: 0;
+}
+
+.list-check-item span {
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+/* Prerequisites List (used in installation.md) */
+.prerequisites-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1rem 0 1rem 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
+}
+
+.prerequisite-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.prerequisite-item span {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+/* Numbered Step List (compact) */
+.step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0.5rem 0;
+}
+
+.step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--vectara-border);
+    border-radius: 0.25rem;
+    padding: 0.4rem 0.625rem;
+    transition: var(--transition-smooth);
+}
+
+.step-item:hover {
+    border-color: rgba(63, 81, 181, 0.3);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+[data-md-color-scheme="slate"] .step-item {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--vectara-primary);
+    border-radius: 50%;
+    font-size: 0.65rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+[data-md-color-scheme="slate"] .step-number {
+    background: rgba(99, 102, 241, 0.2);
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-content h4 {
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin: 0 0 0.15rem 0;
+    line-height: 1.2;
+}
+
+.step-content p {
+    font-size: 0.65rem;
+    line-height: 1.35;
+    margin: 0;
+    color: var(--vectara-text-muted);
+}
